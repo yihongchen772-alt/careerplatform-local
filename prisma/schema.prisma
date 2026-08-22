@@ -29,6 +29,14 @@ model User {
   aiProvider          String?
   aiApiKeyEncrypted   String?
   aiModel             String?
+  // Local build only: sends reminder digests via the user's own mailbox
+  // (SMTP) since there's no always-on server here to run a hosted email
+  // service against. Password is AES-encrypted the same way as the AI key.
+  smtpHost               String?
+  smtpPort               Int?
+  smtpUser               String?
+  smtpPasswordEncrypted  String?
+  smtpFrom               String?
   createdAt      DateTime  @default(now())
 
   accounts       Account[]

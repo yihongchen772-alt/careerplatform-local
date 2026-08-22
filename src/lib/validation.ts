@@ -24,6 +24,14 @@ export const aiSettingsSchema = z.object({
   model: z.string().optional(),
 });
 
+export const emailSettingsSchema = z.object({
+  host: z.string().min(1, "请填写 SMTP 服务器地址"),
+  port: z.coerce.number().int().min(1).max(65535),
+  user: z.string().email("请填写合法的邮箱地址"),
+  password: z.string().min(1, "请填写授权码/应用密码"),
+  from: z.string().email().optional(),
+});
+
 export const positionStatusValues = [
   "EVALUATING",
   "PLANNED",
