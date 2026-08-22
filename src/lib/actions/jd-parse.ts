@@ -11,12 +11,17 @@ import {
 } from "@/lib/action-result";
 
 const jdSchema = z.object({
-  companyName: z.string().nullable(),
-  title: z.string().nullable(),
-  location: z.string().nullable(),
-  track: z.string().nullable(),
-  salaryMin: z.number().nullable(),
-  salaryMax: z.number().nullable(),
+  // .nullish() (not .nullable()): Gemini's schema-constrained mode always
+  // emits every key, but the plain response_format:"json_object" mode other
+  // providers use has no such guarantee — DeepSeek has been observed to
+  // drop a key entirely (not even `null`) instead of filling it in, so a
+  // missing key must be tolerated the same as an explicit null.
+  companyName: z.string().nullish(),
+  title: z.string().nullish(),
+  location: z.string().nullish(),
+  track: z.string().nullish(),
+  salaryMin: z.number().nullish(),
+  salaryMax: z.number().nullish(),
   techFit: z.number().min(0).max(10),
   salaryScore: z.number().min(0).max(10),
   locationScore: z.number().min(0).max(10),
