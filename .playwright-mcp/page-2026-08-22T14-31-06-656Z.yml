@@ -1,0 +1,12 @@
+- generic [active] [ref=f49e1]:
+  - generic [ref=f49e2]:
+    - generic [ref=f49e3]:
+      - heading "全局搜索" [level=2] [ref=f49e4]
+      - paragraph [ref=f49e5]: 搜索候选岗位、投递记录、企业名录
+    - banner [ref=f49e6]:
+      - button "打开菜单" [ref=f49e7]
+      - generic [ref=f49e8]: 性格测试
+      - button "搜索" [ref=f49e9]
+    - main [ref=f49e10]
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=f49e24] [cursor=pointer]

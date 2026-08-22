@@ -1,0 +1,33 @@
+- generic [active] [ref=f26e1]:
+  - generic [ref=f26e2]:
+    - generic [ref=f26e3]:
+      - heading "全局搜索" [level=2] [ref=f26e161]
+      - paragraph [ref=f26e5]: 搜索候选岗位、投递记录、企业名录
+    - banner [ref=f26e6]:
+      - button "打开菜单" [ref=f26e162]
+      - generic [ref=f26e8]: 候选岗位池
+      - button "搜索" [ref=f26e163]
+    - main [ref=f26e10]:
+      - generic [ref=f26e11]:
+        - generic [ref=f26e12]:
+          - heading "候选岗位池" [level=1] [ref=f26e164]
+          - button "+ 添加候选岗位" [ref=f26e165]
+        - generic [ref=f26e18]:
+          - generic [ref=f26e19]:
+            - generic [ref=f26e22]:
+              - paragraph [ref=f26e23]: 编辑测试公司
+              - paragraph [ref=f26e24]: 改过的岗位名
+            - generic [ref=f26e25]: "50"
+          - generic [ref=f26e26]:
+            - generic [ref=f26e27]: 已投递
+            - generic [ref=f26e28]:
+              - button "选简历" [ref=f26e166]
+              - button "面试攻略" [ref=f26e167]
+              - button "编辑" [ref=f26e168]
+              - button "删除" [ref=f26e169]
+  - region "Notifications alt+T":
+    - list:
+      - listitem [ref=f26e170]:
+        - generic [ref=f26e175]: 已标记为投递，投递记录已生成
+  - button "Open Next.js Dev Tools" [ref=f26e39] [cursor=pointer]
+  - alert [ref=f26e43]

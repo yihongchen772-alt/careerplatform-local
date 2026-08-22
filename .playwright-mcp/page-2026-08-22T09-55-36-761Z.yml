@@ -1,0 +1,38 @@
+- generic [active] [ref=f27e1]:
+  - generic [ref=f27e2]:
+    - generic [ref=f27e3]:
+      - heading "全局搜索" [level=2] [ref=f27e4]
+      - paragraph [ref=f27e5]: 搜索候选岗位、投递记录、企业名录
+    - banner [ref=f27e6]:
+      - button "打开菜单" [ref=f27e7]
+      - generic [ref=f27e8]: 投递记录
+      - button "搜索" [ref=f27e9]
+    - main [ref=f27e10]:
+      - generic [ref=f27e11]:
+        - generic [ref=f27e12]:
+          - heading "投递记录" [level=1] [ref=f27e13]
+          - button "+ 新增投递记录" [ref=f27e14]
+        - generic [ref=f27e17]:
+          - generic [ref=f27e18]:
+            - generic [ref=f27e19]:
+              - generic [ref=f27e20]: 按状态筛选：
+              - combobox [ref=f27e21]:
+                - generic [ref=f27e22]: 全部
+                - img: ▼
+              - textbox [ref=f27e23]: ALL
+            - button "导出 CSV" [ref=f27e24]
+          - generic [ref=f27e26]:
+            - link "编辑测试公司 改过的岗位名 已投递 2026/8/22 投递 0 天未更新 内推：王学长" [ref=f27e27] [cursor=pointer]:
+              - /url: /applications/cmt47d3bd0005hzhpccztm1kt
+              - generic [ref=f27e28]:
+                - generic [ref=f27e29]:
+                  - paragraph [ref=f27e30]: 编辑测试公司
+                  - paragraph [ref=f27e31]: 改过的岗位名
+                - generic [ref=f27e32]: 已投递
+              - generic [ref=f27e33]:
+                - generic [ref=f27e34]: 2026/8/22 投递
+                - generic [ref=f27e35]: 0 天未更新
+                - generic [ref=f27e36]: 内推：王学长
+            - button "删除" [ref=f27e38]
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=f27e44] [cursor=pointer]

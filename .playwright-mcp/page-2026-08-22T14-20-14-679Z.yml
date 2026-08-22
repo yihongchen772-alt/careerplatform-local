@@ -1,0 +1,26 @@
+- generic [active] [ref=f40e1]:
+  - generic [ref=f40e2]:
+    - generic [ref=f40e3]:
+      - heading "全局搜索" [level=2] [ref=f40e4]
+      - paragraph [ref=f40e5]: 搜索候选岗位、投递记录、企业名录
+    - banner [ref=f40e6]:
+      - button "打开菜单" [ref=f40e7]
+      - generic [ref=f40e8]: AI 模拟面试
+      - button "搜索" [ref=f40e9]
+    - main [ref=f40e10]:
+      - generic [ref=f40e69]:
+        - generic [ref=f40e70]:
+          - heading "编辑测试公司 · 改过的岗位名" [level=1] [ref=f40e71]
+          - paragraph [ref=f40e72]: 简历版本：面试测试版
+        - generic [ref=f40e73]:
+          - generic [ref=f40e76]:
+            - paragraph [ref=f40e77]: 面试官
+            - paragraph [ref=f40e78]: 请先做个简单的自我介绍，并重点聊聊你在简历中提到的后端开发经历中，让你最有成就感的一次技术实践或优化过程。
+          - generic [ref=f40e79]:
+            - textbox "打字回答..." [ref=f40e80]: 你好，我叫小陈，熟悉Java和MySQL，做过一个后端项目，把接口响应时间从800ms优化到了120ms。
+            - generic [ref=f40e81]:
+              - button "发送" [ref=f40e83]
+              - button "结束面试" [ref=f40e82]
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=f40e24] [cursor=pointer]
+  - alert [ref=f40e28]

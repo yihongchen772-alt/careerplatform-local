@@ -1,0 +1,156 @@
+- generic [ref=f6e1]:
+  - generic [ref=f6e2]:
+    - generic [ref=f6e3]:
+      - heading [level=2] [ref=f6e265]: 全局搜索
+      - paragraph [ref=f6e5]: 搜索候选岗位、投递记录、企业名录
+    - complementary [ref=f6e6]:
+      - generic [ref=f6e8]:
+        - generic [ref=f6e9]:
+          - generic [ref=f6e10]:
+            - img [ref=f6e11]:
+              - generic [ref=f6e13]: 秋
+            - text: 秋招追踪
+          - button [ref=f6e266]:
+            - text: 搜索...
+            - generic [ref=f6e26]: ⌘/Ctrl K
+          - navigation [ref=f6e27]:
+            - link [ref=f6e267] [cursor=pointer]:
+              - /url: /dashboard
+              - text: 总览
+          - generic [ref=f6e34]:
+            - paragraph [ref=f6e35]: 求职工具
+            - navigation [ref=f6e36]:
+              - link [ref=f6e268] [cursor=pointer]:
+                - /url: /pool
+                - text: 候选岗位池
+              - link [ref=f6e269] [cursor=pointer]:
+                - /url: /applications
+                - text: 投递记录
+              - link [ref=f6e270] [cursor=pointer]:
+                - /url: /interviews
+                - text: 面经库
+              - link [ref=f6e271] [cursor=pointer]:
+                - /url: /calendar
+                - text: 日历视图
+              - link [ref=f6e272] [cursor=pointer]:
+                - /url: /insights
+                - text: 转化率
+              - link [ref=f6e273] [cursor=pointer]:
+                - /url: /compare
+                - text: Offer 对比
+          - generic [ref=f6e60]:
+            - paragraph [ref=f6e61]: 资源
+            - navigation [ref=f6e62]:
+              - link [ref=f6e274] [cursor=pointer]:
+                - /url: /companies
+                - text: 企业名录
+              - link [ref=f6e275] [cursor=pointer]:
+                - /url: /resumes
+                - text: 简历版本
+          - generic [ref=f6e72]:
+            - paragraph [ref=f6e73]: 账号
+            - navigation [ref=f6e74]:
+              - link [ref=f6e276] [cursor=pointer]:
+                - /url: /settings
+                - text: 账号设置
+        - generic [ref=f6e79]:
+          - paragraph [ref=f6e80]: 功能测试
+          - button [ref=f6e277]: 退出登录
+    - main [ref=f6e82]:
+      - generic [ref=f6e83]:
+        - generic [ref=f6e84]:
+          - heading [level=1] [ref=f6e278]: 候选岗位池
+          - button [ref=f6e279]: + 添加候选岗位
+        - table [ref=f6e90]:
+          - rowgroup [ref=f6e91]:
+            - row [ref=f6e280]:
+              - columnheader [ref=f6e281]:
+                - checkbox [ref=f6e282]
+                - checkbox [ref=f6e95]
+              - columnheader [ref=f6e283]: 公司 / 岗位
+              - columnheader [ref=f6e284]: 方向
+              - columnheader [ref=f6e285]: 地点
+              - columnheader [ref=f6e286]: 薪资
+              - columnheader [ref=f6e287]: 综合得分
+              - columnheader [ref=f6e288]: 截止日期
+              - columnheader [ref=f6e289]: 状态
+              - columnheader [ref=f6e290]: 操作
+          - rowgroup [ref=f6e104]:
+            - row [ref=f6e291]:
+              - cell [ref=f6e292]:
+                - checkbox [ref=f6e293]
+                - checkbox [ref=f6e241]
+              - cell [ref=f6e294]:
+                - generic [ref=f6e243]: 编辑测试公司
+                - generic [ref=f6e244]: 原始岗位名
+              - cell [ref=f6e295]: "-"
+              - cell [ref=f6e296]: "-"
+              - cell [ref=f6e297]: "-"
+              - cell [ref=f6e298]:
+                - generic [ref=f6e249]: "50"
+              - cell [ref=f6e299]: "-"
+              - cell [ref=f6e300]:
+                - generic [ref=f6e252]: 待评估
+              - cell [ref=f6e301]:
+                - button [ref=f6e302]: 选简历
+                - button [ref=f6e303]: 标记已投
+                - button [expanded] [ref=f6e304]: 编辑
+                - button [ref=f6e305]: 删除
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=f6e117] [cursor=pointer]
+  - alert [ref=f6e121]
+  - dialog [ref=f6e309]:
+    - heading "编辑候选岗位" [level=2] [ref=f6e311]
+    - generic [ref=f6e312]:
+      - generic [ref=f6e313]:
+        - generic [ref=f6e314]:
+          - generic [ref=f6e315]: 粘贴 JD 文字（推荐）
+          - textbox "在招聘页面上复制岗位描述，粘贴到这里" [active] [ref=f6e316]
+        - generic [ref=f6e317]:
+          - generic [ref=f6e318]: 或填 JD 链接
+          - textbox "https://..." [ref=f6e319]
+        - generic [ref=f6e320]:
+          - button "AI 自动填充" [ref=f6e321]
+          - paragraph [ref=f6e322]: 很多招聘网站禁止抓取，链接解析不一定成功，粘文字最稳
+      - generic [ref=f6e323]:
+        - generic [ref=f6e324]:
+          - generic [ref=f6e325]: 公司名称 *
+          - textbox [ref=f6e326]: 编辑测试公司
+        - generic [ref=f6e327]:
+          - generic [ref=f6e328]: 岗位名称 *
+          - textbox [ref=f6e329]: 原始岗位名
+        - generic [ref=f6e330]:
+          - generic [ref=f6e331]: 方向
+          - textbox "后端 / 算法 / 产品..." [ref=f6e332]
+        - generic [ref=f6e333]:
+          - generic [ref=f6e334]: 地点
+          - textbox [ref=f6e335]
+        - generic [ref=f6e336]:
+          - generic [ref=f6e337]: 薪资下限（K）
+          - spinbutton [ref=f6e338]
+        - generic [ref=f6e339]:
+          - generic [ref=f6e340]: 薪资上限（K）
+          - spinbutton [ref=f6e341]
+        - generic [ref=f6e342]:
+          - generic [ref=f6e343]: 渠道
+          - textbox "官网 / 内推 / 猎头..." [ref=f6e344]
+        - generic [ref=f6e345]:
+          - generic [ref=f6e346]: 投递截止日期
+          - textbox [ref=f6e347]
+      - generic [ref=f6e348]:
+        - paragraph [ref=f6e349]: 打分（0-10，权重：技术35% 薪资25% 地点20% 成长20%）
+        - generic [ref=f6e350]:
+          - generic [ref=f6e351]:
+            - generic [ref=f6e352]: 技术栈匹配
+            - spinbutton [ref=f6e353]: "5"
+          - generic [ref=f6e354]:
+            - generic [ref=f6e355]: 薪资
+            - spinbutton [ref=f6e356]: "5"
+          - generic [ref=f6e357]:
+            - generic [ref=f6e358]: 地点
+            - spinbutton [ref=f6e359]: "5"
+          - generic [ref=f6e360]:
+            - generic [ref=f6e361]: 成长性
+            - spinbutton [ref=f6e362]: "5"
+      - button "保存" [ref=f6e364]
+    - button "Close" [ref=f6e365]
