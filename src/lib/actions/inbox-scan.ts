@@ -14,7 +14,11 @@ const classificationSchema = z.object({
       index: z.number(),
       isJobRelated: z.boolean(),
       type: z.string(),
-      company: z.string().nullable(),
+      // .nullish(), not .nullable(): providers using the plain
+      // response_format:"json_object" mode (i.e. not Gemini) can drop a key
+      // entirely instead of emitting null, so a missing key must be
+      // tolerated the same as an explicit null (see jd-parse.ts).
+      company: z.string().nullish(),
       summary: z.string(),
     })
   ),
