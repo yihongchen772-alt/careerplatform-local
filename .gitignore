@@ -7,3 +7,4 @@ release
 *.db-journal
 .env
 .env.local
+.DS_Store
