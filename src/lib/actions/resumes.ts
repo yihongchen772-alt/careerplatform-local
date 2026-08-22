@@ -1,10 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { del } from "@vercel/blob";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
+import { deleteLocalFileByUrl } from "@/lib/local-storage";
 import { resumeVersionSchema } from "@/lib/validation";
 import { z } from "zod";
 
@@ -54,14 +54,10 @@ export async function updateResumeVersion(
     },
   });
 
-  // Best-effort: drop the superseded file so it doesn't leak in Blob storage
-  // the same way deleteResumeVersion used to.
+  // Best-effort: drop the superseded file so it doesn't leak on disk the
+  // same way deleteResumeVersion used to.
   if (replacingFile && existing.fileUrl) {
-    try {
-      await del(existing.fileUrl);
-    } catch {
-      // already gone, or transient — nothing left to roll back
-    }
+    await deleteLocalFileByUrl(existing.fileUrl);
   }
 
   revalidatePath("/resumes");
@@ -74,14 +70,8 @@ export async function deleteResumeVersion(id: string) {
   if (!resume) return;
 
   await db.resumeVersion.delete({ where: { id } });
-  // The PDF was never cleaned up here — every deleted version leaked its file
-  // in Blob storage indefinitely. Best-effort: the DB row is already gone.
   if (resume.fileUrl) {
-    try {
-      await del(resume.fileUrl);
-    } catch {
-      // already gone, or transient — nothing left to roll back
-    }
+    await deleteLocalFileByUrl(resume.fileUrl);
   }
 
   revalidatePath("/resumes");

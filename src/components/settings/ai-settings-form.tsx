@@ -54,7 +54,7 @@ export function AiSettingsForm({
     setClearing(true);
     try {
       await clearAiSettings();
-      toast.success("已清除，AI 功能会改用共享额度");
+      toast.success("已清除，AI 功能在重新配置 Key 之前都用不了");
     } catch {
       toast.error("清除失败，请重试");
     } finally {
@@ -77,7 +77,7 @@ export function AiSettingsForm({
               优先用这个 Key。
             </>
           ) : (
-            "尚未配置，AI 功能使用平台共享额度（有每日上限）。填自己的 Key 后不受共享额度限制。"
+            "尚未配置——这是本地单机版，没有共享额度，AI 功能（简历体检、匹配、面试攻略、模拟面试等）都需要你自己的 API Key 才能用。"
           )}
         </p>
 
@@ -136,7 +136,7 @@ export function AiSettingsForm({
                 disabled={clearing}
                 onClick={handleClear}
               >
-                {clearing ? "清除中..." : "清除，改回共享额度"}
+                {clearing ? "清除中..." : "清除"}
               </Button>
             )}
           </div>

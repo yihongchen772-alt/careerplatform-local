@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -17,7 +17,7 @@ model User {
   school         String?
   targetTrack    String?
   graduationYear Int?
-  skills         String?   @db.Text
+  skills         String?
   preferredCities String?
   expectedSalaryMin Int?
   emailVerified  DateTime?
@@ -27,7 +27,7 @@ model User {
   // preference to the shared key when present; every AI feature still works
   // without one, falling back to the shared quota.
   aiProvider          String?
-  aiApiKeyEncrypted   String?   @db.Text
+  aiApiKeyEncrypted   String?
   aiModel             String?
   createdAt      DateTime  @default(now())
 
@@ -52,12 +52,12 @@ model Account {
   type              String
   provider          String
   providerAccountId String
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
+  refresh_token     String?
+  access_token      String?
   expires_at        Int?
   token_type        String?
   scope             String?
-  id_token          String? @db.Text
+  id_token          String?
   session_state     String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -117,7 +117,7 @@ model Position {
   location       String?
   salaryMin      Int?
   salaryMax      Int?
-  jdText         String?        @db.Text
+  jdText         String?
   jdUrl          String?
   source         String?
   scoreBreakdown Json?
@@ -164,7 +164,7 @@ model Application {
   currentStageDate DateTime         @default(now())
   salaryMin        Int?
   salaryMax        Int?
-  offerNote        String?          @db.Text
+  offerNote        String?
   createdAt        DateTime         @default(now())
 
   user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -184,7 +184,7 @@ model StageHistory {
   applicationId   String
   stage           ApplicationStage
   enteredAt       DateTime         @default(now())
-  note            String?          @db.Text
+  note            String?
   interviewFormat String?
   interviewer     String?
   nextDeadline    DateTime?
@@ -279,7 +279,7 @@ model PersonalTask {
   id            String    @id @default(cuid())
   userId        String
   title         String
-  note          String?   @db.Text
+  note          String?
   dueDate       DateTime?
   done          Boolean   @default(false)
   positionId    String?
@@ -333,7 +333,7 @@ model InterviewMessage {
   id        String               @id @default(cuid())
   sessionId String
   role      InterviewMessageRole
-  content   String               @db.Text
+  content   String
   createdAt DateTime             @default(now())
 
   session InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)

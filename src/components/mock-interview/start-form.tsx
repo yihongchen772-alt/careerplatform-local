@@ -71,7 +71,7 @@ export function MockInterviewStartForm({
             <a href="/settings" className="text-primary underline underline-offset-4">
               账号设置
             </a>{" "}
-            配置你自己的 AI API Key 才能用，不会占用平台共享额度。
+            配置你自己的 AI API Key 才能用。
           </p>
         </CardContent>
       </Card>

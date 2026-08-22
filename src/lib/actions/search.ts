@@ -29,8 +29,8 @@ export async function globalSearch(query: string): Promise<GlobalSearchResults> 
         userId: user.id,
         status: { not: "APPLIED" },
         OR: [
-          { title: { contains: q, mode: "insensitive" } },
-          { company: { name: { contains: q, mode: "insensitive" } } },
+          { title: { contains: q} },
+          { company: { name: { contains: q} } },
         ],
       },
       include: { company: true },
@@ -40,8 +40,8 @@ export async function globalSearch(query: string): Promise<GlobalSearchResults> 
       where: {
         userId: user.id,
         OR: [
-          { title: { contains: q, mode: "insensitive" } },
-          { company: { name: { contains: q, mode: "insensitive" } } },
+          { title: { contains: q} },
+          { company: { name: { contains: q} } },
         ],
       },
       include: { company: true },
@@ -50,7 +50,7 @@ export async function globalSearch(query: string): Promise<GlobalSearchResults> 
     db.company.findMany({
       where: {
         careerUrl: { not: null },
-        name: { contains: q, mode: "insensitive" },
+        name: { contains: q},
       },
       take: 5,
     }),

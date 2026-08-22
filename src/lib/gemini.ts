@@ -1,4 +1,5 @@
 import { UserFacingError } from "@/lib/action-result";
+import { readLocalFile } from "@/lib/local-storage";
 
 // Free-tier quota is per-model per-day, and 3.6-flash only allows 20 calls —
 // enough to exhaust in one afternoon of testing. flash-lite has its own,
@@ -44,7 +45,7 @@ export async function generateStructured({
 }): Promise<unknown> {
   const apiKey = apiKeyOverride ?? process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    throw new GeminiError("尚未配置 Gemini API Key，联系管理员配置后再试");
+    throw new GeminiError("尚未配置 Gemini API Key，请先在账号设置里填一个");
   }
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelOverride ?? MODEL}:generateContent`;
 
@@ -88,7 +89,7 @@ export async function generateStructured({
       throw new GeminiError("今日 AI 免费额度已用完，明天恢复");
     }
     if (response.status === 400 || response.status === 403) {
-      throw new GeminiError("AI 密钥无效或已过期，请联系管理员更换");
+      throw new GeminiError("AI 密钥无效或已过期，请到账号设置里更新");
     }
     throw new GeminiError("AI 服务暂时不可用，请稍后重试");
   }
@@ -110,31 +111,25 @@ const ALLOWED_MIME = [
   "image/webp",
 ];
 
-/** Downloads an uploaded resume from blob storage into a Gemini inline part. */
+/**
+ * Reads an uploaded resume into a Gemini inline part. Local build stores
+ * files on disk under /api/files/<name> — that's a relative path, not a
+ * fetchable URL from server-side code, so this reads straight off disk
+ * instead of doing a self-referential HTTP round trip.
+ */
 export async function fetchFileAsInlinePart(
   url: string
 ): Promise<GeminiFilePart> {
-  let res: Response;
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20000);
-    res = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeout);
-  } catch {
-    throw new GeminiError("读取简历文件失败，请稍后重试");
-  }
-  // A 404 means the blob is gone while the DB row still points at it — retrying
-  // never fixes that, so say what actually works instead.
-  if (res.status === 404) {
+  const filename = url.split("/").pop() ?? "";
+  const file = await readLocalFile(filename);
+  // Missing file means the DB row outlived the file on disk — retrying never
+  // fixes that, so say what actually works instead.
+  if (!file) {
     throw new GeminiError("简历文件已丢失，请重新上传这份简历后再试");
   }
-  if (!res.ok) throw new GeminiError("读取简历文件失败，请稍后重试");
-
-  const mimeType = (res.headers.get("content-type") ?? "").split(";")[0].trim();
-  if (!ALLOWED_MIME.includes(mimeType)) {
+  if (!ALLOWED_MIME.includes(file.mimeType)) {
     throw new GeminiError("只支持 PDF 或图片格式的简历");
   }
 
-  const buffer = Buffer.from(await res.arrayBuffer());
-  return { mimeType, data: buffer.toString("base64") };
+  return { mimeType: file.mimeType, data: file.buffer.toString("base64") };
 }
