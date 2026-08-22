@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { fetchFileAsInlinePart, generateStructured } from "@/lib/gemini";
+import { getUserAiKey } from "@/lib/ai-providers";
 import {
   toActionResult,
   UserFacingError,
@@ -55,6 +56,13 @@ async function run(positionId: string): Promise<MatchResult> {
     throw new UserFacingError("还没有上传过简历文件，先去简历版本页上传一份");
   }
 
+  const geminiKey = await getUserAiKey(user.id, "gemini");
+  if (!geminiKey) {
+    throw new UserFacingError(
+      "岗位匹配需要读取简历 PDF/图片内容，去账号设置 → AI 设置里配置一个 Gemini API Key（其他服务商暂不支持直接读文件）"
+    );
+  }
+
   const coarse = !position.jdText;
 
   const jobDescription = [
@@ -91,6 +99,8 @@ ${coarse ? "\n注意：这个岗位没有提供 JD 正文，只能依据岗位�
       const raw = await generateStructured({
         prompt,
         file,
+        apiKey: geminiKey.apiKey,
+        model: geminiKey.model,
         thinkingBudget: 1024,
         timeoutMs: 90000,
         schema: {

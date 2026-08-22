@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { fetchFileAsInlinePart, generateStructured } from "@/lib/gemini";
+import { getUserAiKey } from "@/lib/ai-providers";
 import {
   toActionResult,
   UserFacingError,
@@ -30,6 +31,13 @@ async function run(resumeVersionId: string): Promise<ResumeCheck> {
     );
   }
 
+  const geminiKey = await getUserAiKey(user.id, "gemini");
+  if (!geminiKey) {
+    throw new UserFacingError(
+      "简历体检需要读取 PDF/图片内容，去账号设置 → AI 设置里配置一个 Gemini API Key（其他服务商暂不支持直接读文件）"
+    );
+  }
+
   const file = await fetchFileAsInlinePart(resume.fileUrl);
 
   const prompt = `你是一位帮中国应届生看秋招简历的资深 HR / 技术面试官。请审阅这份简历并给出评估。
@@ -51,6 +59,8 @@ async function run(resumeVersionId: string): Promise<ResumeCheck> {
   const raw = await generateStructured({
     prompt,
     file,
+    apiKey: geminiKey.apiKey,
+    model: geminiKey.model,
     // Judgement task over a whole document — needs more headroom than the
     // extraction calls, but still far below Gemini's default.
     thinkingBudget: 1024,

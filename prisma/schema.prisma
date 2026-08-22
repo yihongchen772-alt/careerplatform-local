@@ -22,13 +22,13 @@ model User {
   expectedSalaryMin Int?
   emailVerified  DateTime?
   image          String?
-  // Bring-your-own AI key. The key is AES-encrypted at rest (see
-  // src/lib/crypto.ts) — never stored or logged in plaintext. Used in
-  // preference to the shared key when present; every AI feature still works
-  // without one, falling back to the shared quota.
-  aiProvider          String?
-  aiApiKeyEncrypted   String?
-  aiModel             String?
+  // Bring-your-own AI key(s) — see AiKey below, one row per provider, AES
+  // -encrypted at rest (src/lib/crypto.ts). defaultAiProvider picks which
+  // configured key the general text-only AI features use; file-reading
+  // features (JD parsing, resume check, resume match) ignore this and
+  // always look up the "gemini" key specifically, since only Gemini's API
+  // here can read a PDF/image directly.
+  defaultAiProvider   String?
   // Local build only: sends reminder digests via the user's own mailbox
   // (SMTP) since there's no always-on server here to run a hosted email
   // service against. Password is AES-encrypted the same way as the AI key.
@@ -61,6 +61,21 @@ model User {
   interviewSessions InterviewSession[]
   personalityTestResults PersonalityTestResult[]
   careerFitAnalysis      CareerFitAnalysis?
+  aiKeys                 AiKey[]
+}
+
+model AiKey {
+  id              String   @id @default(cuid())
+  userId          String
+  provider        String
+  apiKeyEncrypted String
+  model           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
 }
 
 model Account {

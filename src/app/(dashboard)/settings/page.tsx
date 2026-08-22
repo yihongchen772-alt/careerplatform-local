@@ -3,10 +3,11 @@ import { ProfileForm } from "@/components/settings/profile-form";
 import { AiSettingsForm } from "@/components/settings/ai-settings-form";
 import { AppearanceForm } from "@/components/settings/appearance-form";
 import { EmailSettingsForm } from "@/components/settings/email-settings-form";
-import type { AiProviderId } from "@/lib/ai-provider-labels";
+import { getAiKeysOverview } from "@/lib/actions/ai-keys";
 
 export default async function SettingsPage() {
   const user = await requireUser();
+  const aiKeys = await getAiKeysOverview(user.id);
 
   return (
     <div className="space-y-6">
@@ -24,10 +25,7 @@ export default async function SettingsPage() {
           }}
         />
         <AppearanceForm />
-        <AiSettingsForm
-          currentProvider={user.aiProvider as AiProviderId | null}
-          currentModel={user.aiModel}
-        />
+        <AiSettingsForm keys={aiKeys} />
         <EmailSettingsForm
           currentUser={user.smtpUser}
           inboxScanEnabled={user.inboxScanEnabled}
