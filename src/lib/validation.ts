@@ -30,6 +30,9 @@ export const emailSettingsSchema = z.object({
   user: z.string().email("请填写合法的邮箱地址"),
   password: z.string().min(1, "请填写授权码/应用密码"),
   from: z.string().email().optional(),
+  imapHost: z.string().optional(),
+  imapPort: z.coerce.number().int().min(1).max(65535).optional(),
+  inboxScanEnabled: z.boolean().optional(),
 });
 
 export const positionStatusValues = [

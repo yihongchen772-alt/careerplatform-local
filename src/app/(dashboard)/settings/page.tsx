@@ -28,7 +28,10 @@ export default async function SettingsPage() {
           currentProvider={user.aiProvider as AiProviderId | null}
           currentModel={user.aiModel}
         />
-        <EmailSettingsForm currentUser={user.smtpUser} />
+        <EmailSettingsForm
+          currentUser={user.smtpUser}
+          inboxScanEnabled={user.inboxScanEnabled}
+        />
       </div>
     </div>
   );

@@ -22,6 +22,9 @@ export async function updateEmailSettings(input: z.infer<typeof emailSettingsSch
       // Never store the plaintext password — only the encrypted form ever hits the DB.
       smtpPasswordEncrypted: encryptSecret(data.password),
       smtpFrom: data.from || data.user,
+      imapHost: data.imapHost || null,
+      imapPort: data.imapPort || null,
+      inboxScanEnabled: data.inboxScanEnabled ?? false,
     },
   });
 
@@ -38,6 +41,10 @@ export async function clearEmailSettings() {
       smtpUser: null,
       smtpPasswordEncrypted: null,
       smtpFrom: null,
+      imapHost: null,
+      imapPort: null,
+      inboxScanEnabled: false,
+      lastEmailCheckAt: null,
     },
   });
   revalidatePath("/settings");
