@@ -10,7 +10,7 @@ import { MessageSquare } from "lucide-react";
 export default async function MockInterviewPage() {
   const user = await requireUser();
 
-  const [resumeVersions, positions, sessions, dbUser] = await Promise.all([
+  const [resumeVersions, positions, standaloneApplications, sessions, dbUser] = await Promise.all([
     db.resumeVersion.findMany({
       where: { userId: user.id, checkResult: { not: Prisma.DbNull } },
       select: { id: true, name: true },
@@ -18,6 +18,15 @@ export default async function MockInterviewPage() {
     }),
     db.position.findMany({
       where: { userId: user.id },
+      include: { company: true },
+      orderBy: { createdAt: "desc" },
+    }),
+    // Applications added directly (not via the candidate pool) have no
+    // Position row of their own, so without this they'd never be pickable
+    // here at all. Applications that DO have a positionId are already
+    // covered by the positions list above — no need to list them twice.
+    db.application.findMany({
+      where: { userId: user.id, positionId: null },
       include: { company: true },
       orderBy: { createdAt: "desc" },
     }),
@@ -43,6 +52,10 @@ export default async function MockInterviewPage() {
         positions={positions.map((p) => ({
           id: p.id,
           label: `${p.company.name} · ${p.title}`,
+        }))}
+        applications={standaloneApplications.map((a) => ({
+          id: a.id,
+          label: `${a.company.name} · ${a.title}`,
         }))}
         hasOwnKey={!!dbUser?.defaultAiProvider}
       />

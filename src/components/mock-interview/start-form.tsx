@@ -10,7 +10,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -20,21 +22,35 @@ type ResumeOption = { id: string; name: string };
 type PositionOption = { id: string; label: string };
 
 const NONE = "__none__";
+// Encodes which table a picked option came from, since Position and
+// Application are different rows sharing one flat dropdown — decoded again
+// in handleStart() to build the right startInterviewSession() args.
+const POS_PREFIX = "pos:";
+const APP_PREFIX = "app:";
 
 export function MockInterviewStartForm({
   resumeVersions,
   positions,
+  applications,
   hasOwnKey,
 }: {
   resumeVersions: ResumeOption[];
   positions: PositionOption[];
+  applications: PositionOption[];
   hasOwnKey: boolean;
 }) {
   const router = useRouter();
   const [resumeVersionId, setResumeVersionId] = useState(resumeVersions[0]?.id ?? "");
-  const [positionId, setPositionId] = useState(NONE);
+  const [target, setTarget] = useState(NONE);
   const [targetRole, setTargetRole] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const selectedLabel =
+    target === NONE
+      ? "不选，问通用问题"
+      : target.startsWith(POS_PREFIX)
+        ? positions.find((p) => p.id === target.slice(POS_PREFIX.length))?.label
+        : applications.find((a) => a.id === target.slice(APP_PREFIX.length))?.label;
 
   async function handleStart() {
     if (!resumeVersionId) {
@@ -45,8 +61,12 @@ export function MockInterviewStartForm({
     try {
       const res = await startInterviewSession({
         resumeVersionId,
-        positionId: positionId === NONE ? undefined : positionId,
-        targetRole: positionId === NONE ? targetRole || undefined : undefined,
+        positionId: target.startsWith(POS_PREFIX) ? target.slice(POS_PREFIX.length) : undefined,
+        targetRole: target.startsWith(APP_PREFIX)
+          ? applications.find((a) => a.id === target.slice(APP_PREFIX.length))?.label
+          : target === NONE
+            ? targetRole || undefined
+            : undefined,
       });
       if (res.ok) {
         router.push(`/mock-interview/${res.data.sessionId}`);
@@ -117,28 +137,37 @@ export function MockInterviewStartForm({
               <Label className="text-xs text-muted-foreground">
                 面试哪个岗位（可选，不选就按简历里的求职方向问通用问题）
               </Label>
-              <Select value={positionId} onValueChange={(v) => v && setPositionId(v)}>
+              <Select value={target} onValueChange={(v) => v && setTarget(v)}>
                 <SelectTrigger className="w-full sm:w-80">
-                  <SelectValue>
-                    {() =>
-                      positionId === NONE
-                        ? "不选，问通用问题"
-                        : positions.find((p) => p.id === positionId)?.label
-                    }
-                  </SelectValue>
+                  <SelectValue>{() => selectedLabel}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={NONE}>不选，问通用问题</SelectItem>
-                  {positions.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.label}
-                    </SelectItem>
-                  ))}
+                  {positions.length > 0 && (
+                    <SelectGroup>
+                      <SelectLabel>候选池</SelectLabel>
+                      {positions.map((p) => (
+                        <SelectItem key={p.id} value={`${POS_PREFIX}${p.id}`}>
+                          {p.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  )}
+                  {applications.length > 0 && (
+                    <SelectGroup>
+                      <SelectLabel>投递记录</SelectLabel>
+                      {applications.map((a) => (
+                        <SelectItem key={a.id} value={`${APP_PREFIX}${a.id}`}>
+                          {a.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  )}
                 </SelectContent>
               </Select>
             </div>
 
-            {positionId === NONE && (
+            {target === NONE && (
               <div className="space-y-1">
                 <Label className="text-xs text-muted-foreground">
                   目标方向（可选，比如&ldquo;后端开发&rdquo;）
