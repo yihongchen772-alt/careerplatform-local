@@ -37,6 +37,15 @@ model User {
   smtpUser               String?
   smtpPasswordEncrypted  String?
   smtpFrom               String?
+  // Inbox scanning is opt-in and separate from the SMTP fields above —
+  // sending mail only needs send permission, reading the inbox is a much
+  // bigger trust boundary, so it defaults off even when email is otherwise
+  // configured. Reuses smtpUser/smtpPasswordEncrypted as IMAP credentials
+  // (same login for both on every provider this supports).
+  imapHost               String?
+  imapPort               Int?
+  inboxScanEnabled       Boolean   @default(false)
+  lastEmailCheckAt       DateTime?
   createdAt      DateTime  @default(now())
 
   accounts       Account[]
