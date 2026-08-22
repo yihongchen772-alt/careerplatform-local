@@ -1,5 +1,6 @@
 import { requireUser } from "@/lib/session";
 import { DashboardNav } from "@/components/dashboard/nav";
+import { AssistantWidget } from "@/components/assistant/assistant-widget";
 
 // Prisma reads aren't a Next.js "dynamic API", so without this every page in
 // here would get prerendered once at `next build` time and served as frozen
@@ -31,6 +32,7 @@ export default async function DashboardLayout({
       <main className="min-w-0 flex-1 px-4 pb-16 pt-[calc(3.5rem+env(safe-area-inset-top)+1rem)] md:p-6 md:pb-16">
         {children}
       </main>
+      <AssistantWidget />
     </div>
   );
 }
