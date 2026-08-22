@@ -1,0 +1,46 @@
+- generic [ref=f26e1]:
+  - generic [ref=f26e2]:
+    - generic [ref=f26e3]:
+      - heading [level=2] [ref=f26e44]: 全局搜索
+      - paragraph [ref=f26e5]: 搜索候选岗位、投递记录、企业名录
+    - banner [ref=f26e6]:
+      - button [ref=f26e45]
+      - generic [ref=f26e8]: 候选岗位池
+      - button [ref=f26e46]
+    - main [ref=f26e10]:
+      - generic [ref=f26e11]:
+        - generic [ref=f26e12]:
+          - heading [level=1] [ref=f26e47]: 候选岗位池
+          - button [ref=f26e48]: + 添加候选岗位
+        - generic [ref=f26e18]:
+          - generic [ref=f26e19]:
+            - checkbox [ref=f26e49]
+            - checkbox [ref=f26e21]
+            - generic [ref=f26e22]:
+              - paragraph [ref=f26e23]: 编辑测试公司
+              - paragraph [ref=f26e24]: 改过的岗位名
+            - generic [ref=f26e25]: "50"
+          - generic [ref=f26e26]:
+            - generic [ref=f26e27]: 待评估
+            - generic [ref=f26e28]:
+              - button [ref=f26e50]: 选简历
+              - button [ref=f26e51]: 面试攻略
+              - button [ref=f26e52]: 标记已投
+              - button [ref=f26e53]: 编辑
+              - button [ref=f26e54]: 删除
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=f26e39] [cursor=pointer]
+  - alert [ref=f26e43]
+  - dialog [ref=f26e58]:
+    - heading "投递前面试攻略" [level=2] [ref=f26e60]
+    - paragraph [ref=f26e61]: 编辑测试公司 · 改过的岗位名
+    - generic [ref=f26e62]:
+      - text: 用哪份简历
+      - combobox [active] [ref=f26e63]:
+        - generic [ref=f26e64]: 已改名的版本
+        - img: ▼
+      - textbox [ref=f26e65]: cmt469scb0002hzggwrwav88w
+    - generic [ref=f26e66]:
+      - paragraph [ref=f26e67]: 还没投递的话，可以先看看这个岗位大概率考什么、简历里哪些地方需要提前补强。
+      - button "生成攻略" [ref=f26e68]
+    - button "Close" [ref=f26e69]

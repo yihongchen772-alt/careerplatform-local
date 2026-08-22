@@ -1,0 +1,276 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  /* Was `var(--font-sans)` — self-referential, so the loaded Geist font was
+     never actually applied and every page silently fell back to the browser
+     default. -apple-system/PingFang SC give the CJK text the same system-UI
+     feel Geist gives the Latin/numeric text. */
+  --font-sans: var(--font-geist-sans), -apple-system, BlinkMacSystemFont,
+    "PingFang SC", "Helvetica Neue", "Segoe UI", "Microsoft YaHei", sans-serif;
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  /* Content sits on a soft off-white (macOS-style), cards are pure white —
+     that split is what makes a card read as a floating panel instead of a
+     border-only box. Previously background and card were both pure white,
+     so the only thing separating a card from the page was a 1px ring. */
+  --background: oklch(0.976 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: #4f46e5;
+  --primary-foreground: #ffffff;
+  --secondary: oklch(0.955 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.955 0 0);
+  --muted-foreground: oklch(0.53 0 0);
+  --accent: #eef2ff;
+  --accent-foreground: #4338ca;
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.906 0 0);
+  --input: oklch(0.906 0 0);
+  --ring: #6366f1;
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --radius: 0.75rem;
+  --sidebar: oklch(0.976 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.94 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.906 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+/* ---------- Palette: 靛蓝 (indigo, default) ---------- */
+/* :root above is this palette's light mode. Dark mode below — a floating-
+   panel dark UI mirrors the light mode's card/background split: background
+   is the darkest surface, cards sit one step lighter so they still read as
+   panels instead of flattening into the page like the original shadcn
+   boilerplate dark values did. */
+.dark {
+  --background: oklch(0.16 0.004 285);
+  --foreground: oklch(0.96 0 0);
+  --card: oklch(0.21 0.006 285);
+  --card-foreground: oklch(0.96 0 0);
+  --popover: oklch(0.21 0.006 285);
+  --popover-foreground: oklch(0.96 0 0);
+  --primary: #818cf8;
+  --primary-foreground: oklch(0.15 0 0);
+  --secondary: oklch(0.26 0.006 285);
+  --secondary-foreground: oklch(0.96 0 0);
+  --muted: oklch(0.26 0.006 285);
+  --muted-foreground: oklch(0.68 0 0);
+  --accent: oklch(0.27 0.03 280);
+  --accent-foreground: oklch(0.85 0.06 280);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 12%);
+  --ring: #818cf8;
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.16 0.004 285);
+  --sidebar-foreground: oklch(0.96 0 0);
+  --sidebar-primary: #818cf8;
+  --sidebar-primary-foreground: oklch(0.15 0 0);
+  --sidebar-accent: oklch(0.26 0.006 285);
+  --sidebar-accent-foreground: oklch(0.96 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: #818cf8;
+}
+
+/* ---------- Palette: 科技蓝·深空 (tech blue / deep space) ---------- */
+/* Cooler blue-tinted neutrals instead of true gray, plus a more saturated
+   blue accent — the light mode is a subtler version of the same idea, the
+   dark mode (deep navy, not black, with a bright cyan-blue primary) is
+   where this palette actually earns the "深空" name. */
+[data-palette="tech"] {
+  --background: oklch(0.974 0.004 250);
+  --foreground: oklch(0.16 0.014 255);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.16 0.014 255);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.16 0.014 255);
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+  --secondary: oklch(0.95 0.008 250);
+  --secondary-foreground: oklch(0.22 0.014 255);
+  --muted: oklch(0.95 0.008 250);
+  --muted-foreground: oklch(0.5 0.014 255);
+  --accent: oklch(0.94 0.03 235);
+  --accent-foreground: #1d4ed8;
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.9 0.008 250);
+  --input: oklch(0.9 0.008 250);
+  --ring: #3b82f6;
+  --sidebar: oklch(0.974 0.004 250);
+  --sidebar-foreground: oklch(0.16 0.014 255);
+  --sidebar-primary: #2563eb;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: oklch(0.94 0.03 235);
+  --sidebar-accent-foreground: #1d4ed8;
+  --sidebar-border: oklch(0.9 0.008 250);
+  --sidebar-ring: #3b82f6;
+}
+
+.dark[data-palette="tech"] {
+  --background: oklch(0.15 0.024 260);
+  --foreground: oklch(0.96 0.006 240);
+  --card: oklch(0.2 0.026 260);
+  --card-foreground: oklch(0.96 0.006 240);
+  --popover: oklch(0.2 0.026 260);
+  --popover-foreground: oklch(0.96 0.006 240);
+  --primary: #38bdf8;
+  --primary-foreground: oklch(0.14 0.03 260);
+  --secondary: oklch(0.25 0.024 260);
+  --secondary-foreground: oklch(0.96 0.006 240);
+  --muted: oklch(0.25 0.024 260);
+  --muted-foreground: oklch(0.66 0.014 250);
+  --accent: oklch(0.28 0.055 240);
+  --accent-foreground: oklch(0.85 0.09 220);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 14%);
+  --ring: #38bdf8;
+  --sidebar: oklch(0.15 0.024 260);
+  --sidebar-foreground: oklch(0.96 0.006 240);
+  --sidebar-primary: #38bdf8;
+  --sidebar-primary-foreground: oklch(0.14 0.03 260);
+  --sidebar-accent: oklch(0.28 0.055 240);
+  --sidebar-accent-foreground: oklch(0.85 0.09 220);
+  --sidebar-border: oklch(1 0 0 / 12%);
+  --sidebar-ring: #38bdf8;
+}
+
+/* ---------- Palette: 灰调极简 (grayscale minimal) ---------- */
+/* No hue at all outside destructive red — the "accent color" is ink itself
+   (near-black button in light mode, near-white in dark), the way a lot of
+   minimal productivity apps signal the primary action through weight and
+   contrast rather than color. */
+[data-palette="mono"] {
+  --background: oklch(0.98 0 0);
+  --foreground: oklch(0.14 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.14 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.14 0 0);
+  --primary: oklch(0.18 0 0);
+  --primary-foreground: oklch(0.98 0 0);
+  --secondary: oklch(0.95 0 0);
+  --secondary-foreground: oklch(0.2 0 0);
+  --muted: oklch(0.95 0 0);
+  --muted-foreground: oklch(0.48 0 0);
+  --accent: oklch(0.93 0 0);
+  --accent-foreground: oklch(0.18 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.89 0 0);
+  --input: oklch(0.89 0 0);
+  --ring: oklch(0.4 0 0);
+  --sidebar: oklch(0.98 0 0);
+  --sidebar-foreground: oklch(0.14 0 0);
+  --sidebar-primary: oklch(0.18 0 0);
+  --sidebar-primary-foreground: oklch(0.98 0 0);
+  --sidebar-accent: oklch(0.93 0 0);
+  --sidebar-accent-foreground: oklch(0.18 0 0);
+  --sidebar-border: oklch(0.89 0 0);
+  --sidebar-ring: oklch(0.4 0 0);
+}
+
+.dark[data-palette="mono"] {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.98 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.98 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.98 0 0);
+  --primary: oklch(0.92 0 0);
+  --primary-foreground: oklch(0.18 0 0);
+  --secondary: oklch(0.27 0 0);
+  --secondary-foreground: oklch(0.98 0 0);
+  --muted: oklch(0.27 0 0);
+  --muted-foreground: oklch(0.7 0 0);
+  --accent: oklch(0.27 0 0);
+  --accent-foreground: oklch(0.95 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 12%);
+  --ring: oklch(0.6 0 0);
+  --sidebar: oklch(0.145 0 0);
+  --sidebar-foreground: oklch(0.98 0 0);
+  --sidebar-primary: oklch(0.92 0 0);
+  --sidebar-primary-foreground: oklch(0.18 0 0);
+  --sidebar-accent: oklch(0.27 0 0);
+  --sidebar-accent-foreground: oklch(0.95 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.6 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+  h1,
+  h2,
+  h3 {
+    @apply tracking-tight;
+  }
+}

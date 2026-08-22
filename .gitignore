@@ -1,0 +1,9 @@
+node_modules
+.next
+dist
+dist-electron
+release
+*.db
+*.db-journal
+.env
+.env.local

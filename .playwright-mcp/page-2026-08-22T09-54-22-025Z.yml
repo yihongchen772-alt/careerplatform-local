@@ -1,0 +1,67 @@
+- generic [active] [ref=f26e1]:
+  - generic [ref=f26e2]:
+    - generic [ref=f26e3]:
+      - heading [level=2] [ref=f26e44]: 全局搜索
+      - paragraph [ref=f26e5]: 搜索候选岗位、投递记录、企业名录
+    - banner [ref=f26e6]:
+      - button [ref=f26e45]
+      - generic [ref=f26e8]: 候选岗位池
+      - button [ref=f26e46]
+    - main [ref=f26e10]:
+      - generic [ref=f26e11]:
+        - generic [ref=f26e12]:
+          - heading [level=1] [ref=f26e47]: 候选岗位池
+          - button [ref=f26e48]: + 添加候选岗位
+        - generic [ref=f26e18]:
+          - generic [ref=f26e19]:
+            - checkbox [ref=f26e49]
+            - checkbox [ref=f26e21]
+            - generic [ref=f26e22]:
+              - paragraph [ref=f26e23]: 编辑测试公司
+              - paragraph [ref=f26e24]: 改过的岗位名
+            - generic [ref=f26e25]: "50"
+          - generic [ref=f26e26]:
+            - generic [ref=f26e27]: 待评估
+            - generic [ref=f26e28]:
+              - button [ref=f26e50]: 选简历
+              - button [ref=f26e51]: 面试攻略
+              - button [ref=f26e52]: 标记已投
+              - button [ref=f26e53]: 编辑
+              - button [ref=f26e54]: 删除
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=f26e39] [cursor=pointer]
+  - alert [ref=f26e43]
+  - dialog [ref=f26e58]:
+    - heading "投递前面试攻略" [level=2] [ref=f26e60]
+    - paragraph [ref=f26e61]: 编辑测试公司 · 改过的岗位名
+    - generic [ref=f26e62]:
+      - text: 用哪份简历
+      - combobox [ref=f26e63]:
+        - generic [ref=f26e64]: 面试测试版
+        - img: ▼
+      - textbox [ref=f26e65]: cmt47a2zo0001hzhphd3my5gc
+    - generic [ref=f26e66]:
+      - paragraph [ref=f26e67]: 候选人简历信息严重残缺且缺乏项目细节，建议先完善简历再进行投递，重点夯实后端基础并补充真实的量化项目经历。
+      - generic [ref=f26e82]:
+        - paragraph [ref=f26e83]: 重点准备方向
+        - generic [ref=f26e84]:
+          - paragraph [ref=f26e85]: 完善简历基本信息与排版
+          - paragraph [ref=f26e86]: 简历缺少学历和联系方式，且篇幅过少，HR无法进行背景评估和与候选人取得联系。
+          - paragraph [ref=f26e87]: 补充完整的教育背景、毕业时间、手机号与邮箱，将版面扩充至标准一页纸的完整篇幅。
+        - generic [ref=f26e88]:
+          - paragraph [ref=f26e89]: 夯实Java与MySQL基础
+          - paragraph [ref=f26e90]: 简历仅简单提及Java和MySQL，缺乏技术深度支撑，面试极易在基础知识环节被淘汰。
+          - paragraph [ref=f26e91]: 复习Java集合、多线程并发、JVM基础，以及MySQL索引原理、SQL调优和事务隔离级别。
+        - generic [ref=f26e92]:
+          - paragraph [ref=f26e93]: 重构与量化项目经历
+          - paragraph [ref=f26e94]: 现有项目描述过于空洞，缺少业务场景、技术架构和可量化的性能成果。
+          - paragraph [ref=f26e95]: 梳理一个完整的后端项目，明确写出业务背景、技术选型、遇到的难点及优化后的量化数据。
+      - generic [ref=f26e96]:
+        - paragraph [ref=f26e97]: 大概率会问的题型
+        - generic [ref=f26e98]:
+          - generic [ref=f26e99]: Java基础与并发
+          - generic [ref=f26e100]: MySQL数据库与SQL优化
+          - generic [ref=f26e101]: 项目深挖与技术难点
+          - generic [ref=f26e102]: 行为面试与综合素质
+      - button "重新生成" [ref=f26e103]
+    - button "Close" [ref=f26e69]

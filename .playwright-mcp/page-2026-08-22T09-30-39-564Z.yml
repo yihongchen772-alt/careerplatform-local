@@ -1,0 +1,69 @@
+- generic [active] [ref=f7e1]:
+  - generic [ref=f7e2]:
+    - generic [ref=f7e3]:
+      - heading "全局搜索" [level=2] [ref=f7e165]
+      - paragraph [ref=f7e5]: 搜索候选岗位、投递记录、企业名录
+    - complementary [ref=f7e6]:
+      - generic [ref=f7e8]:
+        - generic [ref=f7e9]:
+          - generic [ref=f7e10]:
+            - img [ref=f7e11]:
+              - generic [ref=f7e13]: 秋
+            - text: 秋招追踪
+          - button "搜索... ⌘/Ctrl K" [ref=f7e166]:
+            - text: 搜索...
+            - generic [ref=f7e26]: ⌘/Ctrl K
+          - navigation [ref=f7e27]:
+            - link "总览" [ref=f7e167] [cursor=pointer]:
+              - /url: /dashboard
+          - generic [ref=f7e34]:
+            - paragraph [ref=f7e35]: 求职工具
+            - navigation [ref=f7e36]:
+              - link "候选岗位池" [ref=f7e168] [cursor=pointer]:
+                - /url: /pool
+              - link "投递记录" [ref=f7e169] [cursor=pointer]:
+                - /url: /applications
+              - link "面经库" [ref=f7e170] [cursor=pointer]:
+                - /url: /interviews
+              - link "日历视图" [ref=f7e171] [cursor=pointer]:
+                - /url: /calendar
+              - link "转化率" [ref=f7e172] [cursor=pointer]:
+                - /url: /insights
+              - link "Offer 对比" [ref=f7e173] [cursor=pointer]:
+                - /url: /compare
+          - generic [ref=f7e60]:
+            - paragraph [ref=f7e61]: 资源
+            - navigation [ref=f7e62]:
+              - link "企业名录" [ref=f7e174] [cursor=pointer]:
+                - /url: /companies
+              - link "简历版本" [ref=f7e175] [cursor=pointer]:
+                - /url: /resumes
+          - generic [ref=f7e72]:
+            - paragraph [ref=f7e73]: 账号
+            - navigation [ref=f7e74]:
+              - link "账号设置" [ref=f7e176] [cursor=pointer]:
+                - /url: /settings
+        - generic [ref=f7e79]:
+          - paragraph [ref=f7e80]: 功能测试
+          - button "退出登录" [ref=f7e177]
+    - main [ref=f7e82]:
+      - generic [ref=f7e100]:
+        - generic [ref=f7e101]:
+          - heading "简历版本" [level=1] [ref=f7e178]
+          - button "+ 添加简历版本" [ref=f7e179]
+        - generic [ref=f7e119]:
+          - generic [ref=f7e120]:
+            - paragraph [ref=f7e123]: 已改名的版本
+            - generic [ref=f7e124]:
+              - button "设为默认" [ref=f7e180]
+              - button "编辑" [ref=f7e181]
+              - button "删除" [ref=f7e182]
+          - generic [ref=f7e128]:
+            - button "AI 体检" [disabled]
+            - generic [ref=f7e129]: 上传文件后才能体检
+  - region "Notifications alt+T":
+    - list:
+      - listitem [ref=f7e183]:
+        - generic [ref=f7e188]: 已删除
+  - button "Open Next.js Dev Tools" [ref=f7e96] [cursor=pointer]
+  - alert [ref=f7e130]

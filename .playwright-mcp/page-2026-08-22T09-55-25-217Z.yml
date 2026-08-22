@@ -1,0 +1,51 @@
+- generic [ref=f26e1]:
+  - generic [ref=f26e2]:
+    - generic [ref=f26e3]:
+      - heading [level=2] [ref=f26e115]: 全局搜索
+      - paragraph [ref=f26e5]: 搜索候选岗位、投递记录、企业名录
+    - banner [ref=f26e6]:
+      - button [ref=f26e116]
+      - generic [ref=f26e8]: 候选岗位池
+      - button [ref=f26e117]
+    - main [ref=f26e10]:
+      - generic [ref=f26e11]:
+        - generic [ref=f26e12]:
+          - heading [level=1] [ref=f26e118]: 候选岗位池
+          - button [ref=f26e119]: + 添加候选岗位
+        - generic [ref=f26e18]:
+          - generic [ref=f26e19]:
+            - checkbox [ref=f26e120]
+            - checkbox [ref=f26e21]
+            - generic [ref=f26e22]:
+              - paragraph [ref=f26e23]: 编辑测试公司
+              - paragraph [ref=f26e24]: 改过的岗位名
+            - generic [ref=f26e25]: "50"
+          - generic [ref=f26e26]:
+            - generic [ref=f26e27]: 待评估
+            - generic [ref=f26e28]:
+              - button [ref=f26e121]: 选简历
+              - button [ref=f26e122]: 面试攻略
+              - button [ref=f26e123]: 标记已投
+              - button [ref=f26e124]: 编辑
+              - button [ref=f26e125]: 删除
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=f26e39] [cursor=pointer]
+  - alert [ref=f26e43]
+  - dialog [ref=f26e129]:
+    - heading "标记为已投递" [level=2] [ref=f26e131]
+    - paragraph [ref=f26e133]: 编辑测试公司 · 改过的岗位名
+    - generic [ref=f26e134]:
+      - generic [ref=f26e135]:
+        - generic [ref=f26e136]: 投递日期
+        - textbox [ref=f26e137]: 2026-08-22
+      - generic [ref=f26e138]:
+        - generic [ref=f26e139]: 内推人（可选）
+        - textbox [ref=f26e140]: 王学长
+      - generic [ref=f26e141]:
+        - generic [ref=f26e142]: 使用的简历版本
+        - combobox [active] [ref=f26e143]:
+          - generic [ref=f26e144]: 面试测试版
+          - img: ▼
+        - textbox [ref=f26e145]: cmt47a2zo0001hzhphd3my5gc
+      - button "确认投递" [ref=f26e147]
+    - button "Close" [ref=f26e148]

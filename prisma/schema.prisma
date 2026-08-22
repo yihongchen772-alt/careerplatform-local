@@ -1,0 +1,381 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Auth (NextAuth / Auth.js) ----------
+
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  passwordHash   String?
+  name           String?
+  school         String?
+  targetTrack    String?
+  graduationYear Int?
+  skills         String?   @db.Text
+  preferredCities String?
+  expectedSalaryMin Int?
+  emailVerified  DateTime?
+  image          String?
+  // Bring-your-own AI key. The key is AES-encrypted at rest (see
+  // src/lib/crypto.ts) — never stored or logged in plaintext. Used in
+  // preference to the shared key when present; every AI feature still works
+  // without one, falling back to the shared quota.
+  aiProvider          String?
+  aiApiKeyEncrypted   String?   @db.Text
+  aiModel             String?
+  createdAt      DateTime  @default(now())
+
+  accounts       Account[]
+  sessions       Session[]
+  positions      Position[]
+  applications   Application[]
+  resumeVersions ResumeVersion[]
+  addedCompanies Company[]
+  attachments    Attachment[]
+  interviewPreps InterviewPrep[]
+  interviewQAs   InterviewQA[]
+  personalTasks  PersonalTask[]
+  interviewSessions InterviewSession[]
+  personalityTestResults PersonalityTestResult[]
+  careerFitAnalysis      CareerFitAnalysis?
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ---------- Domain ----------
+
+model Company {
+  id            String   @id @default(cuid())
+  name          String   @unique
+  industry      String?
+  size          String?
+  logoUrl       String?
+  careerUrl     String?
+  sector        String?
+  verified      Boolean  @default(false)
+  addedByUserId String?
+  createdAt     DateTime @default(now())
+
+  addedBy      User?         @relation(fields: [addedByUserId], references: [id])
+  positions    Position[]
+  applications Application[]
+}
+
+enum PositionStatus {
+  EVALUATING
+  PLANNED
+  APPLIED
+  DROPPED
+}
+
+model Position {
+  id             String         @id @default(cuid())
+  userId         String
+  companyId      String
+  title          String
+  track          String?
+  location       String?
+  salaryMin      Int?
+  salaryMax      Int?
+  jdText         String?        @db.Text
+  jdUrl          String?
+  source         String?
+  scoreBreakdown Json?
+  interestScore  Int?
+  deadline       DateTime?
+  status         PositionStatus @default(EVALUATING)
+  createdAt      DateTime       @default(now())
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company      Company       @relation(fields: [companyId], references: [id])
+  applications Application[]
+  interviewPrep InterviewPrep?
+  personalTasks PersonalTask[]
+  interviewSessions InterviewSession[]
+
+  @@index([userId])
+}
+
+enum ApplicationStage {
+  APPLIED
+  SCREENING
+  OA
+  INTERVIEW_1
+  INTERVIEW_2
+  INTERVIEW_3
+  HR_INTERVIEW
+  OFFER
+  REJECTED
+  ACCEPTED
+  DECLINED
+}
+
+model Application {
+  id               String           @id @default(cuid())
+  userId           String
+  positionId       String?
+  companyId        String
+  resumeVersionId  String?
+  title            String
+  appliedDate      DateTime
+  referrer         String?
+  source           String?
+  currentStage     ApplicationStage @default(APPLIED)
+  currentStageDate DateTime         @default(now())
+  salaryMin        Int?
+  salaryMax        Int?
+  offerNote        String?          @db.Text
+  createdAt        DateTime         @default(now())
+
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  position      Position?       @relation(fields: [positionId], references: [id])
+  company       Company         @relation(fields: [companyId], references: [id])
+  resumeVersion ResumeVersion?  @relation(fields: [resumeVersionId], references: [id])
+  stageHistory  StageHistory[]
+  attachments   Attachment[]
+  interviewQA   InterviewQA?
+  personalTasks PersonalTask[]
+
+  @@index([userId])
+}
+
+model StageHistory {
+  id              String           @id @default(cuid())
+  applicationId   String
+  stage           ApplicationStage
+  enteredAt       DateTime         @default(now())
+  note            String?          @db.Text
+  interviewFormat String?
+  interviewer     String?
+  nextDeadline    DateTime?
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  attachments Attachment[]
+
+  @@index([applicationId])
+}
+
+model Attachment {
+  id             String   @id @default(cuid())
+  userId         String
+  applicationId  String?
+  stageHistoryId String?
+  url            String
+  name           String
+  createdAt      DateTime @default(now())
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  application  Application?  @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  stageHistory StageHistory? @relation(fields: [stageHistoryId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([applicationId])
+  @@index([stageHistoryId])
+}
+
+model ResumeVersion {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  fileUrl     String?
+  targetTrack String?
+  isDefault   Boolean  @default(false)
+  // Cached AI review — each run is a paid call, so results persist instead of
+  // re-running every time the page is opened.
+  checkScore  Int?
+  checkResult Json?
+  checkedAt   DateTime?
+  createdAt   DateTime @default(now())
+
+  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  applications     Application[]
+  interviewSessions InterviewSession[]
+
+  @@index([userId])
+}
+
+// Pre-application prep guide: what to prepare before applying. Lives on
+// Position because that's the "haven't applied yet" stage — Application only
+// exists once 标记已投. One per position; regenerating overwrites.
+model InterviewPrep {
+  id         String   @id @default(cuid())
+  userId     String
+  positionId String   @unique
+  content    Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  position Position @relation(fields: [positionId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// Post-application mock interview: a generated question bank + reference
+// answers for the specific position actually applied to. One per
+// application; regenerating overwrites.
+model InterviewQA {
+  id            String   @id @default(cuid())
+  userId        String
+  applicationId String   @unique
+  content       Json
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// User-authored reminders/plans — the auto-derived 待办 in todos.ts covers
+// deadlines the app already knows about (position deadline, stale
+// application, next-step date), but nothing lets the user write their own
+// plan ("周五前联系内推人", "复习 XX 准备二面"). This does. Optionally links
+// to a position or application so it can surface on that record's timeline,
+// but standalone tasks (positionId/applicationId both null) are equally
+// valid — not everything is tied to a specific job.
+model PersonalTask {
+  id            String    @id @default(cuid())
+  userId        String
+  title         String
+  note          String?   @db.Text
+  dueDate       DateTime?
+  done          Boolean   @default(false)
+  positionId    String?
+  applicationId String?
+  createdAt     DateTime  @default(now())
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  position    Position?    @relation(fields: [positionId], references: [id], onDelete: SetNull)
+  application Application? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+}
+
+enum InterviewMessageRole {
+  USER
+  ASSISTANT
+}
+
+enum InterviewSessionStatus {
+  ACTIVE
+  ENDED
+}
+
+// A real back-and-forth mock interview — distinct from InterviewQA (a
+// one-shot question bank). This is multi-turn, so it costs several AI calls
+// per session instead of one; gated behind the user having their own API
+// key configured (see src/lib/actions/interview-session.ts) so one long
+// session can't burn through the shared free-tier quota for everyone else.
+model InterviewSession {
+  id              String                  @id @default(cuid())
+  userId          String
+  resumeVersionId String
+  positionId      String?
+  // Free-text fallback ("后端开发") when no specific candidate position was
+  // picked — the interview still needs *some* target to ask about.
+  targetRole      String?
+  status          InterviewSessionStatus  @default(ACTIVE)
+  feedback        Json?
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resumeVersion ResumeVersion      @relation(fields: [resumeVersionId], references: [id])
+  position      Position?          @relation(fields: [positionId], references: [id])
+  messages      InterviewMessage[]
+
+  @@index([userId])
+}
+
+model InterviewMessage {
+  id        String               @id @default(cuid())
+  sessionId String
+  role      InterviewMessageRole
+  content   String               @db.Text
+  createdAt DateTime             @default(now())
+
+  session InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+}
+
+enum PersonalityTestType {
+  OCEAN
+  MBTI
+  DISC
+  HOLLAND
+}
+
+// Self-authored, simplified self-assessments (see src/lib/personality-tests/)
+// — not reproductions of any proprietary or academic instrument. Scored
+// entirely client-side by fixed rules, no AI call involved; this table just
+// persists the result so a user can revisit it without retaking.
+model PersonalityTestResult {
+  id          String              @id @default(cuid())
+  userId      String
+  testType    PersonalityTestType
+  answers     Json
+  scores      Json
+  resultLabel String
+  createdAt   DateTime            @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// AI synthesis across whichever personality tests the user has completed —
+// one per user, overwritten on regenerate (like InterviewPrep/InterviewQA).
+// A one-shot generation on the shared quota, not gated behind BYOK.
+model CareerFitAnalysis {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  content   Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+

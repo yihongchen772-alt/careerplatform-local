@@ -1,0 +1,39 @@
+- generic [ref=f40e1]:
+  - generic [ref=f40e2]:
+    - generic [ref=f40e3]:
+      - heading "全局搜索" [level=2] [ref=f40e4]
+      - paragraph [ref=f40e5]: 搜索候选岗位、投递记录、企业名录
+    - banner [ref=f40e6]:
+      - button "打开菜单" [ref=f40e7]
+      - generic [ref=f40e8]: AI 模拟面试
+      - button "搜索" [ref=f40e9]
+    - main [ref=f40e10]:
+      - generic [ref=f40e29]:
+        - generic [ref=f40e30]:
+          - heading "AI 模拟面试" [level=1] [ref=f40e31]
+          - paragraph [ref=f40e32]: 选一份简历，AI 一问你一答，打字回答，大概 10-15 分钟一场
+        - generic [ref=f40e33]:
+          - generic [ref=f40e34]: 开始新的模拟面试
+          - generic [ref=f40e36]:
+            - generic [ref=f40e37]:
+              - generic [ref=f40e38]: 用哪份简历
+              - combobox [ref=f40e39]:
+                - generic [ref=f40e40]: 面试测试版
+                - img: ▼
+              - textbox [ref=f40e41]: cmt47a2zo0001hzhphd3my5gc
+            - generic [ref=f40e42]:
+              - generic [ref=f40e43]: 面试哪个岗位（可选，不选就按简历里的求职方向问通用问题）
+              - combobox [expanded] [ref=f40e44]:
+                - generic [ref=f40e45]: 不选，问通用问题
+                - img: ▼
+              - listbox [ref=f40e54]:
+                - option "不选，问通用问题" [active] [selected] [ref=f40e55]
+                - option "编辑测试公司 · 改过的岗位名" [ref=f40e57]
+              - textbox [ref=f40e46]: __none__
+            - generic [ref=f40e47]:
+              - generic [ref=f40e48]: 目标方向（可选，比如“后端开发”）
+              - textbox "不填就用简历里的求职方向" [ref=f40e49]
+            - button "开始面试" [ref=f40e50]
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=f40e24] [cursor=pointer]
+  - alert [ref=f40e28]
