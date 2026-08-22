@@ -3,7 +3,6 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { signOut } from "next-auth/react";
 import {
   BookOpen,
   Brain,
@@ -156,14 +155,6 @@ function NavContent({
       </div>
       <div className="space-y-2 border-t pt-4">
         <p className="truncate px-2 text-xs text-muted-foreground">{userLabel}</p>
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full"
-          onClick={() => signOut({ callbackUrl: "/login" })}
-        >
-          退出登录
-        </Button>
       </div>
     </div>
   );

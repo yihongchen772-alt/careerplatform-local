@@ -1,14 +1,5 @@
 import { z } from "zod";
 
-export const registerSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8, "密码至少 8 位"),
-  name: z.string().min(1).optional(),
-  school: z.string().optional(),
-  targetTrack: z.string().optional(),
-  graduationYear: z.coerce.number().int().optional(),
-});
-
 export const updateProfileSchema = z.object({
   name: z.string().min(1).optional(),
   school: z.string().optional(),
@@ -17,20 +8,6 @@ export const updateProfileSchema = z.object({
   skills: z.string().optional(),
   preferredCities: z.string().optional(),
   expectedSalaryMin: z.coerce.number().int().optional(),
-});
-
-export const changePasswordSchema = z.object({
-  currentPassword: z.string().min(1),
-  newPassword: z.string().min(8, "密码至少 8 位"),
-});
-
-export const requestPasswordResetSchema = z.object({
-  email: z.string().email(),
-});
-
-export const resetPasswordSchema = z.object({
-  token: z.string().min(1),
-  newPassword: z.string().min(8, "密码至少 8 位"),
 });
 
 export const aiProviderValues = [

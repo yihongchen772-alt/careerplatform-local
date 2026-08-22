@@ -30,7 +30,7 @@ async function requireOwnAiConfig(userId: string) {
   const config = await getUserAiConfig(userId);
   if (!config) {
     throw new UserFacingError(
-      "模拟面试对话需要先在「账号设置」里配置你自己的 AI API Key —— 一次对话要调用好几次模型，比一次性生成的功能耗费多很多，共享额度扛不住"
+      "先在「账号设置」里配置你自己的 AI API Key 才能用模拟面试对话"
     );
   }
   return config;

@@ -1,9 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { del } from "@vercel/blob";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
+import { deleteLocalFileByUrl } from "@/lib/local-storage";
 
 export async function addAttachment(
   input:
@@ -55,11 +55,7 @@ export async function deleteAttachment(id: string) {
   if (!attachment) return;
 
   await db.attachment.delete({ where: { id } });
-  try {
-    await del(attachment.url);
-  } catch {
-    // best-effort cleanup of blob storage; DB row is already gone
-  }
+  await deleteLocalFileByUrl(attachment.url);
 
   if (attachment.applicationId) {
     revalidatePath(`/applications/${attachment.applicationId}`);
