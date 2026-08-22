@@ -26,20 +26,36 @@ export type UserAiConfig = {
   model: string;
 };
 
-/** Decrypts and returns the user's own AI config, or null if none is set. */
+/**
+ * Decrypts and returns the key for one specific provider, regardless of
+ * which provider is the user's default. File-reading features (JD parsing,
+ * resume check, resume match) always want "gemini" here specifically, since
+ * only Gemini's API can read a PDF/image directly — the user's default
+ * provider (e.g. DeepSeek) is irrelevant to that decision.
+ */
+export async function getUserAiKey(
+  userId: string,
+  provider: AiProviderId
+): Promise<UserAiConfig | null> {
+  const key = await db.aiKey.findUnique({
+    where: { userId_provider: { userId, provider } },
+  });
+  if (!key) return null;
+  return {
+    provider,
+    apiKey: decryptSecret(key.apiKeyEncrypted),
+    model: key.model || AI_PROVIDERS[provider].defaultModel,
+  };
+}
+
+/** Decrypts and returns the user's default-provider AI config, or null if none is set. */
 export async function getUserAiConfig(userId: string): Promise<UserAiConfig | null> {
   const user = await db.user.findUnique({
     where: { id: userId },
-    select: { aiProvider: true, aiApiKeyEncrypted: true, aiModel: true },
+    select: { defaultAiProvider: true },
   });
-  if (!user?.aiProvider || !user.aiApiKeyEncrypted) return null;
-
-  const provider = user.aiProvider as AiProviderId;
-  return {
-    provider,
-    apiKey: decryptSecret(user.aiApiKeyEncrypted),
-    model: user.aiModel || AI_PROVIDERS[provider].defaultModel,
-  };
+  if (!user?.defaultAiProvider) return null;
+  return getUserAiKey(userId, user.defaultAiProvider as AiProviderId);
 }
 
 /**

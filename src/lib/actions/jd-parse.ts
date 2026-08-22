@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
-import { generateStructured } from "@/lib/gemini";
+import { callTextAi, getUserAiConfig, type UserAiConfig } from "@/lib/ai-providers";
 import {
   toActionResult,
   UserFacingError,
@@ -100,7 +100,8 @@ function describePreferences(prefs: UserPreferences): string {
 
 async function extractFields(
   jdText: string,
-  prefs: UserPreferences
+  prefs: UserPreferences,
+  aiConfig: UserAiConfig | null
 ): Promise<ParsedJd> {
   const prompt = `你在帮一个求职者评估招聘岗位。下面给出求职者的偏好和一个岗位描述，请提取岗位信息并打分。
 
@@ -124,10 +125,11 @@ ${jdText}
 
 重要：如果求职者没有填写某项偏好（比如没填技能），对应维度就给 5 分表示无法判断，并在 scoreReason 里说明"未填写XX，无法评估"，不要凭空猜测求职者的情况。`;
 
-  const raw = await generateStructured({
+  const raw = await callTextAi({
+    config: aiConfig,
     prompt,
     // Extraction needs little reasoning; the default budget made this ~10x
-    // slower for identical output. 0 is rejected with a 400.
+    // slower for identical output on Gemini. 0 is rejected with a 400.
     thinkingBudget: 512,
     timeoutMs: 45000,
     schema: {
@@ -195,16 +197,18 @@ async function run(input: { url?: string; text?: string }): Promise<ParsedJd> {
     expectedSalaryMin: null,
   };
 
+  const aiConfig = await getUserAiConfig(sessionUser.id);
+
   const pasted = input.text?.trim();
   if (pasted) {
     if (pasted.length < 20) {
       throw new UserFacingError("粘贴的内容太短，看不出岗位信息");
     }
-    return extractFields(pasted.slice(0, 12000), user);
+    return extractFields(pasted.slice(0, 12000), user, aiConfig);
   }
 
   const url = input.url?.trim();
   if (!url) throw new UserFacingError("请粘贴 JD 文字或填写链接");
 
-  return extractFields(await fetchPageText(url), user);
+  return extractFields(await fetchPageText(url), user, aiConfig);
 }

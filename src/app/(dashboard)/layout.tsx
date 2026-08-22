@@ -1,6 +1,15 @@
 import { requireUser } from "@/lib/session";
 import { DashboardNav } from "@/components/dashboard/nav";
 
+// Prisma reads aren't a Next.js "dynamic API", so without this every page in
+// here would get prerendered once at `next build` time and served as frozen
+// HTML from whatever the build machine's database happened to contain —
+// wrong for a single-user local app where every page shows live personal
+// data. `revalidatePath()` calls after mutations happen to paper over this
+// during a single running session, but a fresh install/update would show
+// build-time data until the first action touches each page.
+export const dynamic = "force-dynamic";
+
 export default async function DashboardLayout({
   children,
 }: {

@@ -26,7 +26,7 @@ export default async function MockInterviewPage() {
       include: { resumeVersion: true, position: { include: { company: true } } },
       orderBy: { createdAt: "desc" },
     }),
-    db.user.findUnique({ where: { id: user.id }, select: { aiProvider: true } }),
+    db.user.findUnique({ where: { id: user.id }, select: { defaultAiProvider: true } }),
   ]);
 
   return (
@@ -44,7 +44,7 @@ export default async function MockInterviewPage() {
           id: p.id,
           label: `${p.company.name} · ${p.title}`,
         }))}
-        hasOwnKey={!!dbUser?.aiProvider}
+        hasOwnKey={!!dbUser?.defaultAiProvider}
       />
 
       {sessions.length > 0 && (
