@@ -84,6 +84,11 @@ async function startNextServer() {
   );
 
   await waitForServer(`http://localhost:${PORT}`, 30000);
+
+  // Best-effort — a failed reminder check should never block the window from
+  // opening. The route itself silently no-ops if email isn't configured or
+  // nothing's urgent.
+  fetch(`http://localhost:${PORT}/api/check-reminders`, { method: "POST" }).catch(() => {});
 }
 
 function waitForServer(url, timeoutMs) {

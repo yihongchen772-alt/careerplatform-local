@@ -13,6 +13,7 @@ import {
 } from "@/lib/funnel";
 import { STAGE_LABELS } from "@/lib/stage-labels";
 import { PersonalTaskCard } from "@/components/dashboard/personal-task-card";
+import { SendDigestButton } from "@/components/dashboard/send-digest-button";
 
 export default async function DashboardPage() {
   const user = await requireUser();
@@ -166,8 +167,9 @@ const URGENCY_STYLE: Record<Todo["urgency"], { badge: string; label: string }> =
 function TodoCard({ todos }: { todos: Todo[] }) {
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="flex-row items-center justify-between space-y-0">
         <CardTitle>待办</CardTitle>
+        <SendDigestButton />
       </CardHeader>
       <CardContent className="space-y-2">
         {todos.length === 0 ? (

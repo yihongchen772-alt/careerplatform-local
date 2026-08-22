@@ -2,6 +2,7 @@ import { requireUser } from "@/lib/session";
 import { ProfileForm } from "@/components/settings/profile-form";
 import { AiSettingsForm } from "@/components/settings/ai-settings-form";
 import { AppearanceForm } from "@/components/settings/appearance-form";
+import { EmailSettingsForm } from "@/components/settings/email-settings-form";
 import type { AiProviderId } from "@/lib/ai-provider-labels";
 
 export default async function SettingsPage() {
@@ -27,6 +28,7 @@ export default async function SettingsPage() {
           currentProvider={user.aiProvider as AiProviderId | null}
           currentModel={user.aiModel}
         />
+        <EmailSettingsForm currentUser={user.smtpUser} />
       </div>
     </div>
   );
