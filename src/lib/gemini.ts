@@ -86,7 +86,9 @@ export async function generateStructured({
     console.error(`[gemini] ${response.status}`, detail.slice(0, 500));
 
     if (response.status === 429) {
-      throw new GeminiError("今日 AI 免费额度已用完，明天恢复");
+      throw new GeminiError(
+        "你这个 Gemini Key 今天的免费额度用完了（Google 按 Key 每天限量，明天会自动恢复）——这跟你配的其他服务商无关，简历体检/岗位匹配/AI 搜索公司信息这几个功能必须用 Gemini（要读文件/联网搜索，其他服务商做不到），暂时没法切走"
+      );
     }
     if (response.status === 400 || response.status === 403) {
       throw new GeminiError("AI 密钥无效或已过期，请到账号设置里更新");
@@ -156,7 +158,9 @@ export async function generateGrounded({
     const detail = await response.text().catch(() => "");
     console.error(`[gemini-search] ${response.status}`, detail.slice(0, 500));
     if (response.status === 429) {
-      throw new GeminiError("今日 AI 免费额度已用完，明天恢复");
+      throw new GeminiError(
+        "你这个 Gemini Key 今天的免费额度用完了（Google 按 Key 每天限量，明天会自动恢复）——这跟你配的其他服务商无关，简历体检/岗位匹配/AI 搜索公司信息这几个功能必须用 Gemini（要读文件/联网搜索，其他服务商做不到），暂时没法切走"
+      );
     }
     if (response.status === 400 || response.status === 403) {
       throw new GeminiError("AI 密钥无效或已过期，请到账号设置里更新");
