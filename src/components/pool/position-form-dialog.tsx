@@ -21,6 +21,7 @@ type FormState = {
   companyName: string;
   title: string;
   track: string;
+  department: string;
   location: string;
   salaryMin: string;
   salaryMax: string;
@@ -37,6 +38,7 @@ const emptyForm: FormState = {
   companyName: "",
   title: "",
   track: "",
+  department: "",
   location: "",
   salaryMin: "",
   salaryMax: "",
@@ -53,6 +55,7 @@ export type PositionFormInitial = {
   companyName: string;
   title: string;
   track: string | null;
+  department: string | null;
   location: string | null;
   salaryMin: number | null;
   salaryMax: number | null;
@@ -74,6 +77,7 @@ function toForm(initial: PositionFormInitial): FormState {
     companyName: initial.companyName,
     title: initial.title,
     track: initial.track ?? "",
+    department: initial.department ?? "",
     location: initial.location ?? "",
     salaryMin: initial.salaryMin != null ? String(initial.salaryMin) : "",
     salaryMax: initial.salaryMax != null ? String(initial.salaryMax) : "",
@@ -142,6 +146,7 @@ export function PositionFormDialog({
         title: parsed.title ?? "",
         location: parsed.location ?? "",
         track: parsed.track ?? "",
+        department: parsed.department ?? "",
         salaryMin: parsed.salaryMin != null ? String(parsed.salaryMin) : "",
         salaryMax: parsed.salaryMax != null ? String(parsed.salaryMax) : "",
         techFit: String(Math.round(parsed.techFit)),
@@ -168,6 +173,7 @@ export function PositionFormDialog({
         companyName: form.companyName,
         title: form.title,
         track: form.track || undefined,
+        department: form.department || undefined,
         location: form.location || undefined,
         salaryMin: form.salaryMin ? Number(form.salaryMin) : undefined,
         salaryMax: form.salaryMax ? Number(form.salaryMax) : undefined,
@@ -260,6 +266,13 @@ export function PositionFormDialog({
                 value={form.track}
                 onChange={(e) => set("track", e.target.value)}
                 placeholder="后端 / 算法 / 产品..."
+              />
+            </Field>
+            <Field label="部门">
+              <Input
+                value={form.department}
+                onChange={(e) => set("department", e.target.value)}
+                placeholder="电商事业群 / 云计算部门..."
               />
             </Field>
             <Field label="地点">

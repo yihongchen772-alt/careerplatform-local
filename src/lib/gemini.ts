@@ -104,6 +104,72 @@ export async function generateStructured({
   }
 }
 
+/**
+ * Search-grounded plain-text generation: lets Gemini actually query Google
+ * Search before answering, so it can find a real current career-page URL
+ * instead of guessing from training data (which goes stale — companies
+ * rename recruiting sites constantly). Gemini's API doesn't allow combining
+ * `tools` (grounding) with `responseSchema` in the same call, so this
+ * returns plain text; callers that need structured output run a second,
+ * schema-enforced pass over this text (see researchCompany in
+ * company-research.ts) instead of parsing free text themselves.
+ */
+export async function generateGrounded({
+  prompt,
+  timeoutMs = 45000,
+  apiKey: apiKeyOverride,
+  model: modelOverride,
+}: {
+  prompt: string;
+  timeoutMs?: number;
+  apiKey?: string;
+  model?: string;
+}): Promise<string> {
+  const apiKey = apiKeyOverride ?? process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new GeminiError("尚未配置 Gemini API Key，请先在账号设置里填一个");
+  }
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelOverride ?? MODEL}:generateContent`;
+
+  let response: Response;
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    response = await fetch(endpoint, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey,
+      },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        tools: [{ google_search: {} }],
+      }),
+    });
+    clearTimeout(timeout);
+  } catch {
+    throw new GeminiError("AI 请求超时，请稍后重试");
+  }
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    console.error(`[gemini-search] ${response.status}`, detail.slice(0, 500));
+    if (response.status === 429) {
+      throw new GeminiError("今日 AI 免费额度已用完，明天恢复");
+    }
+    if (response.status === 400 || response.status === 403) {
+      throw new GeminiError("AI 密钥无效或已过期，请到账号设置里更新");
+    }
+    throw new GeminiError("AI 服务暂时不可用，请稍后重试");
+  }
+
+  const data = await response.json();
+  const text: string = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+  if (!text) throw new GeminiError("AI 没有返回结果，请重试");
+  return text;
+}
+
 const ALLOWED_MIME = [
   "application/pdf",
   "image/png",

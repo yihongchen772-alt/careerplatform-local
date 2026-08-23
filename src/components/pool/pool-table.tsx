@@ -35,6 +35,7 @@ export type PoolPosition = {
   id: string;
   title: string;
   track: string | null;
+  department: string | null;
   location: string | null;
   salaryMin: number | null;
   salaryMax: number | null;
@@ -63,6 +64,7 @@ function toEditInitial(p: PoolPosition) {
     companyName: p.company.name,
     title: p.title,
     track: p.track,
+    department: p.department,
     location: p.location,
     salaryMin: p.salaryMin,
     salaryMax: p.salaryMax,
@@ -178,6 +180,7 @@ export function PoolTable({
 
               <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
                 {p.track && <span>{p.track}</span>}
+                {p.department && <span>{p.department}</span>}
                 {p.location && <span>{p.location}</span>}
                 {(p.salaryMin || p.salaryMax) && (
                   <span>

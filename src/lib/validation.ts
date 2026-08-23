@@ -46,6 +46,7 @@ export const positionSchema = z.object({
   companyName: z.string().min(1, "公司名称必填"),
   title: z.string().min(1, "岗位名称必填"),
   track: z.string().optional(),
+  department: z.string().optional(),
   location: z.string().optional(),
   salaryMin: z.coerce.number().int().optional().nullable(),
   salaryMax: z.coerce.number().int().optional().nullable(),
