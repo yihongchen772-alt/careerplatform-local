@@ -84,7 +84,10 @@ async function claudeRequest(
         "x-api-key": apiKey,
         "anthropic-version": ANTHROPIC_VERSION,
       },
-      body: JSON.stringify({ model, max_tokens: 4096, ...body }),
+      // 8192, not the previous 4096 — a resume check's strengths/issues/
+      // suggestions arrays or a multi-question interview Q&A generation can
+      // plausibly exceed 4096 and get cut off mid-JSON.
+      body: JSON.stringify({ model, max_tokens: 8192, ...body }),
     });
   } catch {
     throw new UserFacingError("AI 请求超时，请稍后重试");
@@ -101,6 +104,9 @@ async function claudeRequest(
   }
 
   const data = await response.json();
+  if (data?.stop_reason === "max_tokens") {
+    throw new UserFacingError("AI 回答内容太长被截断了，请重试（有时候换一次就好）");
+  }
   return { contentBlocks: data?.content ?? [] };
 }
 
@@ -177,7 +183,7 @@ async function openAiResponsesRequest(
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({ model, ...body }),
+      body: JSON.stringify({ model, max_output_tokens: 8192, ...body }),
     });
   } catch {
     throw new UserFacingError("AI 请求超时，请稍后重试");
@@ -194,6 +200,9 @@ async function openAiResponsesRequest(
   }
 
   const data = await response.json();
+  if (data?.incomplete_details?.reason === "max_output_tokens") {
+    throw new UserFacingError("AI 回答内容太长被截断了，请重试（有时候换一次就好）");
+  }
   const text: string = data?.output_text ?? "";
   if (!text) throw new UserFacingError("AI 没有返回结果，请重试");
   return text;

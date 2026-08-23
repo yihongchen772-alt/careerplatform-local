@@ -146,14 +146,20 @@ function ProviderRow({
     }
   }
 
+  const modelList = (entry.model ?? "").split(",").map((m) => m.trim()).filter(Boolean);
+  const configuredLabel =
+    modelList.length > 1
+      ? `已配置 · ${modelList[0]} 等 ${modelList.length} 个模型`
+      : `已配置${modelList[0] ? ` · ${modelList[0]}` : ""}`;
+
   return (
     <div className="rounded-md border p-3 space-y-2">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <span className="text-sm font-medium">{entry.label}</span>
           {entry.configured ? (
-            <Badge variant="secondary">
-              已配置{entry.model ? ` · ${entry.model}` : ""}
+            <Badge variant="secondary" className="max-w-full" title={entry.model ?? undefined}>
+              <span className="truncate">{configuredLabel}</span>
             </Badge>
           ) : (
             <Badge variant="outline">未配置</Badge>
