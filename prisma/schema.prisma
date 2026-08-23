@@ -146,6 +146,7 @@ model Position {
   companyId      String
   title          String
   track          String?
+  department     String?
   location       String?
   salaryMin      Int?
   salaryMax      Int?

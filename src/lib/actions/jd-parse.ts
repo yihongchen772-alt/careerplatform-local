@@ -20,6 +20,7 @@ const jdSchema = z.object({
   title: z.string().nullish(),
   location: z.string().nullish(),
   track: z.string().nullish(),
+  department: z.string().nullish(),
   salaryMin: z.number().nullish(),
   salaryMax: z.number().nullish(),
   techFit: z.number().min(0).max(10),
@@ -119,6 +120,7 @@ ${jdText}
 提取要求：
 - 薪资统一换算成"K"（千元/月）为单位的数字，比如"15k-25k/月"就是 salaryMin=15, salaryMax=25；如果写的是年薪，换算成月薪
 - track 指技术/业务方向，比如"后端开发""前端开发""产品经理""算法"等
+- department 指招聘的具体业务部门/事业群，比如"电商事业群""云计算部门""搜索推荐部""XX 事业部"这种，跟 track（技术方向）是两回事——JD 里经常在开头或"部门介绍"里提到，没提到就填 null，不要把 track 的内容当 department 填
 - 岗位描述里没有明确提到的字段填 null，不要编造或猜测
 
 打分要求（0-10 分，5 分表示中等/一般）：
@@ -144,6 +146,7 @@ ${jdText}
         title: { type: "STRING", nullable: true },
         location: { type: "STRING", nullable: true },
         track: { type: "STRING", nullable: true },
+        department: { type: "STRING", nullable: true },
         salaryMin: { type: "NUMBER", nullable: true },
         salaryMax: { type: "NUMBER", nullable: true },
         techFit: { type: "NUMBER" },
@@ -157,6 +160,7 @@ ${jdText}
         "title",
         "location",
         "track",
+        "department",
         "salaryMin",
         "salaryMax",
         "techFit",

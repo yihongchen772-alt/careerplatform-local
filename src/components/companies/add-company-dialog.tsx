@@ -21,15 +21,47 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { addCompanyDirectoryEntry } from "@/lib/actions/companies";
+import { researchCompany } from "@/lib/actions/company-research";
 import { companyDirectorySectors } from "@/lib/validation";
 
 export function AddCompanyDialog() {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [researching, setResearching] = useState(false);
   const [name, setName] = useState("");
   const [careerUrl, setCareerUrl] = useState("");
   const [sector, setSector] = useState<string>("");
   const [industry, setIndustry] = useState("");
+  const [note, setNote] = useState("");
+
+  async function handleResearch() {
+    if (!name.trim()) {
+      toast.error("先填公司名称");
+      return;
+    }
+    setResearching(true);
+    try {
+      const res = await researchCompany(name);
+      if (!res.ok) {
+        toast.error(res.message);
+        return;
+      }
+      const r = res.data;
+      if (r.careerUrl) setCareerUrl(r.careerUrl);
+      if (r.industry) setIndustry(r.industry);
+      if (r.sector && (companyDirectorySectors as readonly string[]).includes(r.sector)) {
+        setSector(r.sector);
+      }
+      setNote(r.note ?? "");
+      if (!r.careerUrl) {
+        toast.error("AI 没搜到明确的招聘官网链接，请手动填写");
+      } else {
+        toast.success("已填入 AI 搜索结果，请核实一下链接再保存");
+      }
+    } finally {
+      setResearching(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -50,6 +82,7 @@ export function AddCompanyDialog() {
       setCareerUrl("");
       setSector("");
       setIndustry("");
+      setNote("");
       setOpen(false);
     } catch {
       toast.error("添加失败，请检查链接格式");
@@ -71,8 +104,32 @@ export function AddCompanyDialog() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1">
             <Label className="text-xs text-muted-foreground">公司名称 *</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} required />
+            <div className="flex gap-2">
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+                className="flex-1"
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={researching}
+                onClick={handleResearch}
+              >
+                {researching ? "搜索中..." : "AI 搜索"}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              让 AI 联网搜一下这家公司的官方招聘入口和行业信息，仍需你核实链接是否正确
+            </p>
           </div>
+          {note && (
+            <p className="rounded-md bg-muted/50 p-2 text-xs text-muted-foreground">
+              AI 搜索备注：{note}
+            </p>
+          )}
           <div className="space-y-1">
             <Label className="text-xs text-muted-foreground">招聘官网链接 *</Label>
             <Input
