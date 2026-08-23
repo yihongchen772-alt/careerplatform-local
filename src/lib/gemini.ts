@@ -99,6 +99,11 @@ export async function generateStructured({
               responseMimeType: "application/json",
               thinkingConfig: { thinkingBudget },
               responseSchema: schema,
+              // Explicit, generous cap — a multi-question interview Q&A
+              // generation (6-8 items with full reference answers) can
+              // plausibly run long enough to hit a smaller implicit default
+              // and get cut off mid-JSON.
+              maxOutputTokens: 8192,
             },
           }),
         }
@@ -126,6 +131,9 @@ export async function generateStructured({
     }
 
     const data = await response.json();
+    if (data?.candidates?.[0]?.finishReason === "MAX_TOKENS") {
+      throw new GeminiError("AI 回答内容太长被截断了，请重试（有时候换一次就好）");
+    }
     const text: string = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
 
     try {

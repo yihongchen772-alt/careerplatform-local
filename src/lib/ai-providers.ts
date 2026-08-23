@@ -75,6 +75,7 @@ export function extractJson(text: string): unknown {
   try {
     return JSON.parse(raw);
   } catch {
+    console.error("[extractJson] unparseable, length:", raw.length, "tail:", raw.slice(-300));
     throw new UserFacingError("AI 返回格式异常，请重试");
   }
 }
@@ -107,6 +108,13 @@ async function callOpenAiCompatible(
         // response_format: json_object.
         messages: [{ role: "user", content: prompt }],
         response_format: { type: "json_object" },
+        // Without this, DeepSeek/OpenAI/Kimi/Qwen fall back to their own
+        // (commonly 4096-token) default — a multi-question interview Q&A
+        // generation (6-8 items, each with a full reference answer) can run
+        // right up against that and get cut off mid-JSON, which then fails
+        // to parse and surfaces as a confusing "AI 返回格式异常" instead of
+        // the truncation it actually was.
+        max_tokens: 8192,
       }),
     });
   } catch {
@@ -128,6 +136,9 @@ async function callOpenAiCompatible(
   }
 
   const data = await response.json();
+  if (data?.choices?.[0]?.finish_reason === "length") {
+    throw new UserFacingError("AI 回答内容太长被截断了，请重试（有时候换一次就好）");
+  }
   const text: string = data?.choices?.[0]?.message?.content ?? "";
   return extractJson(text);
 }
@@ -152,7 +163,10 @@ async function callAnthropic(
       },
       body: JSON.stringify({
         model,
-        max_tokens: 4096,
+        // Same reasoning as OPENAI_COMPATIBLE's max_tokens: 8192 — a 6-8
+        // question interview Q&A generation can plausibly exceed 4096 and
+        // get cut off mid-JSON.
+        max_tokens: 8192,
         messages: [
           {
             role: "user",
@@ -180,6 +194,9 @@ async function callAnthropic(
   }
 
   const data = await response.json();
+  if (data?.stop_reason === "max_tokens") {
+    throw new UserFacingError("AI 回答内容太长被截断了，请重试（有时候换一次就好）");
+  }
   const text: string = data?.content?.[0]?.text ?? "";
   return extractJson(text);
 }
@@ -250,7 +267,48 @@ export async function callTextAi({
  * expected — caught via a real DeepSeek call dropping companyName/title.
  */
 export function withSchemaReminder(prompt: string, schema: GeminiSchema): string {
-  return `${prompt}\n\n严格按下面的字段结构输出一个 JSON 对象，必须包含全部列出的 key（不确定的字段填 null，不要省略 key，不要用 markdown 代码块包裹，不要有 JSON 之外的任何文字）：\n${JSON.stringify(schema)}`;
+  return `${prompt}\n\n严格按下面这个 TypeScript 类型输出一个 JSON 对象（这只是字段类型说明，不要把 type/properties 这些词当成真正要输出的 key，直接输出符合这个类型的值本身）。必须包含全部字段（不确定的字段填 null，不要省略 key，不要用 markdown 代码块包裹，不要有 JSON 之外的任何文字）：\n${schemaToTypeHint(schema)}`;
+}
+
+/**
+ * Turns a Gemini-dialect schema ({type:"OBJECT", properties:{...}}) into a
+ * TypeScript-interface-shaped string instead of dumping the raw schema JSON
+ * into the prompt. Dumping it raw is what caused this bug in the first
+ * place: a nested schema literally uses "type"/"properties" as JSON keys,
+ * and a model reading that inside a "here's the JSON you must produce"
+ * instruction can mistake the schema's own wrapper shape for the literal
+ * output — caught via a real DeepSeek call on interview-qa's nested
+ * questions[] schema, which came back as
+ * `{"type":"OBJECT","properties":{"summary":"...","questions":[...]}}`
+ * instead of `{"summary":"...","questions":[...]}`. A type-hint string has
+ * no such collision — there's nothing in it that looks like a JSON value to
+ * mirror.
+ */
+function schemaToTypeHint(schema: GeminiSchema, indent = ""): string {
+  const type = schema.type as string | undefined;
+  const nullable = schema.nullable === true;
+  const suffix = nullable ? " | null" : "";
+
+  if (type === "OBJECT") {
+    const properties = (schema.properties as Record<string, GeminiSchema>) ?? {};
+    const nextIndent = indent + "  ";
+    const fields = Object.entries(properties)
+      .map(([key, value]) => `${nextIndent}${key}: ${schemaToTypeHint(value, nextIndent)}`)
+      .join(",\n");
+    return `{\n${fields}\n${indent}}${suffix}`;
+  }
+  if (type === "ARRAY") {
+    const items = (schema.items as GeminiSchema) ?? { type: "STRING" };
+    return `Array<${schemaToTypeHint(items, indent)}>${suffix}`;
+  }
+  if (type === "STRING") {
+    const enumValues = schema.enum as string[] | undefined;
+    if (enumValues?.length) return `${enumValues.map((v) => `"${v}"`).join(" | ")}${suffix}`;
+    return `string${suffix}`;
+  }
+  if (type === "NUMBER") return `number${suffix}`;
+  if (type === "BOOLEAN") return `boolean${suffix}`;
+  return `unknown${suffix}`;
 }
 
 export { GeminiError };
