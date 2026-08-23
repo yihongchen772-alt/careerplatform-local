@@ -3,8 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
-import { fetchFileAsInlinePart, generateStructured } from "@/lib/gemini";
-import { getUserAiKey } from "@/lib/ai-providers";
+import { fetchFileAsInlinePart } from "@/lib/gemini";
+import { getFileSearchKey, generateStructuredWithFile } from "@/lib/ai-file-search";
 import {
   toActionResult,
   UserFacingError,
@@ -31,10 +31,10 @@ async function run(resumeVersionId: string): Promise<ResumeCheck> {
     );
   }
 
-  const geminiKey = await getUserAiKey(user.id, "gemini");
-  if (!geminiKey) {
+  const fileKey = await getFileSearchKey(user.id);
+  if (!fileKey) {
     throw new UserFacingError(
-      "简历体检需要读取 PDF/图片内容，去账号设置 → AI 设置里配置一个 Gemini API Key（其他服务商暂不支持直接读文件）"
+      "简历体检需要读取 PDF/图片内容，去账号设置 → AI 设置里配置一个 Gemini、Claude 或 OpenAI 的 API Key（DeepSeek/Kimi/Qwen 暂不支持直接读文件）"
     );
   }
 
@@ -56,11 +56,10 @@ async function run(resumeVersionId: string): Promise<ResumeCheck> {
 - summary 用一到两句话概括整体水平
 - 全部用中文`;
 
-  const raw = await generateStructured({
+  const raw = await generateStructuredWithFile({
+    config: fileKey,
     prompt,
     file,
-    apiKey: geminiKey.apiKey,
-    model: geminiKey.model,
     // Judgement task over a whole document — needs more headroom than the
     // extraction calls, but still far below Gemini's default.
     thinkingBudget: 1024,

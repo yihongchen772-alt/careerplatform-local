@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDeleteButton } from "@/components/ui/confirm-delete-button";
 import {
@@ -14,7 +15,11 @@ import {
   setDefaultAiProvider,
   type AiKeyOverview,
 } from "@/lib/actions/ai-keys";
-import { AI_PROVIDER_OPTIONS } from "@/lib/ai-provider-labels";
+import {
+  AI_PROVIDER_OPTIONS,
+  GEMINI_KNOWN_MODELS,
+  OPENAI_COMPATIBLE_PROVIDERS,
+} from "@/lib/ai-provider-labels";
 import type { AiProviderId } from "@/lib/ai-provider-labels";
 
 export function AiSettingsForm({ keys }: { keys: AiKeyOverview[] }) {
@@ -31,8 +36,9 @@ export function AiSettingsForm({ keys }: { keys: AiKeyOverview[] }) {
           {hasAnyKey
             ? "可以同时配置多个服务商的 Key，切换默认服务商供面试攻略、模拟面试等文字类功能使用。"
             : "这是本地单机版，没有共享额度，AI 功能都需要你自己的 API Key 才能用。"}
-          简历体检、岗位匹配、JD 解析需要直接读取 PDF/图片文件，这三个功能固定用下面的
-          Gemini Key（其他服务商做不到读文件），和&ldquo;默认&rdquo;选择无关。
+          简历体检、岗位匹配、AI 搜索公司信息需要直接读文件/联网搜索，这三个功能只能用
+          Gemini、Claude 或 OpenAI 的 Key（DeepSeek/Kimi/Qwen 的接口做不到），会优先用你的默认
+          服务商（如果是这三个之一），否则自动用你配置了的那一个。
         </p>
 
         <div className="space-y-2">
@@ -66,20 +72,51 @@ function ProviderRow({
   onSaved: () => void;
 }) {
   const [apiKey, setApiKey] = useState("");
-  const [model, setModel] = useState(entry.model ?? "");
+  const savedModels = (entry.model ?? "").split(",").map((m) => m.trim()).filter(Boolean);
+  const [checkedKnown, setCheckedKnown] = useState<Set<string>>(
+    () => new Set(savedModels.filter((m) => (GEMINI_KNOWN_MODELS as readonly string[]).includes(m)))
+  );
+  const [customModel, setCustomModel] = useState(
+    savedModels.filter((m) => !(GEMINI_KNOWN_MODELS as readonly string[]).includes(m)).join(", ")
+  );
+  // Non-Gemini providers keep the plain single-model text field they always had.
+  const [model, setModel] = useState(entry.provider === "gemini" ? "" : (entry.model ?? ""));
+  const [baseUrl, setBaseUrl] = useState(entry.baseUrl ?? "");
   const [loading, setLoading] = useState(false);
   const [settingDefault, setSettingDefault] = useState(false);
+  const isOpenAiCompatible = OPENAI_COMPATIBLE_PROVIDERS.includes(entry.provider);
 
   const meta = AI_PROVIDER_OPTIONS.find((p) => p.id === entry.provider)!;
+
+  function toggleKnownModel(m: string) {
+    setCheckedKnown((prev) => {
+      const next = new Set(prev);
+      if (next.has(m)) next.delete(m);
+      else next.add(m);
+      return next;
+    });
+  }
 
   async function handleSave() {
     if (!apiKey) {
       toast.error("请填写 API Key");
       return;
     }
+    const finalModel =
+      entry.provider === "gemini"
+        ? [
+            ...GEMINI_KNOWN_MODELS.filter((m) => checkedKnown.has(m)),
+            ...customModel.split(",").map((m) => m.trim()).filter(Boolean),
+          ].join(", ")
+        : model;
     setLoading(true);
     try {
-      await upsertAiKey({ provider: entry.provider, apiKey, model: model || undefined });
+      await upsertAiKey({
+        provider: entry.provider,
+        apiKey,
+        model: finalModel || undefined,
+        baseUrl: isOpenAiCompatible ? baseUrl || undefined : undefined,
+      });
       toast.success(`${entry.label} 已保存`);
       setApiKey("");
       onSaved();
@@ -165,16 +202,62 @@ function ProviderRow({
               placeholder={entry.configured ? "已设置，重新填写以更新" : ""}
             />
           </div>
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">
-              模型（可选，默认 {meta.defaultModel}）
-            </Label>
-            <Input
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              placeholder={meta.defaultModel}
-            />
-          </div>
+          {entry.provider === "gemini" ? (
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">
+                模型（可多选，按下面的顺序尝试；只勾一个就是固定用那个）
+              </Label>
+              <div className="space-y-1.5">
+                {GEMINI_KNOWN_MODELS.map((m) => (
+                  <label key={m} className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={checkedKnown.has(m)}
+                      onCheckedChange={() => toggleKnownModel(m)}
+                    />
+                    {m}
+                  </label>
+                ))}
+              </div>
+              <Input
+                value={customModel}
+                onChange={(e) => setCustomModel(e.target.value)}
+                placeholder="其他模型名（可选，逗号分隔）"
+                className="mt-1"
+              />
+              <p className="text-xs text-muted-foreground">
+                Gemini 的免费额度是按模型分别计算的，勾选多个的话，一个用完额度会自动换下一个。
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">
+                  模型（可选，默认 {meta.defaultModel}）
+                </Label>
+                <Input
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  placeholder={meta.defaultModel}
+                />
+              </div>
+              {isOpenAiCompatible && (
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">
+                    API 地址（可选，不填用默认地址）
+                  </Label>
+                  <Input
+                    value={baseUrl}
+                    onChange={(e) => setBaseUrl(e.target.value)}
+                    placeholder="https://.../compatible-mode/v1"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    工作空间专属网关（比如阿里云百炼）或者自建代理地址填这里，不填就用这个
+                    服务商的公共默认地址。
+                  </p>
+                </div>
+              )}
+            </>
+          )}
           <Button type="button" size="sm" disabled={loading} onClick={handleSave}>
             {loading ? "保存中..." : "保存"}
           </Button>

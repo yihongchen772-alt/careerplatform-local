@@ -16,12 +16,14 @@ export const aiProviderValues = [
   "deepseek",
   "kimi",
   "anthropic",
+  "qwen",
 ] as const;
 
 export const aiSettingsSchema = z.object({
   provider: z.enum(aiProviderValues),
   apiKey: z.string().min(1, "请填写 API Key"),
   model: z.string().optional(),
+  baseUrl: z.string().url("请输入合法的地址").optional(),
 });
 
 export const emailSettingsSchema = z.object({
