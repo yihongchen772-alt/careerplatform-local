@@ -92,10 +92,6 @@
       {
         "from": "node_modules/.prisma",
         "to": "app/node_modules/.prisma"
-      },
-      {
-        "from": "node_modules/.bin",
-        "to": "app/node_modules/.bin"
       }
     ],
     "mac": {

@@ -2,8 +2,11 @@
 
 import { z } from "zod";
 import { requireUser } from "@/lib/session";
-import { getUserAiKey } from "@/lib/ai-providers";
-import { generateGrounded, generateStructured } from "@/lib/gemini";
+import {
+  getFileSearchKey,
+  generateGroundedText,
+  generateStructuredWithFile,
+} from "@/lib/ai-file-search";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
 
 const researchSchema = z.object({
@@ -17,13 +20,13 @@ const researchSchema = z.object({
 export type CompanyResearch = z.infer<typeof researchSchema>;
 
 /**
- * Two-pass: first a search-grounded call so Gemini actually looks the
+ * Two-pass: first a search-grounded call so the AI actually looks the
  * company up on the public web instead of relying on (possibly stale)
  * training data, then a second schema-enforced pass to turn that free-text
  * answer into fields the form can use. Deliberately does NOT scrape or ask
  * for content from login-walled platforms (e.g. 小红书) — those require
- * auth and block automated access; this only uses what Gemini's public web
- * search grounding can see, which is officially published pages.
+ * auth and block automated access; this only uses what the provider's own
+ * public web search grounding can see, which is officially published pages.
  */
 export async function researchCompany(name: string): Promise<ActionResult<CompanyResearch>> {
   return toActionResult(async () => {
@@ -31,16 +34,15 @@ export async function researchCompany(name: string): Promise<ActionResult<Compan
     const trimmed = name.trim();
     if (!trimmed) throw new UserFacingError("先填公司名称");
 
-    const geminiKey = await getUserAiKey(user.id, "gemini");
-    if (!geminiKey) {
+    const config = await getFileSearchKey(user.id);
+    if (!config) {
       throw new UserFacingError(
-        "AI 联网搜索需要配置一个 Gemini API Key（去账号设置 → AI 设置里加一个）"
+        "AI 联网搜索需要配置一个 Gemini、Claude 或 OpenAI 的 API Key（去账号设置 → AI 设置里加一个）"
       );
     }
 
-    const searchText = await generateGrounded({
-      apiKey: geminiKey.apiKey,
-      model: geminiKey.model,
+    const searchText = await generateGroundedText({
+      config,
       prompt: `帮我在网上搜一下"${trimmed}"这家公司，面向中国应届生求职场景，我需要：
 - 官方的校园招聘或社会招聘入口网址（不要猜测，搜不到就说没找到）
 - 所属行业和细分领域
@@ -50,9 +52,8 @@ export async function researchCompany(name: string): Promise<ActionResult<Compan
 请说明信息来源（搜到的是官网还是第三方报道），不确定的地方要说明不确定，不要编造网址。`,
     });
 
-    const raw = await generateStructured({
-      apiKey: geminiKey.apiKey,
-      model: geminiKey.model,
+    const raw = await generateStructuredWithFile({
+      config,
       thinkingBudget: 512,
       timeoutMs: 45000,
       prompt: `把下面这段关于一家公司的调研文字，整理成结构化字段。

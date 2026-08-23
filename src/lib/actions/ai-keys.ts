@@ -14,6 +14,7 @@ export type AiKeyOverview = {
   label: string;
   configured: boolean;
   model: string | null;
+  baseUrl: string | null;
   isDefault: boolean;
 };
 
@@ -32,6 +33,7 @@ export async function getAiKeysOverview(userId: string): Promise<AiKeyOverview[]
       label,
       configured: !!key,
       model: key?.model ?? null,
+      baseUrl: key?.baseUrl ?? null,
       isDefault: user?.defaultAiProvider === id,
     };
   });
@@ -47,12 +49,14 @@ export async function upsertAiKey(input: z.infer<typeof aiSettingsSchema>) {
       // Never store the plaintext key — only the encrypted form ever hits the DB.
       apiKeyEncrypted: encryptSecret(data.apiKey),
       model: data.model || null,
+      baseUrl: data.baseUrl || null,
     },
     create: {
       userId: user.id,
       provider: data.provider,
       apiKeyEncrypted: encryptSecret(data.apiKey),
       model: data.model || null,
+      baseUrl: data.baseUrl || null,
     },
   });
 

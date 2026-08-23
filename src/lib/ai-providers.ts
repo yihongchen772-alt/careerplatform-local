@@ -11,19 +11,23 @@ const AI_PROVIDERS: Record<AiProviderId, { defaultModel: string }> =
     AI_PROVIDER_OPTIONS.map((p) => [p.id, { defaultModel: p.defaultModel }])
   ) as Record<AiProviderId, { defaultModel: string }>;
 
-// OpenAI, DeepSeek, and Kimi all speak the same /chat/completions wire format,
-// so one function handles all three — only the base URL and default model
-// actually differ between them.
-const OPENAI_COMPATIBLE_BASE_URL: Record<"openai" | "deepseek" | "kimi", string> = {
+// OpenAI, DeepSeek, Kimi, and Qwen all speak the same /chat/completions wire
+// format, so one function handles all four — only the base URL and default
+// model actually differ between them. A user can override the base URL per
+// key (see AiKey.baseUrl) for workspace-specific or self-hosted endpoints.
+const OPENAI_COMPATIBLE_BASE_URL: Record<"openai" | "deepseek" | "kimi" | "qwen", string> = {
   openai: "https://api.openai.com/v1",
   deepseek: "https://api.deepseek.com/v1",
   kimi: "https://api.moonshot.cn/v1",
+  qwen: "https://dashscope.aliyuncs.com/compatible-mode/v1",
 };
 
 export type UserAiConfig = {
   provider: AiProviderId;
   apiKey: string;
   model: string;
+  /** Only meaningful for OPENAI_COMPATIBLE_PROVIDERS; overrides the default base URL above. */
+  baseUrl?: string;
 };
 
 /**
@@ -45,6 +49,7 @@ export async function getUserAiKey(
     provider,
     apiKey: decryptSecret(key.apiKeyEncrypted),
     model: key.model || AI_PROVIDERS[provider].defaultModel,
+    baseUrl: key.baseUrl ?? undefined,
   };
 }
 
@@ -64,7 +69,7 @@ export async function getUserAiConfig(userId: string): Promise<UserAiConfig | nu
  * provider here is prompted for JSON but not schema-constrained, so this is
  * the one normalization point instead of repeating it at every call site.
  */
-function extractJson(text: string): unknown {
+export function extractJson(text: string): unknown {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   const raw = (fenced ? fenced[1] : text).trim();
   try {
@@ -75,17 +80,18 @@ function extractJson(text: string): unknown {
 }
 
 async function callOpenAiCompatible(
-  provider: "openai" | "deepseek" | "kimi",
+  provider: "openai" | "deepseek" | "kimi" | "qwen",
   apiKey: string,
   model: string,
   prompt: string,
-  timeoutMs: number
+  timeoutMs: number,
+  baseUrlOverride?: string
 ): Promise<unknown> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   let response: Response;
   try {
-    response = await fetch(`${OPENAI_COMPATIBLE_BASE_URL[provider]}/chat/completions`, {
+    response = await fetch(`${baseUrlOverride || OPENAI_COMPATIBLE_BASE_URL[provider]}/chat/completions`, {
       method: "POST",
       signal: controller.signal,
       headers: {
@@ -216,12 +222,14 @@ export async function callTextAi({
     case "openai":
     case "deepseek":
     case "kimi":
+    case "qwen":
       return callOpenAiCompatible(
         config.provider,
         config.apiKey,
         config.model,
         withSchemaReminder(prompt, schema),
-        timeoutMs
+        timeoutMs,
+        config.baseUrl
       );
     case "anthropic":
       return callAnthropic(
@@ -241,7 +249,7 @@ export async function callTextAi({
  * of filled with null, because the model has no other way to learn it's
  * expected — caught via a real DeepSeek call dropping companyName/title.
  */
-function withSchemaReminder(prompt: string, schema: GeminiSchema): string {
+export function withSchemaReminder(prompt: string, schema: GeminiSchema): string {
   return `${prompt}\n\n严格按下面的字段结构输出一个 JSON 对象，必须包含全部列出的 key（不确定的字段填 null，不要省略 key，不要用 markdown 代码块包裹，不要有 JSON 之外的任何文字）：\n${JSON.stringify(schema)}`;
 }
 
