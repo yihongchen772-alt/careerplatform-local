@@ -6,6 +6,7 @@ import { Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -16,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   parseRecruitmentSheet,
+  parseRecruitmentText,
   importLeads,
   rankImportedPositions,
   type ImportedPosition,
@@ -38,6 +40,7 @@ export function ImportSheetDialog({
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [truncated, setTruncated] = useState(false);
   const [batch, setBatch] = useState<string | null>(null);
+  const [pasted, setPasted] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
 
   const resumeId = defaultResumeVersionId ?? resumeVersions[0]?.id ?? null;
@@ -48,6 +51,33 @@ export function ImportSheetDialog({
     setFits(new Map());
     setTruncated(false);
     setBatch(null);
+    setPasted("");
+  }
+
+  function applyParsed(positions: ImportedPosition[], wasTruncated: boolean, label: string) {
+    setRows(positions);
+    setChecked(new Set(positions.map((_, i) => i)));
+    setTruncated(wasTruncated);
+    setBatch(label);
+    toast.success(`认出 ${positions.length} 个岗位，确认后再导入`);
+  }
+
+  async function handlePaste() {
+    if (!pasted.trim()) {
+      toast.error("先粘贴一段内容");
+      return;
+    }
+    setParsing(true);
+    try {
+      const res = await parseRecruitmentText(pasted);
+      if (!res.ok) {
+        toast.error(res.message);
+        return;
+      }
+      applyParsed(res.data.positions, res.data.truncated, "粘贴的内容");
+    } finally {
+      setParsing(false);
+    }
   }
 
   async function handleRank() {
@@ -85,11 +115,7 @@ export function ImportSheetDialog({
         toast.error(res.message);
         return;
       }
-      setRows(res.data.positions);
-      setChecked(new Set(res.data.positions.map((_, i) => i)));
-      setTruncated(res.data.truncated);
-      setBatch(file.name);
-      toast.success(`认出 ${res.data.positions.length} 个岗位，确认后再导入`);
+      applyParsed(res.data.positions, res.data.truncated, file.name);
     } finally {
       setParsing(false);
     }
@@ -152,22 +178,46 @@ export function ImportSheetDialog({
         </DialogHeader>
 
         {!rows ? (
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              选一个 Excel（.xlsx）或 CSV 文件，AI 会自动认出里面的公司、岗位、城市、截止日期等，
-              整理好给你确认后加进「秋招信息库」。飞书/腾讯文档的表格先在原平台「导出为 Excel/CSV」，
-              再选那个文件——链接需要登录，App 读不到。
-            </p>
-            <input
-              ref={fileInput}
-              type="file"
-              accept=".xlsx,.xls,.csv,.tsv,.txt"
-              className="hidden"
-              onChange={handleFile}
-            />
-            <Button type="button" disabled={parsing} onClick={() => fileInput.current?.click()}>
-              {parsing ? "AI 解析中，约需十几秒..." : "选择文件"}
-            </Button>
+          <div className="space-y-5">
+            <div className="space-y-2">
+              <p className="text-sm font-medium">方式一：传表格文件</p>
+              <p className="text-sm text-muted-foreground">
+                Excel（.xlsx）或 CSV。飞书/腾讯文档的表格先在原平台「导出为 Excel/CSV」再选文件
+                ——分享链接需要登录，App 读不到。
+              </p>
+              <input
+                ref={fileInput}
+                type="file"
+                accept=".xlsx,.xls,.csv,.tsv,.txt"
+                className="hidden"
+                onChange={handleFile}
+              />
+              <Button type="button" disabled={parsing} onClick={() => fileInput.current?.click()}>
+                {parsing ? "AI 解析中..." : "选择文件"}
+              </Button>
+            </div>
+
+            <div className="space-y-2 border-t pt-4">
+              <p className="text-sm font-medium">方式二：直接粘贴文字</p>
+              <p className="text-sm text-muted-foreground">
+                在小红书 / 公众号 / 群里看到的招聘信息，整段复制粘贴进来就行，格式乱也没关系，
+                AI 会挑出里面的岗位，闲聊和广告会自动忽略。
+              </p>
+              <Textarea
+                value={pasted}
+                onChange={(e) => setPasted(e.target.value)}
+                rows={6}
+                placeholder="把小红书笔记 / 招聘推文 / 群消息整段粘到这里…"
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={parsing || !pasted.trim()}
+                onClick={handlePaste}
+              >
+                {parsing ? "AI 解析中..." : "解析这段文字"}
+              </Button>
+            </div>
           </div>
         ) : (
           <div className="space-y-3">
