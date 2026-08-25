@@ -36,9 +36,12 @@ export function AiSettingsForm({ keys }: { keys: AiKeyOverview[] }) {
           {hasAnyKey
             ? "可以同时配置多个服务商的 Key，切换默认服务商供面试攻略、模拟面试等文字类功能使用。"
             : "这是本地单机版，没有共享额度，AI 功能都需要你自己的 API Key 才能用。"}
-          简历体检、岗位匹配、AI 搜索公司信息需要直接读文件/联网搜索，这三个功能只能用
-          Gemini、Claude 或 OpenAI 的 Key（DeepSeek/Kimi/Qwen 的接口做不到），会优先用你的默认
-          服务商（如果是这三个之一），否则自动用你配置了的那一个。
+          有两类功能会挑服务商：<span className="font-medium">读文件</span>
+          （简历体检、岗位匹配）只能用 Gemini/Claude/OpenAI；
+          <span className="font-medium">联网搜索</span>
+          （AI 搜索公司、岗位口碑）可以用 Qwen/Gemini/Claude/OpenAI。都会优先用你的默认服务商，
+          不支持时自动换成你配了的、支持的那个。搜索优先挑 Qwen——Gemini 免费版的联网搜索额度
+          极少，很快就会用完。
         </p>
 
         <div className="space-y-2">

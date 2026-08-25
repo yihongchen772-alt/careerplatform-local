@@ -3,11 +3,8 @@
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
-import {
-  getFileSearchKey,
-  generateGroundedText,
-  generateStructuredWithFile,
-} from "@/lib/ai-file-search";
+import { getSearchKey, generateGroundedText } from "@/lib/ai-file-search";
+import { callTextAi } from "@/lib/ai-providers";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
 
 const insightSchema = z.object({
@@ -26,7 +23,9 @@ export type CompanyInsight = z.infer<typeof insightSchema>;
  * "What's this job actually like" — salary reality, overtime, interview
  * difficulty, culture. Uses the provider's own web-search grounding over
  * publicly indexed pages (知乎/脉脉/看准/新闻, plus whatever 小红书 content
- * search engines have indexed).
+ * search engines have indexed). Qwen is preferred when configured: Alibaba
+ * doesn't meter `enable_search` separately, while Gemini's grounding quota
+ * is tiny on the free tier and runs out almost immediately.
  *
  * Deliberately does NOT scrape 小红书 (or any login-walled platform)
  * directly: there is no public content-search API for third parties, the
@@ -50,10 +49,10 @@ export async function researchCompanyInsight(
     });
     if (!position) throw new UserFacingError("未找到该岗位");
 
-    const config = await getFileSearchKey(user.id);
+    const config = await getSearchKey(user.id);
     if (!config) {
       throw new UserFacingError(
-        "岗位口碑调研需要联网搜索，去账号设置配置一个 Gemini、Claude 或 OpenAI 的 Key（DeepSeek/Kimi/Qwen 不支持联网搜索）"
+        "岗位口碑调研需要联网搜索，去账号设置配置一个 Qwen、Gemini、Claude 或 OpenAI 的 Key（DeepSeek/Kimi 的接口不支持联网搜索）"
       );
     }
 
@@ -87,7 +86,7 @@ ${target}
 - 如果搜到的信息明显过时（比如两三年前的），要说明时间`,
     });
 
-    const raw = await generateStructuredWithFile({
+    const raw = await callTextAi({
       config,
       thinkingBudget: 512,
       timeoutMs: 60000,

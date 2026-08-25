@@ -2,11 +2,8 @@
 
 import { z } from "zod";
 import { requireUser } from "@/lib/session";
-import {
-  getFileSearchKey,
-  generateGroundedText,
-  generateStructuredWithFile,
-} from "@/lib/ai-file-search";
+import { getSearchKey, generateGroundedText } from "@/lib/ai-file-search";
+import { callTextAi } from "@/lib/ai-providers";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
 
 const researchSchema = z.object({
@@ -34,10 +31,10 @@ export async function researchCompany(name: string): Promise<ActionResult<Compan
     const trimmed = name.trim();
     if (!trimmed) throw new UserFacingError("先填公司名称");
 
-    const config = await getFileSearchKey(user.id);
+    const config = await getSearchKey(user.id);
     if (!config) {
       throw new UserFacingError(
-        "AI 联网搜索需要配置一个 Gemini、Claude 或 OpenAI 的 API Key（去账号设置 → AI 设置里加一个）"
+        "AI 联网搜索需要配置一个 Qwen、Gemini、Claude 或 OpenAI 的 API Key（去账号设置 → AI 设置里加一个）"
       );
     }
 
@@ -52,7 +49,7 @@ export async function researchCompany(name: string): Promise<ActionResult<Compan
 请说明信息来源（搜到的是官网还是第三方报道），不确定的地方要说明不确定，不要编造网址。`,
     });
 
-    const raw = await generateStructuredWithFile({
+    const raw = await callTextAi({
       config,
       thinkingBudget: 512,
       timeoutMs: 45000,

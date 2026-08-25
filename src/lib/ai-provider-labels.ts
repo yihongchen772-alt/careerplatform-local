@@ -33,6 +33,32 @@ export const OPENAI_COMPATIBLE_PROVIDERS: readonly AiProviderId[] = [
 ];
 
 /**
+ * Providers whose API can read a PDF/image directly. DeepSeek/Kimi/Qwen's
+ * chat-completions endpoints are text-only.
+ */
+export const FILE_CAPABLE_PROVIDERS: readonly AiProviderId[] = [
+  "gemini",
+  "anthropic",
+  "openai",
+];
+
+/**
+ * Providers whose API can do live web search server-side. Qwen belongs here
+ * too — Alibaba's OpenAI-compatible endpoint takes an `enable_search` flag
+ * (https://help.aliyun.com/zh/model-studio/web-search). DeepSeek does not:
+ * its web chat has search, but the API exposes no equivalent parameter.
+ * Qwen is listed first because Gemini meters Search grounding far more
+ * tightly than ordinary generation, so a free Gemini key runs out almost
+ * immediately while Qwen keeps working.
+ */
+export const SEARCH_CAPABLE_PROVIDERS: readonly AiProviderId[] = [
+  "qwen",
+  "gemini",
+  "anthropic",
+  "openai",
+];
+
+/**
  * Gemini's free-tier quota is allocated per model, not per key, so listing
  * several here (checked ones get tried in this order on a 429) is a real
  * way to get more calls out of one key per day — confirmed against a real

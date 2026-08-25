@@ -1,12 +1,17 @@
 import { UserFacingError } from "@/lib/action-result";
 import {
   type UserAiConfig,
-  type AiProviderId,
   getUserAiConfig,
   getUserAiKey,
   withSchemaReminder,
   extractJson,
+  OPENAI_COMPATIBLE_BASE_URL,
 } from "@/lib/ai-providers";
+import {
+  FILE_CAPABLE_PROVIDERS,
+  SEARCH_CAPABLE_PROVIDERS,
+  type AiProviderId,
+} from "@/lib/ai-provider-labels";
 import {
   generateStructured as geminiGenerateStructured,
   generateGrounded as geminiGenerateGrounded,
@@ -18,34 +23,43 @@ import {
 export type { GeminiFilePart as FilePart };
 
 /**
- * Providers whose API can (a) read a PDF/image directly and (b) do live web
- * search — the only three of the six providers this app supports where
- * that's actually true. DeepSeek/Kimi/Qwen's chat-completions APIs are
- * text-only, no file input, no search tool.
+ * Picks a key for a capability the user's default provider may not have:
+ * prefers the default when it qualifies (so the feature uses whatever they
+ * already chose), otherwise falls back to the first configured provider in
+ * `capable` order.
  */
-export const FILE_SEARCH_CAPABLE: readonly AiProviderId[] = ["gemini", "anthropic", "openai"];
-
-/**
- * The key to use for file-reading/search features: prefers the user's
- * default provider if it happens to be a capable one (so "AI 搜索" uses
- * whatever they've already made their main provider), otherwise falls back
- * to whichever capable provider they've configured, checked in a fixed order.
- */
-export async function getFileSearchKey(userId: string): Promise<UserAiConfig | null> {
+async function getCapableKey(
+  userId: string,
+  capable: readonly AiProviderId[]
+): Promise<UserAiConfig | null> {
   const defaultConfig = await getUserAiConfig(userId);
-  if (defaultConfig && FILE_SEARCH_CAPABLE.includes(defaultConfig.provider)) {
-    return defaultConfig;
-  }
-  for (const provider of FILE_SEARCH_CAPABLE) {
+  if (defaultConfig && capable.includes(defaultConfig.provider)) return defaultConfig;
+  for (const provider of capable) {
     const key = await getUserAiKey(userId, provider);
     if (key) return key;
   }
   return null;
 }
 
-function unsupportedProviderError(): never {
+/** For features that must read a PDF/image (resume check, resume match). */
+export async function getFileSearchKey(userId: string): Promise<UserAiConfig | null> {
+  return getCapableKey(userId, FILE_CAPABLE_PROVIDERS);
+}
+
+/** For features that must search the live web (company research, job insight). */
+export async function getSearchKey(userId: string): Promise<UserAiConfig | null> {
+  return getCapableKey(userId, SEARCH_CAPABLE_PROVIDERS);
+}
+
+function unsupportedFileError(): never {
   throw new UserFacingError(
-    "当前配置的服务商不支持读文件/联网搜索，请在账号设置里配一个 Gemini、Claude 或 OpenAI 的 Key"
+    "当前配置的服务商不支持读取 PDF/图片，请在账号设置里配一个 Gemini、Claude 或 OpenAI 的 Key"
+  );
+}
+
+function unsupportedSearchError(): never {
+  throw new UserFacingError(
+    "当前配置的服务商不支持联网搜索，请在账号设置里配一个 Qwen、Gemini、Claude 或 OpenAI 的 Key"
   );
 }
 
@@ -243,6 +257,72 @@ async function openAiGrounded(
   );
 }
 
+
+// ---------- Qwen (Alibaba Model Studio, OpenAI-compatible + enable_search) ----------
+
+/**
+ * Alibaba's OpenAI-compatible endpoint accepts a non-standard `enable_search`
+ * flag that makes the model search the live web server-side
+ * (https://help.aliyun.com/zh/model-studio/web-search). Python users pass it
+ * via the SDK's `extra_body`; over raw HTTP it's simply another field in the
+ * request body. Unlike Gemini's grounding this isn't metered separately from
+ * ordinary generation, which is why Qwen is tried first for search features.
+ */
+async function qwenGrounded(
+  apiKey: string,
+  model: string,
+  prompt: string,
+  timeoutMs: number,
+  baseUrl?: string
+): Promise<string> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let response: Response;
+  try {
+    response = await fetch(
+      `${baseUrl || OPENAI_COMPATIBLE_BASE_URL.qwen}/chat/completions`,
+      {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: "user", content: prompt }],
+          enable_search: true,
+          // No search_strategy here on purpose: the page-fetching strategies
+          // ("agent_max" and friends, i.e. Web Extractor) are rejected on
+          // non-streaming calls — measured: 400 "Non-streaming mode does not
+          // support Web Extractor." Plain enable_search works and answers
+          // from search results, which is what this needs.
+          max_tokens: 4096,
+        }),
+      }
+    );
+  } catch {
+    throw new UserFacingError("AI 请求超时，请稍后重试");
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    console.error(`[qwen-search] ${response.status}`, detail.slice(0, 500));
+    if (response.status === 401 || response.status === 403) {
+      throw new UserFacingError("API Key 无效，请检查账号设置里的 AI 配置");
+    }
+    if (response.status === 429) throw new UserFacingError("API 调用超限，请稍后重试");
+    throw new UserFacingError("AI 服务暂时不可用，请稍后重试");
+  }
+
+  const data = await response.json();
+  const text: string = data?.choices?.[0]?.message?.content ?? "";
+  if (!text) throw new UserFacingError("AI 没有返回结果，请重试");
+  return text;
+}
+
 // ---------- Dispatch ----------
 
 /**
@@ -283,7 +363,7 @@ export async function generateStructuredWithFile({
     case "openai":
       return openAiStructuredWithFile(config.apiKey, config.model, prompt, file, schema, timeoutMs);
     default:
-      unsupportedProviderError();
+      unsupportedFileError();
   }
 }
 
@@ -291,7 +371,10 @@ export async function generateStructuredWithFile({
 export async function generateGroundedText({
   config,
   prompt,
-  timeoutMs = 45000,
+  // 90s, not 45s: a live search round-trip is far slower than plain
+  // generation — a measured Qwen `enable_search` call took ~41s, which would
+  // have been a coin flip against the old default.
+  timeoutMs = 90000,
 }: {
   config: UserAiConfig;
   prompt: string;
@@ -309,8 +392,10 @@ export async function generateGroundedText({
       return claudeGrounded(config.apiKey, config.model, prompt, timeoutMs);
     case "openai":
       return openAiGrounded(config.apiKey, config.model, prompt, timeoutMs);
+    case "qwen":
+      return qwenGrounded(config.apiKey, config.model, prompt, timeoutMs, config.baseUrl);
     default:
-      unsupportedProviderError();
+      unsupportedSearchError();
   }
 }
 

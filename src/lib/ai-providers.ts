@@ -15,7 +15,7 @@ const AI_PROVIDERS: Record<AiProviderId, { defaultModel: string }> =
 // format, so one function handles all four — only the base URL and default
 // model actually differ between them. A user can override the base URL per
 // key (see AiKey.baseUrl) for workspace-specific or self-hosted endpoints.
-const OPENAI_COMPATIBLE_BASE_URL: Record<"openai" | "deepseek" | "kimi" | "qwen", string> = {
+export const OPENAI_COMPATIBLE_BASE_URL: Record<"openai" | "deepseek" | "kimi" | "qwen", string> = {
   openai: "https://api.openai.com/v1",
   deepseek: "https://api.deepseek.com/v1",
   kimi: "https://api.moonshot.cn/v1",
