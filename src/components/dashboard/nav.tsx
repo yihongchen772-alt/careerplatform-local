@@ -8,6 +8,7 @@ import {
   Brain,
   Building2,
   CalendarDays,
+  Database,
   FileText,
   LayoutDashboard,
   ListChecks,
@@ -34,6 +35,7 @@ const groups: { label: string; links: NavLink[] }[] = [
   {
     label: "求职工具",
     links: [
+      { href: "/leads", label: "秋招信息库", icon: Database },
       { href: "/pool", label: "候选岗位池", icon: ListChecks },
       { href: "/applications", label: "投递记录", icon: Send },
       { href: "/mock-interview", label: "AI 模拟面试", icon: MessageSquare },

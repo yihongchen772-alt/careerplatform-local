@@ -2,7 +2,6 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { Card, CardContent } from "@/components/ui/card";
 import { AddPositionDialog } from "@/components/pool/add-position-dialog";
-import { ImportSheetDialog } from "@/components/pool/import-sheet-dialog";
 import { PoolTable } from "@/components/pool/pool-table";
 import type { InterviewPrep } from "@/lib/validation";
 
@@ -28,13 +27,7 @@ export default async function PoolPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-semibold">候选岗位池</h1>
-        <div className="flex flex-wrap items-center gap-2">
-          <ImportSheetDialog
-            resumeVersions={resumeVersions.map((r) => ({ id: r.id, name: r.name }))}
-            defaultResumeVersionId={defaultResumeVersionId}
-          />
-          <AddPositionDialog />
-        </div>
+        <AddPositionDialog />
       </div>
 
       <Card>

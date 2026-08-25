@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   parseRecruitmentSheet,
-  importPositions,
+  importLeads,
   rankImportedPositions,
   type ImportedPosition,
   type PositionFit,
@@ -37,6 +37,7 @@ export function ImportSheetDialog({
   const [fits, setFits] = useState<Map<number, PositionFit>>(new Map());
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [truncated, setTruncated] = useState(false);
+  const [batch, setBatch] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const resumeId = defaultResumeVersionId ?? resumeVersions[0]?.id ?? null;
@@ -46,6 +47,7 @@ export function ImportSheetDialog({
     setChecked(new Set());
     setFits(new Map());
     setTruncated(false);
+    setBatch(null);
   }
 
   async function handleRank() {
@@ -86,6 +88,7 @@ export function ImportSheetDialog({
       setRows(res.data.positions);
       setChecked(new Set(res.data.positions.map((_, i) => i)));
       setTruncated(res.data.truncated);
+      setBatch(file.name);
       toast.success(`认出 ${res.data.positions.length} 个岗位，确认后再导入`);
     } finally {
       setParsing(false);
@@ -103,18 +106,22 @@ export function ImportSheetDialog({
 
   async function handleImport() {
     if (!rows) return;
-    const selected = rows.filter((_, i) => checked.has(i));
+    // Carry any fit score the user just computed through to the library, so
+    // they don't have to re-run the match after importing.
+    const selected = rows
+      .map((r, i) => ({ ...r, fitScore: fits.get(i)?.fitScore ?? null, fitReason: fits.get(i)?.reason ?? null, i }))
+      .filter((r) => checked.has(r.i));
     setImporting(true);
     try {
-      const res = await importPositions(selected);
+      const res = await importLeads(selected, batch ?? undefined);
       if (!res.ok) {
         toast.error(res.message);
         return;
       }
       toast.success(
         res.data.skipped > 0
-          ? `导入 ${res.data.created} 个岗位（跳过 ${res.data.skipped} 个重复或信息不全的）`
-          : `导入 ${res.data.created} 个岗位`
+          ? `已加入信息库 ${res.data.created} 个（跳过 ${res.data.skipped} 个重复或信息不全的）`
+          : `已加入信息库 ${res.data.created} 个岗位`
       );
       reset();
       setOpen(false);
@@ -148,7 +155,7 @@ export function ImportSheetDialog({
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
               选一个 Excel（.xlsx）或 CSV 文件，AI 会自动认出里面的公司、岗位、城市、截止日期等，
-              整理好给你确认后再导入候选池。飞书/腾讯文档的表格先在原平台「导出为 Excel/CSV」，
+              整理好给你确认后加进「秋招信息库」。飞书/腾讯文档的表格先在原平台「导出为 Excel/CSV」，
               再选那个文件——链接需要登录，App 读不到。
             </p>
             <input
@@ -284,7 +291,7 @@ export function ImportSheetDialog({
               onClick={handleImport}
               disabled={importing || checked.size === 0}
             >
-              {importing ? "导入中..." : `导入选中的 ${checked.size} 个`}
+              {importing ? "导入中..." : `加入信息库（${checked.size}）`}
             </Button>
           </DialogFooter>
         )}

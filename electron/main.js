@@ -109,37 +109,206 @@ function waitForServer(url, timeoutMs) {
   });
 }
 
-function createWindow() {
-  const win = new BrowserWindow({
+let mainWindow = null;
+
+function createWindow({ show = true } = {}) {
+  mainWindow = new BrowserWindow({
     width: 1320,
     height: 880,
     minWidth: 900,
     minHeight: 600,
     title: "秋招追踪",
     backgroundColor: "#ffffff",
+    show,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
-  win.loadURL(`http://localhost:${PORT}`);
+  mainWindow.loadURL(`http://localhost:${PORT}`);
+
+  // With background reminders on, closing the window parks the app in the
+  // tray instead of quitting — otherwise there'd be no process left to fire
+  // a reminder, which is the entire point of the feature.
+  mainWindow.on("close", (e) => {
+    if (!isQuitting && readAppSettings().backgroundReminders) {
+      e.preventDefault();
+      mainWindow.hide();
+    }
+  });
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+  });
+  return mainWindow;
 }
+
+function showWindow() {
+  if (!mainWindow) createWindow();
+  else {
+    mainWindow.show();
+    mainWindow.focus();
+  }
+}
+
+// ---------- shared settings file (written by the Next app) ----------
+
+function settingsFile() {
+  return path.join(app.getPath("userData"), "app-settings.json");
+}
+
+function readAppSettings() {
+  try {
+    return {
+      autoLaunch: false,
+      backgroundReminders: false,
+      ...JSON.parse(fs.readFileSync(settingsFile(), "utf8")),
+    };
+  } catch {
+    return { autoLaunch: false, backgroundReminders: false };
+  }
+}
+
+function writeAutoLaunchStatus(failed) {
+  // Reported back through the same shared file the UI reads, so a refusal by
+  // the OS (sandboxing, MDM policy, unsigned build) shows up as a warning in
+  // settings instead of a checkbox that looks on but does nothing.
+  try {
+    const current = readAppSettings();
+    if (!!current.autoLaunchFailed === !!failed) return;
+    fs.writeFileSync(
+      settingsFile(),
+      JSON.stringify({ ...current, autoLaunchFailed: !!failed }, null, 2)
+    );
+  } catch (err) {
+    console.error("[autolaunch] could not record status", err);
+  }
+}
+
+function applyAutoLaunch(enabled) {
+  // Never touch login items in dev — that would register the dev binary.
+  if (isDev) return;
+  try {
+    app.setLoginItemSettings({ openAtLogin: enabled, openAsHidden: true });
+    // Trust the OS's own read-back rather than the absence of a throw:
+    // macOS can decline without raising.
+    const actual = app.getLoginItemSettings().openAtLogin;
+    writeAutoLaunchStatus(enabled && !actual);
+  } catch (err) {
+    console.error("[autolaunch] failed", err);
+    writeAutoLaunchStatus(enabled);
+  }
+}
+
+// ---------- tray ----------
+
+let tray = null;
+
+function buildTray() {
+  if (tray) return;
+  const { Tray, Menu, nativeImage } = require("electron");
+
+  // A tiny transparent-background dot: bundling a separate .png into
+  // extraResources for this is more moving parts than it's worth, and an
+  // empty image renders as a blank gap in the menu bar on macOS.
+  const icon = nativeImage.createFromDataURL(
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAWklEQVR42mNkYPhfz0AEYBxVSF+FjEQq/M9ArEJGYhX+Z2AgUiEjsQr/MzAQqZCRWIX/GRiIVMhIrML/DAxEKmQkVuF/BgYiFTISq/A/AwORChmJVfifAQCk0hP9k0zi7QAAAABJRU5ErkJggg=="
+  );
+  tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
+  tray.setToolTip("秋招追踪");
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: "打开秋招追踪", click: showWindow },
+      { label: "立即检查提醒", click: () => checkReminders(true) },
+      { type: "separator" },
+      {
+        label: "退出",
+        click: () => {
+          isQuitting = true;
+          app.quit();
+        },
+      },
+    ])
+  );
+  tray.on("click", showWindow);
+}
+
+// ---------- background reminder loop ----------
+
+const CHECK_INTERVAL_MS = 30 * 60 * 1000;
+let reminderTimer = null;
+// Ids already surfaced, so a still-overdue item doesn't re-notify every
+// 30 minutes for days on end.
+const notified = new Set();
+
+async function checkReminders(force = false) {
+  try {
+    const res = await fetch(`http://localhost:${PORT}/api/reminders/due`);
+    if (!res.ok) return;
+    const { urgent } = await res.json();
+    if (!Array.isArray(urgent) || urgent.length === 0) return;
+
+    const fresh = force ? urgent : urgent.filter((u) => !notified.has(u.id));
+    if (fresh.length === 0) return;
+    fresh.forEach((u) => notified.add(u.id));
+
+    const { Notification } = require("electron");
+    if (!Notification.isSupported()) return;
+
+    const first = fresh[0];
+    new Notification({
+      title: fresh.length === 1 ? "秋招提醒" : `秋招提醒（${fresh.length} 项）`,
+      body:
+        fresh.length === 1
+          ? `${first.label} — ${first.sublabel}`
+          : `${first.label} — ${first.sublabel}\n还有 ${fresh.length - 1} 项待处理`,
+    })
+      .on("click", showWindow)
+      .show();
+  } catch {
+    // Server not up yet, or transient — the next tick will retry.
+  }
+}
+
+function startReminderLoop() {
+  if (reminderTimer) return;
+  checkReminders();
+  reminderTimer = setInterval(() => {
+    if (readAppSettings().backgroundReminders) checkReminders();
+  }, CHECK_INTERVAL_MS);
+}
+
+let isQuitting = false;
 
 app.whenReady().then(async () => {
   try {
     await startNextServer();
-    createWindow();
+
+    const settings = readAppSettings();
+    applyAutoLaunch(settings.autoLaunch);
+
+    // Launched by the OS at login: start parked in the tray rather than
+    // popping a window in the user's face on every boot.
+    const openedAtLogin =
+      !isDev && app.getLoginItemSettings().wasOpenedAtLogin && settings.backgroundReminders;
+    createWindow({ show: !openedAtLogin });
+
+    if (settings.backgroundReminders) {
+      buildTray();
+      startReminderLoop();
+    }
   } catch (err) {
     dialog.showErrorBox("启动失败", String(err && err.message ? err.message : err));
     app.quit();
   }
 
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
+  app.on("activate", showWindow);
 });
 
 function shutdown() {
+  if (reminderTimer) {
+    clearInterval(reminderTimer);
+    reminderTimer = null;
+  }
   if (serverProcess) {
     serverProcess.kill();
     serverProcess = null;
@@ -147,8 +316,13 @@ function shutdown() {
 }
 
 app.on("window-all-closed", () => {
+  // With the tray running the app deliberately outlives its windows.
+  if (readAppSettings().backgroundReminders && !isQuitting) return;
   shutdown();
   if (process.platform !== "darwin") app.quit();
 });
 
-app.on("before-quit", shutdown);
+app.on("before-quit", () => {
+  isQuitting = true;
+  shutdown();
+});
