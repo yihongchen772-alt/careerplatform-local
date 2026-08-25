@@ -5,6 +5,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { getUserAiConfig, callTextAi } from "@/lib/ai-providers";
+import { getFileSearchKey, generateStructuredWithFile } from "@/lib/ai-file-search";
 import { getResumeContext } from "@/lib/resume-context";
 import { computeInterestScore } from "@/lib/scoring";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
@@ -120,6 +121,109 @@ export async function parseRecruitmentText(
     const trimmed = text.trim();
     if (trimmed.length < 10) throw new UserFacingError("粘贴的内容太短，看不出岗位信息");
     return extractPositions(user.id, trimmed.slice(0, MAX_CHARS), "post");
+  });
+}
+
+
+const SCREENSHOT_MIME: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  webp: "image/webp",
+};
+
+/**
+ * Screenshots of a 小红书 note / 公众号 post. On a phone, screenshotting is a
+ * far more natural gesture than selecting and copying text out of an app that
+ * makes selection awkward — and it's the only way to capture posts whose
+ * information is baked into an image rather than the caption.
+ *
+ * Needs a file-capable provider (Gemini/Claude/OpenAI); DeepSeek/Kimi/Qwen
+ * can't read images at all, so this deliberately errors rather than falling
+ * back to the text path, where they'd "succeed" having read nothing.
+ */
+export async function parseRecruitmentScreenshot(
+  fileBase64: string,
+  filename: string
+): Promise<ActionResult<{ positions: ImportedPosition[]; truncated: boolean }>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+
+    const ext = filename.toLowerCase().split(".").pop() ?? "";
+    const mimeType = SCREENSHOT_MIME[ext];
+    if (!mimeType) throw new UserFacingError("只支持 PNG / JPG / WebP 截图");
+
+    if (Buffer.from(fileBase64, "base64").byteLength > 10 * 1024 * 1024) {
+      throw new UserFacingError("图片不能超过 10MB");
+    }
+
+    const config = await getFileSearchKey(user.id);
+    if (!config) {
+      throw new UserFacingError(
+        "读截图需要能看图的服务商，去账号设置配一个 Gemini、Claude 或 OpenAI 的 Key（DeepSeek/Kimi/Qwen 读不了图片）"
+      );
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const raw = await generateStructuredWithFile({
+      config,
+      file: { mimeType, data: fileBase64 },
+      thinkingBudget: 1024,
+      timeoutMs: 120000,
+      prompt: `这是一张招聘信息的截图（可能来自小红书笔记、公众号推文或群聊）。先读出图里的文字，再从中挑出真正的招聘岗位，整理成结构化列表。界面元素、点赞评论数、话题标签、广告和经验分享都忽略。
+
+今天的日期是 ${today}。
+
+要求：
+- 每个岗位一条记录
+- companyName：公司名称；title：岗位名称
+- track：技术/业务方向，看不出来填 null
+- department：所属部门/事业群，没写填 null
+- location：工作城市
+- salaryMin / salaryMax：月薪，换算成以"K"（千元）为单位的数字；写年薪的换算成月薪；"面议"或没写填 null
+- deadline：YYYY-MM-DD。只写"10.15"这种没年份的，以今天 ${today} 为准补成之后最近的那个日期；"长期有效"/"滚动招聘"填 null
+- source：投递渠道，没写填 null
+- jdUrl：只在图里确实有网址时填，否则 null
+- note：其他值得保留的信息，没有填 null
+- 图里没有的信息一律填 null，绝对不要编造公司名、日期或链接
+- 看不清的地方宁可填 null，不要猜`,
+      schema: {
+        type: "OBJECT",
+        properties: {
+          positions: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                companyName: { type: "STRING", nullable: true },
+                title: { type: "STRING", nullable: true },
+                track: { type: "STRING", nullable: true },
+                department: { type: "STRING", nullable: true },
+                location: { type: "STRING", nullable: true },
+                salaryMin: { type: "NUMBER", nullable: true },
+                salaryMax: { type: "NUMBER", nullable: true },
+                deadline: { type: "STRING", nullable: true },
+                source: { type: "STRING", nullable: true },
+                jdUrl: { type: "STRING", nullable: true },
+                note: { type: "STRING", nullable: true },
+              },
+              required: ["companyName", "title"],
+            },
+          },
+        },
+        required: ["positions"],
+      },
+    });
+
+    const parsed = extractionSchema.safeParse(raw);
+    if (!parsed.success) throw new UserFacingError("AI 返回格式异常，请重试");
+    const positions = parsed.data.positions.filter((p) => p.companyName || p.title);
+    if (positions.length === 0) {
+      throw new UserFacingError(
+        "没从这张图里认出岗位——看看是不是截糊了，或者图里本来就没有具体公司和岗位"
+      );
+    }
+    return { positions, truncated: false };
   });
 }
 

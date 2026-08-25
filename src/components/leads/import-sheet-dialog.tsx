@@ -18,6 +18,7 @@ import {
 import {
   parseRecruitmentSheet,
   parseRecruitmentText,
+  parseRecruitmentScreenshot,
   importLeads,
   rankImportedPositions,
   type ImportedPosition,
@@ -42,6 +43,7 @@ export function ImportSheetDialog({
   const [batch, setBatch] = useState<string | null>(null);
   const [pasted, setPasted] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
+  const imgInput = useRef<HTMLInputElement>(null);
 
   const resumeId = defaultResumeVersionId ?? resumeVersions[0]?.id ?? null;
 
@@ -96,6 +98,33 @@ export function ImportSheetDialog({
     }
   }
 
+  async function toBase64(file: File): Promise<string> {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    // btoa can't take the whole buffer at once for large files; chunk it.
+    let binary = "";
+    for (let i = 0; i < bytes.length; i += 8192) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+    }
+    return btoa(binary);
+  }
+
+  async function handleScreenshot(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setParsing(true);
+    try {
+      const res = await parseRecruitmentScreenshot(await toBase64(file), file.name);
+      if (!res.ok) {
+        toast.error(res.message);
+        return;
+      }
+      applyParsed(res.data.positions, res.data.truncated, file.name);
+    } finally {
+      setParsing(false);
+    }
+  }
+
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
@@ -103,14 +132,7 @@ export function ImportSheetDialog({
 
     setParsing(true);
     try {
-      const buf = await file.arrayBuffer();
-      // btoa can't take the whole buffer at once for large files; chunk it.
-      let binary = "";
-      const bytes = new Uint8Array(buf);
-      for (let i = 0; i < bytes.length; i += 8192) {
-        binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
-      }
-      const res = await parseRecruitmentSheet(btoa(binary), file.name);
+      const res = await parseRecruitmentSheet(await toBase64(file), file.name);
       if (!res.ok) {
         toast.error(res.message);
         return;
@@ -216,6 +238,29 @@ export function ImportSheetDialog({
                 onClick={handlePaste}
               >
                 {parsing ? "AI 解析中..." : "解析这段文字"}
+              </Button>
+            </div>
+
+            <div className="space-y-2 border-t pt-4">
+              <p className="text-sm font-medium">方式三：传截图</p>
+              <p className="text-sm text-muted-foreground">
+                手机上刷到的招聘帖直接截图发过来，AI 会读图里的文字。图里没有的信息不会瞎猜，
+                看不清就留空。需要配 Gemini/Claude/OpenAI 的 Key（这三家能看图）。
+              </p>
+              <input
+                ref={imgInput}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="hidden"
+                onChange={handleScreenshot}
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={parsing}
+                onClick={() => imgInput.current?.click()}
+              >
+                {parsing ? "AI 读图中..." : "选择截图"}
               </Button>
             </div>
           </div>
