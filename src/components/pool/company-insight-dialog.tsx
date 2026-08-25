@@ -67,9 +67,10 @@ export function CompanyInsightDialog({
               最近动态。
             </p>
             <p className="rounded-md bg-muted/50 p-2 text-xs text-muted-foreground">
-              信息来自公开网页（新闻、知乎、脉脉、看准，以及被搜索引擎收录的小红书内容）。
-              大部分是匿名爆料和个人分享，样本少、主观性强，只能当参考，不能当事实。查不到的
-              会如实说查不到，不会拿同类公司的印象凑数。
+              信息来自公开网页（新闻、知乎、脉脉、看准等）。实测搜不到小红书内容——它没被搜索
+              引擎收录，看到好帖子可以复制原文，去「秋招信息库 → 导入信息表 → 粘贴文字」。
+              这里的结果大多是匿名爆料和个人分享，样本少、主观性强，只能当参考不能当事实；
+              查不到的会如实说查不到，不会拿同类公司的印象凑数。
             </p>
             <Button type="button" onClick={run} disabled={loading}>
               <Radar />

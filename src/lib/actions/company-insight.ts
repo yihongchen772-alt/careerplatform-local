@@ -22,16 +22,18 @@ export type CompanyInsight = z.infer<typeof insightSchema>;
 /**
  * "What's this job actually like" — salary reality, overtime, interview
  * difficulty, culture. Uses the provider's own web-search grounding over
- * publicly indexed pages (知乎/脉脉/看准/新闻, plus whatever 小红书 content
- * search engines have indexed). Qwen is preferred when configured: Alibaba
+ * publicly indexed pages (知乎/脉脉/看准/新闻). 小红书 is NOT among them —
+ * measured: a search scoped to it came back "没有搜到小红书内容", because
+ * search engines don't index it. Qwen is preferred when configured: Alibaba
  * doesn't meter `enable_search` separately, while Gemini's grounding quota
  * is tiny on the free tier and runs out almost immediately.
  *
  * Deliberately does NOT scrape 小红书 (or any login-walled platform)
  * directly: there is no public content-search API for third parties, the
  * content sits behind a login with request-signing anti-bot, and scraping it
- * would breach their terms and break constantly. Everything here comes from
- * pages that are publicly reachable.
+ * would breach their terms and risk the user's own account. Everything here
+ * comes from pages that are publicly reachable. For 小红书 specifically the
+ * supported route is pasting a post into the 信息库 importer.
  *
  * Everything returned is hearsay by nature, so the model is asked to grade
  * its own confidence and state what it couldn't find, rather than filling

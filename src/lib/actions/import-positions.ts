@@ -95,18 +95,46 @@ export async function parseRecruitmentSheet(
 ): Promise<ActionResult<{ positions: ImportedPosition[]; truncated: boolean }>> {
   return toActionResult(async () => {
     const user = await requireUser();
-
-    const config = await getUserAiConfig(user.id);
-    if (!config) {
-      throw new UserFacingError("先去账号设置配置一个 AI Key 才能解析信息表");
-    }
-
     const buffer = Buffer.from(fileBase64, "base64");
     if (buffer.byteLength > 10 * 1024 * 1024) {
       throw new UserFacingError("文件不能超过 10MB");
     }
+    return extractPositions(user.id, await sheetToText(buffer, filename), "sheet");
+  });
+}
 
-    const sheetText = await sheetToText(buffer, filename);
+/**
+ * Same extraction, but over text the user pasted in (a 小红书 / 公众号 post,
+ * a group-chat dump, an email). This exists because there is no lawful way
+ * to pull 小红书 content automatically — no third-party content API, the
+ * site is login-walled behind request-signing anti-bot, and web search
+ * surfaces none of it (measured: a scoped query returned "没有搜到小红书
+ * 内容"). Pasting is the one path that works, so it's made a first-class
+ * input rather than leaving the user to retype rows into the form.
+ */
+export async function parseRecruitmentText(
+  text: string
+): Promise<ActionResult<{ positions: ImportedPosition[]; truncated: boolean }>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const trimmed = text.trim();
+    if (trimmed.length < 10) throw new UserFacingError("粘贴的内容太短，看不出岗位信息");
+    return extractPositions(user.id, trimmed.slice(0, MAX_CHARS), "post");
+  });
+}
+
+async function extractPositions(
+  userId: string,
+  sourceText: string,
+  kind: "sheet" | "post"
+): Promise<{ positions: ImportedPosition[]; truncated: boolean }> {
+  {
+    const config = await getUserAiConfig(userId);
+    if (!config) {
+      throw new UserFacingError("先去账号设置配置一个 AI Key 才能解析");
+    }
+
+    const sheetText = sourceText;
     const truncated = sheetText.length >= MAX_CHARS;
 
     // The model has no clock, so a bare "10.15" gets a guessed (usually
@@ -114,7 +142,12 @@ export async function parseRecruitmentSheet(
     // deadline look long overdue to the reminder logic. Give it today.
     const today = new Date().toISOString().slice(0, 10);
 
-    const prompt = `下面是一份秋招信息表的原始内容（每行是表格的一行，单元格用 | 分隔）。请把它整理成结构化的岗位列表。
+    const intro =
+      kind === "sheet"
+        ? "下面是一份秋招信息表的原始内容（每行是表格的一行，单元格用 | 分隔）。请把它整理成结构化的岗位列表。"
+        : "下面是从社交平台/公众号/群聊里复制来的一段秋招信息（可能是小红书笔记、招聘推文或聊天记录，格式很随意，可能夹杂表情、话题标签和无关闲聊）。请从中挑出真正的招聘岗位，整理成结构化列表；广告、经验分享、无具体岗位的内容直接忽略。";
+
+    const prompt = `${intro}
 
 今天的日期是 ${today}。
 
@@ -175,11 +208,15 @@ ${sheetText}
     // A row with neither company nor title is noise the model failed to skip.
     const positions = parsed.data.positions.filter((p) => p.companyName || p.title);
     if (positions.length === 0) {
-      throw new UserFacingError("没从这个表格里认出任何岗位，检查一下文件内容对不对");
+      throw new UserFacingError(
+        kind === "sheet"
+          ? "没从这个表格里认出任何岗位，检查一下文件内容对不对"
+          : "没从这段文字里认出任何岗位——可能它只是经验分享、没写具体公司和岗位"
+      );
     }
 
     return { positions, truncated };
-  });
+  }
 }
 
 const rankSchema = z.object({
