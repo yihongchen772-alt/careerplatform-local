@@ -34,6 +34,20 @@ function candidateModels(modelOverride: string | undefined): string[] {
   return list.length > 0 ? list : [MODEL];
 }
 
+/**
+ * Google meters Search grounding separately from ordinary generation, and far
+ * more tightly — measured directly: with the same key at the same moment, a
+ * plain generateContent call succeeded in ~1.3s while every one of the four
+ * configured models returned 429 for a google_search-grounded call. Saying
+ * "this model is out of quota" there would send the user off to switch
+ * models, which cannot help; the cap is on the capability, not the model.
+ */
+function searchQuotaExhaustedError(): GeminiError {
+  return new GeminiError(
+    "Gemini 的「联网搜索」额度用完了——注意这跟模型额度是分开算的，换模型没用（普通的 AI 功能这会儿照样能用）。Google 免费版给联网搜索的额度非常少，需要等明天恢复，或者配一个 Claude / OpenAI 的 Key 来跑这个功能。"
+  );
+}
+
 function quotaExhaustedError(triedModels: string[]): GeminiError {
   return new GeminiError(
     triedModels.length > 1
@@ -205,7 +219,7 @@ export async function generateGrounded({
       console.error(`[gemini-search:${model}] ${response.status}`, detail.slice(0, 500));
       if (response.status === 429) {
         if (i < models.length - 1) continue;
-        throw quotaExhaustedError(models);
+        throw searchQuotaExhaustedError();
       }
       if (response.status === 400 || response.status === 403) {
         throw new GeminiError("AI 密钥无效或已过期，请到账号设置里更新");
