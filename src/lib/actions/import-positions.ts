@@ -9,6 +9,12 @@ import { getFileSearchKey, generateStructuredWithFile } from "@/lib/ai-file-sear
 import { getResumeContext } from "@/lib/resume-context";
 import { computeInterestScore } from "@/lib/scoring";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
+import {
+  sheetToText,
+  MAX_ROWS,
+  MAX_CHARS,
+  type ImportedPosition,
+} from "@/lib/sheet-import";
 
 /**
  * These sheets circulate in group chats with wildly inconsistent columns
@@ -33,63 +39,14 @@ const rowSchema = z.object({
 
 const extractionSchema = z.object({ positions: z.array(rowSchema) });
 
-export type ImportedPosition = z.infer<typeof rowSchema>;
+export type { ImportedPosition };
 
-/** Sheets in group chats get long; keep one AI call bounded. */
-const MAX_ROWS = 60;
-const MAX_CHARS = 24000;
-
-function looksLikeHeaderOrBlank(cells: string[]): boolean {
-  const joined = cells.join("").trim();
-  if (!joined) return true;
-  return /^(序号|公司|企业|岗位|职位|城市|地点|投递|截止|链接|备注|批次|类型|状态)/.test(
-    cells[0] ?? ""
-  ) && cells.length > 1;
-}
-
-/** Renders a spreadsheet buffer as pipe-delimited text rows for the model. */
-async function sheetToText(buffer: Buffer, filename: string): Promise<string> {
-  const lower = filename.toLowerCase();
-
-  if (lower.endsWith(".csv") || lower.endsWith(".tsv") || lower.endsWith(".txt")) {
-    const text = buffer.toString("utf8");
-    return text.split(/\r?\n/).slice(0, MAX_ROWS + 5).join("\n").slice(0, MAX_CHARS);
-  }
-
-  if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
-    // Imported lazily: exceljs is a heavy, server-only dependency and most
-    // requests through this module never touch a spreadsheet.
-    const ExcelJS = (await import("exceljs")).default;
-    const wb = new ExcelJS.Workbook();
-    await wb.xlsx.load(buffer as unknown as ArrayBuffer);
-
-    const lines: string[] = [];
-    wb.eachSheet((sheet) => {
-      if (lines.length > MAX_ROWS + 5) return;
-      sheet.eachRow((row) => {
-        if (lines.length > MAX_ROWS + 5) return;
-        const cells: string[] = [];
-        row.eachCell({ includeEmpty: true }, (cell) => {
-          const v = cell.value;
-          if (v == null) cells.push("");
-          else if (typeof v === "object" && "text" in v) cells.push(String(v.text));
-          else if (typeof v === "object" && "hyperlink" in v)
-            cells.push(String((v as { hyperlink: string }).hyperlink));
-          else if (v instanceof Date) cells.push(v.toISOString().slice(0, 10));
-          else cells.push(String(v));
-        });
-        if (!looksLikeHeaderOrBlank(cells) || lines.length === 0) {
-          lines.push(cells.join(" | "));
-        }
-      });
-    });
-    if (lines.length === 0) throw new UserFacingError("这个表格里没读到任何内容");
-    return lines.join("\n").slice(0, MAX_CHARS);
-  }
-
-  throw new UserFacingError("只支持 Excel（.xlsx/.xls）或 CSV 文件");
-}
-
+/**
+ * AI fallback for sheets with no recognisable header. The header-mapped path
+ * lives in POST /api/import/sheet — a route handler, because sending the file
+ * through a Server Action hits both the body-size limit and React's payload
+ * guard on real multi-MB sheets.
+ */
 export async function parseRecruitmentSheet(
   fileBase64: string,
   filename: string
@@ -97,9 +54,6 @@ export async function parseRecruitmentSheet(
   return toActionResult(async () => {
     const user = await requireUser();
     const buffer = Buffer.from(fileBase64, "base64");
-    if (buffer.byteLength > 10 * 1024 * 1024) {
-      throw new UserFacingError("文件不能超过 10MB");
-    }
     return extractPositions(user.id, await sheetToText(buffer, filename), "sheet");
   });
 }
