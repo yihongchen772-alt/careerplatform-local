@@ -25,6 +25,10 @@ import { POSITION_STATUS_LABELS } from "@/lib/stage-labels";
 import { daysUntil } from "@/lib/reminders";
 import { PositionFormDialog } from "@/components/pool/position-form-dialog";
 import {
+  CompanyInsightDialog,
+  CompanyInsightTrigger,
+} from "@/components/pool/company-insight-dialog";
+import {
   InterviewPrepDialog,
   InterviewPrepTrigger,
 } from "@/components/pool/interview-prep-dialog";
@@ -93,6 +97,7 @@ export function PoolTable({
   const [markingId, setMarkingId] = useState<string | null>(null);
   const [matchingId, setMatchingId] = useState<string | null>(null);
   const [prepId, setPrepId] = useState<string | null>(null);
+  const [insightId, setInsightId] = useState<string | null>(null);
   const [batchMarking, setBatchMarking] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
@@ -107,6 +112,7 @@ export function PoolTable({
   const marking = sorted.find((p) => p.id === markingId);
   const matching = sorted.find((p) => p.id === matchingId);
   const preparing = sorted.find((p) => p.id === prepId);
+  const inspecting = sorted.find((p) => p.id === insightId);
   const selectedPositions = sorted.filter((p) => selected.has(p.id));
 
   function toggleSelected(id: string, checked: boolean) {
@@ -207,6 +213,7 @@ export function PoolTable({
                 <div className="flex flex-wrap justify-end gap-1">
                   <MatchResumeTrigger onClick={() => setMatchingId(p.id)} />
                   <InterviewPrepTrigger onClick={() => setPrepId(p.id)} />
+                  <CompanyInsightTrigger onClick={() => setInsightId(p.id)} />
                   {p.status !== "APPLIED" && (
                     <Button
                       size="sm"
@@ -329,6 +336,7 @@ export function PoolTable({
                 <TableCell className="space-x-2 text-right">
                   <MatchResumeTrigger onClick={() => setMatchingId(p.id)} />
                   <InterviewPrepTrigger onClick={() => setPrepId(p.id)} />
+                  <CompanyInsightTrigger onClick={() => setInsightId(p.id)} />
                   {p.status !== "APPLIED" && (
                     <Button
                       size="sm"
@@ -383,6 +391,15 @@ export function PoolTable({
           initialResult={preparing.interviewPrep}
           open={!!prepId}
           onOpenChange={(open) => !open && setPrepId(null)}
+        />
+      )}
+
+      {inspecting && (
+        <CompanyInsightDialog
+          positionId={inspecting.id}
+          positionLabel={`${inspecting.company.name} · ${inspecting.title}`}
+          open={!!insightId}
+          onOpenChange={(open) => !open && setInsightId(null)}
         />
       )}
 
