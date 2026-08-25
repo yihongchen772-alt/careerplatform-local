@@ -4,9 +4,9 @@ import { requireUser } from "@/lib/session";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AddStageForm } from "@/components/applications/add-stage-form";
-import { AttachmentList } from "@/components/applications/attachment-list";
 import { ApplicationAttachments } from "@/components/applications/application-attachments";
 import { OfferEditForm } from "@/components/applications/offer-edit-form";
+import { StageTimeline } from "@/components/applications/stage-timeline";
 import { InterviewQaCard } from "@/components/applications/interview-qa-card";
 import { STAGE_BADGE_VARIANT, STAGE_LABELS } from "@/lib/stage-labels";
 import type { InterviewQa } from "@/lib/validation";
@@ -65,35 +65,24 @@ export default async function ApplicationDetailPage({
           <CardHeader>
             <CardTitle>状态流转时间线</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {application.stageHistory.map((h) => (
-              <div key={h.id} className="border-l-2 pl-3">
-                <div className="flex items-center gap-2">
-                  <Badge variant={STAGE_BADGE_VARIANT[h.stage]}>
-                    {STAGE_LABELS[h.stage]}
-                  </Badge>
-                  <span className="text-xs text-muted-foreground">
-                    {h.enteredAt.toLocaleString()}
-                  </span>
-                </div>
-                {(h.interviewFormat || h.interviewer) && (
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {h.interviewFormat} {h.interviewer && `· ${h.interviewer}`}
-                  </p>
-                )}
-                {h.note && <p className="mt-1 text-sm">{h.note}</p>}
-                {h.nextDeadline && (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    下一步截止：{h.nextDeadline.toLocaleDateString()}
-                  </p>
-                )}
-                {h.attachments.length > 0 && (
-                  <div className="mt-2">
-                    <AttachmentList attachments={h.attachments} />
-                  </div>
-                )}
-              </div>
-            ))}
+          <CardContent>
+            <StageTimeline
+              canDelete={application.stageHistory.length > 1}
+              entries={application.stageHistory.map((h) => ({
+                id: h.id,
+                stage: h.stage,
+                enteredAt: h.enteredAt.toISOString(),
+                note: h.note,
+                interviewFormat: h.interviewFormat,
+                interviewer: h.interviewer,
+                nextDeadline: h.nextDeadline?.toISOString() ?? null,
+                attachments: h.attachments.map((a) => ({
+                  id: a.id,
+                  url: a.url,
+                  name: a.name,
+                })),
+              }))}
+            />
           </CardContent>
         </Card>
 

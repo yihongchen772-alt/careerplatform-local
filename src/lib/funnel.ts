@@ -8,6 +8,7 @@ import type { ApplicationStage } from "@prisma/client";
 export const FUNNEL_STAGES: ApplicationStage[] = [
   "APPLIED",
   "SCREENING",
+  "ASSESSMENT",
   "OA",
   "INTERVIEW_1",
   "INTERVIEW_2",
