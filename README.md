@@ -150,6 +150,11 @@ npm run electron:build
   7-Zip 打包失败的问题——`.bin` 其实运行时用不上，直接从打包清单里去掉了），
   但只验证到"打得出包"，没有 Windows 机器实际装过、跑过，安装体验/运行
   是否顺畅没有第一手验证。
+- **Windows 必须显式指定架构**：electron-builder 默认跟随**打包机器**的架构，
+  在 Apple Silicon 的 Mac 上打出来的是 win-arm64 安装包——绝大多数 Windows
+  PC（Intel/AMD）根本装不上。所以 `build.win.target` 里显式写了
+  `arch: ["x64", "arm64"]`，产物文件名也带上架构后缀避免拿错。已用
+  `file` 读 PE 头核对过：x64 包是 `x86-64`，arm64 包是 `Aarch64`。
 - **首次启动稍慢**：第一次打开要跑数据库迁移，正常几秒内完成；如果卡住
   很久说明迁移失败了，看不到界面的话可以在终端跑 `npm run electron:dev`
   看具体报错。

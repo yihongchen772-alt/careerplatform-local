@@ -100,10 +100,19 @@
       "category": "public.app-category.productivity"
     },
     "win": {
-      "target": "nsis"
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ]
     },
     "linux": {
       "target": "AppImage"
-    }
+    },
+    "artifactName": "${productName}-${version}-${arch}.${ext}"
   }
 }
