@@ -527,6 +527,116 @@ export async function deleteLeads(leadIds: string[]): Promise<ActionResult<{ del
   });
 }
 
+/**
+ * Upper bound per refine call. The whole point of the header-mapped path is
+ * that it handles thousands of rows an AI never could; refining is the
+ * opposite trade — smart but context-bound — so it deliberately works on a
+ * hand-picked subset rather than the whole sheet.
+ */
+const MAX_REFINE_ROWS = 40;
+
+/**
+ * Second pass over rows that came from header mapping. Column mapping copies
+ * cells verbatim, which is faithful but dumb: these sheets routinely cram a
+ * dozen roles into one 岗位 cell ("算法工程师(运控/VLA/SLAM)、具身AI Infra
+ * 研发工程师、…"), leave 方向 unlabelled, and mix 学历要求 into 备注. This
+ * asks the model to split those apart and normalise them — the judgement
+ * work mapping can't do — without ever needing the full sheet in context.
+ */
+export async function refineImportedRows(
+  rows: ImportedPosition[]
+): Promise<ActionResult<{ positions: ImportedPosition[]; inputCount: number }>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    if (rows.length === 0) throw new UserFacingError("先勾选要精读的岗位");
+    if (rows.length > MAX_REFINE_ROWS) {
+      throw new UserFacingError(
+        `一次最多精读 ${MAX_REFINE_ROWS} 条（现在选了 ${rows.length} 条）——AI 一次读不下太多，分批选吧`
+      );
+    }
+
+    const config = await getUserAiConfig(user.id);
+    if (!config) throw new UserFacingError("先去账号设置配置一个 AI Key");
+
+    const today = new Date().toISOString().slice(0, 10);
+    const listing = rows
+      .map(
+        (r, i) =>
+          `[${i}] 公司：${r.companyName ?? ""}｜岗位：${r.title ?? ""}｜方向：${r.track ?? ""}｜部门：${r.department ?? ""}｜地点：${r.location ?? ""}｜薪资：${r.salaryMin ?? ""}-${r.salaryMax ?? ""}｜截止：${r.deadline ?? ""}｜渠道：${r.source ?? ""}｜备注：${r.note ?? ""}`
+      )
+      .join("\n");
+
+    const raw = await callTextAi({
+      config,
+      thinkingBudget: 1024,
+      timeoutMs: 120000,
+      prompt: `下面是从秋招信息表里按列抓出来的原始记录，字段没整理过。请把它们整理干净。
+
+今天的日期是 ${today}。
+
+原始记录：
+${listing}
+
+整理要求：
+- 一个格子里塞了多个岗位的，拆成多条。比如"算法工程师(运控/SLAM)、嵌入式工程师、机械工程师"要拆成 3 条，公司、地点、截止日期等信息各自复制一份
+- title 只保留岗位名本身，去掉括号里的一长串方向罗列、去掉"招聘""诚聘"这类词
+- track：归纳成简短的方向，比如"后端开发""算法""硬件""产品""运营""教师"，看不出来填 null
+- location：多个城市保留，但去掉"全国各地"这种无信息量的词
+- deadline：整理成 YYYY-MM-DD；"招满为止""长期有效"这类填 null；只有月日的以今天 ${today} 为准补成之后最近的日期
+- salaryMin / salaryMax：以 K（千元/月）为单位的数字，原始记录里没有就填 null，不要猜
+- note：把学历要求、福利、是否笔试这类有用信息浓缩成一句话，去掉广告词和重复内容；没有就填 null
+- 不要编造原始记录里没有的信息，尤其是公司名、薪资、日期和链接
+- 拆分后总条数可以多于输入条数`,
+      schema: {
+        type: "OBJECT",
+        properties: {
+          positions: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                companyName: { type: "STRING", nullable: true },
+                title: { type: "STRING", nullable: true },
+                track: { type: "STRING", nullable: true },
+                department: { type: "STRING", nullable: true },
+                location: { type: "STRING", nullable: true },
+                salaryMin: { type: "NUMBER", nullable: true },
+                salaryMax: { type: "NUMBER", nullable: true },
+                deadline: { type: "STRING", nullable: true },
+                source: { type: "STRING", nullable: true },
+                jdUrl: { type: "STRING", nullable: true },
+                note: { type: "STRING", nullable: true },
+              },
+              required: ["companyName", "title"],
+            },
+          },
+        },
+        required: ["positions"],
+      },
+    });
+
+    const parsed = extractionSchema.safeParse(raw);
+    if (!parsed.success) throw new UserFacingError("AI 返回格式异常，请重试");
+
+    const positions = parsed.data.positions.filter((p) => p.companyName && p.title);
+    if (positions.length === 0) throw new UserFacingError("AI 没整理出有效结果，请重试");
+
+    // The listing above omits links (they're long and waste context), so put
+    // them back by company name.
+    const urlByCompany = new Map(
+      rows.filter((r) => r.jdUrl).map((r) => [r.companyName ?? "", r.jdUrl as string])
+    );
+    for (const p of positions) {
+      if (!p.jdUrl && p.companyName && urlByCompany.has(p.companyName)) {
+        p.jdUrl = urlByCompany.get(p.companyName) ?? null;
+      }
+    }
+
+    return { positions, inputCount: rows.length };
+  });
+}
+
+
 /** Scores leads already stored in the library (the import-time ranking, re-runnable). */
 export async function rankStoredLeads(
   leadIds: string[],
