@@ -17,11 +17,39 @@ export const ALLOWED_UPLOAD_MIME = [
   "image/webp",
 ];
 
+/**
+ * The 资料库 holds more than resumes and screenshots — certificates, slide
+ * decks, portfolio archives and past written-test papers all live there, and
+ * those arrive as Office files or zips. Kept as a separate list so the
+ * resume/JD upload paths, where a .zip would be meaningless, stay narrow.
+ */
+export const ALLOWED_LIBRARY_MIME = [
+  ...ALLOWED_UPLOAD_MIME,
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/zip",
+  "text/plain",
+  "text/markdown",
+];
+
 const EXT_BY_MIME: Record<string, string> = {
   "application/pdf": ".pdf",
   "image/png": ".png",
   "image/jpeg": ".jpg",
   "image/webp": ".webp",
+  "application/msword": ".doc",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+  "application/vnd.ms-powerpoint": ".ppt",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+  "application/vnd.ms-excel": ".xls",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+  "application/zip": ".zip",
+  "text/plain": ".txt",
+  "text/markdown": ".md",
 };
 
 export async function saveLocalFile(

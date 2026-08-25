@@ -10,7 +10,9 @@ import {
   CalendarDays,
   Database,
   FileText,
+  FolderOpen,
   LayoutDashboard,
+  Library,
   ListChecks,
   Menu,
   MessageSquare,
@@ -40,6 +42,7 @@ const groups: { label: string; links: NavLink[] }[] = [
       { href: "/applications", label: "投递记录", icon: Send },
       { href: "/mock-interview", label: "AI 模拟面试", icon: MessageSquare },
       { href: "/interviews", label: "面经库", icon: BookOpen },
+      { href: "/question-banks", label: "题库", icon: Library },
       { href: "/calendar", label: "日历视图", icon: CalendarDays },
       { href: "/insights", label: "转化率", icon: TrendingUp },
       { href: "/compare", label: "Offer 对比", icon: Scale },
@@ -50,6 +53,7 @@ const groups: { label: string; links: NavLink[] }[] = [
     links: [
       { href: "/companies", label: "企业名录", icon: Building2 },
       { href: "/resumes", label: "简历版本", icon: FileText },
+      { href: "/library", label: "资料库", icon: FolderOpen },
     ],
   },
   {

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { Sparkles } from "lucide-react";
+import { Library, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { generateInterviewQa } from "@/lib/actions/interview-qa";
+import { saveQaAsBank } from "@/lib/actions/question-banks";
 import type { InterviewQa } from "@/lib/validation";
 
 type ResumeOption = { id: string; name: string };
@@ -33,6 +34,24 @@ export function InterviewQaCard({
     defaultResumeVersionId ?? resumeVersions[0]?.id ?? ""
   );
   const [result, setResult] = useState<InterviewQa | null>(initialResult);
+  const [saving, setSaving] = useState(false);
+
+  // Generated Q&A lives on the application and dies with it. Saving it as a
+  // standalone bank is what makes it survive, reusable for the next company
+  // asking the same questions — and exportable to share.
+  async function handleSaveAsBank() {
+    setSaving(true);
+    try {
+      const res = await saveQaAsBank(applicationId);
+      if (!res.ok) {
+        toast.error(res.message);
+        return;
+      }
+      toast.success(`已存进题库（${res.data.count} 题），可在「题库」页导出`);
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function run() {
     if (!resumeVersionId) {
@@ -93,7 +112,19 @@ export function InterviewQaCard({
           </div>
         ) : (
           <div className="space-y-4">
-            <p className="text-sm">{result.summary}</p>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <p className="flex-1 text-sm">{result.summary}</p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={saving}
+                onClick={handleSaveAsBank}
+              >
+                <Library className="mr-1.5 size-4" />
+                {saving ? "保存中..." : "存进题库"}
+              </Button>
+            </div>
 
             {result.questions.map((q, i) => (
               <div key={i} className="space-y-2 rounded-lg border p-3">

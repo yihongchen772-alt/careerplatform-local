@@ -301,3 +301,55 @@ function toDTO(m: {
 }): InterviewMessageDTO {
   return { id: m.id, role: m.role, content: m.content, deliveryNote: m.deliveryNote ?? null };
 }
+
+/**
+ * Deletes a whole mock-interview session. Sessions accumulate fast — a few
+ * abandoned after two questions, a few started against the wrong resume —
+ * and with no way to remove them the history list becomes unusable as a
+ * record of the ones that mattered. Messages go with it via the cascade on
+ * InterviewMessage.sessionId.
+ */
+export async function deleteInterviewSession(
+  sessionId: string
+): Promise<ActionResult<null>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const deleted = await db.interviewSession.deleteMany({
+      where: { id: sessionId, userId: user.id },
+    });
+    if (deleted.count === 0) throw new UserFacingError("未找到该面试记录");
+    revalidatePath("/mock-interview");
+    return null;
+  });
+}
+
+/**
+ * Renames a session. The auto-generated label is the position or target
+ * role, which stops being distinguishable the third time you practise for
+ * the same job — "字节三面重练" is what makes the list navigable.
+ */
+export async function renameInterviewSession(
+  sessionId: string,
+  targetRole: string
+): Promise<ActionResult<null>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const name = targetRole.trim();
+    if (!name) throw new UserFacingError("名字不能为空");
+
+    const session = await db.interviewSession.findFirst({
+      where: { id: sessionId, userId: user.id },
+    });
+    if (!session) throw new UserFacingError("未找到该面试记录");
+
+    // Clearing positionId as well, otherwise the position's label keeps
+    // winning over the name the user just typed when the list renders.
+    await db.interviewSession.update({
+      where: { id: sessionId },
+      data: { targetRole: name, positionId: null },
+    });
+    revalidatePath("/mock-interview");
+    revalidatePath(`/mock-interview/${sessionId}`);
+    return null;
+  });
+}

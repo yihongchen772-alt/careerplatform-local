@@ -71,6 +71,7 @@ export const positionSchema = z.object({
 export const applicationStageValues = [
   "APPLIED",
   "SCREENING",
+  "ASSESSMENT",
   "OA",
   "INTERVIEW_1",
   "INTERVIEW_2",

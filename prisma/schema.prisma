@@ -63,6 +63,7 @@ model User {
   careerFitAnalysis      CareerFitAnalysis?
   aiKeys                 AiKey[]
   jobLeads               JobLead[]
+  questionBanks          QuestionBank[]
 }
 
 model AiKey {
@@ -211,6 +212,7 @@ model Position {
 enum ApplicationStage {
   APPLIED
   SCREENING
+  ASSESSMENT
   OA
   INTERVIEW_1
   INTERVIEW_2
@@ -288,6 +290,10 @@ model Attachment {
   stageHistoryId String?
   url            String
   name           String
+  /// Shelf in the 资料库 (证书 / 作品集 / 笔试资料 / 其他). Null on the
+  /// attachments that predate the library, and on ones uploaded straight
+  /// onto an application, where the application itself is the context.
+  category       String?
   createdAt      DateTime @default(now())
 
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -430,6 +436,29 @@ model InterviewMessage {
   session InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([sessionId])
+}
+
+/// A set of interview questions that can live on its own, separate from
+/// InterviewQA (which is generated for one specific application and is
+/// deleted with it). Banks are what people actually trade with each other in
+/// 秋招 group chats, so they need to be importable and exportable — which
+/// means they cannot be tied to one of *this* user's applications.
+model QuestionBank {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  /// Where it came from: a company name, a friend's share, "AI 生成", …
+  source    String?
+  /// QuestionBankItem[] — see src/lib/question-bank-shared.ts. Stored as JSON
+  /// rather than a table because a bank is always read and written whole;
+  /// nothing ever queries across individual questions.
+  questions Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 enum PersonalityTestType {

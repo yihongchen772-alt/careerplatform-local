@@ -3,6 +3,7 @@ import type { ApplicationStage, PositionStatus } from "@prisma/client";
 export const STAGE_ORDER: ApplicationStage[] = [
   "APPLIED",
   "SCREENING",
+  "ASSESSMENT",
   "OA",
   "INTERVIEW_1",
   "INTERVIEW_2",
@@ -17,6 +18,7 @@ export const STAGE_ORDER: ApplicationStage[] = [
 export const STAGE_LABELS: Record<ApplicationStage, string> = {
   APPLIED: "已投递",
   SCREENING: "简历筛选中",
+  ASSESSMENT: "测评",
   OA: "笔试",
   INTERVIEW_1: "一面",
   INTERVIEW_2: "二面",
@@ -34,6 +36,7 @@ export const STAGE_BADGE_VARIANT: Record<
 > = {
   APPLIED: "secondary",
   SCREENING: "secondary",
+  ASSESSMENT: "outline",
   OA: "outline",
   INTERVIEW_1: "outline",
   INTERVIEW_2: "outline",

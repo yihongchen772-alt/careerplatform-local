@@ -1,11 +1,9 @@
-import Link from "next/link";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { MockInterviewStartForm } from "@/components/mock-interview/start-form";
-import { MessageSquare } from "lucide-react";
+import { MockInterviewSessionList } from "@/components/mock-interview/session-list";
 
 export default async function MockInterviewPage() {
   const user = await requireUser();
@@ -62,29 +60,17 @@ export default async function MockInterviewPage() {
 
       {sessions.length > 0 && (
         <Card>
-          <CardContent className="space-y-2 pt-6">
-            <p className="text-sm font-medium">历史记录</p>
-            {sessions.map((s) => (
-              <Link
-                key={s.id}
-                href={`/mock-interview/${s.id}`}
-                className="flex items-center justify-between gap-2 rounded-md border p-2 text-sm hover:bg-muted"
-              >
-                <div className="flex min-w-0 items-center gap-2">
-                  <MessageSquare className="size-4 shrink-0 text-muted-foreground" />
-                  <span className="truncate">
-                    {s.position
-                      ? `${s.position.company.name} · ${s.position.title}`
-                      : s.targetRole || "通用面试"}
-                    {" · "}
-                    {s.resumeVersion.name}
-                  </span>
-                </div>
-                <Badge variant={s.status === "ENDED" ? "secondary" : "outline"}>
-                  {s.status === "ENDED" ? "已结束" : "进行中"}
-                </Badge>
-              </Link>
-            ))}
+          <CardContent className="pt-6">
+            <MockInterviewSessionList
+              sessions={sessions.map((s) => ({
+                id: s.id,
+                label: s.position
+                  ? `${s.position.company.name} · ${s.position.title}`
+                  : s.targetRole || "通用面试",
+                resumeName: s.resumeVersion.name,
+                status: s.status,
+              }))}
+            />
           </CardContent>
         </Card>
       )}

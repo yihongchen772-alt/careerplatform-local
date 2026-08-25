@@ -9,8 +9,25 @@ export async function addAttachment(
   input:
     | { applicationId: string; url: string; name: string }
     | { stageHistoryId: string; url: string; name: string }
+    | { category: string; url: string; name: string }
 ) {
   const user = await requireUser();
+
+  // A library file belongs to no application — certificates and portfolios
+  // outlive any single application, which is the whole point of having a
+  // shelf for them.
+  if ("category" in input) {
+    const attachment = await db.attachment.create({
+      data: {
+        userId: user.id,
+        url: input.url,
+        name: input.name,
+        category: input.category,
+      },
+    });
+    revalidatePath("/library");
+    return attachment;
+  }
 
   if ("applicationId" in input) {
     const application = await db.application.findFirst({
@@ -60,4 +77,5 @@ export async function deleteAttachment(id: string) {
   if (attachment.applicationId) {
     revalidatePath(`/applications/${attachment.applicationId}`);
   }
+  revalidatePath("/library");
 }
