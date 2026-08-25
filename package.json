@@ -21,6 +21,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "date-fns": "^4.4.0",
+    "exceljs": "^4.4.0",
     "imapflow": "^1.7.2",
     "lucide-react": "^1.33.0",
     "mailparser": "^3.9.15",
