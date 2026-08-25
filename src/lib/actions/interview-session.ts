@@ -21,6 +21,8 @@ export type InterviewMessageDTO = {
   id: string;
   role: InterviewMessageRole;
   content: string;
+  /** Set only on spoken answers — how it sounded, not what was said. */
+  deliveryNote?: string | null;
 };
 
 /** Real back-and-forth chat — several AI calls per session, so it needs the
@@ -120,12 +122,14 @@ ${resumeText}
 
 export async function sendInterviewMessage(
   sessionId: string,
-  content: string
+  content: string,
+  /** Passed through from the transcription step when the answer was spoken. */
+  deliveryNote?: string | null
 ): Promise<ActionResult<{ messages: InterviewMessageDTO[]; ended: boolean }>> {
-  return toActionResult(() => runSend(sessionId, content));
+  return toActionResult(() => runSend(sessionId, content, deliveryNote));
 }
 
-async function runSend(sessionId: string, content: string) {
+async function runSend(sessionId: string, content: string, deliveryNote?: string | null) {
   const user = await requireUser();
   const data = sendInterviewMessageSchema.parse({ content });
 
@@ -139,7 +143,7 @@ async function runSend(sessionId: string, content: string) {
   const config = await requireOwnAiConfig(user.id);
 
   await db.interviewMessage.create({
-    data: { sessionId, role: "USER", content: data.content },
+    data: { sessionId, role: "USER", content: data.content, deliveryNote: deliveryNote || null },
   });
 
   const { resumeText, jobDescription } = await buildContext(
@@ -221,9 +225,18 @@ async function runEnd(sessionId: string) {
     session.targetRole ?? undefined
   );
 
+  // Spoken answers carry a delivery note the transcript can't show. Folding
+  // it in here is the whole reason it's stored: a written-out answer can read
+  // fine while the actual delivery was full of "呃" and 40-second pauses.
   const transcript = session.messages
-    .map((m) => `${m.role === "ASSISTANT" ? "面试官" : "候选人"}：${m.content}`)
+    .map((m) => {
+      const who = m.role === "ASSISTANT" ? "面试官" : "候选人";
+      const delivery = m.deliveryNote ? `\n  （口头表达：${m.deliveryNote}）` : "";
+      return `${who}：${m.content}${delivery}`;
+    })
     .join("\n");
+
+  const spokenCount = session.messages.filter((m) => m.deliveryNote).length;
 
   const prompt = `以下是一场模拟面试的完整对话记录，请给出面试后的整体反馈。
 
@@ -241,6 +254,13 @@ ${transcript}
 - strengths：候选人表现好的地方，要具体（引用对话里的实际回答）
 - improvements：需要改进的地方，要具体、可执行
 - summary：一两句总体评价
+${
+    spokenCount > 0
+      ? "\n这场面试里有 " +
+        spokenCount +
+        " 个回答是口头作答的，对话记录里带了「口头表达」的观察。评价时把表达方式也算进去（语速、流利度、口头禅、停顿），并在 improvements 里给出可练的具体建议——这是打字面试看不出来的部分，别忽略。"
+      : ""
+  }
 
 全部用中文。`;
 
@@ -273,6 +293,11 @@ ${transcript}
   return parsed.data;
 }
 
-function toDTO(m: { id: string; role: InterviewMessageRole; content: string }): InterviewMessageDTO {
-  return { id: m.id, role: m.role, content: m.content };
+function toDTO(m: {
+  id: string;
+  role: InterviewMessageRole;
+  content: string;
+  deliveryNote?: string | null;
+}): InterviewMessageDTO {
+  return { id: m.id, role: m.role, content: m.content, deliveryNote: m.deliveryNote ?? null };
 }

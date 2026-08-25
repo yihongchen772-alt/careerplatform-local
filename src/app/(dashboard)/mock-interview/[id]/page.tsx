@@ -41,6 +41,7 @@ export default async function MockInterviewDetailPage({
           id: m.id,
           role: m.role,
           content: m.content,
+          deliveryNote: m.deliveryNote,
         }))}
         initialStatus={session.status}
         initialFeedback={session.feedback as InterviewFeedback | null}

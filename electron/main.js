@@ -125,6 +125,16 @@ function createWindow({ show = true } = {}) {
       nodeIntegration: false,
     },
   });
+  // Spoken answers in the mock interview need getUserMedia. Electron denies
+  // every permission request by default, so without this the mic button
+  // fails with no visible reason. Only media is granted — anything else
+  // (geolocation, notifications from the page, etc.) stays denied.
+  mainWindow.webContents.session.setPermissionRequestHandler(
+    (_webContents, permission, callback) => {
+      callback(permission === "media" || permission === "audioCapture");
+    }
+  );
+
   mainWindow.loadURL(`http://localhost:${PORT}`);
 
   // With background reminders on, closing the window parks the app in the

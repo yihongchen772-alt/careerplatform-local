@@ -1,8 +1,7 @@
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
-import { Card, CardContent } from "@/components/ui/card";
 import { AddApplicationDialog } from "@/components/applications/add-application-dialog";
-import { ApplicationsTable } from "@/components/applications/applications-table";
+import { ApplicationsView } from "@/components/applications/applications-view";
 
 export default async function ApplicationsPage() {
   const user = await requireUser();
@@ -33,17 +32,13 @@ export default async function ApplicationsPage() {
         />
       </div>
 
-      <Card>
-        <CardContent className="pt-6">
-          <ApplicationsTable
-            applications={applications.map((a) => ({
-              ...a,
-              appliedDate: a.appliedDate.toISOString(),
-              currentStageDate: a.currentStageDate.toISOString(),
-            }))}
-          />
-        </CardContent>
-      </Card>
+      <ApplicationsView
+        applications={applications.map((a) => ({
+          ...a,
+          appliedDate: a.appliedDate.toISOString(),
+          currentStageDate: a.currentStageDate.toISOString(),
+        }))}
+      />
     </div>
   );
 }

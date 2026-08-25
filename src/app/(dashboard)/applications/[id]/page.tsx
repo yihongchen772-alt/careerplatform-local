@@ -105,6 +105,10 @@ export default async function ApplicationDetailPage({
               salaryMin: application.salaryMin,
               salaryMax: application.salaryMax,
               offerNote: application.offerNote,
+              offerAnnualTotal: application.offerAnnualTotal,
+              commuteMinutes: application.commuteMinutes,
+              overtimeNote: application.overtimeNote,
+              growthNote: application.growthNote,
             }}
           />
         </div>

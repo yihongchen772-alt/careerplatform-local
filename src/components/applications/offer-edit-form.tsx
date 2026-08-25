@@ -14,11 +14,23 @@ export function OfferEditForm({
   initial,
 }: {
   applicationId: string;
-  initial: { salaryMin: number | null; salaryMax: number | null; offerNote: string | null };
+  initial: {
+    salaryMin: number | null;
+    salaryMax: number | null;
+    offerNote: string | null;
+    offerAnnualTotal: number | null;
+    commuteMinutes: number | null;
+    overtimeNote: string | null;
+    growthNote: string | null;
+  };
 }) {
   const [salaryMin, setSalaryMin] = useState(initial.salaryMin?.toString() ?? "");
   const [salaryMax, setSalaryMax] = useState(initial.salaryMax?.toString() ?? "");
   const [offerNote, setOfferNote] = useState(initial.offerNote ?? "");
+  const [annualTotal, setAnnualTotal] = useState(initial.offerAnnualTotal?.toString() ?? "");
+  const [commute, setCommute] = useState(initial.commuteMinutes?.toString() ?? "");
+  const [overtime, setOvertime] = useState(initial.overtimeNote ?? "");
+  const [growth, setGrowth] = useState(initial.growthNote ?? "");
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -29,6 +41,10 @@ export function OfferEditForm({
         salaryMin: salaryMin ? Number(salaryMin) : undefined,
         salaryMax: salaryMax ? Number(salaryMax) : undefined,
         offerNote: offerNote || undefined,
+        offerAnnualTotal: annualTotal ? Number(annualTotal) : null,
+        commuteMinutes: commute ? Number(commute) : null,
+        overtimeNote: overtime || undefined,
+        growthNote: growth || undefined,
       });
       toast.success("已保存");
     } catch {
@@ -41,7 +57,7 @@ export function OfferEditForm({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>薪资 / Offer 备注</CardTitle>
+        <CardTitle>薪资 / Offer 详情</CardTitle>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -62,6 +78,41 @@ export function OfferEditForm({
                 onChange={(e) => setSalaryMax(e.target.value)}
               />
             </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">年包（万）</Label>
+              <Input
+                type="number"
+                value={annualTotal}
+                onChange={(e) => setAnnualTotal(e.target.value)}
+                placeholder="含奖金/股票"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">单程通勤（分钟）</Label>
+              <Input
+                type="number"
+                value={commute}
+                onChange={(e) => setCommute(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">加班情况</Label>
+            <Input
+              value={overtime}
+              onChange={(e) => setOvertime(e.target.value)}
+              placeholder="大小周 / 弹性 / 旺季封闭一个月"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">发展空间</Label>
+            <Input
+              value={growth}
+              onChange={(e) => setGrowth(e.target.value)}
+              placeholder="团队、mentor、技术栈、晋升路径"
+            />
           </div>
           <div className="space-y-1">
             <Label className="text-xs text-muted-foreground">备注</Label>

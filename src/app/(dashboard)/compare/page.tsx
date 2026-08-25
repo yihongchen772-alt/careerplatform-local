@@ -5,6 +5,7 @@ import { requireUser } from "@/lib/session";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { STAGE_BADGE_VARIANT, STAGE_LABELS } from "@/lib/stage-labels";
+import { OfferCompareTable, type OfferRow } from "@/components/compare/offer-compare-table";
 
 export default async function ComparePage() {
   const user = await requireUser();
@@ -41,7 +42,36 @@ export default async function ComparePage() {
           </span>
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <>
+          {/* Table on desktop, cards on phones — the same data twice rather
+              than a table that scrolls sideways on a 390px screen. */}
+          <div className="hidden sm:block">
+            <OfferCompareTable
+              offers={applications.map((app): OfferRow => {
+                const offerStage = app.stageHistory.find(
+                  (h) => h.stage === "OFFER" || h.stage === "ACCEPTED"
+                );
+                return {
+                  id: app.id,
+                  companyName: app.company.name,
+                  title: app.title,
+                  stage: app.currentStage,
+                  location: app.position?.location ?? null,
+                  salaryMin: app.salaryMin,
+                  salaryMax: app.salaryMax,
+                  offerAnnualTotal: app.offerAnnualTotal,
+                  commuteMinutes: app.commuteMinutes,
+                  overtimeNote: app.overtimeNote,
+                  growthNote: app.growthNote,
+                  offerNote: app.offerNote,
+                  offerDate: offerStage?.enteredAt.toLocaleDateString() ?? null,
+                  decideBy: offerStage?.nextDeadline?.toLocaleDateString() ?? null,
+                };
+              })}
+            />
+          </div>
+
+        <div className="grid gap-4 sm:hidden">
           {applications.map((app) => {
             const offerStage = app.stageHistory.find(
               (h) => h.stage === "OFFER" || h.stage === "ACCEPTED"
@@ -106,6 +136,7 @@ export default async function ComparePage() {
             );
           })}
         </div>
+        </>
       )}
     </div>
   );
