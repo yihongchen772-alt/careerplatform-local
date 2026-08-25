@@ -136,6 +136,10 @@ export async function updateApplicationOffer(
       salaryMin: data.salaryMin ?? undefined,
       salaryMax: data.salaryMax ?? undefined,
       offerNote: data.offerNote,
+      offerAnnualTotal: data.offerAnnualTotal ?? null,
+      commuteMinutes: data.commuteMinutes ?? null,
+      overtimeNote: data.overtimeNote || null,
+      growthNote: data.growthNote || null,
     },
   });
 

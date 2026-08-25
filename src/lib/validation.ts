@@ -96,6 +96,12 @@ export const offerUpdateSchema = z.object({
   salaryMin: z.coerce.number().int().optional().nullable(),
   salaryMax: z.coerce.number().int().optional().nullable(),
   offerNote: z.string().optional(),
+  // Comparison dimensions beyond headline salary — see Application in
+  // prisma/schema.prisma for why these exist.
+  offerAnnualTotal: z.coerce.number().int().optional().nullable(),
+  commuteMinutes: z.coerce.number().int().optional().nullable(),
+  overtimeNote: z.string().optional(),
+  growthNote: z.string().optional(),
 });
 
 export const stageUpdateSchema = z.object({

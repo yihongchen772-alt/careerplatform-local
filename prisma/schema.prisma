@@ -237,6 +237,20 @@ model Application {
   salaryMin        Int?
   salaryMax        Int?
   offerNote        String?
+  /// Offer comparison beyond the headline monthly salary. A 30K/month offer
+  /// with a 90-minute commute and routine 996 is not the same offer as a 28K
+  /// one twenty minutes away, and comparing on salaryMin/Max alone hides
+  /// exactly that.
+  /// Total annual package in 万元 (base + bonus + stock), as offers here are
+  /// quoted that way; monthly salary stays in salaryMin/Max as K.
+  offerAnnualTotal Int?
+  /// One-way commute in minutes.
+  commuteMinutes   Int?
+  /// Free text rather than an enum — "大小周", "弹性但晚上要盯线上" and
+  /// "旺季前一个月封闭" are all real answers that no fixed list covers.
+  overtimeNote     String?
+  /// Growth prospects: team, mentor, tech stack, promotion path.
+  growthNote       String?
   createdAt        DateTime         @default(now())
 
   user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -406,6 +420,11 @@ model InterviewMessage {
   sessionId String
   role      InterviewMessageRole
   content   String
+  /// Only set on spoken answers: what the audio reveals that a transcript
+  /// can't — pace, filler words, hesitation. Kept out of `content` so the
+  /// transcript stays a clean record of *what* was said while the
+  /// end-of-session feedback can still judge *how* it was said.
+  deliveryNote String?
   createdAt DateTime             @default(now())
 
   session InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
