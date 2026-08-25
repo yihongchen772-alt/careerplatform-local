@@ -132,6 +132,28 @@ export function ImportSheetDialog({
 
     setParsing(true);
     try {
+      // Multipart POST, not a Server Action: actions carry the file as a
+      // base64 argument, which breaks on real multi-MB sheets.
+      const form = new FormData();
+      form.append("file", file);
+      const resp = await fetch("/api/import/sheet", { method: "POST", body: form });
+      const data = await resp.json();
+
+      if (!resp.ok) {
+        toast.error(data?.error ?? "解析失败");
+        return;
+      }
+
+      if (!data.needsAi) {
+        applyParsed(data.positions, data.truncated, file.name);
+        if (data.truncated) {
+          toast.info(`表里共 ${data.total} 条，先取了前 ${data.positions.length} 条`);
+        }
+        return;
+      }
+
+      // No recognisable header — let the AI read it instead. This payload is
+      // flattened text, small enough for a Server Action.
       const res = await parseRecruitmentSheet(await toBase64(file), file.name);
       if (!res.ok) {
         toast.error(res.message);
