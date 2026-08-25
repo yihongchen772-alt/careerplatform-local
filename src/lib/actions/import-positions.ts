@@ -272,9 +272,21 @@ ${listing}
   });
 }
 
-/** Writes the rows the user kept in the preview. */
-export async function importPositions(
-  rows: ImportedPosition[]
+function toDateOrNull(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const d = new Date(value);
+  // An unparseable date must not silently become Invalid Date.
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * Writes the kept rows into the 信息库 (JobLead), not the candidate pool —
+ * an imported sheet is a wide list of leads to sift through, while the pool
+ * is the small set the user has decided to apply to.
+ */
+export async function importLeads(
+  rows: (ImportedPosition & { fitScore?: number | null; fitReason?: string | null })[],
+  batch?: string
 ): Promise<ActionResult<{ created: number; skipped: number }>> {
   return toActionResult(async () => {
     const user = await requireUser();
@@ -291,16 +303,9 @@ export async function importPositions(
         continue;
       }
 
-      // Same company can appear on many rows; upsert keeps one Company row.
-      const company = await db.company.upsert({
-        where: { name: companyName },
-        update: {},
-        create: { name: companyName, addedByUserId: user.id },
-      });
-
-      // Don't create a second copy of a position the pool already has.
-      const existing = await db.position.findFirst({
-        where: { userId: user.id, companyId: company.id, title },
+      // Re-importing an updated sheet shouldn't duplicate what's already listed.
+      const existing = await db.jobLead.findFirst({
+        where: { userId: user.id, companyName, title },
         select: { id: true },
       });
       if (existing) {
@@ -308,37 +313,165 @@ export async function importPositions(
         continue;
       }
 
-      const deadline = row.deadline ? new Date(row.deadline) : null;
-      const notes = [row.note, row.source ? `渠道：${row.source}` : null]
-        .filter(Boolean)
-        .join("；");
-
-      await db.position.create({
+      await db.jobLead.create({
         data: {
           userId: user.id,
-          companyId: company.id,
+          companyName,
           title,
           track: row.track ?? undefined,
           department: row.department ?? undefined,
           location: row.location ?? undefined,
           salaryMin: row.salaryMin ?? undefined,
           salaryMax: row.salaryMax ?? undefined,
-          // An unparseable date must not silently become Invalid Date.
-          deadline: deadline && !Number.isNaN(deadline.getTime()) ? deadline : undefined,
+          deadline: toDateOrNull(row.deadline) ?? undefined,
           source: row.source ?? undefined,
           jdUrl: row.jdUrl ?? undefined,
-          jdText: notes || undefined,
-          status: "EVALUATING",
-          // Imported rows are unscored — the pool's own AI scoring is a
-          // separate, per-position action the user runs deliberately.
-          interestScore: computeInterestScore(undefined),
+          note: row.note ?? undefined,
+          fitScore: row.fitScore != null ? Math.round(row.fitScore) : undefined,
+          fitReason: row.fitReason ?? undefined,
+          batch,
         },
       });
       created++;
     }
 
+    revalidatePath("/leads");
+    return { created, skipped };
+  });
+}
+
+/** Moves a lead into the candidate pool — the point at which it becomes something being applied to. */
+export async function promoteLeads(
+  leadIds: string[]
+): Promise<ActionResult<{ created: number; skipped: number }>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    if (leadIds.length === 0) throw new UserFacingError("没有选中任何岗位");
+
+    const leads = await db.jobLead.findMany({
+      where: { id: { in: leadIds }, userId: user.id },
+    });
+
+    let created = 0;
+    let skipped = 0;
+
+    for (const lead of leads) {
+      if (lead.promotedPositionId) {
+        skipped++;
+        continue;
+      }
+
+      const company = await db.company.upsert({
+        where: { name: lead.companyName },
+        update: {},
+        create: { name: lead.companyName, addedByUserId: user.id },
+      });
+
+      const existing = await db.position.findFirst({
+        where: { userId: user.id, companyId: company.id, title: lead.title },
+        select: { id: true },
+      });
+      if (existing) {
+        // Already in the pool by another route — link it so the library
+        // stops offering to add it again.
+        await db.jobLead.update({
+          where: { id: lead.id },
+          data: { promotedPositionId: existing.id },
+        });
+        skipped++;
+        continue;
+      }
+
+      const notes = [lead.note, lead.source ? `渠道：${lead.source}` : null]
+        .filter(Boolean)
+        .join("；");
+
+      const position = await db.position.create({
+        data: {
+          userId: user.id,
+          companyId: company.id,
+          title: lead.title,
+          track: lead.track ?? undefined,
+          department: lead.department ?? undefined,
+          location: lead.location ?? undefined,
+          salaryMin: lead.salaryMin ?? undefined,
+          salaryMax: lead.salaryMax ?? undefined,
+          deadline: lead.deadline ?? undefined,
+          source: lead.source ?? undefined,
+          jdUrl: lead.jdUrl ?? undefined,
+          jdText: notes || undefined,
+          status: "EVALUATING",
+          // Unscored on purpose — the pool's own AI scoring is a separate,
+          // per-position action the user runs deliberately.
+          interestScore: computeInterestScore(undefined),
+        },
+      });
+
+      await db.jobLead.update({
+        where: { id: lead.id },
+        data: { promotedPositionId: position.id },
+      });
+      created++;
+    }
+
+    revalidatePath("/leads");
     revalidatePath("/pool");
     revalidatePath("/dashboard");
     return { created, skipped };
+  });
+}
+
+export async function deleteLeads(leadIds: string[]): Promise<ActionResult<{ deleted: number }>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const res = await db.jobLead.deleteMany({
+      where: { id: { in: leadIds }, userId: user.id },
+    });
+    revalidatePath("/leads");
+    return { deleted: res.count };
+  });
+}
+
+/** Scores leads already stored in the library (the import-time ranking, re-runnable). */
+export async function rankStoredLeads(
+  leadIds: string[],
+  resumeVersionId: string
+): Promise<ActionResult<{ scored: number }>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const leads = await db.jobLead.findMany({
+      where: { id: { in: leadIds }, userId: user.id },
+    });
+    if (leads.length === 0) throw new UserFacingError("没有可匹配的岗位");
+
+    const res = await rankImportedPositions(
+      leads.map((l) => ({
+        companyName: l.companyName,
+        title: l.title,
+        track: l.track,
+        department: l.department,
+        location: l.location,
+        salaryMin: l.salaryMin,
+        salaryMax: l.salaryMax,
+        deadline: l.deadline?.toISOString().slice(0, 10) ?? null,
+        source: l.source,
+        jdUrl: l.jdUrl,
+        note: l.note,
+      })),
+      resumeVersionId
+    );
+    if (!res.ok) throw new UserFacingError(res.message);
+
+    for (const fit of res.data) {
+      const lead = leads[fit.index];
+      if (!lead) continue;
+      await db.jobLead.update({
+        where: { id: lead.id },
+        data: { fitScore: Math.round(fit.fitScore), fitReason: fit.reason },
+      });
+    }
+
+    revalidatePath("/leads");
+    return { scored: res.data.length };
   });
 }

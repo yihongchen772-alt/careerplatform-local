@@ -62,6 +62,7 @@ model User {
   personalityTestResults PersonalityTestResult[]
   careerFitAnalysis      CareerFitAnalysis?
   aiKeys                 AiKey[]
+  jobLeads               JobLead[]
 }
 
 model AiKey {
@@ -143,6 +144,39 @@ enum PositionStatus {
   PLANNED
   APPLIED
   DROPPED
+}
+
+/// A raw row from an imported 秋招信息表 — the wide, messy, mostly-irrelevant
+/// list that circulates in group chats. Deliberately NOT a Position: the
+/// candidate pool is the small curated set the user actually intends to apply
+/// to, and dumping hundreds of leads into it would bury that. Leads live here
+/// until the user promotes one, at which point promotedPositionId is set so
+/// the library can show it's already been taken.
+model JobLead {
+  id          String    @id @default(cuid())
+  userId      String
+  companyName String
+  title       String
+  track       String?
+  department  String?
+  location    String?
+  salaryMin   Int?
+  salaryMax   Int?
+  deadline    DateTime?
+  source      String?
+  jdUrl       String?
+  note        String?
+  /// 0-100 from the AI resume match; null until the user runs a match.
+  fitScore    Int?
+  fitReason   String?
+  /// Filename of the sheet this came from, so a bad import can be found again.
+  batch       String?
+  promotedPositionId String?
+  createdAt   DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model Position {

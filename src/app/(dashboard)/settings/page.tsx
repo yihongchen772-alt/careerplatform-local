@@ -4,11 +4,16 @@ import { AiSettingsForm } from "@/components/settings/ai-settings-form";
 import { AppearanceForm } from "@/components/settings/appearance-form";
 import { EmailSettingsForm } from "@/components/settings/email-settings-form";
 import { BackupCard } from "@/components/settings/backup-card";
+import { BackgroundReminderCard } from "@/components/settings/background-reminder-card";
 import { getAiKeysOverview } from "@/lib/actions/ai-keys";
+import { getAppSettings } from "@/lib/actions/app-settings";
 
 export default async function SettingsPage() {
   const user = await requireUser();
-  const aiKeys = await getAiKeysOverview(user.id);
+  const [aiKeys, appSettings] = await Promise.all([
+    getAiKeysOverview(user.id),
+    getAppSettings(),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -31,6 +36,7 @@ export default async function SettingsPage() {
           currentUser={user.smtpUser}
           inboxScanEnabled={user.inboxScanEnabled}
         />
+        <BackgroundReminderCard initial={appSettings} />
         <BackupCard />
       </div>
     </div>
