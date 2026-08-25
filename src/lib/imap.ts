@@ -85,11 +85,18 @@ export async function fetchRecentEmails(
       const uids = await client.search({ since }, { uid: true });
       const recentUids = uids ? uids.slice(-MAX_EMAILS_PER_CHECK) : [];
 
-      for await (const message of client.fetch(recentUids, {
-        envelope: true,
-        source: true,
-        uid: true,
-      })) {
+      // `{ uid: true }` MUST be the third (options) argument, not part of the
+      // second (query) argument. In the query it only means "also return the
+      // uid field"; the range itself is then read as *sequence numbers*. Since
+      // UIDs keep climbing as mail is deleted, they run past the message count
+      // (measured: UIDs ~2600 in a 2184-message mailbox) so every fetch matched
+      // nothing and the scan silently reported "0 new emails" — it had never
+      // once worked before this fix.
+      for await (const message of client.fetch(
+        recentUids,
+        { envelope: true, source: true },
+        { uid: true }
+      )) {
         const parsed = message.source ? await simpleParser(message.source) : null;
         const bodyText = parsed?.text ?? "";
         results.push({

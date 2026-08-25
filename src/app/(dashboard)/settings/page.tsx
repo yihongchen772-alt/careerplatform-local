@@ -3,6 +3,7 @@ import { ProfileForm } from "@/components/settings/profile-form";
 import { AiSettingsForm } from "@/components/settings/ai-settings-form";
 import { AppearanceForm } from "@/components/settings/appearance-form";
 import { EmailSettingsForm } from "@/components/settings/email-settings-form";
+import { BackupCard } from "@/components/settings/backup-card";
 import { getAiKeysOverview } from "@/lib/actions/ai-keys";
 
 export default async function SettingsPage() {
@@ -30,6 +31,7 @@ export default async function SettingsPage() {
           currentUser={user.smtpUser}
           inboxScanEnabled={user.inboxScanEnabled}
         />
+        <BackupCard />
       </div>
     </div>
   );
