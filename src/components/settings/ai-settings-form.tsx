@@ -10,17 +10,28 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDeleteButton } from "@/components/ui/confirm-delete-button";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   upsertAiKey,
   deleteAiKey,
   setDefaultAiProvider,
   type AiKeyOverview,
 } from "@/lib/actions/ai-keys";
+import { listProviderModels } from "@/lib/actions/ai-models";
 import {
   AI_PROVIDER_OPTIONS,
-  GEMINI_KNOWN_MODELS,
+  SEED_MODELS,
   OPENAI_COMPATIBLE_PROVIDERS,
 } from "@/lib/ai-provider-labels";
 import type { AiProviderId } from "@/lib/ai-provider-labels";
+
+/** Sentinel Select value that reveals the free-text model field. */
+const CUSTOM = "__custom__";
 
 export function AiSettingsForm({ keys }: { keys: AiKeyOverview[] }) {
   const [editing, setEditing] = useState<AiProviderId | null>(null);
@@ -76,28 +87,59 @@ function ProviderRow({
 }) {
   const [apiKey, setApiKey] = useState("");
   const savedModels = (entry.model ?? "").split(",").map((m) => m.trim()).filter(Boolean);
-  const [checkedKnown, setCheckedKnown] = useState<Set<string>>(
-    () => new Set(savedModels.filter((m) => (GEMINI_KNOWN_MODELS as readonly string[]).includes(m)))
+  const isOpenAiCompatible = OPENAI_COMPATIBLE_PROVIDERS.includes(entry.provider);
+  const meta = AI_PROVIDER_OPTIONS.find((p) => p.id === entry.provider)!;
+
+  // Saved models come first so their order — which for Gemini *is* the
+  // fallback rotation order — survives a refresh of the list.
+  const [available, setAvailable] = useState<string[]>(() =>
+    Array.from(new Set([...savedModels, ...SEED_MODELS[entry.provider]]))
   );
-  const [customModel, setCustomModel] = useState(
-    savedModels.filter((m) => !(GEMINI_KNOWN_MODELS as readonly string[]).includes(m)).join(", ")
+  const [fetchingModels, setFetchingModels] = useState(false);
+
+  // Gemini can rotate through several models on a 429 (per-model free quota),
+  // so it gets checkboxes; every other provider takes exactly one model name.
+  const [checked, setChecked] = useState<Set<string>>(() => new Set(savedModels));
+  const [customModel, setCustomModel] = useState("");
+  const initialSingle = savedModels[0] ?? "";
+  const [model, setModel] = useState(initialSingle);
+  const [singleChoice, setSingleChoice] = useState(
+    initialSingle && !SEED_MODELS[entry.provider].includes(initialSingle)
+      ? initialSingle
+      : initialSingle || meta.defaultModel
   );
-  // Non-Gemini providers keep the plain single-model text field they always had.
-  const [model, setModel] = useState(entry.provider === "gemini" ? "" : (entry.model ?? ""));
   const [baseUrl, setBaseUrl] = useState(entry.baseUrl ?? "");
   const [loading, setLoading] = useState(false);
   const [settingDefault, setSettingDefault] = useState(false);
-  const isOpenAiCompatible = OPENAI_COMPATIBLE_PROVIDERS.includes(entry.provider);
-
-  const meta = AI_PROVIDER_OPTIONS.find((p) => p.id === entry.provider)!;
 
   function toggleKnownModel(m: string) {
-    setCheckedKnown((prev) => {
+    setChecked((prev) => {
       const next = new Set(prev);
       if (next.has(m)) next.delete(m);
       else next.add(m);
       return next;
     });
+  }
+
+  async function handleFetchModels() {
+    setFetchingModels(true);
+    try {
+      const res = await listProviderModels({
+        provider: entry.provider,
+        // Lets the button work while first configuring, before the key is
+        // saved; falls back to the stored key when the field is left blank.
+        apiKey: apiKey || undefined,
+        baseUrl: isOpenAiCompatible ? baseUrl || undefined : undefined,
+      });
+      if (!res.ok) {
+        toast.error(res.message);
+        return;
+      }
+      setAvailable(Array.from(new Set([...savedModels, ...res.data.models])));
+      toast.success(`拉到 ${res.data.models.length} 个可用模型`);
+    } finally {
+      setFetchingModels(false);
+    }
   }
 
   async function handleSave() {
@@ -108,10 +150,12 @@ function ProviderRow({
     const finalModel =
       entry.provider === "gemini"
         ? [
-            ...GEMINI_KNOWN_MODELS.filter((m) => checkedKnown.has(m)),
+            ...available.filter((m) => checked.has(m)),
             ...customModel.split(",").map((m) => m.trim()).filter(Boolean),
           ].join(", ")
-        : model;
+        : singleChoice === CUSTOM
+          ? model.trim()
+          : singleChoice;
     setLoading(true);
     try {
       await upsertAiKey({
@@ -211,61 +255,99 @@ function ProviderRow({
               placeholder={entry.configured ? "已设置，重新填写以更新" : ""}
             />
           </div>
-          {entry.provider === "gemini" ? (
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Label className="text-xs text-muted-foreground">
+                {entry.provider === "gemini"
+                  ? "模型（可多选，按顺序尝试；只勾一个就是固定用那个）"
+                  : `模型（默认 ${meta.defaultModel}）`}
+              </Label>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                disabled={fetchingModels}
+                onClick={handleFetchModels}
+              >
+                {fetchingModels ? "获取中..." : "获取模型列表"}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              下面是常见的几个。点「获取模型列表」会拿你这个 Key
+              实际能调的全部模型——各家上新模型比写死的列表快，以拉回来的为准。
+            </p>
+
+            {entry.provider === "gemini" ? (
+              <>
+                <div className="max-h-48 space-y-1.5 overflow-y-auto rounded-md border p-2">
+                  {available.map((m) => (
+                    <label key={m} className="flex items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={checked.has(m)}
+                        onCheckedChange={() => toggleKnownModel(m)}
+                      />
+                      <span className="truncate">{m}</span>
+                    </label>
+                  ))}
+                </div>
+                <Input
+                  value={customModel}
+                  onChange={(e) => setCustomModel(e.target.value)}
+                  placeholder="其他模型名（可选，逗号分隔）"
+                  className="mt-1"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Gemini 的免费额度是按模型分别计算的，勾选多个的话，一个用完额度会自动换下一个。
+                </p>
+              </>
+            ) : (
+              <>
+                <Select
+                  value={singleChoice}
+                  onValueChange={(v) => v && setSingleChoice(v)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue>
+                      {() => (singleChoice === CUSTOM ? "自定义…" : singleChoice)}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {available.map((m) => (
+                      <SelectItem key={m} value={m}>
+                        {m}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value={CUSTOM}>自定义…</SelectItem>
+                  </SelectContent>
+                </Select>
+                {singleChoice === CUSTOM && (
+                  <Input
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
+                    placeholder={meta.defaultModel}
+                    className="mt-1"
+                  />
+                )}
+              </>
+            )}
+          </div>
+
+          {isOpenAiCompatible && (
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">
-                模型（可多选，按下面的顺序尝试；只勾一个就是固定用那个）
+                API 地址（可选，不填用默认地址）
               </Label>
-              <div className="space-y-1.5">
-                {GEMINI_KNOWN_MODELS.map((m) => (
-                  <label key={m} className="flex items-center gap-2 text-sm">
-                    <Checkbox
-                      checked={checkedKnown.has(m)}
-                      onCheckedChange={() => toggleKnownModel(m)}
-                    />
-                    {m}
-                  </label>
-                ))}
-              </div>
               <Input
-                value={customModel}
-                onChange={(e) => setCustomModel(e.target.value)}
-                placeholder="其他模型名（可选，逗号分隔）"
-                className="mt-1"
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder="https://.../compatible-mode/v1"
               />
               <p className="text-xs text-muted-foreground">
-                Gemini 的免费额度是按模型分别计算的，勾选多个的话，一个用完额度会自动换下一个。
+                工作空间专属网关（比如阿里云百炼）或者自建代理地址填这里，不填就用这个
+                服务商的公共默认地址。
               </p>
             </div>
-          ) : (
-            <>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">
-                  模型（可选，默认 {meta.defaultModel}）
-                </Label>
-                <Input
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                  placeholder={meta.defaultModel}
-                />
-              </div>
-              {isOpenAiCompatible && (
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">
-                    API 地址（可选，不填用默认地址）
-                  </Label>
-                  <Input
-                    value={baseUrl}
-                    onChange={(e) => setBaseUrl(e.target.value)}
-                    placeholder="https://.../compatible-mode/v1"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    工作空间专属网关（比如阿里云百炼）或者自建代理地址填这里，不填就用这个
-                    服务商的公共默认地址。
-                  </p>
-                </div>
-              )}
-            </>
           )}
           <Button type="button" size="sm" disabled={loading} onClick={handleSave}>
             {loading ? "保存中..." : "保存"}
