@@ -19,6 +19,7 @@ import {
   parseRecruitmentSheet,
   parseRecruitmentText,
   parseRecruitmentScreenshot,
+  refineImportedRows,
   importLeads,
   rankImportedPositions,
   type ImportedPosition,
@@ -36,6 +37,7 @@ export function ImportSheetDialog({
   const [parsing, setParsing] = useState(false);
   const [importing, setImporting] = useState(false);
   const [ranking, setRanking] = useState(false);
+  const [refining, setRefining] = useState(false);
   const [rows, setRows] = useState<ImportedPosition[] | null>(null);
   const [fits, setFits] = useState<Map<number, PositionFit>>(new Map());
   const [checked, setChecked] = useState<Set<number>>(new Set());
@@ -79,6 +81,35 @@ export function ImportSheetDialog({
       applyParsed(res.data.positions, res.data.truncated, "粘贴的内容");
     } finally {
       setParsing(false);
+    }
+  }
+
+  async function handleRefine() {
+    if (!rows) return;
+    const selected = rows.filter((_, i) => checked.has(i));
+    if (selected.length === 0) {
+      toast.error("先勾选要精读的岗位");
+      return;
+    }
+    setRefining(true);
+    try {
+      const res = await refineImportedRows(selected);
+      if (!res.ok) {
+        toast.error(res.message);
+        return;
+      }
+      // Refining can split one row into several, so indexes change — reset
+      // the selection to "all of the new rows" rather than trying to map it.
+      setRows(res.data.positions);
+      setChecked(new Set(res.data.positions.map((_, i) => i)));
+      setFits(new Map());
+      toast.success(
+        res.data.positions.length !== res.data.inputCount
+          ? `已整理：${res.data.inputCount} 条 → ${res.data.positions.length} 条（拆分了混在一起的岗位）`
+          : `已整理 ${res.data.positions.length} 条`
+      );
+    } finally {
+      setRefining(false);
     }
   }
 
@@ -292,7 +323,16 @@ export function ImportSheetDialog({
               <p className="text-sm text-muted-foreground">
                 认出 {rows.length} 个岗位，已选 {checked.size} 个。取消勾选不想导入的。
               </p>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={refining || checked.size === 0}
+                  onClick={handleRefine}
+                >
+                  {refining ? "AI 整理中..." : "AI 精读整理"}
+                </Button>
                 {resumeId && (
                   <Button
                     type="button"
