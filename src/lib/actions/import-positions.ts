@@ -309,7 +309,8 @@ export async function rankImportedPositions(
 
     const { resumeText } = await getResumeContext(resumeVersionId, user.id);
 
-    const listing = rows
+    return inBatches(rows, RANK_BATCH, RANK_CONCURRENCY, async (batch, offset) => {
+    const listing = batch
       .map((r, i) =>
         `[${i}] ${r.companyName ?? "?"} · ${r.title ?? "?"}${
           [r.track, r.department, r.location, r.note].filter(Boolean).length
@@ -362,8 +363,13 @@ ${listing}
     const parsed = rankSchema.safeParse(raw);
     if (!parsed.success) throw new UserFacingError("AI 返回格式异常，请重试");
 
-    // Drop hallucinated indexes so a bad row can't mis-label a real position.
-    return parsed.data.results.filter((r) => r.index >= 0 && r.index < rows.length);
+    // Indexes come back relative to this batch; shift them to the caller's
+    // numbering. Hallucinated ones are dropped so a bad row can't mis-label
+    // a real position.
+    return parsed.data.results
+      .filter((r) => r.index >= 0 && r.index < batch.length)
+      .map((r) => ({ ...r, index: r.index + offset }));
+    });
   });
 }
 
@@ -528,12 +534,67 @@ export async function deleteLeads(leadIds: string[]): Promise<ActionResult<{ del
 }
 
 /**
+ * Runs `fn` over `items` in small batches, a few batches at a time.
+ *
+ * One big call is the wrong shape for this work: output tokens are produced
+ * serially, so a single request covering everything grows linearly in wall
+ * time and eventually trips the request timeout. Measured on a real sheet:
+ * scoring 200 rows in one call took 121s, and refining 9 rows whose 岗位
+ * cells were each a paragraph blew straight past the 120s limit ("AI 请求
+ * 超时"). Small batches keep each request short, and running several at once
+ * keeps total time roughly flat as the selection grows.
+ */
+async function inBatches<TIn, TOut>(
+  items: TIn[],
+  batchSize: number,
+  concurrency: number,
+  fn: (batch: TIn[], offset: number) => Promise<TOut[]>
+): Promise<TOut[]> {
+  const batches: { batch: TIn[]; offset: number }[] = [];
+  for (let i = 0; i < items.length; i += batchSize) {
+    batches.push({ batch: items.slice(i, i + batchSize), offset: i });
+  }
+
+  const results: TOut[][] = new Array(batches.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(concurrency, batches.length) }, async () => {
+    for (;;) {
+      const idx = cursor++;
+      if (idx >= batches.length) return;
+      const { batch, offset } = batches[idx];
+      results[idx] = await fn(batch, offset);
+    }
+  });
+  await Promise.all(workers);
+  return results.flat();
+}
+
+/**
  * Upper bound per refine call. The whole point of the header-mapped path is
  * that it handles thousands of rows an AI never could; refining is the
  * opposite trade — smart but context-bound — so it deliberately works on a
  * hand-picked subset rather than the whole sheet.
  */
+/**
+ * Rows per scoring request, and how many run at once. Measured: a batch costs
+ * roughly the same wall time whether it holds 20 rows or 200 — latency is
+ * dominated by the model's own turnaround, not by output length — so total
+ * time is set by how many waves run, i.e. by concurrency. Batching 200 rows
+ * at concurrency 4 was still 124s (3 waves); running all 10 batches at once
+ * collapses it to about one wave.
+ */
+const RANK_BATCH = 20;
+const RANK_CONCURRENCY = 10;
+
 const MAX_REFINE_ROWS = 40;
+/**
+ * Rows per refine request. Very small: one row can expand into a dozen
+ * positions, so output length — the slow part — scales with the batch. At 4
+ * rows/batch a 9-row selection still took 112s; 2 rows/batch with enough
+ * concurrency puts the whole selection in a single wave.
+ */
+const REFINE_BATCH = 2;
+const REFINE_CONCURRENCY = 8;
 
 /**
  * Second pass over rows that came from header mapping. Column mapping copies
@@ -559,7 +620,9 @@ export async function refineImportedRows(
     if (!config) throw new UserFacingError("先去账号设置配置一个 AI Key");
 
     const today = new Date().toISOString().slice(0, 10);
-    const listing = rows
+
+    const positions = await inBatches(rows, REFINE_BATCH, REFINE_CONCURRENCY, async (batch) => {
+    const listing = batch
       .map(
         (r, i) =>
           `[${i}] 公司：${r.companyName ?? ""}｜岗位：${r.title ?? ""}｜方向：${r.track ?? ""}｜部门：${r.department ?? ""}｜地点：${r.location ?? ""}｜薪资：${r.salaryMin ?? ""}-${r.salaryMax ?? ""}｜截止：${r.deadline ?? ""}｜渠道：${r.source ?? ""}｜备注：${r.note ?? ""}`
@@ -617,8 +680,9 @@ ${listing}
 
     const parsed = extractionSchema.safeParse(raw);
     if (!parsed.success) throw new UserFacingError("AI 返回格式异常，请重试");
+    return parsed.data.positions.filter((p) => p.companyName && p.title);
+    });
 
-    const positions = parsed.data.positions.filter((p) => p.companyName && p.title);
     if (positions.length === 0) throw new UserFacingError("AI 没整理出有效结果，请重试");
 
     // The listing above omits links (they're long and waste context), so put

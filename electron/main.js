@@ -161,10 +161,11 @@ function readAppSettings() {
     return {
       autoLaunch: false,
       backgroundReminders: false,
+      inboxScanIntervalHours: 0,
       ...JSON.parse(fs.readFileSync(settingsFile(), "utf8")),
     };
   } catch {
-    return { autoLaunch: false, backgroundReminders: false };
+    return { autoLaunch: false, backgroundReminders: false, inboxScanIntervalHours: 0 };
   }
 }
 
@@ -219,6 +220,13 @@ function buildTray() {
     Menu.buildFromTemplate([
       { label: "打开秋招追踪", click: showWindow },
       { label: "立即检查提醒", click: () => checkReminders(true) },
+      {
+        label: "立即扫描收件箱",
+        click: () => {
+          lastScanAt = 0;
+          maybeScanInbox();
+        },
+      },
       { type: "separator" },
       {
         label: "退出",
@@ -269,6 +277,32 @@ async function checkReminders(force = false) {
   }
 }
 
+// The inbox scan is metered separately from the reminder check: it costs an
+// IMAP fetch plus an AI call per run, so it follows the user's chosen
+// interval rather than the 30-minute reminder tick. Re-read each tick so a
+// settings change takes effect without restarting.
+let scanTimer = null;
+let lastScanAt = 0;
+
+async function maybeScanInbox() {
+  const hours = Number(readAppSettings().inboxScanIntervalHours) || 0;
+  if (hours <= 0) return;
+  if (Date.now() - lastScanAt < hours * 3600 * 1000) return;
+  lastScanAt = Date.now();
+  try {
+    await fetch(`http://localhost:${PORT}/api/check-reminders`, { method: "POST" });
+  } catch {
+    // Server not up yet, or transient — the next tick retries.
+  }
+}
+
+function startScanLoop() {
+  if (scanTimer) return;
+  // Checked every 5 minutes; maybeScanInbox decides whether enough time has
+  // passed. That keeps a newly-shortened interval from waiting out the old one.
+  scanTimer = setInterval(maybeScanInbox, 5 * 60 * 1000);
+}
+
 function startReminderLoop() {
   if (reminderTimer) return;
   checkReminders();
@@ -295,6 +329,7 @@ app.whenReady().then(async () => {
     if (settings.backgroundReminders) {
       buildTray();
       startReminderLoop();
+      startScanLoop();
     }
   } catch (err) {
     dialog.showErrorBox("启动失败", String(err && err.message ? err.message : err));
@@ -308,6 +343,10 @@ function shutdown() {
   if (reminderTimer) {
     clearInterval(reminderTimer);
     reminderTimer = null;
+  }
+  if (scanTimer) {
+    clearInterval(scanTimer);
+    scanTimer = null;
   }
   if (serverProcess) {
     serverProcess.kill();

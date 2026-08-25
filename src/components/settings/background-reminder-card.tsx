@@ -4,8 +4,15 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { updateAppSettings } from "@/lib/actions/app-settings";
-import type { AppSettings } from "@/lib/app-settings-shared";
+import { SCAN_INTERVAL_OPTIONS, type AppSettings } from "@/lib/app-settings-shared";
 
 export function BackgroundReminderCard({ initial }: { initial: AppSettings }) {
   const [settings, setSettings] = useState(initial);
@@ -72,6 +79,40 @@ export function BackgroundReminderCard({ initial }: { initial: AppSettings }) {
             </span>
           </span>
         </label>
+
+        <div className="space-y-1 rounded-md border p-3">
+          <p className="text-sm font-medium">收件箱扫描频率</p>
+          <p className="text-xs text-muted-foreground">
+            开了「常驻托盘」之后，收件箱可以定时扫，不用等下次打开 App。每次扫描都会调用一次
+            AI 判断邮件类型，所以别设太频繁。
+          </p>
+          <Select
+            value={String(settings.inboxScanIntervalHours ?? 0)}
+            onValueChange={(v) => v && set({ inboxScanIntervalHours: Number(v) })}
+          >
+            <SelectTrigger className="mt-1 w-full sm:w-64" disabled={saving || !settings.backgroundReminders}>
+              <SelectValue>
+                {() =>
+                  SCAN_INTERVAL_OPTIONS.find(
+                    (o) => o.value === (settings.inboxScanIntervalHours ?? 0)
+                  )?.label ?? "只在打开 App 时扫一次"
+                }
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {SCAN_INTERVAL_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={String(o.value)}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {!settings.backgroundReminders && (
+            <p className="text-xs text-muted-foreground">
+              需要先打开上面的「常驻托盘」——App 不在后台跑就没人执行定时扫描。
+            </p>
+          )}
+        </div>
 
         {settings.autoLaunchFailed && (
           <p className="rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive">
