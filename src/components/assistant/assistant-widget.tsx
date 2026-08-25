@@ -1,26 +1,49 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Sparkles, X, Send } from "lucide-react";
+import { Sparkles, X, Send, Check, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { askAssistant, type AssistantChatMessage } from "@/lib/actions/assistant";
+import {
+  askAssistant,
+  applyAssistantAction,
+  type AssistantChatMessage,
+} from "@/lib/actions/assistant";
+import type { AssistantAction } from "@/lib/assistant-shared";
 
-type DisplayMessage = AssistantChatMessage & { id: number };
+type DisplayMessage = AssistantChatMessage & {
+  id: number;
+  actions?: AssistantAction[];
+  /** Indices of this message's actions already applied, so they don't run twice. */
+  applied?: number[];
+};
 
-const SUGGESTIONS = ["我这周有什么要跟进的？", "候选池里哪个岗位最值得投？", "帮我看看简历体检结果"];
+// Written as things a student in the middle of 秋招 actually says, not as
+// feature names — the second one exists mostly to teach that the assistant
+// takes plain "I did X" statements and turns them into records.
+const SUGGESTIONS = [
+  "今天该做什么？",
+  "我刚投了字节的后端开发",
+  "候选池和信息库里，接下来最该投哪个？",
+  "哪些岗位快截止了？",
+];
 
 export function AssistantWidget() {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [applying, setApplying] = useState<string | null>(null);
   const nextId = useRef(0);
 
-  function addMessage(role: "user" | "assistant", content: string) {
+  function addMessage(
+    role: "user" | "assistant",
+    content: string,
+    actions?: AssistantAction[]
+  ) {
     const id = nextId.current++;
-    setMessages((prev) => [...prev, { id, role, content }]);
+    setMessages((prev) => [...prev, { id, role, content, actions, applied: [] }]);
   }
 
   async function handleSend(text?: string) {
@@ -33,7 +56,7 @@ export function AssistantWidget() {
     try {
       const res = await askAssistant(content, history);
       if (res.ok) {
-        addMessage("assistant", res.data.reply);
+        addMessage("assistant", res.data.reply, res.data.actions);
       } else {
         toast.error(res.message);
       }
@@ -42,10 +65,31 @@ export function AssistantWidget() {
     }
   }
 
+  async function handleApply(messageId: number, index: number, action: AssistantAction) {
+    const token = `${messageId}:${index}`;
+    if (applying) return;
+    setApplying(token);
+    try {
+      const res = await applyAssistantAction(action);
+      if (!res.ok) {
+        toast.error(res.message);
+        return;
+      }
+      toast.success(res.data.done);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId ? { ...m, applied: [...(m.applied ?? []), index] } : m
+        )
+      );
+    } finally {
+      setApplying(null);
+    }
+  }
+
   return (
     <div className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-50 flex flex-col items-end gap-3">
       {open && (
-        <div className="flex h-[28rem] w-[calc(100vw-2rem)] max-w-sm flex-col overflow-hidden rounded-lg border bg-card shadow-xl">
+        <div className="flex h-[32rem] max-h-[calc(100vh-6rem)] w-[calc(100vw-2rem)] max-w-sm flex-col overflow-hidden rounded-lg border bg-card shadow-xl">
           <div className="flex items-center justify-between border-b px-3 py-2">
             <p className="text-sm font-medium">AI 助手</p>
             <Button
@@ -63,7 +107,9 @@ export function AssistantWidget() {
             {messages.length === 0 ? (
               <div className="space-y-2">
                 <p className="text-sm text-muted-foreground">
-                  随便问，比如你这周有什么面试、哪个岗位最值得投、这份简历怎么样。
+                  它看得到你的候选池、投递记录、秋招信息库和待办。可以问它该投哪个、
+                  什么快截止了；也可以直接说你干了什么（&ldquo;我投了美团数据分析，下周三一面&rdquo;），
+                  它会整理成记录让你一键存下来。
                 </p>
                 {SUGGESTIONS.map((s) => (
                   <button
@@ -78,15 +124,50 @@ export function AssistantWidget() {
               </div>
             ) : (
               messages.map((m) => (
-                <div
-                  key={m.id}
-                  className={
-                    m.role === "assistant"
-                      ? "rounded-lg bg-muted p-2.5 text-sm"
-                      : "rounded-lg bg-primary/10 p-2.5 text-sm"
-                  }
-                >
-                  <p className="whitespace-pre-wrap">{m.content}</p>
+                <div key={m.id} className="space-y-1.5">
+                  <div
+                    className={
+                      m.role === "assistant"
+                        ? "rounded-lg bg-muted p-2.5 text-sm"
+                        : "rounded-lg bg-primary/10 p-2.5 text-sm"
+                    }
+                  >
+                    <p className="whitespace-pre-wrap">{m.content}</p>
+                  </div>
+
+                  {m.actions?.map((action, i) => {
+                    const done = m.applied?.includes(i);
+                    const busy = applying === `${m.id}:${i}`;
+                    return (
+                      <button
+                        key={i}
+                        type="button"
+                        disabled={done || !!applying}
+                        onClick={() => handleApply(m.id, i, action)}
+                        className="flex w-full items-center gap-2 rounded-md border border-dashed px-2.5 py-2 text-left text-xs transition-colors enabled:hover:bg-muted disabled:opacity-70"
+                      >
+                        {done ? (
+                          <Check className="size-3.5 shrink-0 text-green-600" />
+                        ) : (
+                          <Plus className="size-3.5 shrink-0 text-muted-foreground" />
+                        )}
+                        <span className="min-w-0 flex-1">
+                          {action.label}
+                          {/* The label says things like "下周三", but what
+                              gets written is the date the model resolved
+                              that to — and it does get that wrong. Show the
+                              real value so a bad one is caught before the
+                              click, not after. */}
+                          {action.date && (
+                            <span className="ml-1 text-muted-foreground">（{action.date}）</span>
+                          )}
+                        </span>
+                        <span className="shrink-0 text-muted-foreground">
+                          {done ? "已保存" : busy ? "保存中..." : "点击保存"}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               ))
             )}
@@ -100,7 +181,7 @@ export function AssistantWidget() {
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.nativeEvent.isComposing) handleSend();
               }}
-              placeholder="问点什么..."
+              placeholder="问点什么，或说说你今天投了啥..."
               disabled={sending}
               className="h-9"
             />
