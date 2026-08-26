@@ -39,6 +39,8 @@ export type ApplicationRow = {
   source: string | null;
   salaryMin: number | null;
   salaryMax: number | null;
+  nextDeadline: string | null;
+  nextDeadlineEnd: string | null;
   company: { name: string };
 };
 

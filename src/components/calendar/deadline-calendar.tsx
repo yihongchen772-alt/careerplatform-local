@@ -2,9 +2,12 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { CalendarDays } from "lucide-react";
+import { CalendarDays, Plus } from "lucide-react";
+import { zhCN } from "react-day-picker/locale";
 import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { PersonalTaskFormDialog } from "@/components/dashboard/personal-task-form-dialog";
 import { toDateKey } from "@/lib/dates";
 
 export type CalendarEvent = {
@@ -13,12 +16,22 @@ export type CalendarEvent = {
   href: string;
 };
 
+type LinkOption = { id: string; label: string };
+
 // Local calendar day, not UTC — react-day-picker's `selected` is a local-midnight
 // Date, so bucketing by `.toISOString()` (UTC) would shift events by a day for any
 // timezone ahead of UTC.
 const dayKey = toDateKey;
 
-export function DeadlineCalendar({ events }: { events: CalendarEvent[] }) {
+export function DeadlineCalendar({
+  events,
+  positions,
+  applications,
+}: {
+  events: CalendarEvent[];
+  positions: LinkOption[];
+  applications: LinkOption[];
+}) {
   const [selected, setSelected] = useState<Date | undefined>(undefined);
   const [now] = useState(() => Date.now());
 
@@ -59,6 +72,7 @@ export function DeadlineCalendar({ events }: { events: CalendarEvent[] }) {
         <CardContent className="pt-6">
           <Calendar
             mode="single"
+            locale={zhCN}
             selected={selected}
             onSelect={setSelected}
             modifiers={{ hasEvent: eventDates }}
@@ -72,20 +86,35 @@ export function DeadlineCalendar({ events }: { events: CalendarEvent[] }) {
 
       <Card>
         <CardContent className="space-y-2 pt-6">
-          <p className="text-sm font-medium">
-            {selected
-              ? selected.toLocaleDateString("zh-CN", {
-                  year: "numeric",
-                  month: "long",
-                  day: "numeric",
-                })
-              : "近期事项"}
-          </p>
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium">
+              {selected
+                ? selected.toLocaleDateString("zh-CN", {
+                    year: "numeric",
+                    month: "long",
+                    day: "numeric",
+                  })
+                : "近期事项"}
+            </p>
+            {selectedKey && (
+              <PersonalTaskFormDialog
+                positions={positions}
+                applications={applications}
+                defaultDueDate={selectedKey}
+                trigger={
+                  <Button size="sm" variant="outline">
+                    <Plus />
+                    这天加日程
+                  </Button>
+                }
+              />
+            )}
+          </div>
           {shownEvents.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-12 text-center text-muted-foreground">
               <CalendarDays className="size-8 text-muted-foreground/50" />
               <span className="text-sm">
-                {selected ? "这天没有安排" : "暂无即将到来的截止日期"}
+                {selected ? "这天没有安排，点右上角加一个" : "暂无即将到来的截止日期"}
               </span>
             </div>
           ) : (

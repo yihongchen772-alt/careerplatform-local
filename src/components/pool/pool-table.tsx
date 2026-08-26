@@ -14,6 +14,14 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { MarkAppliedDialog } from "@/components/pool/mark-applied-dialog";
 import {
   MatchResumeDialog,
@@ -55,6 +63,38 @@ export type PoolPosition = {
 };
 
 type ResumeOption = { id: string; name: string };
+
+const ALL = "__all__";
+type SortKey = "score" | "deadline" | "added";
+
+function FilterSelect({
+  value,
+  onChange,
+  options,
+  allLabel,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+  allLabel: string;
+}) {
+  if (options.length === 0) return null;
+  return (
+    <Select value={value} onValueChange={(v) => v && onChange(v)}>
+      <SelectTrigger className="w-36">
+        <SelectValue>{() => (value === ALL ? allLabel : value)}</SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={ALL}>{allLabel}</SelectItem>
+        {options.map((o) => (
+          <SelectItem key={o} value={o}>
+            {o}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
 
 /** Tiered so a strong match stands out when skimming a long pool. */
 function scoreVariant(score: number): "default" | "secondary" | "outline" {
@@ -100,20 +140,51 @@ export function PoolTable({
   const [insightId, setInsightId] = useState<string | null>(null);
   const [batchMarking, setBatchMarking] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [q, setQ] = useState("");
+  const [city, setCity] = useState(ALL);
+  const [track, setTrack] = useState(ALL);
+  const [sort, setSort] = useState<SortKey>("score");
 
-  const sorted = useMemo(
-    () =>
-      [...positions].sort(
-        (a, b) => (b.interestScore ?? -1) - (a.interestScore ?? -1)
-      ),
+  const cities = useMemo(
+    () => [...new Set(positions.map((p) => p.location).filter(Boolean))].sort() as string[],
     [positions]
   );
+  const tracks = useMemo(
+    () => [...new Set(positions.map((p) => p.track).filter(Boolean))].sort() as string[],
+    [positions]
+  );
+
+  const sorted = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    const filtered = positions.filter((p) => {
+      if (city !== ALL && p.location !== city) return false;
+      if (track !== ALL && p.track !== track) return false;
+      if (!needle) return true;
+      return [p.company.name, p.title, p.department, p.location]
+        .filter(Boolean)
+        .some((f) => (f as string).toLowerCase().includes(needle));
+    });
+
+    return [...filtered].sort((a, b) => {
+      if (sort === "score") return (b.interestScore ?? -1) - (a.interestScore ?? -1);
+      if (sort === "deadline") {
+        // Undated positions sort last rather than jumping to the front as 0.
+        const av = a.deadline ? new Date(a.deadline).getTime() : Infinity;
+        const bv = b.deadline ? new Date(b.deadline).getTime() : Infinity;
+        return av - bv;
+      }
+      return 0;
+    });
+  }, [positions, q, city, track, sort]);
   const markable = sorted.filter((p) => p.status !== "APPLIED");
-  const marking = sorted.find((p) => p.id === markingId);
-  const matching = sorted.find((p) => p.id === matchingId);
-  const preparing = sorted.find((p) => p.id === prepId);
-  const inspecting = sorted.find((p) => p.id === insightId);
-  const selectedPositions = sorted.filter((p) => selected.has(p.id));
+  // Looked up from the full unfiltered list, not `sorted` — a dialog opened
+  // for a position must keep working even if the search/filter above it
+  // changes underneath while it's open.
+  const marking = positions.find((p) => p.id === markingId);
+  const matching = positions.find((p) => p.id === matchingId);
+  const preparing = positions.find((p) => p.id === prepId);
+  const inspecting = positions.find((p) => p.id === insightId);
+  const selectedPositions = positions.filter((p) => selected.has(p.id));
 
   function toggleSelected(id: string, checked: boolean) {
     setSelected((prev) => {
@@ -139,6 +210,34 @@ export function PoolTable({
 
   return (
     <>
+      {positions.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <Input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="搜公司 / 岗位 / 部门"
+            className="w-full sm:w-64"
+          />
+          <FilterSelect value={city} onChange={setCity} options={cities} allLabel="全部城市" />
+          <FilterSelect value={track} onChange={setTrack} options={tracks} allLabel="全部方向" />
+          <Select value={sort} onValueChange={(v) => v && setSort(v as SortKey)}>
+            <SelectTrigger className="w-36">
+              <SelectValue>
+                {() =>
+                  sort === "score" ? "按综合得分" : sort === "deadline" ? "按截止日期" : "按加入顺序"
+                }
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="score">按综合得分</SelectItem>
+              <SelectItem value="deadline">按截止日期</SelectItem>
+              <SelectItem value="added">按加入顺序</SelectItem>
+            </SelectContent>
+          </Select>
+          <span className="text-sm text-muted-foreground">共 {sorted.length} 条</span>
+        </div>
+      )}
+
       {selected.size > 0 && (
         <div className="mb-3 flex items-center justify-between rounded-md border bg-muted/50 px-3 py-2 text-sm">
           <span>已选 {selected.size} 项</span>
@@ -250,7 +349,11 @@ export function PoolTable({
         {sorted.length === 0 && (
           <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed py-12 text-center text-muted-foreground">
             <ListChecks className="size-8 text-muted-foreground/50" />
-            <span className="text-sm">候选池为空，先添加一个感兴趣的岗位吧</span>
+            <span className="text-sm">
+              {positions.length === 0
+                ? "候选池为空，先添加一个感兴趣的岗位吧"
+                : "当前筛选条件下没有岗位"}
+            </span>
           </div>
         )}
       </div>
@@ -374,7 +477,11 @@ export function PoolTable({
               <TableCell colSpan={9} className="h-32 text-center text-muted-foreground">
                 <div className="flex flex-col items-center gap-2">
                   <ListChecks className="size-8 text-muted-foreground/50" />
-                  <span>候选池为空，先添加一个感兴趣的岗位吧</span>
+                  <span>
+                    {positions.length === 0
+                      ? "候选池为空，先添加一个感兴趣的岗位吧"
+                      : "当前筛选条件下没有岗位"}
+                  </span>
                 </div>
               </TableCell>
             </TableRow>

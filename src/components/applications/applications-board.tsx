@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { STAGE_LABELS, STAGE_ORDER } from "@/lib/stage-labels";
 import { addStageUpdate } from "@/lib/actions/applications";
+import { windowStatus } from "@/lib/todos";
 import type { ApplicationStage } from "@prisma/client";
 
 export type BoardApplication = {
@@ -16,6 +17,8 @@ export type BoardApplication = {
   currentStage: ApplicationStage;
   appliedDate: string;
   currentStageDate: string;
+  nextDeadline: string | null;
+  nextDeadlineEnd: string | null;
 };
 
 /**
@@ -69,7 +72,8 @@ export function ApplicationsBoard({
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-3 overflow-x-auto pb-2">
+      <div className="relative">
+        <div className="flex gap-3 overflow-x-auto pb-2">
         {ACTIVE_STAGES.map((stage) => {
           const items = byStage.get(stage) ?? [];
           const next = ACTIVE_STAGES[ACTIVE_STAGES.indexOf(stage) + 1];
@@ -107,6 +111,16 @@ export function ApplicationsBoard({
                         >
                           停留 {stalled} 天
                         </p>
+                        {app.nextDeadline && (
+                          <p className="mt-0.5 text-xs text-amber-600 dark:text-amber-400">
+                            {
+                              windowStatus(
+                                new Date(app.nextDeadline),
+                                app.nextDeadlineEnd ? new Date(app.nextDeadlineEnd) : null
+                              ).note
+                            }
+                          </p>
+                        )}
                         {next && (
                           <Button
                             type="button"
@@ -127,6 +141,11 @@ export function ApplicationsBoard({
             </div>
           );
         })}
+        </div>
+        {/* Mobile only: on desktop the columns' own width makes "there's more"
+            obvious, but on a narrow screen only ~2 columns fit and nothing
+            else hints that 笔试/一面/Offer etc. are sitting off-screen. */}
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-background to-transparent sm:hidden" />
       </div>
 
       {closed.length > 0 && (
