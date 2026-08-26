@@ -1,28 +1,37 @@
 <svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
   <defs>
+    <!-- Same three-stop brand gradient as the gradient-accent token in
+         globals.css (indigo to violet to magenta) — the mark and the
+         in-app gradient buttons/glow are meant to read as the same
+         substance. -->
     <linearGradient id="bg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#6366f1"/>
-      <stop offset="1" stop-color="#7c3aed"/>
+      <stop offset="0.6" stop-color="#8b5cf6"/>
+      <stop offset="1" stop-color="#d946ef"/>
     </linearGradient>
   </defs>
 
   <rect width="512" height="512" rx="112" fill="url(#bg)"/>
 
-  <text x="256" y="212"
-        font-family="'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif"
-        font-size="180" font-weight="700" fill="#ffffff" text-anchor="middle">秋</text>
+  <!-- Compass bezel -->
+  <circle cx="256" cy="256" r="146" fill="none" stroke="#ffffff" stroke-opacity="0.55" stroke-width="14"/>
 
-  <!-- ascending bars = tracking progress, reads as a funnel left-to-right -->
-  <g fill="#ffffff" opacity="0.3">
-    <rect x="104" y="360" width="52" height="60"  rx="16"/>
-    <rect x="180" y="322" width="52" height="98"  rx="16"/>
-    <rect x="256" y="284" width="52" height="136" rx="16"/>
-    <rect x="332" y="246" width="52" height="174" rx="16"/>
+  <!-- Cardinal ticks (N/E/S/W only — anything busier turns to mush at
+       favicon/sidebar size) -->
+  <g stroke="#ffffff" stroke-opacity="0.55" stroke-width="14" stroke-linecap="round">
+    <line x1="256" y1="86"  x2="256" y2="110"/>
+    <line x1="256" y1="402" x2="256" y2="426"/>
+    <line x1="86"  y1="256" x2="110" y2="256"/>
+    <line x1="402" y1="256" x2="426" y2="256"/>
   </g>
 
-  <!-- trend line rising across the bars, with an arrowhead at the top right -->
-  <g stroke="#ffffff" stroke-width="22" stroke-linecap="round" stroke-linejoin="round" fill="none">
-    <path d="M120 356 L206 316 L282 274 L370 226"/>
-    <path d="M312 224 L374 222 L376 284"/>
+  <!-- Needle, rotated to echo the 135deg diagonal the brand gradient runs
+       on. Pointer half solid white (reads as "north"/the active heading),
+       tail half translucent — the standard compass-needle two-tone. -->
+  <g transform="rotate(45 256 256)">
+    <path d="M256 130 L296 256 L256 246 L216 256 Z" fill="#ffffff"/>
+    <path d="M256 382 L296 256 L256 266 L216 256 Z" fill="#ffffff" fill-opacity="0.4"/>
   </g>
+
+  <circle cx="256" cy="256" r="16" fill="#ffffff"/>
 </svg>

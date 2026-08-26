@@ -21,32 +21,30 @@ export type ImapConfig = {
   password: string;
 };
 
-export async function getUserImapConfig(userId: string): Promise<ImapConfig | null> {
-  const user = await db.user.findUnique({
-    where: { id: userId },
-    select: {
-      imapHost: true,
-      imapPort: true,
-      smtpUser: true,
-      smtpPasswordEncrypted: true,
-      inboxScanEnabled: true,
-    },
+/** One inbox to scan, decrypted and ready to connect. */
+export type ScanAccount = ImapConfig & {
+  id: string;
+  /** Display label for wherever a scan result needs to say which inbox it
+   * came from — the user-given label, falling back to the address itself. */
+  label: string;
+};
+
+/** Every enabled inbox for this user — a recruiter's required mailbox
+ * (QQ/163/Gmail/...) varies per company, so scanning has to cover several
+ * at once rather than assuming one mailbox catches everything. */
+export async function getUserScanAccounts(userId: string): Promise<ScanAccount[]> {
+  const accounts = await db.mailAccount.findMany({
+    where: { userId, enabled: true },
+    orderBy: { createdAt: "asc" },
   });
-  if (
-    !user?.inboxScanEnabled ||
-    !user.imapHost ||
-    !user.imapPort ||
-    !user.smtpUser ||
-    !user.smtpPasswordEncrypted
-  ) {
-    return null;
-  }
-  return {
-    host: user.imapHost,
-    port: user.imapPort,
-    user: user.smtpUser,
-    password: decryptSecret(user.smtpPasswordEncrypted),
-  };
+  return accounts.map((a) => ({
+    id: a.id,
+    label: a.label || a.email,
+    host: a.imapHost,
+    port: a.imapPort,
+    user: a.email,
+    password: decryptSecret(a.passwordEncrypted),
+  }));
 }
 
 const MAX_EMAILS_PER_CHECK = 20;

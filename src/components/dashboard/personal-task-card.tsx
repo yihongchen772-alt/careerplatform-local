@@ -152,7 +152,10 @@ function TaskRow({
         </p>
         <p className="text-xs text-muted-foreground">
           {[
-            task.dueDate && new Date(task.dueDate).toLocaleDateString(),
+            task.dueDate &&
+              (task.dueDateEnd
+                ? `${new Date(task.dueDate).toLocaleDateString()} - ${new Date(task.dueDateEnd).toLocaleDateString()}`
+                : new Date(task.dueDate).toLocaleDateString()),
             linked?.label,
           ]
             .filter(Boolean)

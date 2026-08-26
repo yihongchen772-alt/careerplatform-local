@@ -25,6 +25,7 @@ export function AddStageForm({ applicationId }: { applicationId: string }) {
   const [interviewFormat, setInterviewFormat] = useState("");
   const [interviewer, setInterviewer] = useState("");
   const [nextDeadline, setNextDeadline] = useState("");
+  const [nextDeadlineEnd, setNextDeadlineEnd] = useState("");
   const [pendingFiles, setPendingFiles] = useState<{ url: string; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -38,6 +39,8 @@ export function AddStageForm({ applicationId }: { applicationId: string }) {
         interviewFormat: interviewFormat || undefined,
         interviewer: interviewer || undefined,
         nextDeadline: nextDeadline ? new Date(nextDeadline) : undefined,
+        nextDeadlineEnd:
+          nextDeadline && nextDeadlineEnd ? new Date(nextDeadlineEnd) : undefined,
       });
       await Promise.all(
         pendingFiles.map((f) => addAttachment({ stageHistoryId, ...f }))
@@ -47,6 +50,7 @@ export function AddStageForm({ applicationId }: { applicationId: string }) {
       setInterviewFormat("");
       setInterviewer("");
       setNextDeadline("");
+      setNextDeadlineEnd("");
       setPendingFiles([]);
     } catch {
       toast.error("更新失败，请重试");
@@ -96,9 +100,25 @@ export function AddStageForm({ applicationId }: { applicationId: string }) {
           <Input
             type="date"
             value={nextDeadline}
-            onChange={(e) => setNextDeadline(e.target.value)}
+            onChange={(e) => {
+              setNextDeadline(e.target.value);
+              if (!e.target.value) setNextDeadlineEnd("");
+            }}
           />
         </div>
+        {nextDeadline && (
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">
+              窗口结束日期（可选——笔试/测评这类给一段时间窗口的，填这个）
+            </Label>
+            <Input
+              type="date"
+              min={nextDeadline}
+              value={nextDeadlineEnd}
+              onChange={(e) => setNextDeadlineEnd(e.target.value)}
+            />
+          </div>
+        )}
       </div>
       <div className="space-y-1">
         <Label className="text-xs text-muted-foreground">复盘笔记</Label>

@@ -29,6 +29,7 @@ export type TimelineEntry = {
   interviewFormat: string | null;
   interviewer: string | null;
   nextDeadline: string | null;
+  nextDeadlineEnd: string | null;
   attachments: { id: string; url: string; name: string }[];
 };
 
@@ -68,6 +69,12 @@ function TimelineRow({
   const [note, setNote] = useState(entry.note ?? "");
   const [format, setFormat] = useState(entry.interviewFormat ?? "");
   const [interviewer, setInterviewer] = useState(entry.interviewer ?? "");
+  const [nextDeadline, setNextDeadline] = useState(
+    entry.nextDeadline?.slice(0, 10) ?? ""
+  );
+  const [nextDeadlineEnd, setNextDeadlineEnd] = useState(
+    entry.nextDeadlineEnd?.slice(0, 10) ?? ""
+  );
   const [saving, setSaving] = useState(false);
 
   async function handleSave() {
@@ -78,7 +85,9 @@ function TimelineRow({
         note: note || undefined,
         interviewFormat: format || undefined,
         interviewer: interviewer || undefined,
-        nextDeadline: entry.nextDeadline ? new Date(entry.nextDeadline) : null,
+        nextDeadline: nextDeadline ? new Date(nextDeadline) : null,
+        nextDeadlineEnd:
+          nextDeadline && nextDeadlineEnd ? new Date(nextDeadlineEnd) : null,
         enteredAt,
       });
       if (!res.ok) {
@@ -129,6 +138,32 @@ function TimelineRow({
             <Label className="text-xs text-muted-foreground">面试官</Label>
             <Input value={interviewer} onChange={(e) => setInterviewer(e.target.value)} />
           </div>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">下一步截止日期</Label>
+            <Input
+              type="date"
+              value={nextDeadline}
+              onChange={(e) => {
+                setNextDeadline(e.target.value);
+                if (!e.target.value) setNextDeadlineEnd("");
+              }}
+            />
+          </div>
+          {nextDeadline && (
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">
+                窗口结束日期（笔试/测评窗口可选）
+              </Label>
+              <Input
+                type="date"
+                min={nextDeadline}
+                value={nextDeadlineEnd}
+                onChange={(e) => setNextDeadlineEnd(e.target.value)}
+              />
+            </div>
+          )}
         </div>
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">复盘 / 备注</Label>
@@ -189,7 +224,9 @@ function TimelineRow({
       {entry.note && <p className="mt-1 text-sm">{entry.note}</p>}
       {entry.nextDeadline && (
         <p className="mt-1 text-xs text-muted-foreground">
-          下一步截止：{new Date(entry.nextDeadline).toLocaleDateString()}
+          {entry.nextDeadlineEnd
+            ? `下一步窗口：${new Date(entry.nextDeadline).toLocaleDateString()} - ${new Date(entry.nextDeadlineEnd).toLocaleDateString()}`
+            : `下一步截止：${new Date(entry.nextDeadline).toLocaleDateString()}`}
         </p>
       )}
       {entry.attachments.length > 0 && (

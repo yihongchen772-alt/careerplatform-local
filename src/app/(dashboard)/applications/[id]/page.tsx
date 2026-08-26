@@ -76,6 +76,7 @@ export default async function ApplicationDetailPage({
                 interviewFormat: h.interviewFormat,
                 interviewer: h.interviewer,
                 nextDeadline: h.nextDeadline?.toISOString() ?? null,
+                nextDeadlineEnd: h.nextDeadlineEnd?.toISOString() ?? null,
                 attachments: h.attachments.map((a) => ({
                   id: a.id,
                   url: a.url,

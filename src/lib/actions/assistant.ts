@@ -238,10 +238,10 @@ ${historyText ? `之前的对话：\n${historyText}\n` : ""}
 
 关于 actions（可选，没有就给空数组）：
 当用户说的话意味着数据该被记下来或改动时，在 actions 里提出建议，用户点一下就会执行。绝不要凭空替他决定——只有他确实表达了这个意思才提。可用的 type：
-- add_task：加一条待办。title 填事情，date 填截止日（YYYY-MM-DD），note 可选
+- add_task：加一条待办。title 填事情，date 填截止日（YYYY-MM-DD），note 可选。如果用户说的是一个时间窗口（比如"笔试 8月26到30号之间随时可以做"），date 填窗口开始，dateEnd 填窗口结束
 - log_application：记一条新投递。companyName + title 必填，date 填投递日期（没说就用今天）
 - add_position：往候选岗位池里加一个还没投的岗位。companyName + title 必填，date 填截止日期，note 可写方向/地点
-- update_stage：更新某条投递的阶段。targetId 填上面的[投递ID]，stage 从这些里选：${applicationStageValues.join(" / ")}，date 填下一步的时间（比如面试时间），note 可选
+- update_stage：更新某条投递的阶段。targetId 填上面的[投递ID]，stage 从这些里选：${applicationStageValues.join(" / ")}，date 填下一步的时间（比如面试时间），note 可选。同样，如果下一步是笔试/测评这种给一段窗口而不是单一时间点的，date 填窗口开始，dateEnd 填窗口结束
 - promote_lead：把秋招信息库里的一条线索提进候选岗位池。targetId 填上面的[线索ID]
 每个 action 的 label 写成用户一眼能看懂的按钮文案，比如"记一条投递：字节跳动 后端开发"或"更新为一面，面试时间 3月5日"。label 只是按钮上的字，不能代替上面那些字段——该填 title/companyName/targetId 的一个都不能少，别只写 label 就交差。
 举例：用户说"我今天投了美团的数据分析，下周三一面"，就给两个 action —— 一个 log_application，一个提醒他准备面试的 add_task。`;
@@ -274,6 +274,7 @@ ${historyText ? `之前的对话：\n${historyText}\n` : ""}
                 companyName: { type: "STRING", nullable: true },
                 title: { type: "STRING", nullable: true },
                 date: { type: "STRING", nullable: true },
+                dateEnd: { type: "STRING", nullable: true },
                 stage: { type: "STRING", nullable: true, enum: applicationStageValues },
                 targetId: { type: "STRING", nullable: true },
                 note: { type: "STRING", nullable: true },
@@ -328,6 +329,7 @@ export async function applyAssistantAction(
             title,
             note: a.note || undefined,
             dueDate: parseDate(a.date) ?? undefined,
+            dueDateEnd: parseDate(a.dateEnd) ?? undefined,
           },
         });
         revalidatePath("/dashboard");
@@ -407,6 +409,7 @@ export async function applyAssistantAction(
               stage,
               note: a.note || undefined,
               nextDeadline: parseDate(a.date) ?? undefined,
+              nextDeadlineEnd: parseDate(a.dateEnd) ?? undefined,
             },
           });
           await tx.application.update({

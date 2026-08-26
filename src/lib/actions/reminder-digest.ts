@@ -49,7 +49,7 @@ function renderDigestHtml(todos: Todo[]): string {
     .join("");
 
   return `<div style="font-family:sans-serif;max-width:520px;">
-    <h2 style="margin-bottom:4px;">秋招追踪 · 待办提醒</h2>
+    <h2 style="margin-bottom:4px;">求职罗盘 · 待办提醒</h2>
     <p style="color:#666;font-size:14px;">共 ${todos.length} 件事需要关注</p>
     <table style="width:100%;border-collapse:collapse;">${rows}</table>
   </div>`;
@@ -78,11 +78,11 @@ export async function sendReminderDigestNow(): Promise<ActionResult<{ count: num
     const html =
       todos.length > 0
         ? renderDigestHtml(todos)
-        : `<div style="font-family:sans-serif;"><h2>秋招追踪</h2><p>暂时没有要处理的事，保持住 👍</p></div>`;
+        : `<div style="font-family:sans-serif;"><h2>求职罗盘</h2><p>暂时没有要处理的事，保持住 👍</p></div>`;
 
     await sendMail(config, {
       to: config.user,
-      subject: todos.length > 0 ? `秋招追踪：${todos.length} 件事需要关注` : "秋招追踪：一切正常",
+      subject: todos.length > 0 ? `求职罗盘：${todos.length} 件事需要关注` : "求职罗盘：一切正常",
       html,
     });
 
@@ -108,7 +108,7 @@ export async function checkAndSendOnLaunch(userId: string): Promise<void> {
 
     await sendMail(config, {
       to: config.user,
-      subject: `秋招追踪：${urgent.length} 件事需要关注`,
+      subject: `求职罗盘：${urgent.length} 件事需要关注`,
       html: renderDigestHtml(urgent),
     });
   } catch (err) {

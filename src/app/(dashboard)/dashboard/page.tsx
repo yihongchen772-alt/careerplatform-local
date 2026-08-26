@@ -82,6 +82,7 @@ export default async function DashboardPage() {
           title: t.title,
           note: t.note,
           dueDate: t.dueDate?.toISOString() ?? null,
+          dueDateEnd: t.dueDateEnd?.toISOString() ?? null,
           positionId: t.positionId,
           applicationId: t.applicationId,
           done: t.done,

@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
@@ -19,28 +18,17 @@ import {
   clearEmailSettings,
   sendTestEmail,
 } from "@/lib/actions/email-settings";
-import { scanInboxNow } from "@/lib/actions/inbox-scan";
 import { EMAIL_PROVIDER_OPTIONS } from "@/lib/email-provider-labels";
 import type { EmailProviderId } from "@/lib/email-provider-labels";
 
-export function EmailSettingsForm({
-  currentUser,
-  inboxScanEnabled,
-}: {
-  currentUser: string | null;
-  inboxScanEnabled: boolean;
-}) {
+export function EmailSettingsForm({ currentUser }: { currentUser: string | null }) {
   const [provider, setProvider] = useState<EmailProviderId>("gmail");
   const [smtpHost, setSmtpHost] = useState(EMAIL_PROVIDER_OPTIONS[0].smtpHost);
   const [smtpPort, setSmtpPort] = useState(String(EMAIL_PROVIDER_OPTIONS[0].smtpPort));
-  const [imapHost, setImapHost] = useState(EMAIL_PROVIDER_OPTIONS[0].imapHost);
-  const [imapPort, setImapPort] = useState(String(EMAIL_PROVIDER_OPTIONS[0].imapPort));
   const [email, setEmail] = useState(currentUser ?? "");
   const [password, setPassword] = useState("");
-  const [scanInbox, setScanInbox] = useState(inboxScanEnabled);
   const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [scanning, setScanning] = useState(false);
   const [clearing, setClearing] = useState(false);
 
   const providerMeta = EMAIL_PROVIDER_OPTIONS.find((p) => p.id === provider)!;
@@ -51,8 +39,6 @@ export function EmailSettingsForm({
     if (next !== "custom") {
       setSmtpHost(meta.smtpHost);
       setSmtpPort(String(meta.smtpPort));
-      setImapHost(meta.imapHost);
-      setImapPort(String(meta.imapPort));
     }
   }
 
@@ -70,9 +56,6 @@ export function EmailSettingsForm({
         user: email,
         password,
         from: email,
-        imapHost: imapHost || undefined,
-        imapPort: imapPort ? Number(imapPort) : undefined,
-        inboxScanEnabled: scanInbox,
       });
       toast.success("已保存");
       setPassword("");
@@ -91,24 +74,6 @@ export function EmailSettingsForm({
       else toast.error(res.message);
     } finally {
       setTesting(false);
-    }
-  }
-
-  async function handleScanNow() {
-    setScanning(true);
-    try {
-      const res = await scanInboxNow();
-      if (res.ok) {
-        toast.success(
-          res.data.found > 0
-            ? `扫了 ${res.data.scanned} 封新邮件，${res.data.found} 封求职相关已加入日程`
-            : `扫了 ${res.data.scanned} 封新邮件，没有求职相关的`
-        );
-      } else {
-        toast.error(res.message);
-      }
-    } finally {
-      setScanning(false);
     }
   }
 
@@ -203,42 +168,8 @@ export function EmailSettingsForm({
                   onChange={(e) => setSmtpPort(e.target.value)}
                 />
               </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">IMAP 服务器（收信）</Label>
-                <Input
-                  value={imapHost}
-                  onChange={(e) => setImapHost(e.target.value)}
-                  placeholder="imap.example.com"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">IMAP 端口</Label>
-                <Input
-                  type="number"
-                  value={imapPort}
-                  onChange={(e) => setImapPort(e.target.value)}
-                />
-              </div>
             </div>
           )}
-
-          <div className="flex items-start gap-2 rounded-md border p-3">
-            <Checkbox
-              id="scan-inbox"
-              checked={scanInbox}
-              onCheckedChange={(checked) => setScanInbox(checked === true)}
-              className="mt-0.5"
-            />
-            <label htmlFor="scan-inbox" className="text-sm">
-              <span className="font-medium">自动扫描收件箱，识别面试/offer/拒信邮件</span>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                打开 App 时检查一次新邮件（最多看最近 20 封），只读取邮件标题和一小段正文，
-                不会修改、标记或删除任何邮件。识别到求职相关的会自动生成一条到&ldquo;我的日程&rdquo;，
-                不会自动改投递记录的状态。邮件内容会发给你配置的 AI 服务商用于判断类型，
-                需要先在「AI 设置」里配置好 Key。
-              </p>
-            </label>
-          </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <Button type="submit" disabled={loading}>
@@ -254,16 +185,6 @@ export function EmailSettingsForm({
                 >
                   {testing ? "发送中..." : "发送测试邮件"}
                 </Button>
-                {inboxScanEnabled && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={scanning}
-                    onClick={handleScanNow}
-                  >
-                    {scanning ? "扫描中..." : "立即扫描收件箱"}
-                  </Button>
-                )}
                 <Button
                   type="button"
                   variant="ghost"

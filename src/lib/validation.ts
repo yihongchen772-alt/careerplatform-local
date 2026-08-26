@@ -32,9 +32,16 @@ export const emailSettingsSchema = z.object({
   user: z.string().email("请填写合法的邮箱地址"),
   password: z.string().min(1, "请填写授权码/应用密码"),
   from: z.string().email().optional(),
-  imapHost: z.string().optional(),
-  imapPort: z.coerce.number().int().min(1).max(65535).optional(),
-  inboxScanEnabled: z.boolean().optional(),
+});
+
+/** One inbox to scan — see MailAccount in prisma/schema.prisma for why this
+ * is a list instead of living on User like the SMTP-send fields above. */
+export const mailAccountSchema = z.object({
+  label: z.string().optional(),
+  imapHost: z.string().min(1, "请填写 IMAP 服务器地址"),
+  imapPort: z.coerce.number().int().min(1).max(65535),
+  email: z.string().email("请填写合法的邮箱地址"),
+  password: z.string().min(1, "请填写授权码/应用密码"),
 });
 
 export const positionStatusValues = [
@@ -111,6 +118,10 @@ export const stageUpdateSchema = z.object({
   interviewFormat: z.string().optional(),
   interviewer: z.string().optional(),
   nextDeadline: z.coerce.date().optional().nullable(),
+  /// End of a window, when the next step is a range ("8/26-8/30 期间任意
+  /// 时间可测") rather than a single moment — 笔试/测评链接routinely give a
+  /// window, not a fixed slot the way an interview appointment does.
+  nextDeadlineEnd: z.coerce.date().optional().nullable(),
 });
 
 export const resumeVersionSchema = z.object({
@@ -181,6 +192,9 @@ export const personalTaskSchema = z.object({
   title: z.string().min(1, "标题必填"),
   note: z.string().optional(),
   dueDate: z.coerce.date().optional().nullable(),
+  /// Same window idea as StageHistory.nextDeadlineEnd — a self-authored
+  /// task can equally be "笔试窗口 8/26-8/30" rather than a single moment.
+  dueDateEnd: z.coerce.date().optional().nullable(),
   positionId: z.string().optional().nullable(),
   applicationId: z.string().optional().nullable(),
 });

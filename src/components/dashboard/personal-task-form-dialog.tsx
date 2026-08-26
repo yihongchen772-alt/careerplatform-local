@@ -30,6 +30,7 @@ export type PersonalTaskInitial = {
   title: string;
   note: string | null;
   dueDate: string | null;
+  dueDateEnd: string | null;
   positionId: string | null;
   applicationId: string | null;
 };
@@ -52,6 +53,9 @@ export function PersonalTaskFormDialog({
   const [title, setTitle] = useState(initial?.title ?? "");
   const [note, setNote] = useState(initial?.note ?? "");
   const [dueDate, setDueDate] = useState(initial?.dueDate?.slice(0, 10) ?? "");
+  const [dueDateEnd, setDueDateEnd] = useState(
+    initial?.dueDateEnd?.slice(0, 10) ?? ""
+  );
   // "关联到" is one dropdown covering both lists — a task is about one job
   // search item or it isn't, never both at once.
   const [linkValue, setLinkValue] = useState(
@@ -67,6 +71,7 @@ export function PersonalTaskFormDialog({
       setTitle(initial?.title ?? "");
       setNote(initial?.note ?? "");
       setDueDate(initial?.dueDate?.slice(0, 10) ?? "");
+      setDueDateEnd(initial?.dueDateEnd?.slice(0, 10) ?? "");
       setLinkValue(
         initial?.positionId
           ? `position:${initial.positionId}`
@@ -91,6 +96,7 @@ export function PersonalTaskFormDialog({
         title,
         note: note || undefined,
         dueDate: dueDate ? new Date(dueDate) : undefined,
+        dueDateEnd: dueDate && dueDateEnd ? new Date(dueDateEnd) : undefined,
         positionId: kind === "position" ? linkId : undefined,
         applicationId: kind === "application" ? linkId : undefined,
       };
@@ -137,9 +143,25 @@ export function PersonalTaskFormDialog({
             <Input
               type="date"
               value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
+              onChange={(e) => {
+                setDueDate(e.target.value);
+                if (!e.target.value) setDueDateEnd("");
+              }}
             />
           </div>
+          {dueDate && (
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">
+                结束日期（可选——笔试/测评这类有开放窗口的，填这个）
+              </Label>
+              <Input
+                type="date"
+                min={dueDate}
+                value={dueDateEnd}
+                onChange={(e) => setDueDateEnd(e.target.value)}
+              />
+            </div>
+          )}
           <div className="space-y-1">
             <Label className="text-xs text-muted-foreground">关联到（可选）</Label>
             <Select value={linkValue} onValueChange={(v) => v && setLinkValue(v)}>
