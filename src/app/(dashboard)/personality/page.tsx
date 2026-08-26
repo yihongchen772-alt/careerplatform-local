@@ -21,7 +21,7 @@ export default async function PersonalityPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">性格 / 职业兴趣测试</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">性格 / 职业兴趣测试</h1>
         <p className="text-sm text-muted-foreground">
           自测参考版，基于公开的心理学理论结构自己撰写题目，不是官方量表——结果仅供了解自己的行为风格参考，别当成唯一依据
         </p>

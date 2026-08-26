@@ -39,7 +39,7 @@ export default async function MockInterviewPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">AI 模拟面试</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">AI 模拟面试</h1>
         <p className="text-sm text-muted-foreground">
           选一份简历，AI 一问你一答，打字回答，大概 10-15 分钟一场
         </p>

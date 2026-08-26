@@ -89,7 +89,7 @@ function NavItem({
       href={link.href}
       onClick={onNavigate}
       className={cn(
-        "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+        "flex items-center gap-2.5 rounded-full px-3.5 py-2 text-sm font-medium transition-all duration-200 ease-(--ease-apple)",
         active
           ? "bg-primary/10 text-primary"
           : "text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -115,16 +115,16 @@ function NavContent({
 
   return (
     <div className="flex h-full flex-col justify-between p-4">
-      <div className="space-y-5">
-        <div className="flex items-center gap-2 px-2 text-lg font-semibold">
-          <BrandMark className="size-7 shrink-0 rounded-lg shadow-sm" />
+      <div className="space-y-6">
+        <div className="flex items-center gap-2.5 px-2 text-lg font-semibold tracking-tight">
+          <BrandMark className="size-7 shrink-0 rounded-xl shadow-sm" />
           秋招追踪
         </div>
 
         <button
           type="button"
           onClick={onSearchClick}
-          className="flex w-full items-center gap-2.5 rounded-md border px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="flex w-full items-center gap-2.5 rounded-full border bg-background/60 px-3.5 py-2 text-sm text-muted-foreground transition-all duration-200 ease-(--ease-apple) hover:border-ring/40 hover:bg-muted hover:text-foreground"
         >
           <Search className="size-4 shrink-0" />
           搜索...
@@ -176,8 +176,11 @@ export function DashboardNav({ userLabel }: { userLabel: string }) {
       <GlobalSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
 
       {/* Desktop sidebar — sticky so the nav stays reachable on long pages
-          instead of scrolling away with the content. */}
-      <aside className="hidden w-56 shrink-0 border-r bg-card md:block">
+          instead of scrolling away with the content. Translucent + blurred
+          rather than a flat fill, the way macOS's own sidebar material
+          reads as a distinct layer floating over the content instead of a
+          solid panel butted up against it. */}
+      <aside className="hidden w-56 shrink-0 border-r border-border/60 bg-sidebar/80 backdrop-blur-xl md:block">
         <div className="sticky top-0 h-screen overflow-y-auto">
           <NavContent
             userLabel={userLabel}

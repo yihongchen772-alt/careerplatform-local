@@ -29,7 +29,7 @@ export default async function InsightsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">投递转化率</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">投递转化率</h1>
         <p className="text-sm text-muted-foreground">
           看看哪个渠道、哪版简历、哪个方向更容易拿到面试，好决定精力往哪放
         </p>

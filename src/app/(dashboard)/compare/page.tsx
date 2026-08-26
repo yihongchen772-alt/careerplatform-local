@@ -28,7 +28,7 @@ export default async function ComparePage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Offer 对比</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">Offer 对比</h1>
         <p className="text-sm text-muted-foreground">
           汇总所有拿到 offer 或已接受的投递，方便横向比较
         </p>
