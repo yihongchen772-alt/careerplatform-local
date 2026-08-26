@@ -109,16 +109,17 @@ async function runScan(
   for (const account of accounts) {
     const stored = await db.mailAccount.findUnique({
       where: { id: account.id },
-      select: { lastCheckedAt: true },
+      select: { lastCheckedAt: true, lastSeenUid: true },
     });
     // First-ever check looks back 3 days rather than the whole mailbox
     // history — otherwise the first scan on a long-lived inbox would
-    // classify years of mail in one go.
+    // classify years of mail in one go. Only matters when there's no UID
+    // cursor yet; once one exists, the UID range alone is exact.
     const since = stored?.lastCheckedAt ?? new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
 
     let emails: InboxEmail[];
     try {
-      emails = await fetchRecentEmails(account, since);
+      emails = await fetchRecentEmails(account, since, stored?.lastSeenUid);
     } catch (err) {
       console.error(`[inbox-scan] ${account.label} failed`, err);
       failedAccounts.push(account.label);
@@ -143,9 +144,20 @@ async function runScan(
       }
     }
 
+    // Advance past every message this scan actually looked at, not just
+    // the ones that turned into a 待办 — an email that got fetched and
+    // classified "not job-related" must never be re-classified on the next
+    // scan either, or a same-day rescan would burn an AI call re-judging
+    // it (harmless to data, but a real waste, and the more that behavior
+    // gets relied on the more it's *only one bug away* from silently
+    // reprocessing everything again).
+    const maxUid = emails.length > 0 ? Math.max(...emails.map((e) => e.uid)) : undefined;
     await db.mailAccount.update({
       where: { id: account.id },
-      data: { lastCheckedAt: new Date() },
+      data: {
+        lastCheckedAt: new Date(),
+        lastSeenUid: maxUid !== undefined ? Math.max(maxUid, stored?.lastSeenUid ?? 0) : stored?.lastSeenUid,
+      },
     });
   }
 
