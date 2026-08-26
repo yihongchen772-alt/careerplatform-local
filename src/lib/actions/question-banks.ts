@@ -21,6 +21,8 @@ export type QuestionBankSummary = {
   source: string | null;
   count: number;
   answered: number;
+  /** Distinct module names present, in first-seen order. */
+  modules: string[];
   createdAt: string;
 };
 
@@ -44,6 +46,7 @@ export async function listQuestionBanks(userId: string): Promise<QuestionBankSum
       source: b.source,
       count: items.length,
       answered: items.filter((q) => q.referenceAnswer).length,
+      modules: Array.from(new Set(items.map((q) => q.module).filter((m): m is string => !!m))),
       createdAt: b.createdAt.toISOString(),
     };
   });
@@ -244,5 +247,108 @@ ${batch.map(({ q }, n) => `${n + 1}. ${q.question}`).join("\n")}
     });
     revalidatePath("/question-banks");
     return { filled };
+  });
+}
+
+/**
+ * Batch-assigns a technical module (C++ / Python / 大模型 / 嵌入式 / 强化学习
+ * / 具身智能 …) to whichever questions don't have one yet. A bank swept
+ * together from months of practice is unusable as "复习一下 C++" without
+ * this — it's just two hundred questions in whatever order they arrived.
+ *
+ * Free-form rather than a fixed list: the right module set is different for
+ * every candidate's track, and forcing e.g. a robotics candidate's bank
+ * into a web-dev taxonomy would be actively wrong. The already-used module
+ * names in this bank are passed back to the model as a hint set so repeat
+ * runs don't invent near-synonyms ("大模型" one time, "LLM" the next) for
+ * the same subject.
+ */
+export async function classifyBankModules(
+  id: string
+): Promise<ActionResult<{ classified: number }>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const bank = await db.questionBank.findFirst({ where: { id, userId: user.id } });
+    if (!bank) throw new UserFacingError("找不到这个题库");
+
+    const questions = readItems(bank.questions);
+    const pending = questions.map((q, i) => ({ q, i })).filter(({ q }) => !q.module);
+    if (pending.length === 0) throw new UserFacingError("这个题库的题目都已经分好模块了");
+
+    const config = await getUserAiConfig(user.id);
+    if (!config) throw new UserFacingError("先去账号设置配置一个 AI Key 才能用这个功能");
+
+    const existingModules = Array.from(
+      new Set(questions.map((q) => q.module).filter((m): m is string => !!m))
+    );
+
+    const BATCH = 20;
+    let classified = 0;
+    for (let start = 0; start < pending.length; start += BATCH) {
+      const batch = pending.slice(start, start + BATCH);
+      const prompt = `下面是一批技术面试题，请给每道题标一个技术模块（比如"C++""Python""大模型""嵌入式""强化学习""具身智能""算法与数据结构""操作系统""计算机网络""数据库""行为面试"，也可以是这些之外真正贴切的模块——不要生搬硬套）。
+
+${existingModules.length > 0 ? `这个题库里已经用过的模块名：${existingModules.join("、")}。新题目如果主题相符，直接复用这些名字，不要造近义词（比如已经有"大模型"就不要再造"LLM"）。\n` : ""}
+题目：
+${batch.map(({ q }, n) => `${n + 1}. ${q.question}`).join("\n")}
+
+按题目顺序返回，数量必须和上面的题目数量一致，每题就给一个简短的模块名（2-6 个字/词）。`;
+
+      const raw = await callTextAi({
+        config,
+        prompt,
+        thinkingBudget: 512,
+        timeoutMs: 60000,
+        schema: {
+          type: "OBJECT",
+          properties: {
+            modules: { type: "ARRAY", items: { type: "STRING" } },
+          },
+          required: ["modules"],
+        },
+      });
+
+      const parsed = z.object({ modules: z.array(z.string().nullish()) }).safeParse(raw);
+      if (!parsed.success) continue;
+
+      parsed.data.modules.slice(0, batch.length).forEach((m, n) => {
+        if (!m?.trim()) return;
+        questions[batch[n].i].module = m.trim();
+        classified += 1;
+      });
+    }
+
+    if (classified === 0) throw new UserFacingError("AI 没能给出模块分类，请重试");
+
+    await db.questionBank.update({
+      where: { id: bank.id },
+      data: { questions },
+    });
+    revalidatePath("/question-banks");
+    return { classified };
+  });
+}
+
+/** Manual override for one question's module — the AI classification is a
+ * starting point, not a verdict, and a wrong guess should be one click to fix. */
+export async function updateQuestionModule(
+  bankId: string,
+  questionIndex: number,
+  module: string | null
+): Promise<ActionResult<null>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const bank = await db.questionBank.findFirst({ where: { id: bankId, userId: user.id } });
+    if (!bank) throw new UserFacingError("找不到这个题库");
+
+    const questions = readItems(bank.questions);
+    if (questionIndex < 0 || questionIndex >= questions.length) {
+      throw new UserFacingError("这道题不存在，题库可能已经变了，刷新一下");
+    }
+    questions[questionIndex].module = module?.trim() || null;
+
+    await db.questionBank.update({ where: { id: bankId }, data: { questions } });
+    revalidatePath("/question-banks");
+    return null;
   });
 }
