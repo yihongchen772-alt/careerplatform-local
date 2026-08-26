@@ -22,9 +22,6 @@ export async function updateEmailSettings(input: z.infer<typeof emailSettingsSch
       // Never store the plaintext password — only the encrypted form ever hits the DB.
       smtpPasswordEncrypted: encryptSecret(data.password),
       smtpFrom: data.from || data.user,
-      imapHost: data.imapHost || null,
-      imapPort: data.imapPort || null,
-      inboxScanEnabled: data.inboxScanEnabled ?? false,
     },
   });
 
@@ -41,10 +38,6 @@ export async function clearEmailSettings() {
       smtpUser: null,
       smtpPasswordEncrypted: null,
       smtpFrom: null,
-      imapHost: null,
-      imapPort: null,
-      inboxScanEnabled: false,
-      lastEmailCheckAt: null,
     },
   });
   revalidatePath("/settings");
@@ -58,7 +51,7 @@ export async function sendTestEmail(): Promise<ActionResult<null>> {
 
     await sendMail(config, {
       to: config.user,
-      subject: "秋招追踪 · 测试邮件",
+      subject: "求职罗盘 · 测试邮件",
       html: "<p>这是一封测试邮件——收到就说明邮箱配置对了。</p>",
     });
     return null;

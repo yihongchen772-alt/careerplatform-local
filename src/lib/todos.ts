@@ -45,6 +45,7 @@ type TodoStageHistory = {
   id: string;
   stage: ApplicationStage;
   nextDeadline: Date | null;
+  nextDeadlineEnd: Date | null;
   application: {
     id: string;
     title: string;
@@ -57,8 +58,51 @@ export type TodoPersonalTask = {
   id: string;
   title: string;
   dueDate: Date | null;
+  dueDateEnd: Date | null;
   done: boolean;
 };
+
+/**
+ * A window (笔试/测评 windows routinely span days, not a single moment) is
+ * urgent based on when it *closes*, not when it opens — the whole point of
+ * "8/26-8/30 期间任意时间可测" is that today isn't a deadline yet. Sharing
+ * this between PersonalTask and StageHistory since both can now carry a
+ * window instead of a single point.
+ */
+function windowStatus(
+  start: Date,
+  end: Date | null
+): { urgencyDate: Date; note: string } {
+  if (!end) {
+    const daysLeft = daysUntil(start);
+    return {
+      urgencyDate: start,
+      note:
+        daysLeft < 0
+          ? `已过期 ${-daysLeft} 天`
+          : daysLeft === 0
+            ? "今天到期"
+            : `还有 ${daysLeft} 天`,
+    };
+  }
+  if (new Date() < start) {
+    const daysUntilOpen = daysUntil(start);
+    return {
+      urgencyDate: start,
+      note: daysUntilOpen === 0 ? "窗口今天开放" : `窗口 ${daysUntilOpen} 天后开放`,
+    };
+  }
+  const daysLeft = daysUntil(end);
+  return {
+    urgencyDate: end,
+    note:
+      daysLeft < 0
+        ? `窗口已过期 ${-daysLeft} 天`
+        : daysLeft === 0
+          ? "窗口今天关闭"
+          : `窗口还剩 ${daysLeft} 天`,
+  };
+}
 
 export function buildTodos(
   applications: TodoApplication[],
@@ -74,17 +118,13 @@ export function buildTodos(
   // deadline-ranked list, so they're left out here and shown separately.
   for (const t of personalTasks) {
     if (t.done || !t.dueDate) continue;
-    const daysLeft = daysUntil(t.dueDate);
+    const { urgencyDate, note } = windowStatus(t.dueDate, t.dueDateEnd);
+    const daysLeft = daysUntil(urgencyDate);
     if (daysLeft > NEXT_STEP_WINDOW_DAYS) continue;
     todos.push({
       id: `task-${t.id}`,
       label: t.title,
-      sublabel:
-        daysLeft < 0
-          ? `已过期 ${-daysLeft} 天`
-          : daysLeft === 0
-            ? "今天到期"
-            : `还有 ${daysLeft} 天`,
+      sublabel: note,
       urgency: urgencyOf(daysLeft),
       href: "/dashboard",
       order: daysLeft,
@@ -118,17 +158,13 @@ export function buildTodos(
     if (!h.nextDeadline) continue;
     // A finished application's leftover next-step date isn't actionable.
     if (isTerminalStage(h.application.currentStage)) continue;
-    const daysLeft = daysUntil(h.nextDeadline);
+    const { urgencyDate, note } = windowStatus(h.nextDeadline, h.nextDeadlineEnd);
+    const daysLeft = daysUntil(urgencyDate);
     if (daysLeft > NEXT_STEP_WINDOW_DAYS) continue;
     todos.push({
       id: `next-${h.id}`,
       label: `${h.application.company.name} · ${h.application.title}`,
-      sublabel:
-        daysLeft < 0
-          ? `下一步已过期 ${-daysLeft} 天`
-          : daysLeft === 0
-            ? "下一步今天截止"
-            : `下一步还有 ${daysLeft} 天`,
+      sublabel: `下一步${note}`,
       urgency: urgencyOf(daysLeft),
       href: `/applications/${h.application.id}`,
       order: daysLeft,

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
-import { getUserImapConfig, fetchRecentEmails, type InboxEmail } from "@/lib/imap";
+import { getUserScanAccounts, fetchRecentEmails, type InboxEmail } from "@/lib/imap";
 import { getUserAiConfig, callTextAi } from "@/lib/ai-providers";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
 
@@ -81,9 +81,19 @@ ${listing}
   return parsed.data.results;
 }
 
-async function runScan(userId: string): Promise<{ found: number; scanned: number }> {
-  const imapConfig = await getUserImapConfig(userId);
-  if (!imapConfig) return { found: 0, scanned: 0 };
+/**
+ * Scans every enabled mailbox for this user — a recruiter's required
+ * address (QQ mailbox for Tencent, 163 for NetEase, whatever a given
+ * company standardizes on) varies, so one mailbox alone routinely misses
+ * real notifications. Each account keeps its own since-cursor and is
+ * classified separately; one account's IMAP failure doesn't block the
+ * others from scanning.
+ */
+async function runScan(
+  userId: string
+): Promise<{ found: number; scanned: number; failedAccounts: string[] }> {
+  const accounts = await getUserScanAccounts(userId);
+  if (accounts.length === 0) return { found: 0, scanned: 0, failedAccounts: [] };
 
   const aiConfig = await getUserAiConfig(userId);
   if (!aiConfig) {
@@ -92,45 +102,60 @@ async function runScan(userId: string): Promise<{ found: number; scanned: number
     );
   }
 
-  const user = await db.user.findUnique({
-    where: { id: userId },
-    select: { lastEmailCheckAt: true },
-  });
-  // First-ever check looks back 3 days rather than the whole mailbox history
-  // — otherwise the first scan on a long-lived inbox would classify years of
-  // mail in one go.
-  const since = user?.lastEmailCheckAt ?? new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
-
-  const emails = await fetchRecentEmails(imapConfig, since);
   let found = 0;
+  let scanned = 0;
+  const failedAccounts: string[] = [];
 
-  if (emails.length > 0) {
-    const classifications = await classifyEmails(emails, aiConfig);
-    for (const c of classifications) {
-      if (!c.isJobRelated) continue;
-      const email = emails[c.index];
-      if (!email) continue;
-      await db.personalTask.create({
-        data: {
-          userId,
-          title: `${c.type}${c.company ? `：${c.company}` : ""}`,
-          note: `${c.summary}\n\n邮件主题：${email.subject}\n来自：${email.from}`,
-        },
-      });
-      found += 1;
+  for (const account of accounts) {
+    const stored = await db.mailAccount.findUnique({
+      where: { id: account.id },
+      select: { lastCheckedAt: true },
+    });
+    // First-ever check looks back 3 days rather than the whole mailbox
+    // history — otherwise the first scan on a long-lived inbox would
+    // classify years of mail in one go.
+    const since = stored?.lastCheckedAt ?? new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+
+    let emails: InboxEmail[];
+    try {
+      emails = await fetchRecentEmails(account, since);
+    } catch (err) {
+      console.error(`[inbox-scan] ${account.label} failed`, err);
+      failedAccounts.push(account.label);
+      continue;
     }
+    scanned += emails.length;
+
+    if (emails.length > 0) {
+      const classifications = await classifyEmails(emails, aiConfig);
+      for (const c of classifications) {
+        if (!c.isJobRelated) continue;
+        const email = emails[c.index];
+        if (!email) continue;
+        await db.personalTask.create({
+          data: {
+            userId,
+            title: `${c.type}${c.company ? `：${c.company}` : ""}`,
+            note: `${c.summary}\n\n邮件主题：${email.subject}\n来自：${email.from}\n收件箱：${account.label}`,
+          },
+        });
+        found += 1;
+      }
+    }
+
+    await db.mailAccount.update({
+      where: { id: account.id },
+      data: { lastCheckedAt: new Date() },
+    });
   }
 
-  await db.user.update({
-    where: { id: userId },
-    data: { lastEmailCheckAt: new Date() },
-  });
-
-  return { found, scanned: emails.length };
+  return { found, scanned, failedAccounts };
 }
 
 /** Manual trigger from settings — surfaces errors to the user. */
-export async function scanInboxNow(): Promise<ActionResult<{ found: number; scanned: number }>> {
+export async function scanInboxNow(): Promise<
+  ActionResult<{ found: number; scanned: number; failedAccounts: string[] }>
+> {
   return toActionResult(async () => {
     const user = await requireUser();
     const result = await runScan(user.id);

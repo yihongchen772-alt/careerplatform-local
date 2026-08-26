@@ -1,8 +1,8 @@
 {
   "name": "careerplatform",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "private": true,
-  "description": "秋招追踪 本地单机版",
+  "description": "求职罗盘 本地单机版",
   "author": "yihong",
   "main": "electron/main.js",
   "scripts": {
@@ -56,7 +56,7 @@
   },
   "build": {
     "appId": "com.careerplatform.local",
-    "productName": "秋招追踪",
+    "productName": "求职罗盘",
     "asar": false,
     "directories": {
       "output": "dist-electron"
@@ -97,12 +97,14 @@
     ],
     "mac": {
       "target": "dmg",
+      "icon": "build/icon.icns",
       "category": "public.app-category.productivity",
       "extendInfo": {
         "NSMicrophoneUsageDescription": "模拟面试的口头作答需要使用麦克风录音。录音只发送到你自己配置的 AI 服务商做转写，不会上传到别处。"
       }
     },
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         {
           "target": "nsis",

@@ -12,7 +12,14 @@ function Card({
       data-slot="card"
       data-size={size}
       className={cn(
-        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-2xl bg-card py-(--card-spacing) text-sm text-card-foreground ring-1 ring-foreground/[0.06] shadow-[0_1px_2px_rgba(0,0,0,0.03),0_10px_24px_-12px_rgba(0,0,0,0.12)] transition-shadow duration-300 ease-(--ease-apple) hover:shadow-[0_2px_4px_rgba(0,0,0,0.04),0_16px_32px_-14px_rgba(0,0,0,0.16)] [--card-spacing:--spacing(4)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-2xl *:[img:last-child]:rounded-b-2xl",
+        // bg-card/75 + backdrop-blur rather than an opaque fill: with the
+        // ambient glow now sitting behind every dashboard page (see
+        // (dashboard)/layout.tsx), a fully opaque card reads as a flat white
+        // box stamped on top of the color — the exact "丑" the translucent
+        // sidebar doesn't have. Letting the glow bleed through faintly is
+        // what makes a card look like it belongs to the same surface as the
+        // page instead of a foreign rectangle glued onto it.
+        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-2xl bg-card/75 py-(--card-spacing) text-sm text-card-foreground ring-1 ring-foreground/[0.06] shadow-[0_1px_2px_rgba(0,0,0,0.03),0_10px_24px_-12px_rgba(0,0,0,0.12)] backdrop-blur-xl transition-shadow duration-300 ease-(--ease-apple) hover:shadow-[0_2px_4px_rgba(0,0,0,0.04),0_16px_32px_-14px_rgba(0,0,0,0.16)] [--card-spacing:--spacing(4)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-2xl *:[img:last-child]:rounded-b-2xl",
         className
       )}
       {...props}

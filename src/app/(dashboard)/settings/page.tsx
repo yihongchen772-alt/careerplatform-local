@@ -3,16 +3,19 @@ import { ProfileForm } from "@/components/settings/profile-form";
 import { AiSettingsForm } from "@/components/settings/ai-settings-form";
 import { AppearanceForm } from "@/components/settings/appearance-form";
 import { EmailSettingsForm } from "@/components/settings/email-settings-form";
+import { MailAccountsCard } from "@/components/settings/mail-accounts-card";
 import { BackupCard } from "@/components/settings/backup-card";
 import { BackgroundReminderCard } from "@/components/settings/background-reminder-card";
 import { getAiKeysOverview } from "@/lib/actions/ai-keys";
 import { getAppSettings } from "@/lib/actions/app-settings";
+import { listMailAccounts } from "@/lib/actions/mail-accounts";
 
 export default async function SettingsPage() {
   const user = await requireUser();
-  const [aiKeys, appSettings] = await Promise.all([
+  const [aiKeys, appSettings, mailAccounts] = await Promise.all([
     getAiKeysOverview(user.id),
     getAppSettings(),
+    listMailAccounts(user.id),
   ]);
 
   return (
@@ -32,10 +35,8 @@ export default async function SettingsPage() {
         />
         <AppearanceForm />
         <AiSettingsForm keys={aiKeys} />
-        <EmailSettingsForm
-          currentUser={user.smtpUser}
-          inboxScanEnabled={user.inboxScanEnabled}
-        />
+        <EmailSettingsForm currentUser={user.smtpUser} />
+        <MailAccountsCard accounts={mailAccounts} />
         <BackgroundReminderCard initial={appSettings} />
         <BackupCard />
       </div>

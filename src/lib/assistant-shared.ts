@@ -30,6 +30,10 @@ export const assistantActionSchema = z.object({
   companyName: z.string().nullish(),
   title: z.string().nullish(),
   date: z.string().nullish(),
+  /// Window end, for a 笔试/测评 that gives a range ("8/26-8/30 期间") rather
+  /// than a single deadline — mirrors StageHistory.nextDeadlineEnd /
+  /// PersonalTask.dueDateEnd.
+  dateEnd: z.string().nullish(),
   stage: z.string().nullish(),
   targetId: z.string().nullish(),
   note: z.string().nullish(),

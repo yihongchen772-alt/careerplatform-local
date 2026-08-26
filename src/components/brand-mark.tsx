@@ -1,9 +1,21 @@
+"use client";
+
+import { useId } from "react";
+
 /**
- * The app icon, inlined as SVG so it renders crisply at nav size — a downscaled
- * raster of the same mark turns to mush at 28px. Keep in sync with
- * `public/icon-source.svg`, which generates the PWA/favicon PNGs.
+ * The app icon (a compass), inlined as SVG so it renders crisply at nav size
+ * — a downscaled raster of the same mark turns to mush at 28px. Keep in
+ * sync with `public/icon-source.svg`, which generates the PWA/favicon/tray/
+ * app-bundle icons; regenerate those with:
+ *   rsvg-convert -w 512 -h 512 public/icon-source.svg -o public/icon-512.png
  */
 export function BrandMark({ className }: { className?: string }) {
+  // NavContent renders twice at once (desktop sidebar + mobile drawer), so a
+  // hardcoded gradient id would collide — two <linearGradient> elements with
+  // the same id is undefined behavior for which one a given <rect> actually
+  // resolves to.
+  const gradientId = useId();
+
   return (
     <svg
       viewBox="0 0 512 512"
@@ -13,7 +25,7 @@ export function BrandMark({ className }: { className?: string }) {
     >
       <defs>
         <linearGradient
-          id="brand-mark-bg"
+          id={gradientId}
           x1="0"
           y1="0"
           x2="512"
@@ -21,41 +33,36 @@ export function BrandMark({ className }: { className?: string }) {
           gradientUnits="userSpaceOnUse"
         >
           <stop offset="0" stopColor="#6366f1" />
-          <stop offset="1" stopColor="#7c3aed" />
+          <stop offset="0.6" stopColor="#8b5cf6" />
+          <stop offset="1" stopColor="#d946ef" />
         </linearGradient>
       </defs>
 
-      <rect width="512" height="512" rx="112" fill="url(#brand-mark-bg)" />
+      <rect width="512" height="512" rx="112" fill={`url(#${gradientId})`} />
 
-      <text
-        x="256"
-        y="212"
-        fontFamily="'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif"
-        fontSize="180"
-        fontWeight="700"
-        fill="#ffffff"
-        textAnchor="middle"
-      >
-        秋
-      </text>
-
-      <g fill="#ffffff" opacity="0.3">
-        <rect x="104" y="360" width="52" height="60" rx="16" />
-        <rect x="180" y="322" width="52" height="98" rx="16" />
-        <rect x="256" y="284" width="52" height="136" rx="16" />
-        <rect x="332" y="246" width="52" height="174" rx="16" />
-      </g>
-
-      <g
-        stroke="#ffffff"
-        strokeWidth="22"
-        strokeLinecap="round"
-        strokeLinejoin="round"
+      <circle
+        cx="256"
+        cy="256"
+        r="146"
         fill="none"
-      >
-        <path d="M120 356 L206 316 L282 274 L370 226" />
-        <path d="M312 224 L374 222 L376 284" />
+        stroke="#ffffff"
+        strokeOpacity="0.55"
+        strokeWidth="14"
+      />
+
+      <g stroke="#ffffff" strokeOpacity="0.55" strokeWidth="14" strokeLinecap="round">
+        <line x1="256" y1="86" x2="256" y2="110" />
+        <line x1="256" y1="402" x2="256" y2="426" />
+        <line x1="86" y1="256" x2="110" y2="256" />
+        <line x1="402" y1="256" x2="426" y2="256" />
       </g>
+
+      <g transform="rotate(45 256 256)">
+        <path d="M256 130 L296 256 L256 246 L216 256 Z" fill="#ffffff" />
+        <path d="M256 382 L296 256 L256 266 L216 256 Z" fill="#ffffff" fillOpacity="0.4" />
+      </g>
+
+      <circle cx="256" cy="256" r="16" fill="#ffffff" />
     </svg>
   );
 }

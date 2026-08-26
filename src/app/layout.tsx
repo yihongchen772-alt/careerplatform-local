@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "秋招追踪",
+  title: "求职罗盘",
   description: "投递记录、面试进展与岗位匹配管理",
   manifest: "/manifest.json",
   icons: {
@@ -28,7 +28,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "秋招追踪",
+    title: "求职罗盘",
   },
 };
 

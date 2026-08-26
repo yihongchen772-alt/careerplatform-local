@@ -1,6 +1,6 @@
 {
-  "name": "秋招追踪",
-  "short_name": "秋招追踪",
+  "name": "求职罗盘",
+  "short_name": "求职罗盘",
   "description": "投递记录、面试进展与岗位匹配管理",
   "start_url": "/dashboard",
   "scope": "/",

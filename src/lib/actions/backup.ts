@@ -158,7 +158,7 @@ export async function exportBackup(): Promise<ActionResult<BackupResult>> {
     });
 
     const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
-    const target = path.join(await backupTargetDir(), `秋招追踪备份-${stamp}.json`);
+    const target = path.join(await backupTargetDir(), `求职罗盘备份-${stamp}.json`);
     await writeFile(target, payload, "utf8");
 
     return {

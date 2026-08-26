@@ -71,7 +71,7 @@ export function currentPageLabel(pathname: string): string {
   const match = allLinks
     .filter((l) => pathname.startsWith(l.href))
     .sort((a, b) => b.href.length - a.href.length)[0];
-  return match?.label ?? "秋招追踪";
+  return match?.label ?? "求职罗盘";
 }
 
 function NavItem({
@@ -120,7 +120,7 @@ function NavContent({
           <BrandMark
             className="size-7 shrink-0 rounded-xl shadow-[0_3px_10px_-2px_color-mix(in_oklch,var(--glow-1),transparent_20%)]"
           />
-          秋招追踪
+          求职罗盘
         </div>
 
         <button
