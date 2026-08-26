@@ -38,6 +38,7 @@ async function backupTargetDir(): Promise<string> {
 const TABLES = [
   "user",
   "aiKey",
+  "mailAccount",
   "company",
   "resumeVersion",
   "position",
@@ -47,10 +48,14 @@ const TABLES = [
   "interviewPrep",
   "interviewQA",
   "personalTask",
+  "contact",
   "interviewSession",
   "interviewMessage",
   "personalityTestResult",
   "careerFitAnalysis",
+  "jobLead",
+  "questionBank",
+  "examSession",
 ] as const;
 
 type TableName = (typeof TABLES)[number];
@@ -66,6 +71,7 @@ type TableName = (typeof TABLES)[number];
  */
 const FOREIGN_KEYS: Partial<Record<TableName, [field: string, parent: TableName][]>> = {
   aiKey: [["userId", "user"]],
+  mailAccount: [["userId", "user"]],
   company: [["addedByUserId", "user"]],
   resumeVersion: [["userId", "user"]],
   position: [["userId", "user"], ["companyId", "company"]],
@@ -88,6 +94,11 @@ const FOREIGN_KEYS: Partial<Record<TableName, [field: string, parent: TableName]
     ["positionId", "position"],
     ["applicationId", "application"],
   ],
+  contact: [
+    ["userId", "user"],
+    ["positionId", "position"],
+    ["applicationId", "application"],
+  ],
   interviewSession: [
     ["userId", "user"],
     ["resumeVersionId", "resumeVersion"],
@@ -96,6 +107,9 @@ const FOREIGN_KEYS: Partial<Record<TableName, [field: string, parent: TableName]
   interviewMessage: [["sessionId", "interviewSession"]],
   personalityTestResult: [["userId", "user"]],
   careerFitAnalysis: [["userId", "user"]],
+  jobLead: [["userId", "user"]],
+  questionBank: [["userId", "user"]],
+  examSession: [["userId", "user"]],
 };
 
 function isRowValid(
@@ -180,8 +194,12 @@ const COUNT_LABELS: Partial<Record<TableName, string>> = {
   application: "投递记录",
   resumeVersion: "简历版本",
   personalTask: "日程待办",
+  contact: "联系人",
   interviewSession: "模拟面试",
   company: "企业",
+  jobLead: "秋招信息库线索",
+  questionBank: "题库",
+  mailAccount: "收件箱扫描邮箱",
 };
 
 function parseBackup(json: string): { data: Record<string, unknown[]>; files: Record<string, string>; exportedAt: string } {
@@ -264,7 +282,18 @@ export async function importBackup(
       }
     });
 
-    for (const p of ["/dashboard", "/pool", "/applications", "/resumes", "/settings", "/companies"]) {
+    for (const p of [
+      "/dashboard",
+      "/pool",
+      "/applications",
+      "/resumes",
+      "/settings",
+      "/companies",
+      "/contacts",
+      "/leads",
+      "/question-banks",
+      "/calendar",
+    ]) {
       revalidatePath(p);
     }
     return { restored, skipped };
