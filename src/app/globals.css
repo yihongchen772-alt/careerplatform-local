@@ -53,6 +53,14 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* Apple's characteristic decelerate curve — fast start, long soft landing.
+   Used in place of Tailwind's default ease-in-out on hover/press states
+   throughout the UI primitives, which is what actually gives motion that
+   "premium" feel rather than the shape or color choices alone. */
+:root {
+  --ease-apple: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 :root {
   /* Content sits on a soft off-white (macOS-style), cards are pure white —
      that split is what makes a card read as a floating panel instead of a
@@ -263,14 +271,21 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
   }
   html {
     @apply font-sans;
+    text-rendering: optimizeLegibility;
   }
+  /* Apple's own type sets tighter as it gets bigger — a display-size
+     heading at the default 0 tracking looks loose next to body text, while
+     the same negative tracking on a small label would collide letters. */
   h1,
   h2,
   h3 {
     @apply tracking-tight;
+  }
+  h1 {
+    letter-spacing: -0.025em;
   }
 }

@@ -38,7 +38,7 @@ export default async function InterviewsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">面经库</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">面经库</h1>
         <p className="text-sm text-muted-foreground">
           汇总所有投递里写过的面试复盘，面试前可以按公司或阶段翻一遍
         </p>

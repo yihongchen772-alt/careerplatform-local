@@ -43,7 +43,7 @@ export default async function CalendarPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">日历视图</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">日历视图</h1>
         <p className="text-sm text-muted-foreground">
           候选岗位投递截止日期 + 投递记录里填写的下一步截止日期 + 你自己写的日程，一次看清楚有没有撞期
         </p>

@@ -24,7 +24,7 @@ export default async function LeadsPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">秋招信息库</h1>
+          <h1 className="text-3xl font-semibold tracking-tight">秋招信息库</h1>
           <p className="text-sm text-muted-foreground">
             群里那种大而全的秋招信息表放这里，筛完再把想投的挑进候选岗位池
           </p>

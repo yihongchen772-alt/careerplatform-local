@@ -32,7 +32,7 @@ export default async function LibraryPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">资料库</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">资料库</h1>
         <p className="text-sm text-muted-foreground">
           证书、作品集、笔试真题、面试资料集中放一处，投递记录里传过的附件也会汇总到这里
         </p>

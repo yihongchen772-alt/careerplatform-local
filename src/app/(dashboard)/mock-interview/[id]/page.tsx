@@ -25,7 +25,7 @@ export default async function MockInterviewDetailPage({
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">
+        <h1 className="text-3xl font-semibold tracking-tight">
           {session.position
             ? `${session.position.company.name} · ${session.position.title}`
             : session.targetRole || "模拟面试"}
