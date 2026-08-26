@@ -118,6 +118,6 @@
     "linux": {
       "target": "AppImage"
     },
-    "artifactName": "${productName}-${version}-${arch}.${ext}"
+    "artifactName": "JobCompass-${version}-${arch}.${ext}"
   }
 }
