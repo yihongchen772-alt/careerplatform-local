@@ -2,16 +2,21 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { CalendarDays, Plus } from "lucide-react";
+import { CalendarDays, Download, Plus } from "lucide-react";
 import { zhCN } from "react-day-picker/locale";
 import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PersonalTaskFormDialog } from "@/components/dashboard/personal-task-form-dialog";
 import { toDateKey } from "@/lib/dates";
+import { downloadIcs, toIcs } from "@/lib/ics";
 
 export type CalendarEvent = {
+  id: string;
   date: string;
+  /** End of a window (笔试/测评 that spans several days), or null for a
+   * single-point deadline — same idea as StageHistory.nextDeadlineEnd. */
+  dateEnd: string | null;
   label: string;
   href: string;
 };
@@ -38,10 +43,20 @@ export function DeadlineCalendar({
   const eventsByDay = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>();
     for (const e of events) {
-      const key = dayKey(new Date(e.date));
-      const list = map.get(key) ?? [];
-      list.push(e);
-      map.set(key, list);
+      const start = new Date(e.date);
+      const end = e.dateEnd ? new Date(e.dateEnd) : start;
+      // A 笔试/测评 window shows up on every day it's open, not just the
+      // first — clicking day 3 of a 5-day window should still surface it.
+      for (
+        let d = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+        d <= end;
+        d.setDate(d.getDate() + 1)
+      ) {
+        const key = dayKey(d);
+        const list = map.get(key) ?? [];
+        list.push(e);
+        map.set(key, list);
+      }
     }
     return map;
   }, [events]);
@@ -86,7 +101,7 @@ export function DeadlineCalendar({
 
       <Card>
         <CardContent className="space-y-2 pt-6">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <p className="text-sm font-medium">
               {selected
                 ? selected.toLocaleDateString("zh-CN", {
@@ -96,19 +111,31 @@ export function DeadlineCalendar({
                   })
                 : "近期事项"}
             </p>
-            {selectedKey && (
-              <PersonalTaskFormDialog
-                positions={positions}
-                applications={applications}
-                defaultDueDate={selectedKey}
-                trigger={
-                  <Button size="sm" variant="outline">
-                    <Plus />
-                    这天加日程
-                  </Button>
-                }
-              />
-            )}
+            <div className="flex shrink-0 gap-1.5">
+              {events.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => downloadIcs("求职罗盘-日程.ics", toIcs(events))}
+                >
+                  <Download />
+                  导出到日历
+                </Button>
+              )}
+              {selectedKey && (
+                <PersonalTaskFormDialog
+                  positions={positions}
+                  applications={applications}
+                  defaultDueDate={selectedKey}
+                  trigger={
+                    <Button size="sm" variant="outline">
+                      <Plus />
+                      这天加日程
+                    </Button>
+                  }
+                />
+              )}
+            </div>
           </div>
           {shownEvents.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-12 text-center text-muted-foreground">
@@ -118,15 +145,17 @@ export function DeadlineCalendar({
               </span>
             </div>
           ) : (
-            shownEvents.map((e, i) => (
+            shownEvents.map((e) => (
               <Link
-                key={i}
+                key={e.id}
                 href={e.href}
                 className="flex items-center justify-between rounded-md border p-2 text-sm hover:bg-muted"
               >
                 <span>{e.label}</span>
                 <span className="text-xs text-muted-foreground">
-                  {new Date(e.date).toLocaleDateString()}
+                  {e.dateEnd
+                    ? `${new Date(e.date).toLocaleDateString()} - ${new Date(e.dateEnd).toLocaleDateString()}`
+                    : new Date(e.date).toLocaleDateString()}
                 </span>
               </Link>
             ))

@@ -7,7 +7,7 @@ import { getUserMailConfig, sendMail } from "@/lib/mailer";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
 
 async function collectTodos(userId: string): Promise<Todo[]> {
-  const [applications, positions, stageHistories, personalTasks] = await Promise.all([
+  const [applications, positions, stageHistories, personalTasks, contacts] = await Promise.all([
     db.application.findMany({
       where: { userId },
       include: { company: true },
@@ -22,9 +22,13 @@ async function collectTodos(userId: string): Promise<Todo[]> {
       include: { application: { include: { company: true } } },
     }),
     db.personalTask.findMany({ where: { userId } }),
+    db.contact.findMany({
+      where: { userId, nextFollowUpAt: { not: null } },
+      select: { id: true, name: true, companyName: true, nextFollowUpAt: true },
+    }),
   ]);
 
-  return buildTodos(applications, positions, stageHistories, personalTasks);
+  return buildTodos(applications, positions, stageHistories, personalTasks, contacts);
 }
 
 const URGENCY_LABEL: Record<Todo["urgency"], string> = {

@@ -37,7 +37,7 @@ function ymd(d: Date): string {
 }
 
 async function buildSnapshot(userId: string): Promise<string> {
-  const [profile, positions, applications, stageHistories, personalTasks, resumeVersions, leads] =
+  const [profile, positions, applications, stageHistories, personalTasks, resumeVersions, leads, contacts] =
     await Promise.all([
       db.user.findUnique({
         where: { id: userId },
@@ -82,9 +82,10 @@ async function buildSnapshot(userId: string): Promise<string> {
         orderBy: [{ fitScore: "desc" }, { deadline: "asc" }],
         take: MAX_LEADS,
       }),
+      db.contact.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: MAX_ITEMS }),
     ]);
 
-  const todos = buildTodos(applications, positions, stageHistories, personalTasks);
+  const todos = buildTodos(applications, positions, stageHistories, personalTasks, contacts);
 
   const sections: string[] = [];
 
@@ -184,6 +185,23 @@ async function buildSnapshot(userId: string): Promise<string> {
   );
 
   sections.push(
+    "联系人（HR/内推人/面试官）：\n" +
+      (contacts.length === 0
+        ? "（还没记录联系人）"
+        : contacts
+            .map((c) => {
+              const parts = [
+                c.role ?? null,
+                c.companyName ?? null,
+                c.contactInfo ?? null,
+                c.nextFollowUpAt ? `下次跟进：${ymd(c.nextFollowUpAt)}` : null,
+              ].filter(Boolean);
+              return `- [联系人ID:${c.id}] ${c.name}${parts.length ? "；" + parts.join("；") : ""}`;
+            })
+            .join("\n"))
+  );
+
+  sections.push(
     "简历版本：\n" +
       (resumeVersions.length === 0
         ? "（还没上传过简历）"
@@ -243,6 +261,7 @@ ${historyText ? `之前的对话：\n${historyText}\n` : ""}
 - add_position：往候选岗位池里加一个还没投的岗位。companyName + title 必填，date 填截止日期，note 可写方向/地点
 - update_stage：更新某条投递的阶段。targetId 填上面的[投递ID]，stage 从这些里选：${applicationStageValues.join(" / ")}，date 填下一步的时间（比如面试时间），note 可选。同样，如果下一步是笔试/测评这种给一段窗口而不是单一时间点的，date 填窗口开始，dateEnd 填窗口结束
 - promote_lead：把秋招信息库里的一条线索提进候选岗位池。targetId 填上面的[线索ID]
+- add_contact：记一个 HR / 内推人 / 面试官。contactName 填这个人的名字（必填），title 填角色（HR/内推人/面试官等），companyName 可选，note 填联系方式（微信/邮箱/电话）或其他备注，date 填下次该跟进的日期（用户说"过几天再联系他"这类才填，没提就不填）
 每个 action 的 label 写成用户一眼能看懂的按钮文案，比如"记一条投递：字节跳动 后端开发"或"更新为一面，面试时间 3月5日"。label 只是按钮上的字，不能代替上面那些字段——该填 title/companyName/targetId 的一个都不能少，别只写 label 就交差。
 举例：用户说"我今天投了美团的数据分析，下周三一面"，就给两个 action —— 一个 log_application，一个提醒他准备面试的 add_task。`;
 
@@ -268,11 +287,13 @@ ${historyText ? `之前的对话：\n${historyText}\n` : ""}
                     "add_position",
                     "update_stage",
                     "promote_lead",
+                    "add_contact",
                   ],
                 },
                 label: { type: "STRING" },
                 companyName: { type: "STRING", nullable: true },
                 title: { type: "STRING", nullable: true },
+                contactName: { type: "STRING", nullable: true },
                 date: { type: "STRING", nullable: true },
                 dateEnd: { type: "STRING", nullable: true },
                 stage: { type: "STRING", nullable: true, enum: applicationStageValues },
@@ -463,6 +484,24 @@ export async function applyAssistantAction(
         revalidatePath("/leads");
         revalidatePath("/dashboard");
         return { done: `已提入候选池：${lead.companyName} · ${lead.title}` };
+      }
+
+      case "add_contact": {
+        const name = a.contactName?.trim() || a.label.trim();
+        if (!name) throw new UserFacingError("没认出联系人姓名，改成手动添加吧");
+        await db.contact.create({
+          data: {
+            userId: user.id,
+            name,
+            role: a.title || undefined,
+            companyName: a.companyName || undefined,
+            note: a.note || undefined,
+            nextFollowUpAt: parseDate(a.date) ?? undefined,
+          },
+        });
+        revalidatePath("/contacts");
+        revalidatePath("/dashboard");
+        return { done: `已加联系人：${name}` };
       }
     }
   });

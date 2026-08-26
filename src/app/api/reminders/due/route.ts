@@ -13,7 +13,7 @@ import { buildTodos } from "@/lib/todos";
 export async function GET() {
   const user = await requireUser();
 
-  const [applications, positions, stageHistories, personalTasks] = await Promise.all([
+  const [applications, positions, stageHistories, personalTasks, contacts] = await Promise.all([
     db.application.findMany({ where: { userId: user.id }, include: { company: true } }),
     db.position.findMany({
       where: { userId: user.id, status: { not: "APPLIED" } },
@@ -24,9 +24,13 @@ export async function GET() {
       include: { application: { include: { company: true } } },
     }),
     db.personalTask.findMany({ where: { userId: user.id } }),
+    db.contact.findMany({
+      where: { userId: user.id, nextFollowUpAt: { not: null } },
+      select: { id: true, name: true, companyName: true, nextFollowUpAt: true },
+    }),
   ]);
 
-  const todos = buildTodos(applications, positions, stageHistories, personalTasks);
+  const todos = buildTodos(applications, positions, stageHistories, personalTasks, contacts);
 
   // Only things that are actually time-critical are worth interrupting for.
   const urgent = todos

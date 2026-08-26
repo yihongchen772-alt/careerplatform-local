@@ -62,6 +62,13 @@ export type TodoPersonalTask = {
   done: boolean;
 };
 
+export type TodoContact = {
+  id: string;
+  name: string;
+  companyName: string | null;
+  nextFollowUpAt: Date | null;
+};
+
 /**
  * A window (笔试/测评 windows routinely span days, not a single moment) is
  * urgent based on when it *closes*, not when it opens — the whole point of
@@ -108,7 +115,8 @@ export function buildTodos(
   applications: TodoApplication[],
   positions: TodoPosition[],
   stageHistories: TodoStageHistory[],
-  personalTasks: TodoPersonalTask[] = []
+  personalTasks: TodoPersonalTask[] = [],
+  contacts: TodoContact[] = []
 ): Todo[] {
   const todos: Todo[] = [];
 
@@ -167,6 +175,25 @@ export function buildTodos(
       sublabel: `下一步${note}`,
       urgency: urgencyOf(daysLeft),
       href: `/applications/${h.application.id}`,
+      order: daysLeft,
+    });
+  }
+
+  for (const c of contacts) {
+    if (!c.nextFollowUpAt) continue;
+    const daysLeft = daysUntil(c.nextFollowUpAt);
+    if (daysLeft > NEXT_STEP_WINDOW_DAYS) continue;
+    todos.push({
+      id: `contact-${c.id}`,
+      label: `联系 ${c.name}${c.companyName ? ` · ${c.companyName}` : ""}`,
+      sublabel:
+        daysLeft < 0
+          ? `该跟进了，已过期 ${-daysLeft} 天`
+          : daysLeft === 0
+            ? "今天该跟进"
+            : `还有 ${daysLeft} 天该跟进`,
+      urgency: urgencyOf(daysLeft),
+      href: "/contacts",
       order: daysLeft,
     });
   }

@@ -25,10 +25,15 @@ export const assistantActionSchema = z.object({
     "add_position",
     "update_stage",
     "promote_lead",
+    "add_contact",
   ]),
   label: z.string(),
   companyName: z.string().nullish(),
   title: z.string().nullish(),
+  /// A person's name, only for add_contact — kept separate from `title`
+  /// (used for job/position titles by every other action type; reusing it
+  /// for a person's name would collide in meaning).
+  contactName: z.string().nullish(),
   date: z.string().nullish(),
   /// Window end, for a 笔试/测评 that gives a range ("8/26-8/30 期间") rather
   /// than a single deadline — mirrors StageHistory.nextDeadlineEnd /
