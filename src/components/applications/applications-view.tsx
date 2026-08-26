@@ -51,6 +51,8 @@ export function ApplicationsView({ applications }: { applications: ApplicationRo
             currentStage: a.currentStage,
             appliedDate: a.appliedDate,
             currentStageDate: a.currentStageDate,
+            nextDeadline: a.nextDeadline,
+            nextDeadlineEnd: a.nextDeadlineEnd,
           }))}
         />
       ) : (

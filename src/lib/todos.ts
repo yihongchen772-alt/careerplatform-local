@@ -69,7 +69,7 @@ export type TodoPersonalTask = {
  * this between PersonalTask and StageHistory since both can now carry a
  * window instead of a single point.
  */
-function windowStatus(
+export function windowStatus(
   start: Date,
   end: Date | null
 ): { urgencyDate: Date; note: string } {

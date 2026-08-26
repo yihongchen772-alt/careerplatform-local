@@ -88,7 +88,10 @@ export default async function ApplicationDetailPage({
         </Card>
 
         <div className="space-y-6">
-          <AddStageForm applicationId={application.id} />
+          <AddStageForm
+            applicationId={application.id}
+            currentStage={application.currentStage}
+          />
           <OfferEditForm
             applicationId={application.id}
             initial={{

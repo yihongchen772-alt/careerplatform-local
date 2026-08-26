@@ -16,11 +16,27 @@ import {
 import { addStageUpdate } from "@/lib/actions/applications";
 import { addAttachment } from "@/lib/actions/attachments";
 import { FileUploadButton } from "@/components/ui/file-upload-button";
-import { STAGE_LABELS } from "@/lib/stage-labels";
+import { STAGE_LABELS, STAGE_ORDER } from "@/lib/stage-labels";
 import type { ApplicationStage } from "@prisma/client";
 
-export function AddStageForm({ applicationId }: { applicationId: string }) {
-  const [stage, setStage] = useState<ApplicationStage>("SCREENING");
+/** The stage right after the current one, or the current stage itself if
+ * it's already the last one in the pipeline (OFFER/terminal stages) — those
+ * don't have an obvious "next", so falling back avoids guessing wrong. */
+function nextStageAfter(current: ApplicationStage): ApplicationStage {
+  const i = STAGE_ORDER.indexOf(current);
+  return i >= 0 && i + 1 < STAGE_ORDER.length ? STAGE_ORDER[i + 1] : current;
+}
+
+export function AddStageForm({
+  applicationId,
+  currentStage,
+}: {
+  applicationId: string;
+  currentStage: ApplicationStage;
+}) {
+  const [stage, setStage] = useState<ApplicationStage>(() =>
+    nextStageAfter(currentStage)
+  );
   const [note, setNote] = useState("");
   const [interviewFormat, setInterviewFormat] = useState("");
   const [interviewer, setInterviewer] = useState("");
@@ -46,6 +62,7 @@ export function AddStageForm({ applicationId }: { applicationId: string }) {
         pendingFiles.map((f) => addAttachment({ stageHistoryId, ...f }))
       );
       toast.success("已更新进展");
+      setStage((s) => nextStageAfter(s));
       setNote("");
       setInterviewFormat("");
       setInterviewer("");

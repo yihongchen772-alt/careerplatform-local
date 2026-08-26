@@ -64,13 +64,20 @@ function SessionRowItem({ session }: { session: SessionRow }) {
           className="h-8"
           autoFocus
         />
-        <Button size="icon" className="size-8 shrink-0" disabled={busy} onClick={handleRename}>
+        <Button
+          size="icon"
+          className="size-8 shrink-0"
+          aria-label="保存名称"
+          disabled={busy}
+          onClick={handleRename}
+        >
           <Check className="size-4" />
         </Button>
         <Button
           size="icon"
           variant="ghost"
           className="size-8 shrink-0"
+          aria-label="取消重命名"
           onClick={() => {
             setName(session.label);
             setRenaming(false);

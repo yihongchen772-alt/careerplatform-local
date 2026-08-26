@@ -97,6 +97,7 @@ export function AssistantWidget() {
               variant="ghost"
               size="icon"
               className="size-7"
+              aria-label="关闭 AI 助手"
               onClick={() => setOpen(false)}
             >
               <X className="size-4" />
@@ -189,6 +190,7 @@ export function AssistantWidget() {
               type="button"
               size="icon"
               className="size-9 shrink-0"
+              aria-label="发送"
               disabled={sending || !input.trim()}
               onClick={() => handleSend()}
             >
@@ -202,6 +204,7 @@ export function AssistantWidget() {
         type="button"
         size="icon"
         className="size-12 rounded-full shadow-lg"
+        aria-label={open ? "关闭 AI 助手" : "打开 AI 助手"}
         onClick={() => setOpen((v) => !v)}
       >
         {open ? <X className="size-5" /> : <Sparkles className="size-5" />}

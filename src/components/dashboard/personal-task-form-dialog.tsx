@@ -41,18 +41,25 @@ export function PersonalTaskFormDialog({
   positions,
   applications,
   initial,
+  defaultDueDate,
   trigger,
 }: {
   positions: LinkOption[];
   applications: LinkOption[];
   initial?: PersonalTaskInitial;
+  /** Pre-fills the date on a *new* task (e.g. the day the user clicked on
+   * the calendar) without turning this into an edit — `initial` is what
+   * does that, and a click-to-add day has no existing task to edit. */
+  defaultDueDate?: string;
   trigger: React.ReactElement;
 }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [title, setTitle] = useState(initial?.title ?? "");
   const [note, setNote] = useState(initial?.note ?? "");
-  const [dueDate, setDueDate] = useState(initial?.dueDate?.slice(0, 10) ?? "");
+  const [dueDate, setDueDate] = useState(
+    initial?.dueDate?.slice(0, 10) ?? defaultDueDate ?? ""
+  );
   const [dueDateEnd, setDueDateEnd] = useState(
     initial?.dueDateEnd?.slice(0, 10) ?? ""
   );
@@ -70,7 +77,7 @@ export function PersonalTaskFormDialog({
     if (next) {
       setTitle(initial?.title ?? "");
       setNote(initial?.note ?? "");
-      setDueDate(initial?.dueDate?.slice(0, 10) ?? "");
+      setDueDate(initial?.dueDate?.slice(0, 10) ?? defaultDueDate ?? "");
       setDueDateEnd(initial?.dueDateEnd?.slice(0, 10) ?? "");
       setLinkValue(
         initial?.positionId

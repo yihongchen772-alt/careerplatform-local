@@ -439,7 +439,7 @@ function QuestionRow({
             className="h-7 w-40 text-xs"
             autoFocus
           />
-          <Button size="icon" className="size-7 shrink-0" onClick={save}>
+          <Button size="icon" className="size-7 shrink-0" aria-label="保存模块名" onClick={save}>
             <Check className="size-3.5" />
           </Button>
         </div>
