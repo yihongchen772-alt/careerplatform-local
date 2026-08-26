@@ -274,7 +274,7 @@ ${historyText ? `之前的对话：\n${historyText}\n` : ""}
                 companyName: { type: "STRING", nullable: true },
                 title: { type: "STRING", nullable: true },
                 date: { type: "STRING", nullable: true },
-                stage: { type: "STRING", nullable: true },
+                stage: { type: "STRING", nullable: true, enum: applicationStageValues },
                 targetId: { type: "STRING", nullable: true },
                 note: { type: "STRING", nullable: true },
               },
