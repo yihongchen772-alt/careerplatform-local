@@ -91,10 +91,10 @@ export default async function DashboardPage() {
       />
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        <StatCard label="总投递数" value={total} icon={Send} />
-        <StatCard label="进行中" value={inProgress} icon={Clock} />
-        <StatCard label="Offer" value={offers} icon={Trophy} accent />
-        <StatCard label="已结束" value={rejected} icon={XCircle} muted />
+        <StatCard label="总投递数" value={total} icon={Send} tone="brand" />
+        <StatCard label="进行中" value={inProgress} icon={Clock} tone="amber" />
+        <StatCard label="Offer" value={offers} icon={Trophy} tone="emerald" />
+        <StatCard label="已结束" value={rejected} icon={XCircle} tone="slate" />
       </div>
 
       <FunnelCard levels={levels} total={total} outcomes={outcomes} />
@@ -213,40 +213,61 @@ function TodoCard({ todos }: { todos: Todo[] }) {
   );
 }
 
+/** Fixed semantic gradients rather than theme tokens — these read as status
+ * (neutral/progress/success/closed), which stays meaningful regardless of
+ * which of the three color palettes is active. Only "brand" ties to the
+ * current palette, for the one card that's just a raw count with no status
+ * of its own. */
+const STAT_TONES = {
+  brand: {
+    badge: "bg-[image:var(--gradient-accent)]",
+    glow: "color-mix(in oklch, var(--glow-1), transparent 55%)",
+    value: "",
+  },
+  amber: {
+    badge: "bg-[linear-gradient(135deg,#f59e0b,#f97316)]",
+    glow: "color-mix(in oklch, #f59e0b, transparent 55%)",
+    value: "",
+  },
+  emerald: {
+    badge: "bg-[linear-gradient(135deg,#10b981,#059669)]",
+    glow: "color-mix(in oklch, #10b981, transparent 55%)",
+    value: "text-emerald-600 dark:text-emerald-400",
+  },
+  slate: {
+    badge: "bg-[linear-gradient(135deg,#64748b,#475569)]",
+    glow: "color-mix(in oklch, #64748b, transparent 60%)",
+    value: "text-muted-foreground",
+  },
+} as const;
+
 function StatCard({
   label,
   value,
   icon: Icon,
-  accent,
-  muted,
+  tone,
 }: {
   label: string;
   value: number;
   icon: LucideIcon;
-  accent?: boolean;
-  muted?: boolean;
+  tone: keyof typeof STAT_TONES;
 }) {
+  const t = STAT_TONES[tone];
   return (
     <Card>
-      {/* Icon inline with the label rather than floating on the right — at four
-          cards across, the right-aligned version left a wide dead gap. */}
-      <CardContent className="space-y-1 pt-6">
-        <div className="flex items-center gap-1.5 text-muted-foreground">
-          <Icon
-            className={
-              "size-4 shrink-0 " + (accent ? "text-primary" : muted ? "opacity-60" : "")
-            }
-          />
-          <span className="truncate text-sm">{label}</span>
-        </div>
-        <p
-          className={
-            "text-4xl font-semibold tabular-nums " +
-            (accent ? "text-primary" : muted ? "text-muted-foreground" : "")
-          }
+      <CardContent className="flex items-center gap-3.5 pt-6">
+        <div
+          className={`flex size-11 shrink-0 items-center justify-center rounded-2xl text-white shadow-[0_4px_14px_-4px_var(--tone-glow)] ${t.badge}`}
+          style={{ "--tone-glow": t.glow } as React.CSSProperties}
         >
-          {value}
-        </p>
+          <Icon className="size-5" />
+        </div>
+        <div className="min-w-0">
+          <p className="truncate text-sm text-muted-foreground">{label}</p>
+          <p className={`text-3xl font-semibold tracking-tight tabular-nums ${t.value}`}>
+            {value}
+          </p>
+        </div>
       </CardContent>
     </Card>
   );

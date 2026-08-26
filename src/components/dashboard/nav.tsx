@@ -91,7 +91,7 @@ function NavItem({
       className={cn(
         "flex items-center gap-2.5 rounded-full px-3.5 py-2 text-sm font-medium transition-all duration-200 ease-(--ease-apple)",
         active
-          ? "bg-primary/10 text-primary"
+          ? "bg-[image:var(--gradient-accent)] text-primary-foreground shadow-[0_2px_10px_-3px_color-mix(in_oklch,var(--glow-1),transparent_35%)]"
           : "text-muted-foreground hover:bg-muted hover:text-foreground"
       )}
     >
@@ -117,7 +117,9 @@ function NavContent({
     <div className="flex h-full flex-col justify-between p-4">
       <div className="space-y-6">
         <div className="flex items-center gap-2.5 px-2 text-lg font-semibold tracking-tight">
-          <BrandMark className="size-7 shrink-0 rounded-xl shadow-sm" />
+          <BrandMark
+            className="size-7 shrink-0 rounded-xl shadow-[0_3px_10px_-2px_color-mix(in_oklch,var(--glow-1),transparent_20%)]"
+          />
           秋招追踪
         </div>
 

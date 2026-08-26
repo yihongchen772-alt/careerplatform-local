@@ -84,6 +84,12 @@
   --border: oklch(0.906 0 0);
   --input: oklch(0.906 0 0);
   --ring: #6366f1;
+  /* Two-stop brand gradient (indigo → violet) — the signature color move
+     that makes primary buttons, stat icons and the ambient page glow read
+     as "one product" instead of flat single-hue fills. */
+  --gradient-accent: linear-gradient(135deg, #6366f1 0%, #8b5cf6 60%, #d946ef 100%);
+  --glow-1: #6366f1;
+  --glow-2: #d946ef;
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -125,6 +131,9 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 12%);
   --ring: #818cf8;
+  --gradient-accent: linear-gradient(135deg, #818cf8 0%, #a78bfa 60%, #e879f9 100%);
+  --glow-1: #818cf8;
+  --glow-2: #e879f9;
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -164,6 +173,9 @@
   --border: oklch(0.9 0.008 250);
   --input: oklch(0.9 0.008 250);
   --ring: #3b82f6;
+  --gradient-accent: linear-gradient(135deg, #2563eb 0%, #0ea5e9 55%, #06b6d4 100%);
+  --glow-1: #2563eb;
+  --glow-2: #06b6d4;
   --sidebar: oklch(0.974 0.004 250);
   --sidebar-foreground: oklch(0.16 0.014 255);
   --sidebar-primary: #2563eb;
@@ -193,6 +205,9 @@
   --border: oklch(1 0 0 / 12%);
   --input: oklch(1 0 0 / 14%);
   --ring: #38bdf8;
+  --gradient-accent: linear-gradient(135deg, #38bdf8 0%, #22d3ee 55%, #2dd4bf 100%);
+  --glow-1: #38bdf8;
+  --glow-2: #2dd4bf;
   --sidebar: oklch(0.15 0.024 260);
   --sidebar-foreground: oklch(0.96 0.006 240);
   --sidebar-primary: #38bdf8;
@@ -227,6 +242,12 @@
   --border: oklch(0.89 0 0);
   --input: oklch(0.89 0 0);
   --ring: oklch(0.4 0 0);
+  /* Stays true to "no hue" — a graphite sheen (near-black to mid-gray)
+     rather than an actual color gradient, so this palette still reads as
+     the deliberately monochrome option next to the other two. */
+  --gradient-accent: linear-gradient(135deg, oklch(0.12 0 0) 0%, oklch(0.32 0 0) 100%);
+  --glow-1: oklch(0.3 0 0);
+  --glow-2: oklch(0.5 0 0);
   --sidebar: oklch(0.98 0 0);
   --sidebar-foreground: oklch(0.14 0 0);
   --sidebar-primary: oklch(0.18 0 0);
@@ -256,6 +277,9 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 12%);
   --ring: oklch(0.6 0 0);
+  --gradient-accent: linear-gradient(135deg, oklch(0.98 0 0) 0%, oklch(0.72 0 0) 100%);
+  --glow-1: oklch(0.75 0 0);
+  --glow-2: oklch(0.5 0 0);
   --sidebar: oklch(0.145 0 0);
   --sidebar-foreground: oklch(0.98 0 0);
   --sidebar-primary: oklch(0.92 0 0);
