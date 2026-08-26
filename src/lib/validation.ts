@@ -199,6 +199,17 @@ export const personalTaskSchema = z.object({
   applicationId: z.string().optional().nullable(),
 });
 
+export const contactSchema = z.object({
+  name: z.string().min(1, "姓名必填"),
+  role: z.string().optional(),
+  companyName: z.string().optional(),
+  contactInfo: z.string().optional(),
+  note: z.string().optional(),
+  nextFollowUpAt: z.coerce.date().optional().nullable(),
+  positionId: z.string().optional().nullable(),
+  applicationId: z.string().optional().nullable(),
+});
+
 export const startInterviewSessionSchema = z.object({
   resumeVersionId: z.string().min(1),
   positionId: z.string().optional().nullable(),

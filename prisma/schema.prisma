@@ -57,6 +57,7 @@ model User {
   questionBanks          QuestionBank[]
   examSessions           ExamSession[]
   mailAccounts           MailAccount[]
+  contacts               Contact[]
 }
 
 /// One inbox to scan for job-related mail — a user routinely needs several:
@@ -227,6 +228,7 @@ model Position {
   interviewPrep InterviewPrep?
   personalTasks PersonalTask[]
   interviewSessions InterviewSession[]
+  contacts      Contact[]
 
   @@index([userId])
 }
@@ -285,6 +287,7 @@ model Application {
   attachments   Attachment[]
   interviewQA   InterviewQA?
   personalTasks PersonalTask[]
+  contacts      Contact[]
 
   @@index([userId])
 }
@@ -409,6 +412,38 @@ model PersonalTask {
   positionId    String?
   applicationId String?
   createdAt     DateTime  @default(now())
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  position    Position?    @relation(fields: [positionId], references: [id], onDelete: SetNull)
+  application Application? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+}
+
+/// A recruiter, referrer, or interviewer worth keeping track of — who they
+/// are, how to reach them, and when to follow up. Distinct from
+/// Application.referrer (a free-text name on one investment record): a
+/// contact is a person, not an attribute of one application, and the same
+/// person often spans multiple roles/rounds at the same company or shows up
+/// again at a different one next season.
+model Contact {
+  id              String    @id @default(cuid())
+  userId          String
+  name            String
+  /// Free text rather than an enum — "HR"/"内推人"/"技术面试官"/"猎头" and
+  /// combinations of those don't fit a fixed list.
+  role            String?
+  companyName     String?
+  /// Free text: 微信号/邮箱/电话, whatever the user actually has for them —
+  /// no reason to force three separate fields when most contacts only have
+  /// one channel worth recording.
+  contactInfo     String?
+  note            String?
+  lastContactedAt DateTime?
+  nextFollowUpAt  DateTime?
+  positionId      String?
+  applicationId   String?
+  createdAt       DateTime  @default(now())
 
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   position    Position?    @relation(fields: [positionId], references: [id], onDelete: SetNull)
