@@ -7,7 +7,16 @@ import { z } from "zod";
 
 export const questionBankItemSchema = z.object({
   question: z.string().min(1),
+  /** Interview-question *type* (项目经历 / 计算机基础 / 行为面试...) — set by
+   * the AI when a bank is generated from a specific application's Q&A. */
   category: z.string().nullish(),
+  /** Technical *subject module* (C++ / Python / 大模型 / 嵌入式 / 强化学习 /
+   * 具身智能...) — orthogonal to category. A question bank swept together
+   * from months of practice needs this to stay usable; without it, "复习一下
+   * C++" means scrolling past two hundred unrelated questions. Free text
+   * rather than a fixed enum, since the right module set is different for
+   * every candidate's track. */
+  module: z.string().nullish(),
   referenceAnswer: z.string().nullish(),
   tips: z.string().nullish(),
 });
@@ -60,19 +69,32 @@ export function parseBankInput(raw: string): { name?: string; source?: string; q
     }
   }
 
-  const questions = text
-    .split(/\r?\n/)
-    .map((line) =>
-      line
-        .trim()
-        // Strip the numbering these lists always carry: "1. ", "1、", "- ",
-        // "Q1:" and so on, which would otherwise become part of the question.
-        .replace(/^(\d+\s*[.、)．]|[-*•]|Q\d*\s*[:：])\s*/i, "")
-        .trim()
-    )
-    .filter((line) => line.length >= 4)
-    .slice(0, MAX_QUESTIONS)
-    .map((question) => ({ question, category: null, referenceAnswer: null, tips: null }));
+  // "# C++" style headings switch the module for every question below them,
+  // until the next heading. Study notes are routinely organized exactly
+  // this way, and recognizing it means a well-organized paste groups itself
+  // instead of landing in one flat undifferentiated list.
+  let currentModule: string | null = null;
+  const questions: QuestionBankItem[] = [];
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    const heading = line.match(/^#{1,3}\s*(.+)$/);
+    if (heading) {
+      currentModule = heading[1].trim() || null;
+      continue;
+    }
+
+    const question = line
+      // Strip the numbering these lists always carry: "1. ", "1、", "- ",
+      // "Q1:" and so on, which would otherwise become part of the question.
+      .replace(/^(\d+\s*[.、)．]|[-*•]|Q\d*\s*[:：])\s*/i, "")
+      .trim();
+    if (question.length < 4) continue;
+
+    questions.push({ question, category: null, module: currentModule, referenceAnswer: null, tips: null });
+    if (questions.length >= MAX_QUESTIONS) break;
+  }
 
   return questions.length > 0 ? { questions } : null;
 }
@@ -100,8 +122,13 @@ export function toBankMarkdown(bank: {
 }): string {
   const lines = [`# ${bank.name}`, ""];
   if (bank.source) lines.push(`来源：${bank.source}`, "");
+  let lastModule: string | null | undefined = undefined;
   bank.questions.forEach((q, i) => {
-    lines.push(`## ${i + 1}. ${q.question}`);
+    if (q.module !== lastModule) {
+      lines.push(`## ${q.module ?? "未分类"}`, "");
+      lastModule = q.module;
+    }
+    lines.push(`### ${i + 1}. ${q.question}`);
     if (q.category) lines.push(`分类：${q.category}`);
     if (q.referenceAnswer) lines.push("", "**参考思路**", q.referenceAnswer);
     if (q.tips) lines.push("", `**提示**：${q.tips}`);

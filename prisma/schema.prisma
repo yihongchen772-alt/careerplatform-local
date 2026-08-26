@@ -64,6 +64,7 @@ model User {
   aiKeys                 AiKey[]
   jobLeads               JobLead[]
   questionBanks          QuestionBank[]
+  examSessions           ExamSession[]
 }
 
 model AiKey {
@@ -455,6 +456,45 @@ model QuestionBank {
   questions Json
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+enum ExamSessionStatus {
+  ACTIVE
+  ENDED
+}
+
+/// A timed practice run through a subset of a QuestionBank. Deliberately
+/// snapshots the questions (and later, answers/grading) as JSON rather than
+/// referencing QuestionBank.questions live — a bank gets edited over time
+/// (AI re-classifies modules, answers get filled in), and a past exam's
+/// content must not silently change out from under its own score history.
+model ExamSession {
+  id        String            @id @default(cuid())
+  userId    String
+  /// The source bank, kept only so "重考一次" can re-pull from the same
+  /// pool — never dereferenced to render the exam itself.
+  bankId    String?
+  bankName  String
+  /// Modules selected when starting, or null if the whole bank was used.
+  modules   Json?
+  /// QuestionBankItem[] snapshot at exam start (question/module/category/
+  /// referenceAnswer/tips) — see src/lib/question-bank-shared.ts.
+  questions Json
+  /// Parallel array to `questions`, filled in on submit:
+  /// {answer, score, feedback}[]. Null until the exam is submitted.
+  answers      Json?
+  status       ExamSessionStatus @default(ACTIVE)
+  overallScore Int?
+  summary      String?
+  /// Minutes the user was given — advisory (client auto-submits at zero),
+  /// not enforced server-side.
+  durationMinutes Int
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
