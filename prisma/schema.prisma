@@ -82,6 +82,14 @@ model MailAccount {
   /// either re-scan years of mail (cursor null) or skip its own backlog
   /// (cursor copied from an older account).
   lastCheckedAt   DateTime?
+  /// IMAP UID high-water mark — the actual de-dup cursor. lastCheckedAt
+  /// alone isn't enough: IMAP's SEARCH SINCE only has day granularity (no
+  /// time-of-day), so two scans on the same calendar day both re-match
+  /// every message since midnight and re-create a 待办 for mail already
+  /// processed earlier that day. UIDs are stable and strictly increasing
+  /// within one mailbox, so "uid > lastSeenUid" never re-matches a message
+  /// already seen, regardless of how many times per day this runs.
+  lastSeenUid     Int?
   createdAt       DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

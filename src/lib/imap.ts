@@ -50,14 +50,24 @@ export async function getUserScanAccounts(userId: string): Promise<ScanAccount[]
 const MAX_EMAILS_PER_CHECK = 20;
 
 /**
- * Read-only: fetches recent inbox messages since `since`, never marks,
- * moves, or deletes anything. Capped at MAX_EMAILS_PER_CHECK so a mailbox
- * with a big backlog on first-ever setup doesn't trigger dozens of AI calls
- * in one check.
+ * Read-only: fetches recent inbox messages, never marks, moves, or deletes
+ * anything. Capped at MAX_EMAILS_PER_CHECK so a mailbox with a big backlog
+ * on first-ever setup doesn't trigger dozens of AI calls in one check.
+ *
+ * `sinceUid`, when known, is what actually prevents duplicates: IMAP's
+ * SEARCH SINCE date filter only has day granularity (no time-of-day), so
+ * two scans on the same calendar day both re-match every message since
+ * midnight — including ones a scan earlier that same day already turned
+ * into a 待办. UIDs are stable and strictly increasing within one mailbox,
+ * so "uid > sinceUid" never re-matches an already-seen message no matter
+ * how many times per day this runs. `since` is only the fallback for the
+ * very first scan, when there's no UID cursor yet — it bounds "look back a
+ * few days" instead of scanning the entire mailbox history.
  */
 export async function fetchRecentEmails(
   config: ImapConfig,
-  since: Date
+  since: Date,
+  sinceUid?: number | null
 ): Promise<InboxEmail[]> {
   const client = new ImapFlow({
     host: config.host,
@@ -80,7 +90,10 @@ export async function fetchRecentEmails(
   try {
     const lock = await client.getMailboxLock("INBOX");
     try {
-      const uids = await client.search({ since }, { uid: true });
+      const uids = await client.search(
+        sinceUid ? { uid: `${sinceUid + 1}:*` } : { since },
+        { uid: true }
+      );
       const recentUids = uids ? uids.slice(-MAX_EMAILS_PER_CHECK) : [];
 
       // `{ uid: true }` MUST be the third (options) argument, not part of the
