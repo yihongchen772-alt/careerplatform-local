@@ -64,7 +64,7 @@ export async function getSearchKey(userId: string): Promise<UserAiConfig | null>
 
 function unsupportedFileError(): never {
   throw new UserFacingError(
-    "当前配置的服务商不支持读取 PDF，请在账号设置里配一个 Gemini、Claude 或 OpenAI 的 Key（DeepSeek/Kimi/Qwen 能读图片，但都读不了 PDF）"
+    "当前配置的服务商不支持读取 PDF，请在账号设置里配一个 Gemini、Claude、OpenAI 或 Qwen 的 Key（DeepSeek/Kimi 能读图片，但读不了 PDF）"
   );
 }
 
@@ -334,6 +334,127 @@ async function qwenGrounded(
   return text;
 }
 
+// ---------- Qwen document (PDF) understanding ----------
+
+/**
+ * Qwen's vision models (qwenGrounded's sibling in ai-providers.ts's
+ * VISION_MODEL) can't read a PDF at all — but DashScope has a completely
+ * separate mechanism for that: an OpenAI-compatible Files endpoint
+ * (purpose=file-extract, PDF/DOCX/TXT/... up to 150MB) that returns a
+ * file id, referenced in a second `system` message as `fileid://{id}` on
+ * qwen-long specifically (https://help.aliyun.com/zh/model-studio/openai-file-interface,
+ * https://help.aliyun.com/zh/model-studio/long-context-qwen-long — checked
+ * directly, this is not the same code path as the vision image_url blocks).
+ * Two HTTP calls where every other provider here needs one, but it's the
+ * only way Qwen can read a resume PDF at all.
+ */
+async function qwenUploadFile(
+  apiKey: string,
+  file: GeminiFilePart,
+  baseUrl: string,
+  timeoutMs: number
+): Promise<string> {
+  const ext = file.mimeType === "application/pdf" ? "pdf" : "bin";
+  const form = new FormData();
+  form.append(
+    "file",
+    new Blob([Buffer.from(file.data, "base64")], { type: file.mimeType }),
+    `resume.${ext}`
+  );
+  form.append("purpose", "file-extract");
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}/files`, {
+      method: "POST",
+      signal: controller.signal,
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: form,
+    });
+  } catch {
+    throw new UserFacingError("AI 请求超时，请稍后重试");
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    console.error(`[qwen-file-upload] ${response.status}`, detail.slice(0, 500));
+    if (response.status === 401 || response.status === 403) {
+      throw new UserFacingError("API Key 无效，请检查账号设置里的 AI 配置");
+    }
+    throw new UserFacingError("上传文件给 AI 失败，请稍后重试");
+  }
+
+  const data = await response.json();
+  const fileId: string | undefined = data?.id;
+  if (!fileId) throw new UserFacingError("AI 没有返回文件 id，请重试");
+  return fileId;
+}
+
+async function qwenDocumentStructured(
+  apiKey: string,
+  prompt: string,
+  file: GeminiFilePart,
+  schema: GeminiSchema,
+  timeoutMs: number,
+  baseUrlOverride?: string
+): Promise<unknown> {
+  const baseUrl = baseUrlOverride || OPENAI_COMPATIBLE_BASE_URL.qwen;
+  const fileId = await qwenUploadFile(apiKey, file, baseUrl, timeoutMs);
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "qwen-long",
+        // Per DashScope's own doc structure: first system message is the
+        // role/instructions, second is the fileid:// reference, then the
+        // user message is the actual ask — the file content isn't put
+        // directly in the user message.
+        messages: [
+          { role: "system", content: withSchemaReminder(prompt, schema) },
+          { role: "system", content: `fileid://${fileId}` },
+          { role: "user", content: "请阅读这份文件并按上面的要求输出结果。" },
+        ],
+        response_format: { type: "json_object" },
+        max_tokens: 8192,
+      }),
+    });
+  } catch {
+    throw new UserFacingError("AI 请求超时，请稍后重试");
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    console.error(`[qwen-long] ${response.status}`, detail.slice(0, 500));
+    if (response.status === 401 || response.status === 403) {
+      throw new UserFacingError("API Key 无效，请检查账号设置里的 AI 配置");
+    }
+    if (response.status === 429) throw new UserFacingError("API 调用超限，请稍后重试");
+    throw new UserFacingError("AI 服务暂时不可用，请稍后重试");
+  }
+
+  const data = await response.json();
+  if (data?.choices?.[0]?.finish_reason === "length") {
+    throw new UserFacingError("AI 回答内容太长被截断了，请重试（有时候换一次就好）");
+  }
+  const text: string = data?.choices?.[0]?.message?.content ?? "";
+  return extractJson(text);
+}
+
 // ---------- Dispatch ----------
 
 /**
@@ -373,17 +494,33 @@ export async function generateStructuredWithFile({
       return claudeStructuredWithFile(config.apiKey, config.model, prompt, file, schema, timeoutMs);
     case "openai":
       return openAiStructuredWithFile(config.apiKey, config.model, prompt, file, schema, timeoutMs);
+    case "qwen":
+      // PDF and image are two entirely different mechanisms on Qwen: a PDF
+      // goes through the upload-then-fileid:// document path (qwen-long),
+      // an image goes through the same vision image_url blocks DeepSeek/
+      // Kimi use. Neither is the account's configured (text) model.
+      if (file && file.mimeType === "application/pdf") {
+        return qwenDocumentStructured(config.apiKey, prompt, file, schema, timeoutMs, config.baseUrl);
+      }
+      return callOpenAiCompatible(
+        config.provider,
+        config.apiKey,
+        config.model,
+        withSchemaReminder(prompt, schema),
+        timeoutMs,
+        config.baseUrl,
+        file
+      );
     case "deepseek":
     case "kimi":
-    case "qwen":
-      // Images only — see FILE_CAPABLE_PROVIDERS vs IMAGE_CAPABLE_PROVIDERS.
-      // A caller that already knows the file is a PDF should be requesting a
-      // key via getFileSearchKey (which never returns these three) rather
-      // than reaching this branch at all; this is the backstop for the case
-      // where it didn't.
+      // Images only — DeepSeek/Kimi have no equivalent to Qwen's document
+      // upload path. A caller that already knows the file is a PDF should
+      // be requesting a key via getFileSearchKey (which never returns these
+      // two) rather than reaching this branch; this is the backstop for the
+      // case where it didn't.
       if (file?.mimeType === "application/pdf") {
         throw new UserFacingError(
-          "DeepSeek/Kimi/Qwen 都读不了 PDF，只能读图片——换一个能读 PDF 的服务商（Gemini/Claude/OpenAI），或者把简历转成图片再传"
+          "DeepSeek/Kimi 读不了 PDF，只能读图片——换一个能读 PDF 的服务商（Gemini/Claude/OpenAI/Qwen），或者把简历转成图片再传"
         );
       }
       return callOpenAiCompatible(

@@ -46,7 +46,7 @@ async function run(resumeVersionId: string): Promise<ResumeCheck> {
   if (!fileKey) {
     throw new UserFacingError(
       isPdf
-        ? "简历体检需要读取 PDF 内容，去账号设置 → AI 设置里配置一个 Gemini、Claude 或 OpenAI 的 API Key（DeepSeek/Kimi/Qwen 读不了 PDF）"
+        ? "简历体检需要读取 PDF 内容，去账号设置 → AI 设置里配置一个 Gemini、Claude、OpenAI 或 Qwen 的 API Key（DeepSeek/Kimi 读不了 PDF）"
         : "简历体检需要读取图片内容，去账号设置 → AI 设置里配置一个 AI Key"
     );
   }
