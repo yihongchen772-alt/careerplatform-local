@@ -92,9 +92,10 @@ const SCREENSHOT_MIME: Record<string, string> = {
  * makes selection awkward — and it's the only way to capture posts whose
  * information is baked into an image rather than the caption.
  *
- * Needs a file-capable provider (Gemini/Claude/OpenAI); DeepSeek/Kimi/Qwen
- * can't read images at all, so this deliberately errors rather than falling
- * back to the text path, where they'd "succeed" having read nothing.
+ * Needs an image-capable provider (getImageSearchKey — all six now that
+ * DeepSeek/Kimi/Qwen have shipped vision models); errors rather than falling
+ * back to the text path, where an incapable provider would "succeed" having
+ * read nothing.
  */
 export async function parseRecruitmentScreenshot(
   fileBase64: string,

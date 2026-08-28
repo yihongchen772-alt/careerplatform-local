@@ -91,7 +91,7 @@ async function run(positionId: string): Promise<MatchResult> {
       if (!fileKey) {
         throw new UserFacingError(
           isPdf
-            ? `「${resume.name}」是 PDF，需要 Gemini/Claude/OpenAI 其中一个的 Key（DeepSeek/Kimi/Qwen 读不了 PDF）`
+            ? `「${resume.name}」是 PDF，需要 Gemini/Claude/OpenAI/Qwen 其中一个的 Key（DeepSeek/Kimi 读不了 PDF）`
             : `「${resume.name}」需要配置一个 AI Key 才能读图片`
         );
       }

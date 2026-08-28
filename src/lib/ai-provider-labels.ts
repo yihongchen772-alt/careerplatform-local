@@ -33,17 +33,23 @@ export const OPENAI_COMPATIBLE_PROVIDERS: readonly AiProviderId[] = [
 ];
 
 /**
- * Providers whose API can read a PDF directly. DeepSeek/Kimi/Qwen's vision
- * models (see IMAGE_CAPABLE_PROVIDERS) are images-only — none of the three
- * accept a PDF content block as of Aug 2026 (checked each vendor's current
- * vision docs directly rather than assuming OpenAI-compatible ⇒ PDF-capable).
- * A resume/screenshot that's already a PDF needs one of these three
- * regardless of what the user's default provider is.
+ * Providers whose API can read a PDF directly. DeepSeek and Kimi's vision
+ * models (see IMAGE_CAPABLE_PROVIDERS) are images-only — neither accepts a
+ * PDF content block as of Aug 2026 (checked each vendor's current vision
+ * docs directly rather than assuming OpenAI-compatible ⇒ PDF-capable).
+ * Qwen is the one exception: DashScope has a completely separate
+ * upload-then-reference mechanism (an OpenAI-compatible Files endpoint,
+ * purpose=file-extract, then `fileid://{id}` in a system message to
+ * qwen-long) that genuinely reads a PDF's content — see
+ * qwenDocumentStructured in ai-file-search.ts. A resume/screenshot that's
+ * already a PDF needs one of these four regardless of what the user's
+ * default provider is.
  */
 export const FILE_CAPABLE_PROVIDERS: readonly AiProviderId[] = [
   "gemini",
   "anthropic",
   "openai",
+  "qwen",
 ];
 
 /**
@@ -56,8 +62,9 @@ export const FILE_CAPABLE_PROVIDERS: readonly AiProviderId[] = [
  * data URI, over the same /chat/completions endpoint already used for text
  * (see VISION_MODEL in ai-providers.ts for the exact model id each one
  * needs — none of them use the account's configured *text* model for this).
- * A superset of FILE_CAPABLE_PROVIDERS: everything that can read a PDF can
- * also read a plain image, but not the other way around.
+ * Not a strict superset of FILE_CAPABLE_PROVIDERS here — Qwen reads a PDF
+ * through an entirely different mechanism (see above) than its own vision
+ * path, so it appears on both lists for different reasons.
  */
 export const IMAGE_CAPABLE_PROVIDERS: readonly AiProviderId[] = [
   "gemini",
