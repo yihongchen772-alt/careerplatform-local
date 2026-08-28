@@ -1,5 +1,16 @@
 generator client {
   provider = "prisma-client-js"
+  // Prisma only bundles the query engine binary for whatever platform
+  // `prisma generate` actually ran on — this repo has only ever been built
+  // on this Mac, so every packaged Windows release so far shipped with
+  // zero working database engine (query_engine binary present for
+  // darwin-arm64 only), meaning literally every DB-backed page crashed on
+  // launch and fell straight to the generic Next.js error boundary.
+  // "native" keeps local dev working on whatever machine runs `generate`;
+  // "windows" adds the x64 engine electron-builder's Windows targets need
+  // (works under emulation for the arm64 NSIS build too — Prisma has no
+  // separate windows-arm64 engine to target).
+  binaryTargets = ["native", "windows"]
 }
 
 datasource db {
