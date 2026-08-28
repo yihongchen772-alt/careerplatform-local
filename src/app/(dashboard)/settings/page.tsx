@@ -1,6 +1,7 @@
 import { requireUser } from "@/lib/session";
 import { ProfileForm } from "@/components/settings/profile-form";
 import { AiSettingsForm } from "@/components/settings/ai-settings-form";
+import { ProxySettingsCard } from "@/components/settings/proxy-settings-card";
 import { AppearanceForm } from "@/components/settings/appearance-form";
 import { EmailSettingsForm } from "@/components/settings/email-settings-form";
 import { MailAccountsCard } from "@/components/settings/mail-accounts-card";
@@ -35,6 +36,7 @@ export default async function SettingsPage() {
         />
         <AppearanceForm />
         <AiSettingsForm keys={aiKeys} />
+        <ProxySettingsCard initial={appSettings} />
         <EmailSettingsForm currentUser={user.smtpUser} />
         <MailAccountsCard accounts={mailAccounts} />
         <BackgroundReminderCard initial={appSettings} />

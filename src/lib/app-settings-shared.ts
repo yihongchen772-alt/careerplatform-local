@@ -26,6 +26,17 @@ export type AppSettings = {
    * warning instead of a checkbox that looks on but does nothing.
    */
   autoLaunchFailed?: boolean;
+  /**
+   * HTTP proxy for outbound AI calls (`http://host:port`) — plain fetch()
+   * inside the Next server's Node process does not pick up whatever system
+   * proxy/VPN the user has running, even though a browser or the Electron
+   * window itself would. Someone whose network needs a proxy to reach
+   * Gemini/OpenAI/Anthropic at all would otherwise see every call to those
+   * silently hang until timeout, no matter how well their VPN works for
+   * everything else. Undici's ProxyAgent only speaks HTTP CONNECT, not
+   * SOCKS5 — the user needs their proxy tool's HTTP(S) port specifically.
+   */
+  proxyUrl?: string;
 };
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
