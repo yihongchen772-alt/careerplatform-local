@@ -52,6 +52,10 @@ const EXT_BY_MIME: Record<string, string> = {
   "text/markdown": ".md",
 };
 
+export function mimeTypeForExtension(ext: string): string | undefined {
+  return Object.entries(EXT_BY_MIME).find(([, e]) => e === ext.toLowerCase())?.[0];
+}
+
 export async function saveLocalFile(
   buffer: Buffer,
   mimeType: string
@@ -76,7 +80,7 @@ export async function readLocalFile(
     return null;
   }
   const ext = path.extname(filename).toLowerCase();
-  const mimeType = Object.entries(EXT_BY_MIME).find(([, e]) => e === ext)?.[0];
+  const mimeType = mimeTypeForExtension(ext);
   if (!mimeType) return null;
 
   try {
