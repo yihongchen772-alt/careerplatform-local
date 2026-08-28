@@ -5,10 +5,12 @@ import {
   getUserAiKey,
   withSchemaReminder,
   extractJson,
+  callOpenAiCompatible,
   OPENAI_COMPATIBLE_BASE_URL,
 } from "@/lib/ai-providers";
 import {
   FILE_CAPABLE_PROVIDERS,
+  IMAGE_CAPABLE_PROVIDERS,
   SEARCH_CAPABLE_PROVIDERS,
   type AiProviderId,
 } from "@/lib/ai-provider-labels";
@@ -41,9 +43,18 @@ async function getCapableKey(
   return null;
 }
 
-/** For features that must read a PDF/image (resume check, resume match). */
+/** For features that must read a PDF specifically (resume check/match when
+ * the file turns out to be a PDF, not an image — see FILE_CAPABLE_PROVIDERS
+ * for why this is a strict subset of the image-capable list). */
 export async function getFileSearchKey(userId: string): Promise<UserAiConfig | null> {
   return getCapableKey(userId, FILE_CAPABLE_PROVIDERS);
+}
+
+/** For features that only need to read an image (screenshot import; resume
+ * check/match when the uploaded file is an image rather than a PDF). Wider
+ * than getFileSearchKey — DeepSeek/Kimi/Qwen can all do this now, just not PDFs. */
+export async function getImageSearchKey(userId: string): Promise<UserAiConfig | null> {
+  return getCapableKey(userId, IMAGE_CAPABLE_PROVIDERS);
 }
 
 /** For features that must search the live web (company research, job insight). */
@@ -53,7 +64,7 @@ export async function getSearchKey(userId: string): Promise<UserAiConfig | null>
 
 function unsupportedFileError(): never {
   throw new UserFacingError(
-    "当前配置的服务商不支持读取 PDF/图片，请在账号设置里配一个 Gemini、Claude 或 OpenAI 的 Key"
+    "当前配置的服务商不支持读取 PDF，请在账号设置里配一个 Gemini、Claude 或 OpenAI 的 Key（DeepSeek/Kimi/Qwen 能读图片，但都读不了 PDF）"
   );
 }
 
@@ -362,6 +373,28 @@ export async function generateStructuredWithFile({
       return claudeStructuredWithFile(config.apiKey, config.model, prompt, file, schema, timeoutMs);
     case "openai":
       return openAiStructuredWithFile(config.apiKey, config.model, prompt, file, schema, timeoutMs);
+    case "deepseek":
+    case "kimi":
+    case "qwen":
+      // Images only — see FILE_CAPABLE_PROVIDERS vs IMAGE_CAPABLE_PROVIDERS.
+      // A caller that already knows the file is a PDF should be requesting a
+      // key via getFileSearchKey (which never returns these three) rather
+      // than reaching this branch at all; this is the backstop for the case
+      // where it didn't.
+      if (file?.mimeType === "application/pdf") {
+        throw new UserFacingError(
+          "DeepSeek/Kimi/Qwen 都读不了 PDF，只能读图片——换一个能读 PDF 的服务商（Gemini/Claude/OpenAI），或者把简历转成图片再传"
+        );
+      }
+      return callOpenAiCompatible(
+        config.provider,
+        config.apiKey,
+        config.model,
+        withSchemaReminder(prompt, schema),
+        timeoutMs,
+        config.baseUrl,
+        file
+      );
     default:
       unsupportedFileError();
   }

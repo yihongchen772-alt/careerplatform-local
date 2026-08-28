@@ -5,7 +5,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { getUserAiConfig, callTextAi } from "@/lib/ai-providers";
-import { getFileSearchKey, generateStructuredWithFile } from "@/lib/ai-file-search";
+import { getImageSearchKey, generateStructuredWithFile } from "@/lib/ai-file-search";
 import { getResumeContext } from "@/lib/resume-context";
 import { computeInterestScore } from "@/lib/scoring";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
@@ -111,11 +111,9 @@ export async function parseRecruitmentScreenshot(
       throw new UserFacingError("图片不能超过 10MB");
     }
 
-    const config = await getFileSearchKey(user.id);
+    const config = await getImageSearchKey(user.id);
     if (!config) {
-      throw new UserFacingError(
-        "读截图需要能看图的服务商，去账号设置配一个 Gemini、Claude 或 OpenAI 的 Key（DeepSeek/Kimi/Qwen 读不了图片）"
-      );
+      throw new UserFacingError("读截图需要能看图的服务商，去账号设置配一个 AI Key（这几家都能读图片）");
     }
 
     const today = new Date().toISOString().slice(0, 10);

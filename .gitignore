@@ -10,3 +10,4 @@ release
 .DS_Store
 uploads/
 app-settings.json
+.playwright-mcp/
