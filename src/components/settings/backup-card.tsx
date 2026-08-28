@@ -65,11 +65,11 @@ export function BackupCard() {
         toast.error(res.message);
         return;
       }
-      toast.success(
-        res.data.skipped > 0
-          ? `已恢复 ${res.data.restored} 条数据（跳过 ${res.data.skipped} 条已损坏/关联缺失的），刷新页面查看`
-          : `已恢复 ${res.data.restored} 条数据，刷新页面查看`
-      );
+      const parts = [`已恢复 ${res.data.restored} 条数据`];
+      if (res.data.skipped > 0) parts.push(`跳过 ${res.data.skipped} 条已损坏/关联缺失的`);
+      if (res.data.filesMigrated > 0) parts.push(`搬运了 ${res.data.filesMigrated} 个文件`);
+      if (res.data.filesFailed > 0) parts.push(`${res.data.filesFailed} 个文件搬运失败（可能已过期或需要登录，需自己重新上传）`);
+      toast.success(`${parts.join("，")}，刷新页面查看`);
       setPending(null);
     } finally {
       setImporting(false);
@@ -85,7 +85,9 @@ export function BackupCard() {
         <p className="text-sm text-muted-foreground">
           所有数据都只存在这台电脑上，没有云端副本——文件损坏或换电脑就没了。导出会把投递记录、
           候选岗位、简历文件、日程等打包成一个 JSON 文件存到「下载」文件夹，换电脑或重装后
-          用它恢复。API Key 也在里面（加密状态），备份文件请自己保管好。
+          用它恢复。API Key 也在里面（加密状态），备份文件请自己保管好。也可以直接选网页版
+          「账号设置 → 导出我的数据」导出的 JSON——数据会正常导入，简历/附件文件会尝试从网页版的
+          云端地址下载一份存到本地，失败的（链接过期/需要登录）会保留原样，需要的话请自己重新上传。
         </p>
 
         <div className="space-y-2">

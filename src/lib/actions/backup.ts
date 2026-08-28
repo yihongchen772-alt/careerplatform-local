@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireUser, LOCAL_USER_ID } from "@/lib/session";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
+import { saveLocalFile, mimeTypeForExtension, ALLOWED_LIBRARY_MIME } from "@/lib/local-storage";
 
 /**
  * Bumped whenever the export shape changes incompatibly. Import refuses a
@@ -264,10 +265,45 @@ export async function previewBackup(json: string): Promise<ActionResult<ImportPr
   });
 }
 
+/**
+ * A backup coming from the web version's export carries `fileUrl`/`url`
+ * pointing at its cloud blob storage, not a local file — this app only ever
+ * reads resumes/attachments off disk (src/lib/local-storage.ts, used by
+ * AI features like 简历体检/岗位匹配). Left as-is, "查看文件" still works fine
+ * (it's a plain absolute-URL link), but anything that reads the file's
+ * *content* would fail with "简历文件已丢失". Best-effort fetch it once at
+ * import time and rewrite the field to the freshly-saved local copy; a
+ * failure (offline, expired link, unrecognized file type) just leaves the
+ * original URL in place rather than failing the whole restore — the row is
+ * still useful (and still openable) without a local copy of its file.
+ */
+const REMOTE_FILE_FIELDS: Partial<Record<TableName, string>> = {
+  resumeVersion: "fileUrl",
+  attachment: "url",
+};
+
+async function migrateRemoteFile(url: string): Promise<string | null> {
+  if (!/^https?:\/\//i.test(url)) return null;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    let mimeType = res.headers.get("content-type")?.split(";")[0]?.trim() ?? "";
+    if (!ALLOWED_LIBRARY_MIME.includes(mimeType)) {
+      mimeType = mimeTypeForExtension(path.extname(new URL(url).pathname)) ?? "";
+    }
+    if (!ALLOWED_LIBRARY_MIME.includes(mimeType)) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    const { url: localUrl } = await saveLocalFile(buf, mimeType);
+    return localUrl;
+  } catch {
+    return null;
+  }
+}
+
 /** Destructive: wipes current data and restores the backup wholesale. */
 export async function importBackup(
   json: string
-): Promise<ActionResult<{ restored: number; skipped: number }>> {
+): Promise<ActionResult<{ restored: number; skipped: number; filesMigrated: number; filesFailed: number }>> {
   return toActionResult(async () => {
     await requireUser();
     const { data, files } = parseBackup(json);
@@ -294,6 +330,25 @@ export async function importBackup(
     for (const [name, b64] of Object.entries(files)) {
       if (name.includes("/") || name.includes("\\") || name.includes("..")) continue;
       await writeFile(path.join(uploadsDir(), name), Buffer.from(b64, "base64"));
+    }
+
+    // Sequential, not Promise.all: this only ever runs against a handful of
+    // resumes/attachments, and hammering someone's blob storage with a burst
+    // of concurrent requests during an import isn't worth the speedup.
+    let filesMigrated = 0;
+    let filesFailed = 0;
+    for (const [table, field] of Object.entries(REMOTE_FILE_FIELDS) as [TableName, string][]) {
+      for (const row of cleaned.get(table) ?? []) {
+        const value = row[field];
+        if (typeof value !== "string" || !/^https?:\/\//i.test(value)) continue;
+        const migrated = await migrateRemoteFile(value);
+        if (migrated) {
+          row[field] = migrated;
+          filesMigrated++;
+        } else {
+          filesFailed++;
+        }
+      }
     }
 
     let restored = 0;
@@ -325,6 +380,6 @@ export async function importBackup(
     ]) {
       revalidatePath(p);
     }
-    return { restored, skipped };
+    return { restored, skipped, filesMigrated, filesFailed };
   });
 }
