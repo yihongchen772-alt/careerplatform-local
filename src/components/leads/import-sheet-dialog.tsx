@@ -298,7 +298,7 @@ export function ImportSheetDialog({
               <p className="text-sm font-medium">方式三：传截图</p>
               <p className="text-sm text-muted-foreground">
                 手机上刷到的招聘帖直接截图发过来，AI 会读图里的文字。图里没有的信息不会瞎猜，
-                看不清就留空。需要配 Gemini/Claude/OpenAI 的 Key（这三家能看图）。
+                看不清就留空。需要先配一个 AI Key（这几家都能看图）。
               </p>
               <input
                 ref={imgInput}

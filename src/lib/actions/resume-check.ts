@@ -4,7 +4,11 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { fetchFileAsInlinePart } from "@/lib/gemini";
-import { getFileSearchKey, generateStructuredWithFile } from "@/lib/ai-file-search";
+import {
+  getFileSearchKey,
+  getImageSearchKey,
+  generateStructuredWithFile,
+} from "@/lib/ai-file-search";
 import {
   toActionResult,
   UserFacingError,
@@ -31,14 +35,21 @@ async function run(resumeVersionId: string): Promise<ResumeCheck> {
     );
   }
 
-  const fileKey = await getFileSearchKey(user.id);
+  // Only known once the file is actually fetched — a .pdf name isn't
+  // proof of content, and the mime type is what actually determines which
+  // providers can read it (PDF needs FILE_CAPABLE_PROVIDERS; a plain image
+  // opens this up to DeepSeek/Kimi/Qwen's vision models too).
+  const file = await fetchFileAsInlinePart(resume.fileUrl);
+  const isPdf = file.mimeType === "application/pdf";
+
+  const fileKey = isPdf ? await getFileSearchKey(user.id) : await getImageSearchKey(user.id);
   if (!fileKey) {
     throw new UserFacingError(
-      "简历体检需要读取 PDF/图片内容，去账号设置 → AI 设置里配置一个 Gemini、Claude 或 OpenAI 的 API Key（DeepSeek/Kimi/Qwen 暂不支持直接读文件）"
+      isPdf
+        ? "简历体检需要读取 PDF 内容，去账号设置 → AI 设置里配置一个 Gemini、Claude 或 OpenAI 的 API Key（DeepSeek/Kimi/Qwen 读不了 PDF）"
+        : "简历体检需要读取图片内容，去账号设置 → AI 设置里配置一个 AI Key"
     );
   }
-
-  const file = await fetchFileAsInlinePart(resume.fileUrl);
 
   const prompt = `你是一位帮中国应届生看秋招简历的资深 HR / 技术面试官。请审阅这份简历并给出评估。
 

@@ -33,13 +33,39 @@ export const OPENAI_COMPATIBLE_PROVIDERS: readonly AiProviderId[] = [
 ];
 
 /**
- * Providers whose API can read a PDF/image directly. DeepSeek/Kimi/Qwen's
- * chat-completions endpoints are text-only.
+ * Providers whose API can read a PDF directly. DeepSeek/Kimi/Qwen's vision
+ * models (see IMAGE_CAPABLE_PROVIDERS) are images-only — none of the three
+ * accept a PDF content block as of Aug 2026 (checked each vendor's current
+ * vision docs directly rather than assuming OpenAI-compatible ⇒ PDF-capable).
+ * A resume/screenshot that's already a PDF needs one of these three
+ * regardless of what the user's default provider is.
  */
 export const FILE_CAPABLE_PROVIDERS: readonly AiProviderId[] = [
   "gemini",
   "anthropic",
   "openai",
+];
+
+/**
+ * Providers whose API can read an image (not necessarily a PDF) directly.
+ * DeepSeek, Kimi, and Qwen all shipped a vision-capable model on their
+ * hosted platform API within the last few months — DeepSeek's
+ * deepseek-v4-flash-vision-exp (Aug 2026), Kimi's kimi-k3 /
+ * moonshot-v1-*-vision-preview, Qwen's qwen3-vl-plus / qwen-vl-plus — all
+ * three take the same OpenAI-style `image_url` content block with a base64
+ * data URI, over the same /chat/completions endpoint already used for text
+ * (see VISION_MODEL in ai-providers.ts for the exact model id each one
+ * needs — none of them use the account's configured *text* model for this).
+ * A superset of FILE_CAPABLE_PROVIDERS: everything that can read a PDF can
+ * also read a plain image, but not the other way around.
+ */
+export const IMAGE_CAPABLE_PROVIDERS: readonly AiProviderId[] = [
+  "gemini",
+  "anthropic",
+  "openai",
+  "deepseek",
+  "kimi",
+  "qwen",
 ];
 
 /**

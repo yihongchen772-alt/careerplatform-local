@@ -4,7 +4,11 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { fetchFileAsInlinePart } from "@/lib/gemini";
-import { getFileSearchKey, generateStructuredWithFile } from "@/lib/ai-file-search";
+import {
+  getFileSearchKey,
+  getImageSearchKey,
+  generateStructuredWithFile,
+} from "@/lib/ai-file-search";
 import {
   toActionResult,
   UserFacingError,
@@ -56,13 +60,6 @@ async function run(positionId: string): Promise<MatchResult> {
     throw new UserFacingError("还没有上传过简历文件，先去简历版本页上传一份");
   }
 
-  const fileKey = await getFileSearchKey(user.id);
-  if (!fileKey) {
-    throw new UserFacingError(
-      "岗位匹配需要读取简历 PDF/图片内容，去账号设置 → AI 设置里配置一个 Gemini、Claude 或 OpenAI 的 API Key（DeepSeek/Kimi/Qwen 暂不支持直接读文件）"
-    );
-  }
-
   const coarse = !position.jdText;
 
   const jobDescription = [
@@ -78,9 +75,26 @@ async function run(positionId: string): Promise<MatchResult> {
     .filter(Boolean)
     .join("\n");
 
-  const matches = await Promise.all(
+  // Resumes in one match run can be a mix of PDFs and images — each needs
+  // its own capability check (PDF is the strict subset, see
+  // FILE_CAPABLE_PROVIDERS vs IMAGE_CAPABLE_PROVIDERS), fetched only after
+  // downloading the file since the mime type is what actually decides it,
+  // not the filename. Promise.allSettled rather than Promise.all: one resume
+  // failing (unsupported file type for the user's configured providers, a
+  // transient AI error) shouldn't blank out results for every other resume
+  // that succeeded.
+  const settled = await Promise.allSettled(
     resumes.map(async (resume) => {
       const file = await fetchFileAsInlinePart(resume.fileUrl!);
+      const isPdf = file.mimeType === "application/pdf";
+      const fileKey = isPdf ? await getFileSearchKey(user.id) : await getImageSearchKey(user.id);
+      if (!fileKey) {
+        throw new UserFacingError(
+          isPdf
+            ? `「${resume.name}」是 PDF，需要 Gemini/Claude/OpenAI 其中一个的 Key（DeepSeek/Kimi/Qwen 读不了 PDF）`
+            : `「${resume.name}」需要配置一个 AI Key 才能读图片`
+        );
+      }
 
       const prompt = `你在帮一个中国应届生判断：投这个岗位时，这份简历合不合适。
 
@@ -124,6 +138,19 @@ ${coarse ? "\n注意：这个岗位没有提供 JD 正文，只能依据岗位�
       };
     })
   );
+
+  const matches = settled
+    .filter((r): r is PromiseFulfilledResult<ResumeMatch> => r.status === "fulfilled")
+    .map((r) => r.value);
+
+  if (matches.length === 0) {
+    const firstError = settled.find(
+      (r): r is PromiseRejectedResult => r.status === "rejected"
+    )?.reason;
+    throw firstError instanceof Error
+      ? new UserFacingError(firstError.message)
+      : new UserFacingError("没有一份简历能完成匹配，检查一下 AI 设置");
+  }
 
   matches.sort((a, b) => b.matchScore - a.matchScore);
   return { coarse, matches };

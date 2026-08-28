@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { decryptSecret } from "@/lib/crypto";
-import { generateStructured, GeminiError, type GeminiSchema } from "@/lib/gemini";
+import { generateStructured, GeminiError, type GeminiFilePart, type GeminiSchema } from "@/lib/gemini";
 import { UserFacingError } from "@/lib/action-result";
 import { AI_PROVIDER_OPTIONS, type AiProviderId } from "@/lib/ai-provider-labels";
 
@@ -20,6 +20,22 @@ export const OPENAI_COMPATIBLE_BASE_URL: Record<"openai" | "deepseek" | "kimi" |
   deepseek: "https://api.deepseek.com/v1",
   kimi: "https://api.moonshot.cn/v1",
   qwen: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+};
+
+/**
+ * DeepSeek/Kimi/Qwen each ship a *separate* model id for vision — unlike
+ * Gemini, where the same gemini-3.x-flash models handle both text and
+ * images, a user's configured (text) model for these three can't read an
+ * image at all. Checked directly against each vendor's current docs
+ * (Aug 2026): DeepSeek's deepseek-v4-flash-vision-exp, Kimi's
+ * moonshot-v1-8k-vision-preview, Qwen's qwen-vl-plus. None of the three
+ * accept a PDF content block — images only (see IMAGE_CAPABLE_PROVIDERS vs
+ * FILE_CAPABLE_PROVIDERS in ai-provider-labels.ts).
+ */
+const VISION_MODEL: Partial<Record<"openai" | "deepseek" | "kimi" | "qwen", string>> = {
+  deepseek: "deepseek-v4-flash-vision-exp",
+  kimi: "moonshot-v1-8k-vision-preview",
+  qwen: "qwen-vl-plus",
 };
 
 export type UserAiConfig = {
@@ -80,14 +96,26 @@ export function extractJson(text: string): unknown {
   }
 }
 
-async function callOpenAiCompatible(
+export async function callOpenAiCompatible(
   provider: "openai" | "deepseek" | "kimi" | "qwen",
   apiKey: string,
   model: string,
   prompt: string,
   timeoutMs: number,
-  baseUrlOverride?: string
+  baseUrlOverride?: string,
+  file?: GeminiFilePart
 ): Promise<unknown> {
+  // A vision call always uses the provider's dedicated vision model — the
+  // account's configured text model (e.g. "deepseek-chat") can't read images
+  // at all, so silently sending it a picture would just 400.
+  const effectiveModel = file ? VISION_MODEL[provider] ?? model : model;
+  const content: unknown = file
+    ? [
+        { type: "image_url", image_url: { url: `data:${file.mimeType};base64,${file.data}` } },
+        { type: "text", text: prompt },
+      ]
+    : prompt;
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   let response: Response;
@@ -100,13 +128,13 @@ async function callOpenAiCompatible(
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model,
+        model: effectiveModel,
         // `prompt` here is already schema-annotated by withSchemaReminder(),
         // which also satisfies OpenAI-compatible APIs' (confirmed on
         // DeepSeek, same documented behavior on OpenAI) requirement that the
         // literal word "json" appear somewhere in the prompt to use
         // response_format: json_object.
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "user", content }],
         response_format: { type: "json_object" },
         // Without this, DeepSeek/OpenAI/Kimi/Qwen fall back to their own
         // (commonly 4096-token) default — a multi-question interview Q&A
