@@ -5,7 +5,7 @@ import path from "path";
 import { mkdir, writeFile, readdir, readFile } from "fs/promises";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireUser } from "@/lib/session";
+import { requireUser, LOCAL_USER_ID } from "@/lib/session";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
 
 /**
@@ -111,6 +111,33 @@ const FOREIGN_KEYS: Partial<Record<TableName, [field: string, parent: TableName]
   questionBank: [["userId", "user"]],
   examSession: [["userId", "user"]],
 };
+
+/**
+ * This build has exactly one user, always id `LOCAL_USER_ID` — but a backup
+ * being restored here isn't necessarily this app's own export. It might come
+ * from the web version (multi-user, real cuid ids), where "导出我的数据"
+ * produces a file in this same shape so a web account's data can move onto
+ * this desktop build. Every row in a foreign backup carries that web
+ * account's real id, which matches nothing here, so every userId (and the
+ * `user` row's own id) gets forced onto LOCAL_USER_ID before anything else
+ * runs. This is a no-op for this app's own exports, which already only ever
+ * contain LOCAL_USER_ID.
+ */
+function remapToLocalUser(
+  table: TableName,
+  row: Record<string, unknown>
+): Record<string, unknown> {
+  const copy = { ...row };
+  if (table === "user") {
+    copy.id = LOCAL_USER_ID;
+  } else if ("userId" in copy) {
+    copy.userId = LOCAL_USER_ID;
+  }
+  if (table === "company" && copy.addedByUserId != null) {
+    copy.addedByUserId = LOCAL_USER_ID;
+  }
+  return copy;
+}
 
 function isRowValid(
   table: TableName,
@@ -252,7 +279,9 @@ export async function importBackup(
     const cleaned = new Map<TableName, Record<string, unknown>[]>();
     let skipped = 0;
     for (const table of TABLES) {
-      const rows = (data[table] ?? []) as Record<string, unknown>[];
+      const rows = ((data[table] ?? []) as Record<string, unknown>[]).map((row) =>
+        remapToLocalUser(table, row)
+      );
       const keep = rows.filter((row) => isRowValid(table, row, idsByTable));
       skipped += rows.length - keep.length;
       cleaned.set(table, keep);

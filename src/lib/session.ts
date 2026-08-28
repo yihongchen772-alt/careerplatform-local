@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 // (unchanged from the web version, so the rest of the codebase didn't need
 // touching), it just always resolves to the one local user, auto-created on
 // first run.
-const LOCAL_USER_ID = "local-user";
+export const LOCAL_USER_ID = "local-user";
 
 export async function requireUser() {
   // upsert, not find-then-create: a page's layout and the page itself both
