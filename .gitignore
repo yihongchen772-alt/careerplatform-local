@@ -9,3 +9,4 @@ release
 .env.local
 .DS_Store
 uploads/
+app-settings.json
