@@ -1,0 +1,20 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- macOS menu-bar "template image" version of the app mark: solid black
+       on transparent, no background square, no gradient — macOS re-tints
+       template images to match the menu bar (white in the default dark bar,
+       black in light mode) and expects flat alpha shapes, not color. A
+       full-color icon (the Dock/app icon) rendered at menu-bar size instead
+       just looks like a smudged color blob next to the system's own
+       monochrome status icons. Same compass geometry as icon-source.svg,
+       stripped down to the shapes that still read at 22px: bezel ring +
+       ticks dropped (too thin to survive that shrink), needle + hub kept
+       solid instead of two-tone (the translucent tail disappears at this
+       size anyway). Regenerate the two PNGs below if this ever changes:
+         rsvg-convert -w 22 -h 22 build/tray-icon-source.svg > build/trayTemplate.png
+         rsvg-convert -w 44 -h 44 build/tray-icon-source.svg > build/trayTemplate@2x.png -->
+  <g transform="rotate(45 256 256)">
+    <path d="M256 96 L316 256 L256 241 L196 256 Z" fill="#000000"/>
+    <path d="M256 416 L316 256 L256 271 L196 256 Z" fill="#000000"/>
+  </g>
+  <circle cx="256" cy="256" r="30" fill="#000000"/>
+</svg>
