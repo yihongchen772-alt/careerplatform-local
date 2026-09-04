@@ -14,6 +14,7 @@ export async function updateProfile(input: z.infer<typeof updateProfileSchema>) 
     where: { id: user.id },
     data: {
       name: data.name,
+      phone: data.phone,
       school: data.school,
       targetTrack: data.targetTrack,
       graduationYear: data.graduationYear,

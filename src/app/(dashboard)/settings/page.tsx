@@ -26,6 +26,7 @@ export default async function SettingsPage() {
         <ProfileForm
           initial={{
             name: user.name,
+            phone: user.phone,
             school: user.school,
             targetTrack: user.targetTrack,
             graduationYear: user.graduationYear,
