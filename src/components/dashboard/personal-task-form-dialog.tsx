@@ -17,7 +17,10 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -177,20 +180,32 @@ export function PersonalTaskFormDialog({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={NONE}>不关联</SelectItem>
-                {positions.length > 0 && (
+                {applications.length > 0 && (
                   <>
-                    {positions.map((p) => (
-                      <SelectItem key={p.id} value={`position:${p.id}`}>
-                        {p.label}
-                      </SelectItem>
-                    ))}
+                    <SelectSeparator />
+                    <SelectGroup>
+                      <SelectLabel>已投递</SelectLabel>
+                      {applications.map((a) => (
+                        <SelectItem key={a.id} value={`application:${a.id}`}>
+                          {a.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
                   </>
                 )}
-                {applications.map((a) => (
-                  <SelectItem key={a.id} value={`application:${a.id}`}>
-                    {a.label}
-                  </SelectItem>
-                ))}
+                {positions.length > 0 && (
+                  <>
+                    <SelectSeparator />
+                    <SelectGroup>
+                      <SelectLabel>候选</SelectLabel>
+                      {positions.map((p) => (
+                        <SelectItem key={p.id} value={`position:${p.id}`}>
+                          {p.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </>
+                )}
               </SelectContent>
             </Select>
           </div>
