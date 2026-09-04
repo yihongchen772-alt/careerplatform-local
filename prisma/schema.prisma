@@ -25,6 +25,7 @@ model User {
   email          String    @unique
   passwordHash   String?
   name           String?
+  phone          String?
   school         String?
   targetTrack    String?
   graduationYear Int?

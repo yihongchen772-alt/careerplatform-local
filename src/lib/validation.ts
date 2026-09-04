@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const updateProfileSchema = z.object({
   name: z.string().min(1).optional(),
+  phone: z.string().optional(),
   school: z.string().optional(),
   targetTrack: z.string().optional(),
   graduationYear: z.coerce.number().int().optional(),
