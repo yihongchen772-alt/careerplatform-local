@@ -523,6 +523,7 @@ export function PoolTable({
         <MarkAppliedDialog
           positionIds={[marking.id]}
           positionLabels={[`${marking.company.name} · ${marking.title}`]}
+          defaultSource={marking.source}
           resumeVersions={resumeVersions}
           defaultResumeVersionId={defaultResumeVersionId}
           open={!!markingId}

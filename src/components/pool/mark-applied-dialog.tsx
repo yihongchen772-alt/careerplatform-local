@@ -20,7 +20,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { markPositionsApplied } from "@/lib/actions/positions";
-import { LAST_REFERRER_KEY, rememberValue, recallValue } from "@/lib/remembered-values";
+import {
+  LAST_REFERRER_KEY,
+  LAST_SOURCE_KEY,
+  rememberValue,
+  recallValue,
+} from "@/lib/remembered-values";
 import { todayKey } from "@/lib/dates";
 
 type ResumeOption = { id: string; name: string };
@@ -28,6 +33,12 @@ type ResumeOption = { id: string; name: string };
 export function MarkAppliedDialog({
   positionIds,
   positionLabels,
+  /** Falls back to this position's own 渠道 (set when it was added to the
+   * pool) when there's exactly one position and it already has one — a
+   * batch mark-applied over several positions has no single source to
+   * prefill, so it's left blank and the user fills in what actually
+   * applies to the batch. */
+  defaultSource,
   resumeVersions,
   defaultResumeVersionId,
   open,
@@ -35,6 +46,7 @@ export function MarkAppliedDialog({
 }: {
   positionIds: string[];
   positionLabels: string[];
+  defaultSource?: string | null;
   resumeVersions: ResumeOption[];
   defaultResumeVersionId?: string | null;
   open: boolean;
@@ -45,6 +57,7 @@ export function MarkAppliedDialog({
   // mounts this dialog once the user opens it, so it never renders on the server.
   const [appliedDate, setAppliedDate] = useState(todayKey);
   const [referrer, setReferrer] = useState(() => recallValue(LAST_REFERRER_KEY));
+  const [source, setSource] = useState(() => defaultSource || recallValue(LAST_SOURCE_KEY));
   const [resumeVersionId, setResumeVersionId] = useState<string>(
     defaultResumeVersionId ?? ""
   );
@@ -56,9 +69,11 @@ export function MarkAppliedDialog({
       await markPositionsApplied(positionIds, {
         appliedDate: new Date(appliedDate),
         referrer: referrer || undefined,
+        source: source || undefined,
         resumeVersionId: resumeVersionId || undefined,
       });
       rememberValue(LAST_REFERRER_KEY, referrer);
+      rememberValue(LAST_SOURCE_KEY, source);
       toast.success(
         positionIds.length > 1
           ? `已标记 ${positionIds.length} 项为投递，投递记录已生成`
@@ -97,9 +112,19 @@ export function MarkAppliedDialog({
               required
             />
           </div>
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">内推人（可选）</Label>
-            <Input value={referrer} onChange={(e) => setReferrer(e.target.value)} />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">渠道（可选）</Label>
+              <Input
+                value={source}
+                onChange={(e) => setSource(e.target.value)}
+                placeholder="官网 / 内推 / 猎头..."
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">内推人（可选）</Label>
+              <Input value={referrer} onChange={(e) => setReferrer(e.target.value)} />
+            </div>
           </div>
           {resumeVersions.length > 0 && (
             <div className="space-y-1">
