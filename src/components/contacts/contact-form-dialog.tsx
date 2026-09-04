@@ -17,7 +17,10 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -183,16 +186,32 @@ export function ContactFormDialog({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={NONE}>不关联</SelectItem>
-                {positions.map((p) => (
-                  <SelectItem key={p.id} value={`position:${p.id}`}>
-                    {p.label}
-                  </SelectItem>
-                ))}
-                {applications.map((a) => (
-                  <SelectItem key={a.id} value={`application:${a.id}`}>
-                    {a.label}
-                  </SelectItem>
-                ))}
+                {applications.length > 0 && (
+                  <>
+                    <SelectSeparator />
+                    <SelectGroup>
+                      <SelectLabel>已投递</SelectLabel>
+                      {applications.map((a) => (
+                        <SelectItem key={a.id} value={`application:${a.id}`}>
+                          {a.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </>
+                )}
+                {positions.length > 0 && (
+                  <>
+                    <SelectSeparator />
+                    <SelectGroup>
+                      <SelectLabel>候选</SelectLabel>
+                      {positions.map((p) => (
+                        <SelectItem key={p.id} value={`position:${p.id}`}>
+                          {p.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </>
+                )}
               </SelectContent>
             </Select>
           </div>
