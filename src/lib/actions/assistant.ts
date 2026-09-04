@@ -10,6 +10,10 @@ import { STAGE_LABELS } from "@/lib/stage-labels";
 import { applicationStageValues } from "@/lib/validation";
 import { computeInterestScore } from "@/lib/scoring";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
+import { markPositionsApplied, deletePosition } from "@/lib/actions/positions";
+import { deleteApplication, updateApplication } from "@/lib/actions/applications";
+import { toggleTaskDone } from "@/lib/actions/personal-tasks";
+import { markContacted } from "@/lib/actions/contacts";
 import {
   assistantActionSchema,
   type AssistantAction,
@@ -184,6 +188,24 @@ async function buildSnapshot(userId: string): Promise<string> {
         : todos.map((t) => `- ${t.label}：${t.sublabel}`).join("\n"))
   );
 
+  // Separate from the merged feed above (which has no IDs): complete_task
+  // needs to name a specific row, and only undone ones are worth offering.
+  const openTasks = personalTasks.filter((t) => !t.done);
+  sections.push(
+    "自建待办（含ID，只列未完成的）：\n" +
+      (openTasks.length === 0
+        ? "（没有未完成的待办）"
+        : openTasks
+            .map((t) => {
+              const parts = [
+                t.dueDate ? `日期：${ymd(t.dueDate)}` : null,
+                t.note ? `备注：${t.note}` : null,
+              ].filter(Boolean);
+              return `- [待办ID:${t.id}] ${t.title}${parts.length ? "；" + parts.join("；") : ""}`;
+            })
+            .join("\n"))
+  );
+
   sections.push(
     "联系人（HR/内推人/面试官）：\n" +
       (contacts.length === 0
@@ -262,8 +284,14 @@ ${historyText ? `之前的对话：\n${historyText}\n` : ""}
 - update_stage：更新某条投递的阶段。targetId 填上面的[投递ID]，stage 从这些里选：${applicationStageValues.join(" / ")}，date 填下一步的时间（比如面试时间），note 可选。同样，如果下一步是笔试/测评这种给一段窗口而不是单一时间点的，date 填窗口开始，dateEnd 填窗口结束
 - promote_lead：把秋招信息库里的一条线索提进候选岗位池。targetId 填上面的[线索ID]
 - add_contact：记一个 HR / 内推人 / 面试官。contactName 填这个人的名字（必填），title 填角色（HR/内推人/面试官等），companyName 可选，note 填联系方式（微信/邮箱/电话）或其他备注，date 填下次该跟进的日期（用户说"过几天再联系他"这类才填，没提就不填）
+- mark_position_applied：把候选岗位池里的一个岗位标记为已投递。targetId 填上面"候选岗位池"里对上的 [岗位ID]，date 填投递日期（没说就用今天），note 填渠道（官网/内推/猎头...），contactName 填内推人（没有就不填）。**用户提到的公司+岗位如果能在候选岗位池里对上号，一定用这个而不是 log_application**——这样投递记录和候选池会正确关联、候选池状态也会同步更新；对不上号（候选池里没有这个岗位）才用 log_application 单独记一条
+- update_application：修改一条已有投递记录的日期/渠道/内推人。targetId 填上面"投递记录"里对上的 [投递ID]，date/note（渠道）/contactName（内推人）里用户提到哪个改哪个，没提到的字段留空——**留空的字段调用时会自动保留原值，不会被清空**
+- delete_position：把候选岗位池里一个不打算投的岗位删掉。targetId 填 [岗位ID]，仅当用户明确说"不投了""删了"这类才提
+- withdraw_application：删掉一条投递记录，比如记错了或者要撤回。targetId 填 [投递ID]，仅当用户明确说要删/记错了才提，不要因为用户说"这家跪了""被拒了"就提删除——被拒也是投递记录的一部分，应该用 update_stage 改成 REJECTED，不是删掉
+- complete_task：把一条自建待办标记完成。targetId 填上面"自建待办"里对上的 [待办ID]
+- mark_contacted：记一下刚联系过某个联系人（会自动清掉这个人的跟进提醒）。targetId 填上面"联系人"里对上的 [联系人ID]
 每个 action 的 label 写成用户一眼能看懂的按钮文案，比如"记一条投递：字节跳动 后端开发"或"更新为一面，面试时间 3月5日"。label 只是按钮上的字，不能代替上面那些字段——该填 title/companyName/targetId 的一个都不能少，别只写 label 就交差。
-举例：用户说"我今天投了美团的数据分析，下周三一面"，就给两个 action —— 一个 log_application，一个提醒他准备面试的 add_task。`;
+举例：用户说"我今天投了美团的数据分析，下周三一面"，就给两个 action —— 一个 log_application（如果候选池里没有这条，对上号就用 mark_position_applied），一个提醒他准备面试的 add_task。`;
 
     const raw = await callTextAi({
       config,
@@ -288,6 +316,12 @@ ${historyText ? `之前的对话：\n${historyText}\n` : ""}
                     "update_stage",
                     "promote_lead",
                     "add_contact",
+                    "mark_position_applied",
+                    "update_application",
+                    "delete_position",
+                    "withdraw_application",
+                    "complete_task",
+                    "mark_contacted",
                   ],
                 },
                 label: { type: "STRING" },
@@ -502,6 +536,69 @@ export async function applyAssistantAction(
         revalidatePath("/contacts");
         revalidatePath("/dashboard");
         return { done: `已加联系人：${name}` };
+      }
+
+      case "mark_position_applied": {
+        if (!a.targetId) throw new UserFacingError("没指明是哪个候选岗位，改成手动标记吧");
+        const position = await db.position.findFirst({
+          where: { id: a.targetId, userId: user.id },
+          include: { company: true },
+        });
+        if (!position) throw new UserFacingError("找不到这个候选岗位");
+        await markPositionsApplied([position.id], {
+          appliedDate: parseDate(a.date) ?? new Date(),
+          referrer: a.contactName || undefined,
+          source: a.note || undefined,
+        });
+        return { done: `已标记为已投递：${position.company.name} · ${position.title}` };
+      }
+
+      case "update_application": {
+        if (!a.targetId) throw new UserFacingError("没指明是哪条投递，改成手动修改吧");
+        const application = await db.application.findFirst({
+          where: { id: a.targetId, userId: user.id },
+        });
+        if (!application) throw new UserFacingError("找不到这条投递记录");
+        await updateApplication(application.id, {
+          appliedDate: parseDate(a.date) ?? application.appliedDate,
+          referrer: a.contactName || undefined,
+          source: a.note || undefined,
+        });
+        return { done: `已更新投递信息：${application.title}` };
+      }
+
+      case "delete_position": {
+        if (!a.targetId) throw new UserFacingError("没指明是哪个候选岗位，改成手动删除吧");
+        const position = await db.position.findFirst({ where: { id: a.targetId, userId: user.id } });
+        if (!position) throw new UserFacingError("找不到这个候选岗位");
+        await deletePosition(position.id);
+        return { done: `已删除候选岗位：${position.title}` };
+      }
+
+      case "withdraw_application": {
+        if (!a.targetId) throw new UserFacingError("没指明是哪条投递，改成手动删除吧");
+        const application = await db.application.findFirst({
+          where: { id: a.targetId, userId: user.id },
+        });
+        if (!application) throw new UserFacingError("找不到这条投递记录");
+        await deleteApplication(application.id);
+        return { done: `已删除投递记录：${application.title}` };
+      }
+
+      case "complete_task": {
+        if (!a.targetId) throw new UserFacingError("没指明是哪条待办，改成手动完成吧");
+        const task = await db.personalTask.findFirst({ where: { id: a.targetId, userId: user.id } });
+        if (!task) throw new UserFacingError("找不到这条待办");
+        await toggleTaskDone(task.id, true);
+        return { done: `已完成待办：${task.title}` };
+      }
+
+      case "mark_contacted": {
+        if (!a.targetId) throw new UserFacingError("没指明是哪个联系人，改成手动操作吧");
+        const contact = await db.contact.findFirst({ where: { id: a.targetId, userId: user.id } });
+        if (!contact) throw new UserFacingError("找不到这个联系人");
+        await markContacted(contact.id);
+        return { done: `已记录联系：${contact.name}` };
       }
     }
   });
