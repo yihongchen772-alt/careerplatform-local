@@ -145,7 +145,7 @@ export async function markPositionApplied(
 
 export async function markPositionsApplied(
   ids: string[],
-  input: { appliedDate: Date; referrer?: string; resumeVersionId?: string }
+  input: { appliedDate: Date; referrer?: string; source?: string; resumeVersionId?: string }
 ) {
   const user = await requireUser();
   const positions = await db.position.findMany({
@@ -162,7 +162,13 @@ export async function markPositionsApplied(
           title: position.title,
           appliedDate: input.appliedDate,
           referrer: input.referrer,
-          source: position.source,
+          // Explicit input wins — the position's own 渠道 (set back when it
+          // was added to the pool, if at all) is only a fallback for a
+          // single-position mark-applied, handled by the dialog prefilling
+          // `defaultSource` rather than here, so a batch mark-applied over
+          // several positions with different sources never silently
+          // overwrites what the user actually typed with one of theirs.
+          source: input.source,
           resumeVersionId: input.resumeVersionId,
           currentStage: "APPLIED",
           salaryMin: position.salaryMin,
