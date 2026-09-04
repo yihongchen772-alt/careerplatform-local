@@ -3,6 +3,7 @@ const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
 const { spawn } = require("child_process");
+const { setupBrowserViewIpc } = require("./browser-view");
 
 // Pinned regardless of the app's marketing name (package.json's
 // "productName", shown in the dock/menu bar/window title): app.getPath
@@ -155,6 +156,7 @@ function createWindow({ show = true } = {}) {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      preload: path.join(__dirname, "preload.js"),
     },
   });
   // Spoken answers in the mock interview need getUserMedia. Electron denies
@@ -166,6 +168,8 @@ function createWindow({ show = true } = {}) {
       callback(permission === "media" || permission === "audioCapture");
     }
   );
+
+  setupBrowserViewIpc(mainWindow, PORT);
 
   mainWindow.loadURL(`http://localhost:${PORT}`);
 

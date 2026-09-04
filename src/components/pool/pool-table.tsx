@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
-import { ListChecks } from "lucide-react";
+import { Globe, ListChecks } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -12,7 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
@@ -322,6 +323,15 @@ export function PoolTable({
                       标记已投
                     </Button>
                   )}
+                  {p.jdUrl && (
+                    <Link
+                      href={`/browser?url=${encodeURIComponent(p.jdUrl)}`}
+                      className={buttonVariants({ size: "sm", variant: "outline" })}
+                    >
+                      <Globe className="size-3.5" />
+                      打开网申页面
+                    </Link>
+                  )}
                   <PositionFormDialog
                     mode="edit"
                     positionId={p.id}
@@ -448,6 +458,15 @@ export function PoolTable({
                     >
                       标记已投
                     </Button>
+                  )}
+                  {p.jdUrl && (
+                    <Link
+                      href={`/browser?url=${encodeURIComponent(p.jdUrl)}`}
+                      className={buttonVariants({ size: "sm", variant: "outline" })}
+                    >
+                      <Globe className="size-3.5" />
+                      打开网申页面
+                    </Link>
                   )}
                   <PositionFormDialog
                     mode="edit"
