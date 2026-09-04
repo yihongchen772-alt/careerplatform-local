@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { MockInterviewChat } from "@/components/mock-interview/chat";
+import { BackLink } from "@/components/ui/back-link";
 import type { InterviewFeedback } from "@/lib/validation";
 
 export default async function MockInterviewDetailPage({
@@ -25,7 +26,8 @@ export default async function MockInterviewDetailPage({
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-semibold tracking-tight">
+        <BackLink href="/mock-interview" label="返回模拟面试" />
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight">
           {session.position
             ? `${session.position.company.name} · ${session.position.title}`
             : session.targetRole || "模拟面试"}

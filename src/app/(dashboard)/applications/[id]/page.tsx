@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { BackLink } from "@/components/ui/back-link";
 import { AddStageForm } from "@/components/applications/add-stage-form";
 import { ApplicationAttachments } from "@/components/applications/application-attachments";
 import { ApplicationEditForm } from "@/components/applications/application-edit-form";
@@ -45,7 +46,8 @@ export default async function ApplicationDetailPage({
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-semibold tracking-tight">
+        <BackLink href="/applications" label="返回投递记录" />
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight">
           {application.company.name} · {application.title}
         </h1>
         <div className="mt-2">
