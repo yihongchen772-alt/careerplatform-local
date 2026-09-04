@@ -100,6 +100,13 @@ export const applicationSchema = z.object({
   resumeVersionId: z.string().optional().nullable(),
 });
 
+export const applicationCoreUpdateSchema = z.object({
+  appliedDate: z.coerce.date(),
+  referrer: z.string().optional(),
+  source: z.string().optional(),
+  resumeVersionId: z.string().optional().nullable(),
+});
+
 export const offerUpdateSchema = z.object({
   salaryMin: z.coerce.number().int().optional().nullable(),
   salaryMax: z.coerce.number().int().optional().nullable(),

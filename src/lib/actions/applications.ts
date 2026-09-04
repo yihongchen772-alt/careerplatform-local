@@ -3,7 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
-import { applicationSchema, offerUpdateSchema, stageUpdateSchema } from "@/lib/validation";
+import {
+  applicationCoreUpdateSchema,
+  applicationSchema,
+  offerUpdateSchema,
+  stageUpdateSchema,
+} from "@/lib/validation";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
@@ -119,6 +124,33 @@ export async function deleteApplication(id: string) {
   revalidatePath("/dashboard");
   revalidatePath("/insights");
   revalidatePath("/interviews");
+}
+
+export async function updateApplication(
+  applicationId: string,
+  input: z.infer<typeof applicationCoreUpdateSchema>
+) {
+  const user = await requireUser();
+  const application = await db.application.findFirst({
+    where: { id: applicationId, userId: user.id },
+  });
+  if (!application) throw new Error("未找到该投递记录");
+
+  const data = applicationCoreUpdateSchema.parse(input);
+
+  await db.application.update({
+    where: { id: applicationId },
+    data: {
+      appliedDate: data.appliedDate,
+      referrer: data.referrer || null,
+      source: data.source || null,
+      resumeVersionId: data.resumeVersionId || null,
+    },
+  });
+
+  revalidatePath(`/applications/${applicationId}`);
+  revalidatePath("/applications");
+  revalidatePath("/dashboard");
 }
 
 export async function updateApplicationOffer(

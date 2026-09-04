@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AddStageForm } from "@/components/applications/add-stage-form";
 import { ApplicationAttachments } from "@/components/applications/application-attachments";
+import { ApplicationEditForm } from "@/components/applications/application-edit-form";
 import { OfferEditForm } from "@/components/applications/offer-edit-form";
 import { StageTimeline } from "@/components/applications/stage-timeline";
 import { InterviewQaCard } from "@/components/applications/interview-qa-card";
@@ -47,12 +48,6 @@ export default async function ApplicationDetailPage({
         <h1 className="text-3xl font-semibold tracking-tight">
           {application.company.name} · {application.title}
         </h1>
-        <p className="text-sm text-muted-foreground">
-          投递日期 {application.appliedDate.toLocaleDateString()}
-          {application.referrer && ` · 内推人：${application.referrer}`}
-          {application.source && ` · 渠道：${application.source}`}
-          {application.resumeVersion && ` · 简历版本：${application.resumeVersion.name}`}
-        </p>
         <div className="mt-2">
           <Badge variant={STAGE_BADGE_VARIANT[application.currentStage]}>
             当前状态：{STAGE_LABELS[application.currentStage]}
@@ -88,6 +83,16 @@ export default async function ApplicationDetailPage({
         </Card>
 
         <div className="space-y-6">
+          <ApplicationEditForm
+            applicationId={application.id}
+            initial={{
+              appliedDate: application.appliedDate,
+              referrer: application.referrer,
+              source: application.source,
+              resumeVersionId: application.resumeVersionId,
+            }}
+            resumeVersions={resumeVersions}
+          />
           <AddStageForm
             applicationId={application.id}
             currentStage={application.currentStage}
