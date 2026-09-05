@@ -10,7 +10,10 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   forward: () => ipcRenderer.invoke("browser:forward"),
   reload: () => ipcRenderer.invoke("browser:reload"),
   setBounds: (rect) => ipcRenderer.invoke("browser:set-bounds", rect),
-  autofill: () => ipcRenderer.invoke("browser:autofill"),
+  autofill: (resumeVersionId) => ipcRenderer.invoke("browser:autofill", resumeVersionId),
+  zoomIn: () => ipcRenderer.invoke("browser:zoom-in"),
+  zoomOut: () => ipcRenderer.invoke("browser:zoom-out"),
+  zoomReset: () => ipcRenderer.invoke("browser:zoom-reset"),
   onNavState: (callback) => {
     const listener = (_event, state) => callback(state);
     ipcRenderer.on("browser:nav-state", listener);

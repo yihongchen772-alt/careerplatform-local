@@ -56,6 +56,7 @@ model User {
   positions      Position[]
   applications   Application[]
   resumeVersions ResumeVersion[]
+  autofillAnswers AutofillAnswer[]
   addedCompanies Company[]
   attachments    Attachment[]
   interviewPreps InterviewPrep[]
@@ -373,8 +374,28 @@ model ResumeVersion {
   user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   applications     Application[]
   interviewSessions InterviewSession[]
+  autofillAnswers  AutofillAnswer[]
 
   @@index([userId])
+}
+
+/// A 网申表单开放性问题 the AI answered once, kept so a similar question on a
+/// different site's form reuses it instead of re-generating (and re-paying
+/// for) an answer every time. Matched by text similarity against
+/// questionLabel at lookup time — see answer-questions/route.ts.
+model AutofillAnswer {
+  id              String   @id @default(cuid())
+  userId          String
+  resumeVersionId String
+  questionLabel   String
+  answer          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resumeVersion ResumeVersion @relation(fields: [resumeVersionId], references: [id], onDelete: Cascade)
+
+  @@index([userId, resumeVersionId])
 }
 
 // Pre-application prep guide: what to prepare before applying. Lives on

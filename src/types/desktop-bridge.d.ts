@@ -4,6 +4,7 @@ export type DesktopBridgeNavState = {
   canGoBack: boolean;
   canGoForward: boolean;
   loading: boolean;
+  zoomFactor: number;
 };
 
 export type DesktopBridgeAutofillStatus = {
@@ -19,7 +20,10 @@ export type DesktopBridge = {
   forward(): Promise<void>;
   reload(): Promise<void>;
   setBounds(rect: DesktopBridgeRect | null): Promise<void>;
-  autofill(): Promise<void>;
+  autofill(resumeVersionId?: string): Promise<void>;
+  zoomIn(): Promise<void>;
+  zoomOut(): Promise<void>;
+  zoomReset(): Promise<void>;
   onNavState(callback: (state: DesktopBridgeNavState) => void): () => void;
   onAutofillStatus(callback: (status: DesktopBridgeAutofillStatus) => void): () => void;
 };
