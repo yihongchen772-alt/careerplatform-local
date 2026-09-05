@@ -67,18 +67,31 @@ function scanPageFields() {
     if (el.type === "password" || el.disabled || el.readOnly) return;
     const id = "cp-fill-" + counter++;
     el.setAttribute("data-cp-fill-id", id);
-    results.push({
+    const entry = {
       id,
       tag: el.tagName.toLowerCase(),
       type: el.type || "",
       label: labelFor(el),
       placeholder: el.getAttribute("placeholder") || "",
       name: el.getAttribute("name") || "",
-    });
+    };
+    if (entry.tag === "select") {
+      entry.options = Array.from(el.options)
+        .map((o) => (o.textContent || "").trim())
+        .filter(Boolean);
+    }
+    results.push(entry);
   });
 
   return results;
 }
+
+// AI's honest "couldn't find this in the resume" answer for a short/choice
+// field — distinct from a real value so it never gets written into the page
+// (a sentence dropped into a 性别 dropdown would be worse than leaving it
+// blank). Deliberately an unambiguous English sentinel, not matched against
+// any wording the AI might naturally produce.
+const NEEDS_MANUAL_INPUT = "NEEDS_MANUAL_INPUT";
 
 function fillFields(pairs) {
   let filled = 0;
@@ -119,12 +132,15 @@ function fillFields(pairs) {
 }
 
 // Runs in the main process, not injected — matches detected form fields to
-// the user's own profile by keyword. Intentionally conservative: a field
-// with no confident match is left alone rather than guessed at.
+// the user's own saved profile by keyword. Intentionally conservative: a
+// field with no confident match is left for the AI pass (or manual entry)
+// rather than guessed at here.
 const BASIC_FIELD_RULES = [
   { keys: ["姓名", "真实姓名", "name"], get: (p) => p.name },
   { keys: ["手机", "电话", "联系电话", "phone", "mobile", "tel"], get: (p) => p.phone },
   { keys: ["邮箱", "email", "mail"], get: (p) => p.email },
+  { keys: ["性别", "gender"], get: (p) => p.gender },
+  { keys: ["出生日期", "出生年月", "生日", "birth"], get: (p) => p.birthDate },
   { keys: ["学校", "毕业院校", "院校", "school", "university"], get: (p) => p.school },
   {
     keys: ["毕业年份", "毕业时间", "graduate"],
@@ -133,8 +149,28 @@ const BASIC_FIELD_RULES = [
   { keys: ["意向城市", "期望城市", "工作城市", "city"], get: (p) => p.preferredCities },
 ];
 
+// Never sent to AI, never guessed, always left for the user — a resume
+// essentially never contains these, and getting one wrong (a fabricated ID
+// number, a wrong bank digit) is a real-world problem, not just a bad fill.
+const NEVER_GUESS_KEYWORDS = [
+  "身份证",
+  "证件号码",
+  "护照",
+  "签名",
+  "密码",
+  "password",
+  "验证码",
+  "captcha",
+  "银行卡",
+  "卡号",
+];
+
+function fieldHaystack(field) {
+  return `${field.label} ${field.placeholder} ${field.name}`.toLowerCase();
+}
+
 function matchBasicField(field, profile) {
-  const haystack = `${field.label} ${field.placeholder} ${field.name}`.toLowerCase();
+  const haystack = fieldHaystack(field);
   for (const rule of BASIC_FIELD_RULES) {
     if (rule.keys.some((k) => haystack.includes(k.toLowerCase()))) {
       const value = rule.get(profile);
@@ -142,6 +178,11 @@ function matchBasicField(field, profile) {
     }
   }
   return null;
+}
+
+function isNeverGuessField(field) {
+  const haystack = fieldHaystack(field);
+  return NEVER_GUESS_KEYWORDS.some((k) => haystack.includes(k.toLowerCase()));
 }
 
 function normalizeUrl(input) {
@@ -272,67 +313,96 @@ function setupBrowserViewIpc(mainWindow, port) {
       const fields = await view.webContents.executeJavaScript(`(${scanPageFields.toString()})()`);
 
       const pairs = [];
-      const openQuestions = [];
+      const candidates = []; // fields going to AI: {id, label, kind, options?}
+      let neverGuessCount = 0;
       for (const field of fields) {
+        if (isNeverGuessField(field)) {
+          neverGuessCount++;
+          continue;
+        }
         const value = matchBasicField(field, profile);
         if (value) {
           pairs.push({ id: field.id, value });
-        } else if (field.tag === "textarea") {
-          openQuestions.push({ id: field.id, label: field.label || field.placeholder || field.name });
+          continue;
+        }
+        const label = field.label || field.placeholder || field.name;
+        if (!label) continue; // nothing to even describe this field to the AI with
+        if (field.tag === "textarea") {
+          candidates.push({ id: field.id, label, kind: "essay" });
+        } else if (field.tag === "select") {
+          candidates.push({ id: field.id, label, kind: "choice", options: field.options || [] });
+        } else {
+          candidates.push({ id: field.id, label, kind: "short" });
         }
       }
       const basicCount = pairs.length;
 
-      let answeredCount = 0;
-      let reusedCount = 0;
+      let essayCount = 0;
+      let essayReused = 0;
+      let shortFilledCount = 0;
       let aiError = null;
-      if (openQuestions.length > 0 && !resumeVersionId) {
-        aiError = "没选简历，这些问答题跳过了";
-      } else if (openQuestions.length > 0) {
+      if (candidates.length > 0 && !resumeVersionId) {
+        aiError = "没选简历，这些字段跳过了";
+      } else if (candidates.length > 0) {
         send("browser:autofill-status", {
           phase: "ai",
-          message: `正在处理 ${openQuestions.length} 道问答题…`,
+          message: `正在用 AI 补全 ${candidates.length} 个字段…`,
         });
         try {
           const answerRes = await fetch(`http://localhost:${port}/api/desktop-browser/answer-questions`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ questions: openQuestions, resumeVersionId }),
+            body: JSON.stringify({ questions: candidates, resumeVersionId, profile }),
           });
           if (answerRes.ok) {
             const { answers } = await answerRes.json();
+            const kindById = new Map(candidates.map((c) => [c.id, c.kind]));
             for (const a of answers || []) {
+              const kind = kindById.get(a.id);
+              const isSentinel = a.answer.trim().toUpperCase() === NEEDS_MANUAL_INPUT;
+              if (kind !== "essay" && isSentinel) continue; // leave for manual entry
               pairs.push({ id: a.id, value: a.answer });
-              answeredCount++;
-              if (a.reused) reusedCount++;
+              if (kind === "essay") {
+                essayCount++;
+                if (a.reused) essayReused++;
+              } else {
+                shortFilledCount++;
+              }
             }
           } else {
             const body = await answerRes.json().catch(() => ({}));
-            aiError = body.error || "AI 生成问答失败";
+            aiError = body.error || "AI 生成失败";
           }
         } catch {
-          aiError = "AI 生成问答失败";
+          aiError = "AI 生成失败";
         }
       }
 
       await view.webContents.executeJavaScript(`(${fillFields.toString()})(${JSON.stringify(pairs)})`);
 
       const parts = [`已填 ${basicCount} 个基础字段`];
-      if (answeredCount > 0) {
-        const freshCount = answeredCount - reusedCount;
-        const aiParts = [];
-        if (reusedCount > 0) aiParts.push(`${reusedCount} 道复用了之前保存的答案`);
-        if (freshCount > 0) aiParts.push(`${freshCount} 道 AI 新生成`);
+      if (essayCount > 0) {
+        const fresh = essayCount - essayReused;
+        const bits = [];
+        if (essayReused > 0) bits.push(`${essayReused} 道复用了之前保存的答案`);
+        if (fresh > 0) bits.push(`${fresh} 道新生成`);
+        parts.push(`${essayCount} 道问答题已填（${bits.join("，")}）——提交前务必自己检查一遍`);
+      }
+      if (shortFilledCount > 0) {
+        parts.push(`AI 从简历里补全了 ${shortFilledCount} 个其他字段——也检查一下`);
+      }
+      if (neverGuessCount > 0) {
+        parts.push(`${neverGuessCount} 个涉及证件号码/密码等敏感信息，没有自动填`);
+      }
+      const attempted = basicCount + essayCount + shortFilledCount + neverGuessCount;
+      const stillManual = fields.length - attempted;
+      if (stillManual > 0) {
         parts.push(
-          `${answeredCount} 道问答题已填（${aiParts.join("，")}）——提交前务必自己检查一遍，尤其是新生成的那几段`
+          aiError
+            ? `${stillManual} 个字段没能自动填（${aiError}），需要自己填`
+            : `${stillManual} 个字段简历里没有对应信息，需要自己填`
         );
       }
-      const missed = openQuestions.length - answeredCount;
-      if (missed > 0) {
-        parts.push(aiError ? `${missed} 道问答题没能生成（${aiError}），需要自己写` : `${missed} 道问答题需要自己写`);
-      }
-      const unmatched = fields.length - basicCount - answeredCount;
-      if (unmatched > 0) parts.push(`${unmatched} 个字段没认出来，需要自己填`);
 
       send("browser:autofill-status", { phase: "done", message: parts.join("；") });
     } catch (err) {

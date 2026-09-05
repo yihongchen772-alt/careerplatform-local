@@ -12,7 +12,13 @@ export async function GET() {
   return NextResponse.json({
     name: user.name,
     phone: user.phone,
-    email: user.email,
+    // `user.email` is the local single-user account's internal identifier
+    // (defaults to a placeholder like "me@local") — never a real address,
+    // so it must never be handed to the autofill matcher. contactEmail is
+    // the one the user actually typed in for this purpose.
+    email: user.contactEmail,
+    gender: user.gender,
+    birthDate: user.birthDate,
     school: user.school,
     targetTrack: user.targetTrack,
     graduationYear: user.graduationYear,

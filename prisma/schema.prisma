@@ -26,6 +26,17 @@ model User {
   passwordHash   String?
   name           String?
   phone          String?
+  /// A real contact email for filling into 网申 forms — `email` above is the
+  /// local single-user account's internal identifier (defaults to a
+  /// placeholder like "me@local") and must never be used for that.
+  contactEmail   String?
+  /// Free text rather than an enum, matching this app's convention
+  /// elsewhere (see Contact.role) — a fixed list doesn't fit everyone.
+  gender         String?
+  /// Stored as plain text (YYYY-MM-DD from a date input), not DateTime —
+  /// this is purely informational for 网申 autofill, never used in date
+  /// arithmetic elsewhere, so there's no reason to deal with timezones.
+  birthDate      String?
   school         String?
   targetTrack    String?
   graduationYear Int?
