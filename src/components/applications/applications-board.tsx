@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { STAGE_LABELS, STAGE_ORDER } from "@/lib/stage-labels";
 import { addStageUpdate } from "@/lib/actions/applications";
+import { StageDateDialog } from "@/components/applications/stage-date-dialog";
 import { windowStatus } from "@/lib/todos";
 import type { ApplicationStage } from "@prisma/client";
 
@@ -46,6 +47,12 @@ export function ApplicationsBoard({
 }) {
   const [moving, setMoving] = useState<string | null>(null);
   const [showClosed, setShowClosed] = useState(false);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<ApplicationStage | null>(null);
+  const [pendingDrop, setPendingDrop] = useState<{
+    app: BoardApplication;
+    stage: ApplicationStage;
+  } | null>(null);
 
   const byStage = useMemo(() => {
     const map = new Map<ApplicationStage, BoardApplication[]>();
@@ -70,6 +77,15 @@ export function ApplicationsBoard({
     }
   }
 
+  function handleDrop(stage: ApplicationStage) {
+    setDropTarget(null);
+    if (!draggingId) return;
+    const app = applications.find((a) => a.id === draggingId);
+    setDraggingId(null);
+    if (!app || app.currentStage === stage) return;
+    setPendingDrop({ app, stage });
+  }
+
   return (
     <div className="space-y-4">
       <div className="relative">
@@ -78,7 +94,21 @@ export function ApplicationsBoard({
           const items = byStage.get(stage) ?? [];
           const next = ACTIVE_STAGES[ACTIVE_STAGES.indexOf(stage) + 1];
           return (
-            <div key={stage} className="w-56 shrink-0 rounded-lg border bg-muted/30">
+            <div
+              key={stage}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDropTarget(stage);
+              }}
+              onDragLeave={() => setDropTarget((cur) => (cur === stage ? null : cur))}
+              onDrop={(e) => {
+                e.preventDefault();
+                handleDrop(stage);
+              }}
+              className={`w-56 shrink-0 rounded-lg border bg-muted/30 transition-colors ${
+                dropTarget === stage ? "border-primary bg-primary/5" : ""
+              }`}
+            >
               <div className="flex items-center justify-between border-b px-3 py-2">
                 <span className="text-sm font-medium">{STAGE_LABELS[stage]}</span>
                 <Badge variant="secondary">{items.length}</Badge>
@@ -86,13 +116,27 @@ export function ApplicationsBoard({
               <div className="space-y-2 p-2">
                 {items.length === 0 ? (
                   <p className="px-1 py-3 text-center text-xs text-muted-foreground">
-                    空
+                    {dropTarget === stage ? "松手移到这个阶段" : "空"}
                   </p>
                 ) : (
                   items.map((app) => {
                     const stalled = daysSince(app.currentStageDate);
                     return (
-                      <div key={app.id} className="rounded-md border bg-card p-2.5">
+                      <div
+                        key={app.id}
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.effectAllowed = "move";
+                          setDraggingId(app.id);
+                        }}
+                        onDragEnd={() => {
+                          setDraggingId(null);
+                          setDropTarget(null);
+                        }}
+                        className={`cursor-grab rounded-md border bg-card p-2.5 active:cursor-grabbing ${
+                          draggingId === app.id ? "opacity-40" : ""
+                        }`}
+                      >
                         <Link
                           href={`/applications/${app.id}`}
                           className="text-sm font-medium underline-offset-4 hover:underline"
@@ -180,6 +224,18 @@ export function ApplicationsBoard({
         <p className="text-sm text-muted-foreground">
           所有投递都已结束，看板上没有在进行中的了。
         </p>
+      )}
+
+      {pendingDrop && (
+        <StageDateDialog
+          applicationId={pendingDrop.app.id}
+          companyName={pendingDrop.app.companyName}
+          stage={pendingDrop.stage}
+          onOpenChange={(open) => {
+            if (!open) setPendingDrop(null);
+          }}
+          onDone={() => setPendingDrop(null)}
+        />
       )}
     </div>
   );
