@@ -27,6 +27,9 @@ export default async function SettingsPage() {
           initial={{
             name: user.name,
             phone: user.phone,
+            contactEmail: user.contactEmail,
+            gender: user.gender,
+            birthDate: user.birthDate,
             school: user.school,
             targetTrack: user.targetTrack,
             graduationYear: user.graduationYear,
