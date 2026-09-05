@@ -55,7 +55,7 @@ export async function createApplication(
 
 export async function addStageUpdate(
   applicationId: string,
-  input: z.infer<typeof stageUpdateSchema>
+  input: z.infer<typeof stageUpdateSchema> & { enteredAt?: Date | string }
 ) {
   const user = await requireUser();
   const application = await db.application.findFirst({
@@ -64,6 +64,11 @@ export async function addStageUpdate(
   if (!application) throw new Error("未找到该投递记录");
 
   const data = stageUpdateSchema.parse(input);
+  // Defaults to now, same as before this accepted an override — the board's
+  // drag-to-a-column interaction is the one caller that actually sets this,
+  // for backdating/correcting when a stage change really happened.
+  const enteredAt = input.enteredAt ? new Date(input.enteredAt) : new Date();
+  if (Number.isNaN(enteredAt.getTime())) throw new Error("时间格式不对");
 
   const stageHistoryId = await db.$transaction(async (tx) => {
     const created = await tx.stageHistory.create({
@@ -75,6 +80,7 @@ export async function addStageUpdate(
         interviewer: data.interviewer,
         nextDeadline: data.nextDeadline ?? undefined,
         nextDeadlineEnd: data.nextDeadlineEnd ?? undefined,
+        enteredAt,
       },
     });
 
@@ -82,7 +88,7 @@ export async function addStageUpdate(
       where: { id: applicationId },
       data: {
         currentStage: data.stage,
-        currentStageDate: new Date(),
+        currentStageDate: enteredAt,
       },
     });
 
