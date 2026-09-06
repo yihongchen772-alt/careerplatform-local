@@ -14,7 +14,24 @@ import {
 import {
   matchResumesToPosition,
   type MatchResult,
+  type ResumeMatch,
 } from "@/lib/actions/resume-match";
+
+const RECOMMENDATION_VARIANT: Record<
+  ResumeMatch["recommendation"],
+  "default" | "secondary" | "outline" | "destructive"
+> = {
+  强烈建议投: "default",
+  可以投: "secondary",
+  海投备用: "outline",
+  不建议浪费时间: "destructive",
+};
+
+const VERDICT_ICON: Record<ResumeMatch["breakdown"][number]["verdict"], string> = {
+  match: "✅",
+  partial: "⚠️",
+  missing: "❌",
+};
 
 export function MatchResumeDialog({
   positionId,
@@ -72,30 +89,38 @@ export function MatchResumeDialog({
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium">{m.resumeName}</span>
                   {i === 0 && <Badge>推荐</Badge>}
+                  <Badge variant={RECOMMENDATION_VARIANT[m.recommendation]}>
+                    {m.recommendation}
+                  </Badge>
                   <span className="ml-auto text-lg font-semibold tabular-nums">
                     {m.matchScore}
                   </span>
                 </div>
 
-                {m.matchedPoints.length > 0 && (
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground">对得上的点</p>
-                    <ul className="list-inside list-disc text-sm">
-                      {m.matchedPoints.map((p, j) => (
-                        <li key={j}>{p}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {m.gaps.length > 0 && (
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground">差距</p>
-                    <ul className="list-inside list-disc text-sm text-muted-foreground">
-                      {m.gaps.map((g, j) => (
-                        <li key={j}>{g}</li>
-                      ))}
-                    </ul>
+                {m.breakdown.length > 0 && (
+                  <div className="overflow-x-auto rounded-md border">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
+                          <th className="px-2 py-1.5 font-medium">JD 要求</th>
+                          <th className="px-2 py-1.5 font-medium">简历里的证据</th>
+                          <th className="w-8 px-2 py-1.5 font-medium"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {m.breakdown.map((row, j) => (
+                          <tr key={j} className="border-b last:border-b-0">
+                            <td className="px-2 py-1.5 align-top">{row.requirement}</td>
+                            <td className="px-2 py-1.5 align-top text-muted-foreground">
+                              {row.evidence}
+                            </td>
+                            <td className="px-2 py-1.5 text-center align-top">
+                              {VERDICT_ICON[row.verdict]}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
 

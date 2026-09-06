@@ -15,10 +15,23 @@ import {
   type ActionResult,
 } from "@/lib/action-result";
 
+const matchRecommendations = [
+  "强烈建议投",
+  "可以投",
+  "海投备用",
+  "不建议浪费时间",
+] as const;
+
+const breakdownRowSchema = z.object({
+  requirement: z.string(),
+  evidence: z.string(),
+  verdict: z.enum(["match", "partial", "missing"]),
+});
+
 const matchSchema = z.object({
   matchScore: z.number().min(0).max(100),
-  matchedPoints: z.array(z.string()),
-  gaps: z.array(z.string()),
+  recommendation: z.enum(matchRecommendations),
+  breakdown: z.array(breakdownRowSchema),
   suggestion: z.string(),
 });
 
@@ -100,13 +113,16 @@ async function run(positionId: string): Promise<MatchResult> {
 
 目标岗位：
 ${jobDescription}
-${coarse ? "\n注意：这个岗位没有提供 JD 正文，只能依据岗位名称和方向判断，请在 suggestion 里说明结论较粗略。" : ""}
+${coarse ? "\n注意：这个岗位没有提供 JD 正文，只能依据岗位名称和方向判断，breakdown 可以给得粗一些，suggestion 里要说明结论较粗略。" : ""}
 
 请阅读附件里的简历，然后：
-- matchScore（0-100）：这份简历投这个岗位的匹配程度
-- matchedPoints：简历里**确实写到的**、能对上岗位要求的点，引用简历里的具体内容，不要泛泛而谈
-- gaps：岗位需要但简历里没体现的能力/经历，要具体
-- suggestion：一句话建议，比如该不该用这份投、投之前该补什么
+- breakdown：从 JD 里提炼出 5-8 条关键要求（技能/经验/学历等），每条给：
+  - requirement：这条要求本身
+  - evidence：简历里**确实写到的**、能证明这条要求的具体内容；如果简历里完全没有对应内容，写"简历里没有体现"
+  - verdict：match（明确满足）/ partial（部分满足或有一定相关性）/ missing（没有体现）
+- matchScore（0-100）：综合上面的拆解给一个匹配度
+- recommendation：从这四个里选一个——"强烈建议投"/"可以投"/"海投备用"/"不建议浪费时间"，不要只给分数不给结论
+- suggestion：一句话建议，比如投之前该补什么、这份简历的哪个部分该调整
 
 不要编造简历里没有的内容。全部用中文。`;
 
@@ -120,16 +136,47 @@ ${coarse ? "\n注意：这个岗位没有提供 JD 正文，只能依据岗位�
           type: "OBJECT",
           properties: {
             matchScore: { type: "NUMBER" },
-            matchedPoints: { type: "ARRAY", items: { type: "STRING" } },
-            gaps: { type: "ARRAY", items: { type: "STRING" } },
+            recommendation: { type: "STRING", enum: [...matchRecommendations] },
+            breakdown: {
+              type: "ARRAY",
+              items: {
+                type: "OBJECT",
+                properties: {
+                  requirement: { type: "STRING" },
+                  evidence: { type: "STRING" },
+                  verdict: { type: "STRING", enum: ["match", "partial", "missing"] },
+                },
+                required: ["requirement", "evidence", "verdict"],
+              },
+            },
             suggestion: { type: "STRING" },
           },
-          required: ["matchScore", "matchedPoints", "gaps", "suggestion"],
+          required: ["matchScore", "recommendation", "breakdown", "suggestion"],
         },
       });
 
       const parsed = matchSchema.safeParse(raw);
       if (!parsed.success) throw new UserFacingError("AI 返回格式异常，请重试");
+
+      // Cached per (position, resume) pair — lets the daily digest read
+      // match quality later without paying for another AI call, and saves
+      // re-running this exact comparison if nothing's changed.
+      await db.positionMatch.upsert({
+        where: { positionId_resumeVersionId: { positionId, resumeVersionId: resume.id } },
+        create: {
+          userId: user.id,
+          positionId,
+          resumeVersionId: resume.id,
+          matchScore: Math.round(parsed.data.matchScore),
+          recommendation: parsed.data.recommendation,
+          result: { breakdown: parsed.data.breakdown, suggestion: parsed.data.suggestion },
+        },
+        update: {
+          matchScore: Math.round(parsed.data.matchScore),
+          recommendation: parsed.data.recommendation,
+          result: { breakdown: parsed.data.breakdown, suggestion: parsed.data.suggestion },
+        },
+      });
 
       return {
         ...parsed.data,

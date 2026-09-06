@@ -82,6 +82,26 @@ model User {
   examSessions           ExamSession[]
   mailAccounts           MailAccount[]
   contacts               Contact[]
+  positionMatches        PositionMatch[]
+  dailyDigests           DailyDigest[]
+}
+
+/// One AI-curated "today's top priorities" per day, cached so opening the
+/// dashboard repeatedly doesn't repeatedly pay for an AI call — regenerating
+/// the same day overwrites via the (userId, date) unique constraint.
+model DailyDigest {
+  id        String   @id @default(cuid())
+  userId    String
+  /// YYYY-MM-DD in the user's local timezone, not UTC.
+  date      String
+  /// [{label, reason, href}]
+  items     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
 }
 
 /// One inbox to scan for job-related mail — a user routinely needs several:
@@ -261,6 +281,7 @@ model Position {
   personalTasks PersonalTask[]
   interviewSessions InterviewSession[]
   contacts      Contact[]
+  positionMatches PositionMatch[]
 
   @@index([userId])
 }
@@ -386,7 +407,32 @@ model ResumeVersion {
   applications     Application[]
   interviewSessions InterviewSession[]
   autofillAnswers  AutofillAnswer[]
+  positionMatches  PositionMatch[]
 
+  @@index([userId])
+}
+
+/// Cached 岗位匹配 result for one (position, resume version) pair — each run
+/// is a paid AI call, and the score also feeds the daily digest without that
+/// needing its own AI call just to know "is this a good match".
+model PositionMatch {
+  id              String   @id @default(cuid())
+  userId          String
+  positionId      String
+  resumeVersionId String
+  matchScore      Int
+  /// 强烈建议投 / 可以投 / 海投备用 / 不建议浪费时间
+  recommendation  String
+  /// { breakdown: [{requirement, evidence, verdict}], suggestion }
+  result          Json
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  position      Position      @relation(fields: [positionId], references: [id], onDelete: Cascade)
+  resumeVersion ResumeVersion @relation(fields: [resumeVersionId], references: [id], onDelete: Cascade)
+
+  @@unique([positionId, resumeVersionId])
   @@index([userId])
 }
 
