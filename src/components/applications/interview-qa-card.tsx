@@ -126,13 +126,34 @@ export function InterviewQaCard({
               </Button>
             </div>
 
+            {result.outline && result.outline.length > 0 && (
+              <div className="space-y-1.5 rounded-lg border bg-muted/30 p-3">
+                <p className="text-xs font-medium text-muted-foreground">备考大纲</p>
+                {result.outline.map((o, i) => (
+                  <div key={i} className="flex items-start gap-2 text-sm">
+                    <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
+                      {o.module}（{o.questionCount} 题）
+                    </span>
+                    <span className="text-muted-foreground">{o.reason}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {result.questions.map((q, i) => (
               <div key={i} className="space-y-2 rounded-lg border p-3">
                 <div className="flex items-start justify-between gap-2">
                   <p className="font-medium">{q.question}</p>
-                  <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                    {q.category}
-                  </span>
+                  <div className="flex shrink-0 gap-1">
+                    {q.module && (
+                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
+                        {q.module}
+                      </span>
+                    )}
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                      {q.category}
+                    </span>
+                  </div>
                 </div>
                 <div>
                   <p className="text-xs font-medium text-muted-foreground">

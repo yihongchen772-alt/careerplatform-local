@@ -187,10 +187,24 @@ export type InterviewPrep = z.infer<typeof interviewPrepSchema>;
 
 export const interviewQaSchema = z.object({
   summary: z.string(),
+  /// A JD-derived 备考大纲 — which modules to prepare and why, before the
+  /// flat question list. questionCount is a suggested split, not a promise
+  /// the question list below sums to exactly this per module.
+  outline: z.array(
+    z.object({
+      module: z.string(),
+      reason: z.string(),
+      questionCount: z.number(),
+    })
+  ),
   questions: z.array(
     z.object({
       question: z.string(),
       category: z.string(),
+      /// Ties into QuestionBankItem.module (src/lib/question-bank-shared.ts)
+      /// so saveQaAsBank's items land pre-tagged, no separate classification
+      /// pass needed.
+      module: z.string().nullish(),
       referenceAnswer: z.string(),
       tips: z.string(),
     })

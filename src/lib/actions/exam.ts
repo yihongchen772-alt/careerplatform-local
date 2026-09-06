@@ -300,6 +300,50 @@ ${batchIdx
   });
 }
 
+export type WeakPoint = { module: string; avgScore: number; questionCount: number };
+
+const gradedAnswerSchema = z.array(
+  z.object({ answer: z.string(), score: z.number(), feedback: z.string() })
+);
+
+/**
+ * Aggregates every ended exam's per-question module + score into a
+ * per-module average, weakest first — nothing here is new data, it's already
+ * sitting in each ExamSession's questions/answers snapshot, just never
+ * summed across sessions before. Computed on read rather than cached: exam
+ * sessions are infrequent enough that this is cheap, and caching would need
+ * invalidating every time a new exam ends anyway.
+ */
+export async function getWeakPointSummary(): Promise<WeakPoint[]> {
+  const user = await requireUser();
+  const sessions = await db.examSession.findMany({
+    where: { userId: user.id, status: "ENDED" },
+    select: { questions: true, answers: true },
+  });
+
+  const byModule = new Map<string, number[]>();
+  for (const session of sessions) {
+    const questions = readItems(session.questions);
+    const answers = gradedAnswerSchema.safeParse(session.answers);
+    if (!answers.success) continue;
+    questions.forEach((q, i) => {
+      const score = answers.data[i]?.score;
+      if (score === undefined) return;
+      const key = q.module || "未分类";
+      if (!byModule.has(key)) byModule.set(key, []);
+      byModule.get(key)!.push(score);
+    });
+  }
+
+  return Array.from(byModule.entries())
+    .map(([module, scores]) => ({
+      module,
+      avgScore: Math.round(scores.reduce((a, b) => a + b, 0) / scores.length),
+      questionCount: scores.length,
+    }))
+    .sort((a, b) => a.avgScore - b.avgScore);
+}
+
 export async function deleteExamSession(id: string): Promise<ActionResult<null>> {
   return toActionResult(async () => {
     const user = await requireUser();
