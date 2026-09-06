@@ -50,7 +50,7 @@ export function AiSettingsForm({ keys }: { keys: AiKeyOverview[] }) {
           有两类功能会挑服务商：<span className="font-medium">读文件</span>
           （简历体检、岗位匹配、截图导入）图片这几家都能读，但 PDF 只有 Gemini/Claude/OpenAI/Qwen
           能读（Qwen 是单独走文件上传接口，不是靠图片识别）——简历是 PDF 就必须配这四家之一，
-          是图片的话 DeepSeek/Kimi 也能用；
+          是图片的话 DeepSeek/Kimi/智谱/Mistral 也能用；
           <span className="font-medium">联网搜索</span>
           （AI 搜索公司、岗位口碑）可以用 Qwen/Gemini/Claude/OpenAI。都会优先用你的默认服务商，
           不支持时自动换成你配了的、支持的那个。搜索优先挑 Qwen——Gemini 免费版的联网搜索额度
@@ -105,11 +105,14 @@ function ProviderRow({
   const [customModel, setCustomModel] = useState("");
   const initialSingle = savedModels[0] ?? "";
   const [model, setModel] = useState(initialSingle);
-  const [singleChoice, setSingleChoice] = useState(
-    initialSingle && !SEED_MODELS[entry.provider].includes(initialSingle)
-      ? initialSingle
-      : initialSingle || meta.defaultModel
-  );
+  const [singleChoice, setSingleChoice] = useState(() => {
+    if (initialSingle) return initialSingle;
+    // No seed list to pick a default from (e.g. Doubao, where the "model" is
+    // actually a per-account 推理接入点 ID — there's no universal default to
+    // pre-fill) — go straight to the free-text field instead of silently
+    // pre-selecting a placeholder-looking string that isn't a real model.
+    return SEED_MODELS[entry.provider].length > 0 ? meta.defaultModel : CUSTOM;
+  });
   const [baseUrl, setBaseUrl] = useState(entry.baseUrl ?? "");
   const [loading, setLoading] = useState(false);
   const [settingDefault, setSettingDefault] = useState(false);
@@ -145,7 +148,7 @@ function ProviderRow({
   }
 
   async function handleSave() {
-    if (!apiKey) {
+    if (!apiKey && !entry.configured) {
       toast.error("请填写 API Key");
       return;
     }
@@ -158,11 +161,18 @@ function ProviderRow({
         : singleChoice === CUSTOM
           ? model.trim()
           : singleChoice;
+    if (entry.provider === "doubao" && !finalModel) {
+      // Unlike every other provider, there's no universal default model to
+      // silently fall back to here — falling back would send the literal
+      // placeholder example string as the "model" param to a real API call.
+      toast.error("豆包没有通用默认模型，请填你自己的推理接入点 ID");
+      return;
+    }
     setLoading(true);
     try {
       await upsertAiKey({
         provider: entry.provider,
-        apiKey,
+        apiKey: apiKey || undefined,
         model: finalModel || undefined,
         baseUrl: isOpenAiCompatible ? baseUrl || undefined : undefined,
       });
@@ -254,7 +264,7 @@ function ProviderRow({
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder={entry.configured ? "已设置，重新填写以更新" : ""}
+              placeholder={entry.configured ? "已设置，留空则保持不变，只改下面的模型也可以直接保存" : ""}
             />
           </div>
           <div className="space-y-1">
@@ -262,7 +272,9 @@ function ProviderRow({
               <Label className="text-xs text-muted-foreground">
                 {entry.provider === "gemini"
                   ? "模型（可多选，按顺序尝试；只勾一个就是固定用那个）"
-                  : `模型（默认 ${meta.defaultModel}）`}
+                  : entry.provider === "doubao"
+                    ? "推理接入点 ID（没有通用默认值，必须填你自己账号下的接入点）"
+                    : `模型（默认 ${meta.defaultModel}）`}
               </Label>
               <Button
                 type="button"
@@ -276,8 +288,9 @@ function ProviderRow({
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              下面是常见的几个。点「获取模型列表」会拿你这个 Key
-              实际能调的全部模型——各家上新模型比写死的列表快，以拉回来的为准。
+              {entry.provider === "doubao"
+                ? "接入点是每个账号私有的，没有通用列表可选——直接在下面填你自己创建的接入点 ID。"
+                : "下面是常见的几个。点「获取模型列表」会拿你这个 Key 实际能调的全部模型——各家上新模型比写死的列表快，以拉回来的为准。"}
             </p>
 
             {entry.provider === "gemini" ? (

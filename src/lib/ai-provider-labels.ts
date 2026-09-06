@@ -3,7 +3,17 @@
  * client components. src/lib/ai-providers.ts (server-only) re-exports the
  * type and imports AI_PROVIDER_META from here so the two never drift apart.
  */
-export type AiProviderId = "gemini" | "openai" | "deepseek" | "kimi" | "anthropic" | "qwen";
+export type AiProviderId =
+  | "gemini"
+  | "openai"
+  | "deepseek"
+  | "kimi"
+  | "anthropic"
+  | "qwen"
+  | "xai"
+  | "mistral"
+  | "zhipu"
+  | "doubao";
 
 export const AI_PROVIDER_OPTIONS: {
   id: AiProviderId;
@@ -17,6 +27,16 @@ export const AI_PROVIDER_OPTIONS: {
   { id: "kimi", label: "Kimi（月之暗面）", defaultModel: "moonshot-v1-8k", keyHelp: "在 platform.moonshot.cn 生成" },
   { id: "anthropic", label: "Anthropic Claude", defaultModel: "claude-sonnet-4-6", keyHelp: "在 console.anthropic.com 生成" },
   { id: "qwen", label: "Qwen（通义千问）", defaultModel: "qwen-plus", keyHelp: "在阿里云百炼/DashScope 生成，OpenAI 兼容模式" },
+  { id: "xai", label: "xAI Grok", defaultModel: "grok-4", keyHelp: "在 console.x.ai 生成" },
+  { id: "mistral", label: "Mistral AI", defaultModel: "mistral-large-latest", keyHelp: "在 console.mistral.ai 生成" },
+  { id: "zhipu", label: "智谱 AI（GLM）", defaultModel: "glm-4.6", keyHelp: "在 open.bigmodel.cn 生成" },
+  {
+    id: "doubao",
+    label: "字节豆包（Doubao）",
+    defaultModel: "ep-20260101000000-xxxxx",
+    keyHelp:
+      "在火山引擎控制台生成 Key；模型要填「推理接入点」ID（形如 ep-xxxxxxxxxx-xxxxx），不是模型名——先在控制台创建接入点",
+  },
 ];
 
 /**
@@ -30,7 +50,29 @@ export const OPENAI_COMPATIBLE_PROVIDERS: readonly AiProviderId[] = [
   "deepseek",
   "kimi",
   "qwen",
+  "xai",
+  "mistral",
+  "zhipu",
+  "doubao",
 ];
+
+/**
+ * Narrower alias for the exact set above — src/lib/ai-providers.ts needs a
+ * literal union (not the full AiProviderId) for a few Record key types and
+ * callOpenAiCompatible's parameter, so a new provider added there without
+ * updating this list is a compile error rather than a silent runtime gap.
+ * Keep in sync with OPENAI_COMPATIBLE_PROVIDERS's contents by hand — TS
+ * can't derive a literal union from a `readonly AiProviderId[]` value.
+ */
+export type OpenAiCompatibleProviderId =
+  | "openai"
+  | "deepseek"
+  | "kimi"
+  | "qwen"
+  | "xai"
+  | "mistral"
+  | "zhipu"
+  | "doubao";
 
 /**
  * Providers whose API can read a PDF directly. DeepSeek and Kimi's vision
@@ -65,6 +107,13 @@ export const FILE_CAPABLE_PROVIDERS: readonly AiProviderId[] = [
  * Not a strict superset of FILE_CAPABLE_PROVIDERS here — Qwen reads a PDF
  * through an entirely different mechanism (see above) than its own vision
  * path, so it appears on both lists for different reasons.
+ *
+ * 智谱 (glm-4v-flash/glm-5v-turbo) and Mistral (Pixtral family / Mistral
+ * Medium 3.5) both confirmed to take the same OpenAI-style `image_url`
+ * block. xAI and Doubao are NOT listed — vision support is plausible for
+ * both but no specific current model id was confirmed against live docs,
+ * so they're left off rather than guessed (see VISION_MODEL in
+ * ai-providers.ts, which needs an exact model id per entry here).
  */
 export const IMAGE_CAPABLE_PROVIDERS: readonly AiProviderId[] = [
   "gemini",
@@ -73,6 +122,8 @@ export const IMAGE_CAPABLE_PROVIDERS: readonly AiProviderId[] = [
   "deepseek",
   "kimi",
   "qwen",
+  "zhipu",
+  "mistral",
 ];
 
 /**
@@ -128,4 +179,11 @@ export const SEED_MODELS: Record<AiProviderId, readonly string[]> = {
     "claude-opus-5",
   ],
   qwen: ["qwen-turbo", "qwen-plus", "qwen-max", "qwen-long"],
+  xai: ["grok-4", "grok-4-fast"],
+  mistral: ["mistral-large-latest", "mistral-medium-latest", "mistral-small-latest"],
+  zhipu: ["glm-4.6", "glm-4.5-air", "glm-4.5-flash", "glm-4.6v"],
+  // No safe seed: a model name here is meaningless without the user's own
+  // 推理接入点 ID (see keyHelp above) — an empty list keeps the dropdown from
+  // showing a name that will never work for anyone else's account.
+  doubao: [],
 };

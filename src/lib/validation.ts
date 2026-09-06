@@ -21,11 +21,19 @@ export const aiProviderValues = [
   "kimi",
   "anthropic",
   "qwen",
+  "xai",
+  "mistral",
+  "zhipu",
+  "doubao",
 ] as const;
 
 export const aiSettingsSchema = z.object({
   provider: z.enum(aiProviderValues),
-  apiKey: z.string().min(1, "请填写 API Key"),
+  /// Optional: blank means "keep whatever key is already saved" — the
+  /// client never gets the decrypted key back to pre-fill this field, so
+  /// requiring it on every save would force retyping it just to change the
+  /// model. upsertAiKey enforces it's present when there's no existing row.
+  apiKey: z.string().optional(),
   model: z.string().optional(),
   baseUrl: z.string().url("请输入合法的地址").optional(),
 });

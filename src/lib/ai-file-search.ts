@@ -513,14 +513,16 @@ export async function generateStructuredWithFile({
       );
     case "deepseek":
     case "kimi":
-      // Images only — DeepSeek/Kimi have no equivalent to Qwen's document
-      // upload path. A caller that already knows the file is a PDF should
-      // be requesting a key via getFileSearchKey (which never returns these
-      // two) rather than reaching this branch; this is the backstop for the
-      // case where it didn't.
+    case "zhipu":
+    case "mistral":
+      // Images only — none of these four have an equivalent to Qwen's
+      // document upload path. A caller that already knows the file is a PDF
+      // should be requesting a key via getFileSearchKey (which never returns
+      // these) rather than reaching this branch; this is the backstop for
+      // the case where it didn't.
       if (file?.mimeType === "application/pdf") {
         throw new UserFacingError(
-          "DeepSeek/Kimi 读不了 PDF，只能读图片——换一个能读 PDF 的服务商（Gemini/Claude/OpenAI/Qwen），或者把简历转成图片再传"
+          "这个服务商读不了 PDF，只能读图片——换一个能读 PDF 的服务商（Gemini/Claude/OpenAI/Qwen），或者把简历转成图片再传"
         );
       }
       return callOpenAiCompatible(

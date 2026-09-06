@@ -2,7 +2,11 @@ import { db } from "@/lib/db";
 import { decryptSecret } from "@/lib/crypto";
 import { generateStructured, GeminiError, type GeminiFilePart, type GeminiSchema } from "@/lib/gemini";
 import { UserFacingError } from "@/lib/action-result";
-import { AI_PROVIDER_OPTIONS, type AiProviderId } from "@/lib/ai-provider-labels";
+import {
+  AI_PROVIDER_OPTIONS,
+  type AiProviderId,
+  type OpenAiCompatibleProviderId,
+} from "@/lib/ai-provider-labels";
 
 export type { AiProviderId };
 
@@ -15,11 +19,15 @@ const AI_PROVIDERS: Record<AiProviderId, { defaultModel: string }> =
 // format, so one function handles all four — only the base URL and default
 // model actually differ between them. A user can override the base URL per
 // key (see AiKey.baseUrl) for workspace-specific or self-hosted endpoints.
-export const OPENAI_COMPATIBLE_BASE_URL: Record<"openai" | "deepseek" | "kimi" | "qwen", string> = {
+export const OPENAI_COMPATIBLE_BASE_URL: Record<OpenAiCompatibleProviderId, string> = {
   openai: "https://api.openai.com/v1",
   deepseek: "https://api.deepseek.com/v1",
   kimi: "https://api.moonshot.cn/v1",
   qwen: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  xai: "https://api.x.ai/v1",
+  mistral: "https://api.mistral.ai/v1",
+  zhipu: "https://open.bigmodel.cn/api/paas/v4",
+  doubao: "https://ark.cn-beijing.volces.com/api/v3",
 };
 
 /**
@@ -31,11 +39,16 @@ export const OPENAI_COMPATIBLE_BASE_URL: Record<"openai" | "deepseek" | "kimi" |
  * moonshot-v1-8k-vision-preview, Qwen's qwen-vl-plus. None of the three
  * accept a PDF content block — images only (see IMAGE_CAPABLE_PROVIDERS vs
  * FILE_CAPABLE_PROVIDERS in ai-provider-labels.ts).
+ *
+ * 智谱's glm-4v-flash and Mistral's pixtral-large-latest are the same story —
+ * a dedicated vision model id, confirmed against each vendor's current docs.
  */
-const VISION_MODEL: Partial<Record<"openai" | "deepseek" | "kimi" | "qwen", string>> = {
+const VISION_MODEL: Partial<Record<OpenAiCompatibleProviderId, string>> = {
   deepseek: "deepseek-v4-flash-vision-exp",
   kimi: "moonshot-v1-8k-vision-preview",
   qwen: "qwen-vl-plus",
+  zhipu: "glm-4v-flash",
+  mistral: "pixtral-large-latest",
 };
 
 export type UserAiConfig = {
@@ -97,7 +110,7 @@ export function extractJson(text: string): unknown {
 }
 
 export async function callOpenAiCompatible(
-  provider: "openai" | "deepseek" | "kimi" | "qwen",
+  provider: OpenAiCompatibleProviderId,
   apiKey: string,
   model: string,
   prompt: string,
@@ -268,6 +281,10 @@ export async function callTextAi({
     case "deepseek":
     case "kimi":
     case "qwen":
+    case "xai":
+    case "mistral":
+    case "zhipu":
+    case "doubao":
       return callOpenAiCompatible(
         config.provider,
         config.apiKey,
