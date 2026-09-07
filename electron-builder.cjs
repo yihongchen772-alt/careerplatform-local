@@ -21,9 +21,17 @@ module.exports = {
     target: [{ target: "dmg", arch: ["arm64"] }],
     icon: "build/icon.icns",
     category: "public.app-category.productivity",
-    // DMG upgrades remain manual until an Apple Developer signing identity and
-    // notarization credentials are configured. No unsigned auto-update ZIP.
-    identity: null,
+    // "-" = ad-hoc signing, not "no signing". A completely unsigned Mach-O
+    // binary (identity: null) fails to launch at all on Apple Silicon — the
+    // OS's code-signature check (AMFI) is mandatory there, not just Gatekeeper
+    // quarantine — so identity: null shipped an app that showed "已损坏，无法
+    // 打开" on every arm64 Mac. Ad-hoc signing needs no Apple Developer
+    // account or certificate; it only stops short of removing the "无法验证
+    // 开发者" Gatekeeper prompt on first launch (right-click → 打开 clears
+    // it), which real Developer ID signing + notarization would still fix.
+    // DMG upgrades remain manual until that's configured. No unsigned
+    // auto-update ZIP.
+    identity: "-",
     extendInfo: {
       NSMicrophoneUsageDescription: "模拟面试的口头作答需要使用麦克风录音。录音只发送到你自己配置的 AI 服务商做转写，不会上传到别处。",
     },
