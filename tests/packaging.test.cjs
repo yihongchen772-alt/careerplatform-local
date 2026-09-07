@@ -23,6 +23,9 @@ test("packaging rejects databases, credentials and backup variants on either pat
   for (const file of ["electron/backup-worker.cjs", "electron/data-backup.cjs", "prisma/migrations/initial/migration.sql", "node_modules/.prisma/client/index.js", "node_modules/@prisma/engines/schema-engine-windows.exe"]) {
     assert.equal(isPrivatePath(file), false, file);
   }
+  for (const file of [".agents/skills/neon/SKILL.md", ".claude/skills/neon", ".codex/project.json"]) {
+    assert.equal(isPrivatePath(file), false, file);
+  }
 });
 
 test("copying runtime inputs excludes private files and source maps", t => {

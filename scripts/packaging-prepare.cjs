@@ -17,7 +17,7 @@ function isPrivatePath(relative) {
     /\.(?:db|sqlite|sqlite3)(?:$|[-.])/i.test(part) ||
     /\.(?:bak|backup)(?:$|[.-])/i.test(part) ||
     /(?:^|[._-])backups?(?:[._-].*)?\.(?:zip|tar|gz|7z)$/i.test(part) ||
-    /^(?:uploads|backups?|userData|\.git|\.local-run|\.local-data|\.agents|\.claude|\.codex)$/i.test(part) ||
+    /^(?:uploads|backups?|userData|\.git|\.local-run|\.local-data)$/i.test(part) ||
     /^.+[-_]backups?$/i.test(part) ||
     /^(?:app-settings|\.local-desktop)\.json$/i.test(part)
   );
