@@ -90,6 +90,7 @@ model User {
   contacts               Contact[]
   positionMatches        PositionMatch[]
   dailyDigests           DailyDigest[]
+  weeklyReviews          WeeklyReview[]
 }
 
 /// One AI-curated "today's top priorities" per day, cached so opening the
@@ -108,6 +109,28 @@ model DailyDigest {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, date])
+}
+
+/// Weekly retrospective, one row per (user, week) — same "cache the paid AI
+/// call, overwrite on regenerate" shape as DailyDigest, just on a weekly
+/// instead of daily cadence and covering the whole week's activity rather
+/// than picking today's priorities.
+model WeeklyReview {
+  id        String   @id @default(cuid())
+  userId    String
+  /// Monday of the reviewed week, YYYY-MM-DD local time — see weekStartKey()
+  /// in src/lib/dates.ts.
+  weekStart String
+  /// WeeklyReviewResult from src/lib/actions/weekly-review.ts: narrative
+  /// (summary/highlights/concerns/suggestions) plus the deterministically
+  /// computed stats block it was written from.
+  summary   Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, weekStart])
 }
 
 /// One inbox to scan for job-related mail — a user routinely needs several:

@@ -16,6 +16,8 @@ import { PersonalTaskCard } from "@/components/dashboard/personal-task-card";
 import { SendDigestButton } from "@/components/dashboard/send-digest-button";
 import { DailyDigestCard } from "@/components/dashboard/daily-digest-card";
 import { getTodayDigest } from "@/lib/actions/daily-digest";
+import { WeeklyReviewCard } from "@/components/dashboard/weekly-review-card";
+import { getWeeklyReview } from "@/lib/actions/weekly-review";
 
 export default async function DashboardPage() {
   const user = await requireUser();
@@ -65,6 +67,7 @@ export default async function DashboardPage() {
   const outcomes = computeOutcomes(funnelApps);
   const todos = buildTodos(applications, positions, stageHistories, personalTasks, contacts);
   const dailyDigest = await getTodayDigest();
+  const weeklyReview = await getWeeklyReview();
 
   // Prefixed because a position and the application it turned into share the
   // same company/title — without this the picker shows two identical rows.
@@ -82,6 +85,8 @@ export default async function DashboardPage() {
       <h1 className="text-3xl font-semibold tracking-tight">总览</h1>
 
       <DailyDigestCard initial={dailyDigest} />
+
+      <WeeklyReviewCard initial={weeklyReview} />
 
       <TodoCard todos={todos} />
 

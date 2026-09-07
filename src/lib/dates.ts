@@ -18,3 +18,17 @@ export function toDateKey(date: Date): string {
 export function todayKey(): string {
   return toDateKey(new Date());
 }
+
+/**
+ * Monday of the current local week, as `YYYY-MM-DD` — matches the Chinese
+ * convention of a week starting Monday, not the JS Date/Sunday-first default.
+ * getDay() returns 0 for Sunday, so it needs its own offset (6 days back)
+ * rather than fitting the same `day - 1` formula as the other weekdays.
+ */
+export function weekStartKey(date: Date = new Date()): string {
+  const day = date.getDay();
+  const diff = day === 0 ? 6 : day - 1;
+  const monday = new Date(date);
+  monday.setDate(date.getDate() - diff);
+  return toDateKey(monday);
+}
