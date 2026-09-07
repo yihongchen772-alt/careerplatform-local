@@ -421,6 +421,37 @@ let isQuitting = false;
 app.whenReady().then(async () => {
   if (!ownsInstance) return;
   try {
+    // Opening the DMG's app directly (instead of dragging it into
+    // Applications first) runs it under macOS's App Translocation — a
+    // read-only mount at a randomized /private/var/folders/.../
+    // AppTranslocation/... path. Everything under Contents/Resources is
+    // read-only there, including bundled binaries like the Prisma query
+    // engine — something inside `prisma migrate deploy` tries to touch one
+    // of those and fails with a confusing "EROFS: read-only file system,
+    // unlink ...libquery_engine..." instead of anything pointing at the
+    // real cause. moveToApplicationsFolder() (macOS-only, no-ops if already
+    // in /Applications) sidesteps translocation entirely instead of chasing
+    // every read that might fail under it. It shows NO dialog by default —
+    // Electron's own docs recommend confirming first via the dialog API
+    // rather than silently relocating and relaunching a data-holding app
+    // out from under the user.
+    if (!isDev && process.platform === "darwin" && !app.isInApplicationsFolder()) {
+      const response = dialog.showMessageBoxSync({
+        type: "question",
+        buttons: ["移动并重启", "暂不"],
+        defaultId: 0,
+        cancelId: 1,
+        title: "移动到应用程序文件夹",
+        message: "求职罗盘看起来是从下载的磁盘镜像直接打开的，不是安装到「应用程序」文件夹。",
+        detail: "直接从镜像运行时，macOS 会把它挂载成只读状态，部分启动步骤会失败。建议现在移动到「应用程序」文件夹并重启 App；选择「暂不」会继续尝试直接运行，可能遇到启动失败。",
+      });
+      // response 0 = "移动并重启". A throw here means the move itself failed
+      // (not a user cancel, which just returns false) — worth surfacing
+      // through the same catch/dialog below rather than silently continuing
+      // translocated.
+      if (response === 0) app.moveToApplicationsFolder();
+    }
+
     await startNextServer();
 
     const settings = readAppSettings();
