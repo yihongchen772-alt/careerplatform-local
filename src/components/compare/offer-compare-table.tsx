@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { STAGE_BADGE_VARIANT, STAGE_LABELS } from "@/lib/stage-labels";
+import { OfferAnalysisDialog } from "@/components/compare/offer-analysis-dialog";
 import type { ApplicationStage } from "@prisma/client";
 
 export type OfferRow = {
@@ -94,6 +95,9 @@ export function OfferCompareTable({ offers }: { offers: OfferRow[] }) {
                 <Badge variant={STAGE_BADGE_VARIANT[o.stage]} className="mt-1.5">
                   {STAGE_LABELS[o.stage]}
                 </Badge>
+                <div className="mt-1.5">
+                  <OfferAnalysisDialog applicationId={o.id} offerLabel={`${o.companyName} · ${o.title}`} />
+                </div>
               </th>
             ))}
           </tr>

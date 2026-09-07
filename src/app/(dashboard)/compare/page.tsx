@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { STAGE_BADGE_VARIANT, STAGE_LABELS } from "@/lib/stage-labels";
 import { OfferCompareTable, type OfferRow } from "@/components/compare/offer-compare-table";
+import { OfferAnalysisDialog } from "@/components/compare/offer-analysis-dialog";
 
 export default async function ComparePage() {
   const user = await requireUser();
@@ -125,12 +126,18 @@ export default async function ComparePage() {
                   {app.offerNote && (
                     <p className="text-muted-foreground">{app.offerNote}</p>
                   )}
-                  <Link
-                    href={`/applications/${app.id}`}
-                    className="block text-primary underline underline-offset-4"
-                  >
-                    查看详情
-                  </Link>
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <Link
+                      href={`/applications/${app.id}`}
+                      className="text-primary underline underline-offset-4"
+                    >
+                      查看详情
+                    </Link>
+                    <OfferAnalysisDialog
+                      applicationId={app.id}
+                      offerLabel={`${app.company.name} · ${app.title}`}
+                    />
+                  </div>
                 </CardContent>
               </Card>
             );
