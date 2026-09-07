@@ -1,6 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  output: "standalone",
+  outputFileTracingExcludes: {
+    "/*": ["./.env*", "./.secret", "./**/*.db*", "./uploads/**/*", "./.local-data/**/*", "./.local-run/**/*", "./.local-desktop.json", "./.git/**/*", "./dist-electron/**/*"],
+  },
   experimental: {
     serverActions: {
       // Spreadsheet import sends the file to a Server Action as base64, which

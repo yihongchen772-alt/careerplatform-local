@@ -1,0 +1,166 @@
+name: Desktop installers
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            os: windows-2022
+            platform: win32
+            architecture: x64
+            target: --win --x64
+            artifact: windows-x64
+          - name: macOS Apple Silicon
+            os: macos-15
+            platform: darwin
+            architecture: arm64
+            target: --mac --arm64
+            artifact: macos-arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          architecture: ${{ matrix.architecture }}
+          cache: npm
+
+      - name: Check release inputs without exposing their contents
+        env:
+          EXPECTED_PLATFORM: ${{ matrix.platform }}
+          EXPECTED_ARCH: ${{ matrix.architecture }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const { execFileSync } = require('node:child_process');
+          const { isPrivatePath } = require('./scripts/packaging-prepare.cjs');
+          if (process.platform !== process.env.EXPECTED_PLATFORM || process.arch !== process.env.EXPECTED_ARCH) {
+            throw new Error('Runner platform/architecture does not match this installer. Native Prisma binaries must be built on the matching host.');
+          }
+          const tracked = execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8' }).split('\0').filter(Boolean);
+          const blocked = tracked.filter(file => file !== '.env.example' && isPrivatePath(file));
+          if (blocked.length) {
+            // Paths only: do not write key values or database records to CI logs.
+            throw new Error('Private files must be removed from Git before building: ' + blocked.join(', '));
+          }
+          const version = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
+          if (process.env.GITHUB_REF_TYPE === 'tag' && process.env.GITHUB_REF_NAME !== `v${version}`) {
+            throw new Error('Release tag must equal v + package.json version.');
+          }
+          NODE
+
+      - run: npm ci
+      - run: npm run test:agent
+      - run: npm run test:desktop
+      - run: node --test tests/packaging.test.cjs
+      - name: Build with an empty database and prepare minimal runtime
+        run: |
+          node scripts/packaging-build.cjs
+          node scripts/packaging-prepare.cjs
+      - name: Smoke test the isolated runtime without source dependencies
+        run: node scripts/packaging-smoke.cjs
+      - name: Build installer locally without publishing
+        run: npx --no-install electron-builder --config electron-builder.cjs ${{ matrix.target }} --publish never
+      - name: Verify release asset set
+        env:
+          EXPECTED_PLATFORM: ${{ matrix.platform }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const crypto = require('node:crypto');
+          const yaml = require('js-yaml');
+          const version = require('./package.json').version;
+          const files = fs.readdirSync('dist-electron');
+          const installer = process.env.EXPECTED_PLATFORM === 'win32'
+            ? `JobCompass-${version}-win-x64.exe`
+            : `JobCompass-${version}-mac-arm64.dmg`;
+          const required = process.env.EXPECTED_PLATFORM === 'win32'
+            ? [installer, `${installer}.blockmap`, 'latest.yml']
+            : [installer];
+          for (const file of required) {
+            if (!files.includes(file) || !fs.statSync(path.join('dist-electron', file)).size) {
+              throw new Error('Expected installer/update asset missing or empty: ' + file);
+            }
+          }
+          if (process.env.EXPECTED_PLATFORM === 'win32') {
+            const update = yaml.load(fs.readFileSync('dist-electron/latest.yml', 'utf8'));
+            const payload = fs.readFileSync(path.join('dist-electron', installer));
+            const sha512 = crypto.createHash('sha512').update(payload).digest('base64');
+            const entry = update.files?.find(file => file.url === installer);
+            if (update.version !== version || update.path !== installer || update.sha512 !== sha512 ||
+                update.files?.length !== 1 || !entry || entry.sha512 !== sha512 || entry.size !== payload.length) {
+              throw new Error('Windows update metadata does not match the installer version, size and checksum.');
+            }
+          }
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            dist-electron/JobCompass-*.exe
+            dist-electron/JobCompass-*.exe.blockmap
+            dist-electron/JobCompass-*.dmg
+            dist-electron/latest.yml
+
+  draft-release:
+    name: Prepare GitHub release draft
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: installers
+          merge-multiple: true
+      - name: Create reviewable draft with both platforms
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          cat > release-notes.md <<'NOTES'
+          Windows 电脑下载文件名含 win-x64 的 .exe；Apple Silicon Mac 下载含 mac-arm64 的 .dmg。
+
+          Windows 安装后可以在软件内检查更新、下载并重启安装。首次切换到本版本需安装一次新的安装包。
+          macOS 当前通过 DMG 覆盖应用更新；尚未配置 Apple 开发者签名和公证，不提供自动替换安装。
+
+          更新保留 careerplatform 用户数据目录中的数据库、附件和密钥。不要卸载或手动删除用户数据目录。
+          latest.yml 和 .blockmap 是 Windows 更新所需的文件，请与安装包一起保留。
+
+          发布前请检查本次版本变更，并完成 Windows 安装/更新和 Mac DMG 打开验证。
+          NOTES
+          if gh release view "$RELEASE_TAG" --json isDraft > existing-release.json 2>/dev/null; then
+            node -e "if (!require('./existing-release.json').isDraft) throw new Error('Refusing to replace a published release. Increment the version instead.');"
+            gh release upload "$RELEASE_TAG" installers/* --clobber
+          else
+            gh release create "$RELEASE_TAG" installers/* --draft --verify-tag --title "求职罗盘 $RELEASE_TAG" --notes-file release-notes.md
+          fi

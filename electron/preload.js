@@ -1,5 +1,18 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
+contextBridge.exposeInMainWorld("desktopUpdates", {
+  getState: () => ipcRenderer.invoke("updates:get-state"),
+  check: () => ipcRenderer.invoke("updates:check"),
+  download: () => ipcRenderer.invoke("updates:download"),
+  install: () => ipcRenderer.invoke("updates:install"),
+  openReleases: () => ipcRenderer.invoke("updates:open-releases"),
+  onState: (callback) => {
+    const listener = (_event, state) => callback(state);
+    ipcRenderer.on("updates:state", listener);
+    return () => ipcRenderer.removeListener("updates:state", listener);
+  },
+});
+
 // This app's first contextBridge. Kept deliberately narrow — only what the
 // embedded 网申浏览器 panel needs — since anything exposed here is reachable
 // from every page this window ever loads (all of them are our own Next app,

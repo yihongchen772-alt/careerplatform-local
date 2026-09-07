@@ -11,3 +11,8 @@ release
 uploads/
 app-settings.json
 .playwright-mcp/
+.local-run/
+.local-data/
+.local-desktop.json
+.env.*
+!.env.example

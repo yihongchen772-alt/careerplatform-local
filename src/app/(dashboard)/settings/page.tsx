@@ -10,6 +10,8 @@ import { BackgroundReminderCard } from "@/components/settings/background-reminde
 import { getAiKeysOverview } from "@/lib/actions/ai-keys";
 import { getAppSettings } from "@/lib/actions/app-settings";
 import { listMailAccounts } from "@/lib/actions/mail-accounts";
+import { UpdateCard } from "@/components/settings/update-card";
+import { version } from "../../../../package.json";
 
 export default async function SettingsPage() {
   const user = await requireUser();
@@ -45,6 +47,7 @@ export default async function SettingsPage() {
         <MailAccountsCard accounts={mailAccounts} />
         <BackgroundReminderCard initial={appSettings} />
         <BackupCard />
+        <UpdateCard currentVersion={version} />
       </div>
     </div>
   );

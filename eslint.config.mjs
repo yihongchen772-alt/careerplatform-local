@@ -18,6 +18,13 @@ const eslintConfig = defineConfig([
     // itself — plain CommonJS Node, not part of the Next.js/TS app.
     "dist-electron/**",
     "electron/**",
+    ".local-run/**",
+    ".local-data/**",
+    // CommonJS Node packaging/test utilities are verified with node --check
+    // and the dedicated test scripts rather than the browser/TypeScript rules.
+    "scripts/**",
+    "tests/**",
+    "electron-builder.cjs",
   ]),
 ]);
 

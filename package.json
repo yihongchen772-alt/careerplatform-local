@@ -1,18 +1,27 @@
 {
   "name": "careerplatform",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "private": true,
   "description": "求职罗盘 本地单机版",
   "author": "yihong",
   "main": "electron/main.js",
   "scripts": {
+    "local:setup": "node scripts/setup-local.cjs",
+    "local:dev": "next dev --hostname 127.0.0.1",
+    "local:start": "node scripts/local-server.cjs",
+    "test:agent": "node --test tests/agent.test.cjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "postinstall": "prisma generate",
     "electron:dev": "electron electron/main.js",
-    "electron:build": "next build && electron-builder"
+    "electron:build": "npm run desktop:prepare && electron-builder --config electron-builder.cjs --publish never",
+    "desktop:prepare": "node scripts/packaging-build.cjs && node scripts/packaging-prepare.cjs",
+    "electron:build:win": "npm run desktop:prepare && electron-builder --config electron-builder.cjs --win --x64 --publish never",
+    "electron:build:mac": "npm run desktop:prepare && electron-builder --config electron-builder.cjs --mac --arm64 --publish never",
+    "test:desktop": "node --test tests/updater.test.cjs tests/desktop-data.test.cjs",
+    "local:data": "node scripts/desktop-data.cjs inspect"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
@@ -21,6 +30,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "date-fns": "^4.4.0",
+    "electron-updater": "6.8.9",
     "exceljs": "^4.4.0",
     "imapflow": "^1.7.2",
     "lucide-react": "^1.33.0",
@@ -54,71 +64,5 @@
     "tailwindcss": "^4",
     "typescript": "^5",
     "wait-on": "^9.1.0"
-  },
-  "build": {
-    "appId": "com.careerplatform.local",
-    "productName": "求职罗盘",
-    "asar": false,
-    "directories": {
-      "output": "dist-electron"
-    },
-    "files": [
-      "electron/**/*",
-      "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": ".",
-        "to": "app",
-        "filter": [
-          ".next/**/*",
-          "public/**/*",
-          "prisma/**/*",
-          "node_modules/**/*",
-          "package.json",
-          "next.config.ts",
-          "!node_modules/electron/**",
-          "!node_modules/electron-builder/**",
-          "!node_modules/playwright/**",
-          "!node_modules/playwright-core/**",
-          "!node_modules/typescript/**",
-          "!node_modules/eslint*/**",
-          "!node_modules/@typescript-eslint/**",
-          "!node_modules/tailwindcss/**",
-          "!node_modules/@tailwindcss/**",
-          "!node_modules/wait-on/**",
-          "!node_modules/@types/**",
-          "!node_modules/.cache/**"
-        ]
-      },
-      {
-        "from": "node_modules/.prisma",
-        "to": "app/node_modules/.prisma"
-      }
-    ],
-    "mac": {
-      "target": "dmg",
-      "icon": "build/icon.icns",
-      "category": "public.app-category.productivity",
-      "extendInfo": {
-        "NSMicrophoneUsageDescription": "模拟面试的口头作答需要使用麦克风录音。录音只发送到你自己配置的 AI 服务商做转写，不会上传到别处。"
-      }
-    },
-    "win": {
-      "icon": "build/icon.ico",
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        }
-      ]
-    },
-    "linux": {
-      "target": "AppImage"
-    },
-    "artifactName": "JobCompass-${version}-${arch}.${ext}"
   }
 }

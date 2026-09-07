@@ -4,6 +4,7 @@ const fs = require("fs");
 const crypto = require("crypto");
 const { spawn } = require("child_process");
 const { setupBrowserViewIpc } = require("./browser-view");
+const { setupUpdater } = require("./updater");
 
 // Pinned regardless of the app's marketing name (package.json's
 // "productName", shown in the dock/menu bar/window title): app.getPath
@@ -13,15 +14,19 @@ const { setupBrowserViewIpc } = require("./browser-view");
 // keys would still exist on disk, just orphaned under the old folder name.
 // Call this before anything touches app.getPath.
 app.setName("careerplatform");
+if (process.env.CAREERPLATFORM_DATA_DIR) app.setPath("userData", path.resolve(process.env.CAREERPLATFORM_DATA_DIR));
+const ownsInstance = app.requestSingleInstanceLock();
+if (!ownsInstance) app.quit();
+app.on("second-instance", () => { if (mainWindow) { mainWindow.restore(); showWindow(); } });
 
 const isDev = !app.isPackaged;
-const PORT = 3210;
+const PORT = process.env.CAREERPLATFORM_TEST_MODE === "1" ? Number(process.env.CAREERPLATFORM_TEST_PORT || 3210) : 3210;
 
 // Dev: this file is at <project>/electron/main.js, so the project root is one
 // level up. Packaged: electron-builder copies the project into
 // process.resourcesPath/app (see package.json's "build.files"/"extraResources").
 function getAppRoot() {
-  return isDev ? path.join(__dirname, "..") : path.join(process.resourcesPath, "app");
+  return isDev ? path.join(__dirname, "..") : path.join(process.resourcesPath, "app-runtime");
 }
 
 // The AI-key encryption in src/lib/crypto.ts derives its key from
@@ -88,6 +93,18 @@ function migrateLegacyUserData(userDataDir) {
 
 let serverProcess;
 
+async function runDataWorker(initialize = false) {
+  const dir = app.getPath("userData");
+  if (!initialize && !fs.existsSync(path.join(dir, "local.db"))) return;
+  await new Promise((resolve, reject) => {
+    const worker = isDev ? path.join(__dirname, "backup-worker.cjs") : path.join(process.resourcesPath, "app.asar.unpacked", "electron", "backup-worker.cjs");
+    const child = spawn(process.execPath, [worker, dir, ...(initialize ? ["--initialize"] : [])], { env: nodeEnv(process.env), stdio: "inherit" });
+    child.on("error", reject);
+    child.on("exit", code => code === 0 ? resolve() : reject(new Error("数据备份失败，已停止更新。")));
+  });
+}
+async function backupUserData() { await runDataWorker(); }
+
 async function startNextServer() {
   const userDataDir = app.getPath("userData");
   fs.mkdirSync(userDataDir, { recursive: true });
@@ -103,25 +120,32 @@ async function startNextServer() {
     NEXTAUTH_SECRET: ensureSecret(userDataDir),
     NEXTAUTH_URL: `http://localhost:${PORT}`,
     PORT: String(PORT),
+    HOSTNAME: "127.0.0.1",
     NODE_ENV: isDev ? "development" : "production",
   };
 
   const appRoot = getAppRoot();
+  if (!fs.existsSync(dbPath)) await runDataWorker(true);
+  // Back up once per app version before any new migrations touch user data.
+  const marker = path.join(userDataDir, ".last-migrated-version");
+  const previousVersion = fs.existsSync(marker) ? fs.readFileSync(marker, "utf8").trim() : "";
+  if (previousVersion !== app.getVersion()) await backupUserData();
   await runPrismaMigrate(appRoot, env);
+  fs.writeFileSync(marker, app.getVersion());
 
   const nextCli = path.join(appRoot, "node_modules", "next", "dist", "bin", "next");
   serverProcess = spawn(
     process.execPath,
-    [nextCli, isDev ? "dev" : "start", "-p", String(PORT)],
+    isDev ? [nextCli, "dev", "-p", String(PORT), "--hostname", "127.0.0.1"] : [path.join(appRoot, "server.js")],
     { cwd: appRoot, env: nodeEnv(env), stdio: "inherit" }
   );
 
-  await waitForServer(`http://localhost:${PORT}`, 30000);
+  await waitForServer(`http://localhost:${PORT}`, 90000);
 
   // Best-effort — a failed reminder check should never block the window from
   // opening. The route itself silently no-ops if email isn't configured or
   // nothing's urgent.
-  fetch(`http://localhost:${PORT}/api/check-reminders`, { method: "POST" }).catch(() => {});
+  if (process.env.CAREERPLATFORM_TEST_MODE !== "1") fetch(`http://localhost:${PORT}/api/check-reminders`, { method: "POST" }).catch(() => {});
 }
 
 function waitForServer(url, timeoutMs) {
@@ -129,7 +153,7 @@ function waitForServer(url, timeoutMs) {
   return new Promise((resolve, reject) => {
     const attempt = () => {
       fetch(url)
-        .then(() => resolve())
+        .then(response => { if (!response.ok) throw new Error(`HTTP ${response.status}`); resolve(); })
         .catch(() => {
           if (Date.now() - start > timeoutMs) {
             reject(new Error("本地服务启动超时"));
@@ -152,7 +176,7 @@ function createWindow({ show = true } = {}) {
     minHeight: 600,
     title: "求职罗盘",
     backgroundColor: "#ffffff",
-    show,
+    show: process.env.CAREERPLATFORM_TEST_MODE === "1" ? false : show,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -373,19 +397,31 @@ function startReminderLoop() {
 let isQuitting = false;
 
 app.whenReady().then(async () => {
+  if (!ownsInstance) return;
   try {
     await startNextServer();
 
     const settings = readAppSettings();
-    applyAutoLaunch(settings.autoLaunch);
+    if (process.env.CAREERPLATFORM_TEST_MODE !== "1") applyAutoLaunch(settings.autoLaunch);
 
     // Launched by the OS at login: start parked in the tray rather than
     // popping a window in the user's face on every boot.
     const openedAtLogin =
       !isDev && app.getLoginItemSettings().wasOpenedAtLogin && settings.backgroundReminders;
     createWindow({ show: !openedAtLogin });
+    setupUpdater({
+      app,
+      ipcMain: require("electron").ipcMain,
+      getMainWindow: () => mainWindow,
+      trustedOrigin: `http://localhost:${PORT}`,
+      beforeInstall: async () => {
+        await backupUserData();
+        isQuitting = true;
+        shutdown();
+      },
+    });
 
-    if (settings.backgroundReminders) {
+    if (settings.backgroundReminders && process.env.CAREERPLATFORM_TEST_MODE !== "1") {
       buildTray();
       startReminderLoop();
       startScanLoop();
