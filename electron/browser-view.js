@@ -131,6 +131,24 @@ function fillFields(pairs) {
   return filled;
 }
 
+// Read side of fillFields — same element lookup and same "select reads by
+// visible option text" rule, so a value read back here compares cleanly
+// against what fillFields originally wrote.
+function readFieldValues(ids) {
+  const result = {};
+  ids.forEach((id) => {
+    const el = document.querySelector('[data-cp-fill-id="' + id + '"]');
+    if (!el) return;
+    if (el.tagName.toLowerCase() === "select") {
+      const selected = el.options[el.selectedIndex];
+      result[id] = selected ? selected.textContent.trim() : "";
+    } else {
+      result[id] = el.value;
+    }
+  });
+  return result;
+}
+
 // Runs in the main process, not injected — matches detected form fields to
 // the user's own saved profile by keyword. Intentionally conservative: a
 // field with no confident match is left for the AI pass (or manual entry)
@@ -206,6 +224,12 @@ let registered = false;
 let currentWindow = null;
 let view = null;
 let attached = false;
+// AI-answered fields from the most recent autofill run — [{id, answerId,
+// filledValue}]. Reset on every autofill call; "save corrections" only ever
+// looks at what's currently on screen from the latest run, not older ones
+// (a stale answerId pointing at a field the page no longer has is harmless,
+// readFieldValues just returns nothing for it).
+let lastAiFilled = [];
 
 function send(channel, payload) {
   if (currentWindow && !currentWindow.isDestroyed()) currentWindow.webContents.send(channel, payload);
@@ -303,6 +327,7 @@ function setupBrowserViewIpc(mainWindow, port) {
   });
 
   ipcMain.handle("browser:autofill", async (_e, resumeVersionId) => {
+    lastAiFilled = [];
     try {
       send("browser:autofill-status", { phase: "scanning", message: "正在读取页面…" });
 
@@ -362,6 +387,11 @@ function setupBrowserViewIpc(mainWindow, port) {
               const isSentinel = a.answer.trim().toUpperCase() === NEEDS_MANUAL_INPUT;
               if (kind !== "essay" && isSentinel) continue; // leave for manual entry
               pairs.push({ id: a.id, value: a.answer });
+              // Only fields actually written to the page, and only ones with
+              // a cache row behind them (answerId), are correction-worthy —
+              // matches basic profile fields aren't AI answers at all, so a
+              // wrong one means "fix your saved profile", not "correct this".
+              if (a.answerId) lastAiFilled.push({ id: a.id, answerId: a.answerId, filledValue: a.answer });
               if (kind === "essay") {
                 essayCount++;
                 if (a.reused) essayReused++;
@@ -411,6 +441,43 @@ function setupBrowserViewIpc(mainWindow, port) {
         message: err && err.message ? err.message : "自动填充失败",
       });
     }
+  });
+
+  // Lets a hand-edit after autofill correct the cached answer instead of
+  // just correcting the page — otherwise the same wrong guess keeps coming
+  // back on every future site that asks a similarly-worded question.
+  // Compares each AI-answered field's *current* DOM value against what
+  // fillFields originally wrote it as; only genuinely different, non-empty
+  // values count as a correction worth saving.
+  ipcMain.handle("browser:save-corrections", async () => {
+    if (!lastAiFilled.length) return { saved: 0 };
+    const ids = lastAiFilled.map((f) => f.id);
+    const current = await view.webContents.executeJavaScript(
+      `(${readFieldValues.toString()})(${JSON.stringify(ids)})`
+    );
+    const corrections = lastAiFilled
+      .filter((f) => {
+        const value = current[f.id];
+        return typeof value === "string" && value.trim() && value !== f.filledValue;
+      })
+      .map((f) => ({ answerId: f.answerId, answer: current[f.id] }));
+    if (!corrections.length) return { saved: 0 };
+
+    const res = await fetch(`http://localhost:${port}/api/desktop-browser/save-corrections`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ corrections }),
+    });
+    if (!res.ok) throw new Error("保存修改失败");
+    const body = await res.json();
+
+    // Reflects the just-saved values so re-clicking without further edits
+    // reports "0 处修改" instead of re-submitting the same correction.
+    for (const c of corrections) {
+      const record = lastAiFilled.find((f) => f.answerId === c.answerId);
+      if (record) record.filledValue = c.answer;
+    }
+    return { saved: body.saved ?? corrections.length };
   });
 }
 

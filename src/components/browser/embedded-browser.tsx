@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, ChevronLeft, RotateCw, Sparkles, ZoomIn, ZoomOut } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronLeft, RotateCw, Sparkles, Check, ZoomIn, ZoomOut } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -29,6 +30,7 @@ export function EmbeddedBrowser({
   const [navState, setNavState] = useState<DesktopBridgeNavState | null>(null);
   const [status, setStatus] = useState<DesktopBridgeAutofillStatus | null>(null);
   const [autofilling, setAutofilling] = useState(false);
+  const [savingCorrections, setSavingCorrections] = useState(false);
   const [resumeVersionId, setResumeVersionId] = useState(
     resumeVersions.find((r) => r.isDefault)?.id ?? resumeVersions[0]?.id ?? ""
   );
@@ -83,6 +85,23 @@ export function EmbeddedBrowser({
     setAutofilling(true);
     setStatus({ phase: "scanning", message: "正在读取页面…" });
     bridge.autofill(resumeVersionId || undefined);
+  }
+
+  async function handleSaveCorrections() {
+    if (!bridge || savingCorrections) return;
+    setSavingCorrections(true);
+    try {
+      const { saved } = await bridge.saveCorrections();
+      if (saved > 0) {
+        toast.success(`已把 ${saved} 处修改保存到答案库，下次遇到相似问题会直接用改过的版本`);
+      } else {
+        toast.info("没有检测到跟自动填充时不一样的内容");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "保存修改失败");
+    } finally {
+      setSavingCorrections(false);
+    }
   }
 
   if (!bridge) {
@@ -193,6 +212,19 @@ export function EmbeddedBrowser({
           <Sparkles className="size-4" />
           {autofilling ? "填充中..." : "AI 一键填充"}
         </Button>
+        {status?.phase === "done" && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={savingCorrections}
+            onClick={handleSaveCorrections}
+            title="如果你手动改过 AI 填的内容，点这个把改动存下来，下次遇到相似问题会直接用改过的版本"
+          >
+            <Check className="size-4" />
+            {savingCorrections ? "保存中..." : "保存修改"}
+          </Button>
+        )}
       </div>
 
       {status && (

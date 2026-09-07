@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   reload: () => ipcRenderer.invoke("browser:reload"),
   setBounds: (rect) => ipcRenderer.invoke("browser:set-bounds", rect),
   autofill: (resumeVersionId) => ipcRenderer.invoke("browser:autofill", resumeVersionId),
+  saveCorrections: () => ipcRenderer.invoke("browser:save-corrections"),
   zoomIn: () => ipcRenderer.invoke("browser:zoom-in"),
   zoomOut: () => ipcRenderer.invoke("browser:zoom-out"),
   zoomReset: () => ipcRenderer.invoke("browser:zoom-reset"),

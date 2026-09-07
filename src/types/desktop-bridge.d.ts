@@ -21,6 +21,7 @@ export type DesktopBridge = {
   reload(): Promise<void>;
   setBounds(rect: DesktopBridgeRect | null): Promise<void>;
   autofill(resumeVersionId?: string): Promise<void>;
+  saveCorrections(): Promise<{ saved: number }>;
   zoomIn(): Promise<void>;
   zoomOut(): Promise<void>;
   zoomReset(): Promise<void>;

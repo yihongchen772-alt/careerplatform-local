@@ -96,18 +96,22 @@ export async function POST(request: Request) {
 
   // Cache lookup first — reused answers cost nothing and need no AI key.
   const cached = await db.autofillAnswer.findMany({ where: { userId: user.id, resumeVersionId } });
-  const answers: { id: string; answer: string; reused: boolean }[] = [];
+  // answerId ties a returned answer back to the AutofillAnswer row backing
+  // it (existing for a reuse, newly created for a fresh generation) — the
+  // embedded browser uses this to let the user's post-fill edits correct
+  // that exact cached row instead of only ever reading it.
+  const answers: { id: string; answer: string; reused: boolean; answerId?: string }[] = [];
   const needsGeneration: typeof questions = [];
   for (const q of questions) {
-    let best: { answer: string; score: number } | null = null;
+    let best: { answer: string; score: number; id: string } | null = null;
     for (const c of cached) {
       const score = similarity(q.label, c.questionLabel);
       if (score >= SIMILARITY_THRESHOLD && (!best || score > best.score)) {
-        best = { answer: c.answer, score };
+        best = { answer: c.answer, score, id: c.id };
       }
     }
     if (best) {
-      answers.push({ id: q.id, answer: best.answer, reused: true });
+      answers.push({ id: q.id, answer: best.answer, reused: true, answerId: best.id });
     } else {
       needsGeneration.push(q);
     }
@@ -230,17 +234,24 @@ export async function POST(request: Request) {
         if (result.success) {
           const labelById = new Map(needsGeneration.map((q) => [q.id, q.label]));
           for (const a of result.data.answers) {
-            answers.push({ id: a.id, answer: a.answer, reused: false });
             // A "couldn't find it" isn't a real answer — caching it would
             // make a different site's rephrasing of the same question reuse
-            // a non-answer instead of getting its own fresh attempt.
-            if (a.answer.trim().toUpperCase() === NEEDS_MANUAL_INPUT) continue;
-            const label = labelById.get(a.id);
-            if (label) {
-              await db.autofillAnswer.create({
-                data: { userId: user.id, resumeVersionId, questionLabel: label, answer: a.answer },
-              });
+            // a non-answer instead of getting its own fresh attempt. No
+            // answerId either: nothing gets written to the page for these
+            // (see the kind!=="essay" sentinel check in browser-view.js), so
+            // there's nothing a user could later correct.
+            const isSentinel = a.answer.trim().toUpperCase() === NEEDS_MANUAL_INPUT;
+            let answerId: string | undefined;
+            if (!isSentinel) {
+              const label = labelById.get(a.id);
+              if (label) {
+                const created = await db.autofillAnswer.create({
+                  data: { userId: user.id, resumeVersionId, questionLabel: label, answer: a.answer },
+                });
+                answerId = created.id;
+              }
             }
+            answers.push({ id: a.id, answer: a.answer, reused: false, answerId });
           }
         } else if (answers.length === 0) {
           return NextResponse.json({ error: "AI 返回格式异常，请重试" }, { status: 502 });
