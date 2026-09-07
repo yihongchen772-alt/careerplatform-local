@@ -91,6 +91,15 @@ test("application preparation filters unsafe stored URLs and reports missing fie
   assert.match(result.summary, /真实姓名/);
   assert.match(result.summary, /简历/);
 });
+test("application preparation assumes https for a scheme-less stored URL instead of dropping it", async () => {
+  const execute = toolWithDb({
+    position: { findFirst: async () => ({ company: { name: "测试", careerUrl: "hr.example.com/careers" }, title: "工程师", jdUrl: null }) },
+    user: { findUnique: async () => ({ name: "我" }) },
+    resumeVersion: { findMany: async () => [] },
+  });
+  const result = await execute("owner", decision("prepare_application", "", "p"));
+  assert.equal(result.href, `/browser?url=${encodeURIComponent("https://hr.example.com/careers")}`);
+});
 test("missing search credentials fail explicitly without a network call", async () => {
   const execute = toolWithDb({});
   await assert.rejects(execute("owner", decision("research_web", "校招")), /联网研究需要/);

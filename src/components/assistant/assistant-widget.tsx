@@ -24,6 +24,17 @@ type DisplayMessage = AssistantChatMessage & {
 
 const HISTORY_KEY = "careerplatform-agent-history-v1";
 
+// Derived from the href itself rather than step.tool: prepare_application
+// returns href: "/pool" (agent-tools.ts) when the position has no usable
+// entry link at all, and labeling that link "打开网申入口" would be wrong —
+// there's nothing to open, it's just a pointer back to the candidate pool.
+function hrefLinkLabel(href: string): string {
+  if (href.startsWith("/browser")) return "继续准备 / 打开网申入口";
+  if (href.startsWith("/resumes")) return "查看简历";
+  if (href.startsWith("/pool")) return "查看候选池";
+  return "查看详情";
+}
+
 // Written as things a student in the middle of 秋招 actually says, not as
 // feature names — the second one exists mostly to teach that the assistant
 // takes plain "I did X" statements and turns them into records.
@@ -189,7 +200,7 @@ export function AssistantWidget() {
                         {m.steps.map((step, index) => <li key={index}>
                           <p className={step.status === "error" ? "text-destructive" : "font-medium"}>{index + 1}. {step.label} · {step.status === "error" ? "未完成" : "完成"}</p>
                           <p className="mt-0.5 text-muted-foreground">{step.summary}</p>
-                          {step.href && <Link href={step.href} onClick={() => setOpen(false)} className="text-primary underline">{step.tool === "prepare_application" ? "继续准备 / 打开网申入口" : "查看简历"}</Link>}
+                          {step.href && <Link href={step.href} onClick={() => setOpen(false)} className="text-primary underline">{hrefLinkLabel(step.href)}</Link>}
                         </li>)}
                       </ol>
                     </details>

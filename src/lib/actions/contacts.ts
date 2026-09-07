@@ -1,16 +1,10 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { contactSchema } from "@/lib/validation";
-
-function revalidateContactPaths() {
-  revalidatePath("/contacts");
-  revalidatePath("/dashboard");
-  revalidatePath("/calendar");
-}
+import { revalidateContactPaths } from "@/lib/revalidate-contacts";
 
 export async function createContact(input: z.infer<typeof contactSchema>) {
   const user = await requireUser();

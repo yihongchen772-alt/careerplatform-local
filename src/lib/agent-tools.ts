@@ -5,11 +5,20 @@ import { UserFacingError } from "@/lib/action-result";
 import type { AgentDecision, ToolResult } from "@/lib/agent-loop";
 
 function safeWebUrl(raw: string | null): string | undefined {
-  if (!raw) return;
+  const candidate = raw?.trim();
+  if (!candidate) return;
+  // People often paste a bare domain/path ("hr.tencent.com/xxx") with no
+  // scheme — new URL() rejects that outright rather than defaulting to
+  // https, which used to make prepare_application silently report "尚无招聘
+  // 入口链接" even though a perfectly usable link was stored, just missing
+  // "https://". Only add the prefix when there's genuinely no scheme yet
+  // (RFC 3986 scheme syntax) — a link that already names some other scheme
+  // (mailto:, ftp:) is left alone and still correctly rejected below.
+  const withScheme = /^[a-z][a-z0-9+.-]*:/i.test(candidate) ? candidate : `https://${candidate}`;
   try {
-    const url = new URL(raw);
+    const url = new URL(withScheme);
     if (["https:", "http:"].includes(url.protocol) && !url.username && !url.password) return url.href;
-  } catch { /* Stored URLs may be incomplete. */ }
+  } catch { /* Not a usable link even after assuming https. */ }
 }
 
 export async function executeAgentTool(userId: string, decision: AgentDecision): Promise<ToolResult> {

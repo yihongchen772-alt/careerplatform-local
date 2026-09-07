@@ -14,6 +14,7 @@ import { markPositionsApplied, deletePosition } from "@/lib/actions/positions";
 import { deleteApplication, updateApplication } from "@/lib/actions/applications";
 import { toggleTaskDone } from "@/lib/actions/personal-tasks";
 import { markContacted } from "@/lib/actions/contacts";
+import { revalidateContactPaths } from "@/lib/revalidate-contacts";
 import { runAgentLoop, type AgentStep } from "@/lib/agent-loop";
 import { executeAgentTool } from "@/lib/agent-tools";
 import {
@@ -554,8 +555,7 @@ export async function applyAssistantAction(
             nextFollowUpAt: parseDate(a.date) ?? undefined,
           },
         });
-        revalidatePath("/contacts");
-        revalidatePath("/dashboard");
+        revalidateContactPaths();
         return { done: `已加联系人：${name}` };
       }
 
