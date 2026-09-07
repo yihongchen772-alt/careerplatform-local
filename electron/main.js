@@ -57,15 +57,37 @@ function runPrismaMigrate(appRoot, env) {
   return new Promise((resolve, reject) => {
     const prismaCli = path.join(appRoot, "node_modules", "prisma", "build", "index.js");
     const schemaPath = path.join(appRoot, "prisma", "schema.prisma");
+    // "inherit" sends this straight to the parent's stdout/stderr, which is
+    // exactly what Prisma's real error text needs — but a packaged app
+    // launched by double-click (not from a terminal) has no visible stdout
+    // at all, so "inherit" silently threw away the one thing anyone would
+    // need to diagnose a failure: caught only because the wrapper's generic
+    // "exited 1" message reached the user with no way to say more. Capture
+    // the output ourselves and fold it into the rejection instead.
     const proc = spawn(
       process.execPath,
       [prismaCli, "migrate", "deploy", "--schema", schemaPath],
-      { cwd: appRoot, env: nodeEnv(env), stdio: "inherit" }
+      { cwd: appRoot, env: nodeEnv(env), stdio: ["ignore", "pipe", "pipe"] }
     );
+    let output = "";
+    const collect = (chunk) => {
+      output += chunk;
+      process.stdout.write(chunk); // still visible when run from a terminal
+    };
+    proc.stdout.on("data", collect);
+    proc.stderr.on("data", collect);
     proc.on("error", reject);
-    proc.on("exit", (code) =>
-      code === 0 ? resolve() : reject(new Error(`prisma migrate deploy exited ${code}`))
-    );
+    proc.on("exit", (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      // Keep only the tail: Prisma's actual error (P-code and message) is
+      // always at the end, and dialog.showErrorBox has no scroll affordance
+      // for a multi-thousand-character migration log.
+      const tail = output.trim().split("\n").slice(-25).join("\n");
+      reject(new Error(`prisma migrate deploy exited ${code}\n\n${tail}`));
+    });
   });
 }
 
