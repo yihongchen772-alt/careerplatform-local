@@ -2,6 +2,7 @@
 
 import os from "os";
 import path from "path";
+import { statSync } from "fs";
 import { mkdir, writeFile, readdir, readFile } from "fs/promises";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
@@ -170,7 +171,7 @@ export type BackupResult = { path: string; sizeMb: string; files: number };
 
 export async function exportBackup(): Promise<ActionResult<BackupResult>> {
   return toActionResult(async () => {
-    await requireUser();
+    const user = await requireUser();
 
     const data: Record<string, unknown[]> = {};
     for (const table of TABLES) {
@@ -202,6 +203,9 @@ export async function exportBackup(): Promise<ActionResult<BackupResult>> {
     const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
     const target = path.join(await backupTargetDir(), `求职罗盘备份-${stamp}.json`);
     await writeFile(target, payload, "utf8");
+
+    await db.user.update({ where: { id: user.id }, data: { lastBackupAt: new Date() } });
+    revalidatePath("/settings");
 
     return {
       path: target,
@@ -381,5 +385,57 @@ export async function importBackup(
       revalidatePath(p);
     }
     return { restored, skipped, filesMigrated, filesFailed };
+  });
+}
+
+/**
+ * A DATABASE_URL of "file:./local.db" (dev) or an absolute path (packaged —
+ * see electron/main.js, which points it at userData/local.db) is all Prisma
+ * itself understands here; nothing else in the app has parsed it back out
+ * to a real filesystem path before, so this is duplicated rather than
+ * reused from anywhere.
+ *
+ * A relative path is resolved against prisma/schema.prisma's own directory,
+ * NOT process.cwd() — that's Prisma's documented SQLite behavior, and dev's
+ * .env sets exactly this ("file:./local.db"), resolving to prisma/local.db.
+ * Getting this wrong silently reads a different, empty local.db that
+ * happens to also exist at the project root — caught by actually checking
+ * the file this pointed at rather than assuming cwd was right.
+ */
+function resolveDbPath(): string | null {
+  const url = process.env.DATABASE_URL;
+  if (!url?.startsWith("file:")) return null;
+  const raw = url.slice("file:".length);
+  return path.isAbsolute(raw) ? raw : path.join(process.cwd(), "prisma", raw);
+}
+
+export type DataFreshness = { dbUpdatedAt: string | null; lastBackupAt: string | null };
+
+/**
+ * There's no cloud sync in this build — running the app on two machines
+ * (e.g. this desktop's Mac and Windows installs) means two completely
+ * independent local databases that only ever converge through a manual
+ * export/import. dbUpdatedAt (the SQLite file's own mtime — any write to
+ * any table touches it, so it's a reliable proxy for "last time anything
+ * changed here" without needing an updatedAt column on every model) plus
+ * lastBackupAt together let the settings page answer "is this the machine
+ * with my newest data, and have I backed it up recently" instead of the
+ * user finding out only after the two copies have already diverged.
+ */
+export async function getDataFreshness(): Promise<ActionResult<DataFreshness>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const dbPath = resolveDbPath();
+    let dbUpdatedAt: string | null = null;
+    if (dbPath) {
+      try {
+        dbUpdatedAt = statSync(dbPath).mtime.toISOString();
+      } catch {
+        // Path didn't parse to a real file (unexpected DATABASE_URL shape) —
+        // leave it null rather than fail the whole settings page over this.
+      }
+    }
+    const row = await db.user.findUnique({ where: { id: user.id }, select: { lastBackupAt: true } });
+    return { dbUpdatedAt, lastBackupAt: row?.lastBackupAt?.toISOString() ?? null };
   });
 }

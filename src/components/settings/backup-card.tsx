@@ -14,13 +14,36 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { exportBackup, previewBackup, importBackup, type ImportPreview } from "@/lib/actions/backup";
+import {
+  exportBackup,
+  previewBackup,
+  importBackup,
+  type ImportPreview,
+  type DataFreshness,
+} from "@/lib/actions/backup";
 
-export function BackupCard() {
+// Purely a nudge threshold, not a hard rule — 2 weeks of local-only changes
+// with no cloud copy felt like a reasonable "you should probably do this
+// soon" line without being naggy about it.
+const STALE_BACKUP_DAYS = 14;
+
+function daysSince(iso: string): number {
+  return Math.floor((Date.now() - new Date(iso).getTime()) / (1000 * 60 * 60 * 24));
+}
+
+// Matches the existing exportedAt formatting used below in the restore
+// preview dialog — kept identical rather than introducing a second
+// date-formatting convention in the same file.
+function formatDateTime(iso: string): string {
+  return iso.slice(0, 19).replace("T", " ");
+}
+
+export function BackupCard({ initialFreshness }: { initialFreshness: DataFreshness | null }) {
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [lastPath, setLastPath] = useState<string | null>(null);
   const [pending, setPending] = useState<{ json: string; preview: ImportPreview } | null>(null);
+  const [freshness, setFreshness] = useState(initialFreshness);
   const fileInput = useRef<HTMLInputElement>(null);
 
   async function handleExport() {
@@ -32,6 +55,7 @@ export function BackupCard() {
         return;
       }
       setLastPath(res.data.path);
+      setFreshness((f) => ({ dbUpdatedAt: f?.dbUpdatedAt ?? null, lastBackupAt: new Date().toISOString() }));
       toast.success(`已导出（${res.data.sizeMb}MB，含 ${res.data.files} 个文件）`);
     } finally {
       setExporting(false);
@@ -89,6 +113,28 @@ export function BackupCard() {
           「账号设置 → 导出我的数据」导出的 JSON——数据会正常导入，简历/附件文件会尝试从网页版的
           云端地址下载一份存到本地，失败的（链接过期/需要登录）会保留原样，需要的话请自己重新上传。
         </p>
+
+        {freshness && (
+          <div className="space-y-1 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            {freshness.dbUpdatedAt && (
+              <p>这台电脑的数据最后更新于 {formatDateTime(freshness.dbUpdatedAt)}——如果你还在别的电脑上装了这个 App，拿这个时间对比一下，确认现在用的是哪台机器上更新的数据。</p>
+            )}
+            {freshness.lastBackupAt ? (
+              (() => {
+                const days = daysSince(freshness.lastBackupAt);
+                const stale = days >= STALE_BACKUP_DAYS;
+                return (
+                  <p className={stale ? "font-medium text-amber-600 dark:text-amber-500" : undefined}>
+                    上次导出备份：{days === 0 ? "今天" : `${days} 天前`}（{formatDateTime(freshness.lastBackupAt)}）
+                    {stale && "——有点久了，建议导出一份最新的"}
+                  </p>
+                );
+              })()
+            ) : (
+              <p className="font-medium text-amber-600 dark:text-amber-500">还没导出过备份——数据只在这台电脑上，建议先导出一份</p>
+            )}
+          </div>
+        )}
 
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">

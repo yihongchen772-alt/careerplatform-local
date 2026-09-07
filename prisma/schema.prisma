@@ -60,6 +60,12 @@ model User {
   smtpUser               String?
   smtpPasswordEncrypted  String?
   smtpFrom               String?
+  // This build has no cloud sync — a user running the app on two machines
+  // (e.g. Windows + Mac) has two entirely independent local databases, kept
+  // in step only by manually exporting/importing a backup. Tracked so the
+  // settings page can nudge "it's been N days" instead of the user finding
+  // out their data diverged only after it already has.
+  lastBackupAt   DateTime?
   createdAt      DateTime  @default(now())
 
   accounts       Account[]
