@@ -401,6 +401,15 @@ model ResumeVersion {
   checkScore  Int?
   checkResult Json?
   checkedAt   DateTime?
+  // Plain-text extraction of the resume's actual content (education/
+  // experience/projects/skills) — read once so features that need real
+  // resume content (网申自动填充) stop re-reading and re-sending the whole
+  // file to an AI on every single use. Populated in the background right
+  // after upload; null until that finishes or if it was never triggered
+  // (older resumes from before this field existed) — callers fall back to
+  // reading the raw file in that case, so this is a pure optimization.
+  extractedText String?
+  extractedAt   DateTime?
   createdAt   DateTime @default(now())
 
   user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)

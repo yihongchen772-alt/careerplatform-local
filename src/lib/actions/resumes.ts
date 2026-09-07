@@ -5,6 +5,7 @@ import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { deleteLocalFileByUrl } from "@/lib/local-storage";
+import { extractResumeContent } from "@/lib/resume-extract";
 import { resumeVersionSchema } from "@/lib/validation";
 import { z } from "zod";
 
@@ -14,7 +15,7 @@ export async function createResumeVersion(
   const user = await requireUser();
   const data = resumeVersionSchema.parse(input);
 
-  await db.resumeVersion.create({
+  const created = await db.resumeVersion.create({
     data: {
       userId: user.id,
       name: data.name,
@@ -22,6 +23,12 @@ export async function createResumeVersion(
       targetTrack: data.targetTrack,
     },
   });
+
+  // Fire-and-forget: warms the 网申自动填充 content cache right away so the
+  // first autofill run on this resume doesn't also have to pay for this —
+  // never blocks the upload, and silently no-ops on any failure (no AI key
+  // configured yet, etc.).
+  if (created.fileUrl) void extractResumeContent(user.id, created.id);
 
   revalidatePath("/resumes");
 }
@@ -45,14 +52,22 @@ export async function updateResumeVersion(
       name: data.name,
       fileUrl: data.fileUrl ?? existing.fileUrl,
       targetTrack: data.targetTrack,
-      // A re-uploaded file invalidates any cached AI review of the old one.
+      // A re-uploaded file invalidates any cached AI review/extraction of
+      // the old one.
       ...(replacingFile && {
         checkScore: null,
         checkResult: Prisma.JsonNull,
         checkedAt: null,
+        extractedText: null,
+        extractedAt: null,
       }),
     },
   });
+
+  // Fire-and-forget, same reasoning as createResumeVersion: re-warm the
+  // content cache for the new file right away rather than waiting for the
+  // next autofill run to pay for it.
+  if (replacingFile && data.fileUrl) void extractResumeContent(user.id, id);
 
   // Best-effort: drop the superseded file so it doesn't leak on disk the
   // same way deleteResumeVersion used to.

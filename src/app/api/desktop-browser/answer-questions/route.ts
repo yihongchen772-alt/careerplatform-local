@@ -3,7 +3,10 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { fetchFileAsInlinePart } from "@/lib/gemini";
+import type { GeminiSchema } from "@/lib/gemini";
 import { getFileSearchKey, getImageSearchKey, generateStructuredWithFile } from "@/lib/ai-file-search";
+import { callTextAi, getUserAiConfig } from "@/lib/ai-providers";
+import { extractResumeContent } from "@/lib/resume-extract";
 
 // Mirrors the shape /api/desktop-browser/profile returns — passed through
 // so the AI has known facts (e.g. the saved name) available alongside the
@@ -111,11 +114,23 @@ export async function POST(request: Request) {
   }
 
   if (needsGeneration.length > 0) {
+    // Already have a cached digest of the resume's real content (see
+    // src/lib/resume-extract.ts) — skip the file-capable-provider
+    // requirement entirely and just send that text as context to whichever
+    // provider the user has configured as default. Only when this is
+    // missing (first-ever use of this resume, or extraction failed/wasn't
+    // configured yet) do we fall back to reading the raw file, which also
+    // means only that fallback path needs a Gemini/Claude/OpenAI/Qwen key.
+    const usingCachedText = !!resume.extractedText;
     const isPdf = resume.fileUrl.toLowerCase().endsWith(".pdf");
-    // Cheap check first — no reason to read the (possibly large) resume
-    // file off disk when there's no key configured to do anything with it.
-    const fileKey = isPdf ? await getFileSearchKey(user.id) : await getImageSearchKey(user.id);
-    if (!fileKey) {
+    const fileKey = usingCachedText
+      ? null
+      : isPdf
+        ? await getFileSearchKey(user.id)
+        : await getImageSearchKey(user.id);
+    const textConfig = usingCachedText ? await getUserAiConfig(user.id) : null;
+
+    if (!usingCachedText && !fileKey) {
       // Still return whatever was served from cache — a missing key
       // shouldn't throw away answers that needed no AI call at all.
       if (answers.length === 0) {
@@ -128,10 +143,12 @@ export async function POST(request: Request) {
           { status: 400 }
         );
       }
+    } else if (usingCachedText && !textConfig) {
+      if (answers.length === 0) {
+        return NextResponse.json({ error: "需要先在账号设置配置一个 AI Key" }, { status: 400 });
+      }
     } else {
       try {
-        const file = await fetchFileAsInlinePart(resume.fileUrl);
-
         const essays = needsGeneration.filter((q) => q.kind === "essay");
         const shortFields = needsGeneration.filter((q) => q.kind !== "essay");
         const knownFacts = profile
@@ -143,6 +160,7 @@ export async function POST(request: Request) {
 
         const sections: string[] = [];
         if (knownFacts) sections.push(`已知信息（来自他的账号资料，可直接用，不用去简历里找）：\n${knownFacts}`);
+        if (usingCachedText) sections.push(`简历内容：\n${resume.extractedText}`);
         if (essays.length > 0) {
           sections.push(
             `开放性问答题——基于简历里真实的经历，给每道题写一段可以直接填进网申表单的回答：\n` +
@@ -166,32 +184,44 @@ export async function POST(request: Request) {
           );
         }
 
-        const prompt = `你在帮一个应届生填网申表单。下面是他的简历文件，以及网申页面上检测到的、需要你帮忙填的字段（文字是从页面上抓取的，可能不完整或带一些无关字符，尽量按大意理解）。\n\n${sections.join("\n\n")}`;
+        const introLine = usingCachedText
+          ? "你在帮一个应届生填网申表单。下面是他简历里的内容，以及网申页面上检测到的、需要你帮忙填的字段（文字是从页面上抓取的，可能不完整或带一些无关字符，尽量按大意理解）。"
+          : "你在帮一个应届生填网申表单。下面是他的简历文件，以及网申页面上检测到的、需要你帮忙填的字段（文字是从页面上抓取的，可能不完整或带一些无关字符，尽量按大意理解）。";
+        const prompt = `${introLine}\n\n${sections.join("\n\n")}`;
 
-        const raw = await generateStructuredWithFile({
-          config: fileKey,
-          prompt,
-          file,
-          thinkingBudget: 1024,
-          timeoutMs: 90000,
-          schema: {
-            type: "OBJECT",
-            properties: {
-              answers: {
-                type: "ARRAY",
-                items: {
-                  type: "OBJECT",
-                  properties: {
-                    id: { type: "STRING" },
-                    answer: { type: "STRING" },
-                  },
-                  required: ["id", "answer"],
+        const schema: GeminiSchema = {
+          type: "OBJECT",
+          properties: {
+            answers: {
+              type: "ARRAY",
+              items: {
+                type: "OBJECT",
+                properties: {
+                  id: { type: "STRING" },
+                  answer: { type: "STRING" },
                 },
+                required: ["id", "answer"],
               },
             },
-            required: ["answers"],
           },
-        });
+          required: ["answers"],
+        };
+
+        const raw = usingCachedText
+          ? await callTextAi({ config: textConfig, prompt, schema, thinkingBudget: 1024, timeoutMs: 90000 })
+          : await generateStructuredWithFile({
+              config: fileKey!,
+              prompt,
+              file: await fetchFileAsInlinePart(resume.fileUrl),
+              thinkingBudget: 1024,
+              timeoutMs: 90000,
+              schema,
+            });
+
+        // No cached digest yet — this run already paid for a full file
+        // read, so warm the cache now instead of every future run doing
+        // the same. Fire-and-forget: never block the response on it.
+        if (!usingCachedText) void extractResumeContent(user.id, resumeVersionId);
 
         const resultSchema = z.object({
           answers: z.array(z.object({ id: z.string(), answer: z.string() })),
