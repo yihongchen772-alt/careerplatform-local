@@ -1,6 +1,7 @@
 "use server";
 
 import { z } from "zod";
+import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { fetchFileAsInlinePart } from "@/lib/gemini";
@@ -200,5 +201,11 @@ ${coarse ? "\n注意：这个岗位没有提供 JD 正文，只能依据岗位�
   }
 
   matches.sort((a, b) => b.matchScore - a.matchScore);
+  // Never revalidated before — harmless while the score lived only inside
+  // this dialog, but now that /pool's own table shows the best score too
+  // (see PoolPosition.bestMatch), closing the dialog without this left the
+  // table showing "未匹配" until some unrelated navigation happened to
+  // refresh it.
+  revalidatePath("/pool");
   return { coarse, matches };
 }

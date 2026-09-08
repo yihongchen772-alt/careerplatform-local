@@ -60,6 +60,11 @@ export type PoolPosition = {
   source: string | null;
   scoreBreakdown: unknown;
   interviewPrep: InterviewPrep | null;
+  /** Best PositionMatch across every resume version checked against this
+   * position (src/lib/actions/resume-match.ts) — null until "选简历" has
+   * been run at least once. Distinct from interestScore: that's a manual
+   * self-rating, this is the AI's JD-vs-resume judgement. */
+  bestMatch: { score: number; recommendation: string } | null;
   company: { name: string };
 };
 
@@ -277,11 +282,21 @@ export function PoolTable({
                     {p.title}
                   </p>
                 </div>
-                {p.interestScore !== null && (
-                  <Badge variant={scoreVariant(p.interestScore)}>
-                    {p.interestScore}
-                  </Badge>
-                )}
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  {p.interestScore !== null && (
+                    <Badge variant={scoreVariant(p.interestScore)}>
+                      {p.interestScore}
+                    </Badge>
+                  )}
+                  {p.bestMatch && (
+                    <Badge
+                      variant={scoreVariant(p.bestMatch.score)}
+                      title={p.bestMatch.recommendation}
+                    >
+                      AI {p.bestMatch.score}
+                    </Badge>
+                  )}
+                </div>
               </div>
 
               <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
@@ -384,6 +399,7 @@ export function PoolTable({
             <TableHead>地点</TableHead>
             <TableHead>薪资</TableHead>
             <TableHead>综合得分</TableHead>
+            <TableHead>AI 匹配</TableHead>
             <TableHead>截止日期</TableHead>
             <TableHead>状态</TableHead>
             <TableHead className="text-right">操作</TableHead>
@@ -424,6 +440,18 @@ export function PoolTable({
                     </Badge>
                   ) : (
                     "-"
+                  )}
+                </TableCell>
+                <TableCell>
+                  {p.bestMatch ? (
+                    <Badge
+                      variant={scoreVariant(p.bestMatch.score)}
+                      title={p.bestMatch.recommendation}
+                    >
+                      {p.bestMatch.score} · {p.bestMatch.recommendation}
+                    </Badge>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">未匹配</span>
                   )}
                 </TableCell>
                 <TableCell>
@@ -493,7 +521,7 @@ export function PoolTable({
           })}
           {sorted.length === 0 && (
             <TableRow>
-              <TableCell colSpan={9} className="h-32 text-center text-muted-foreground">
+              <TableCell colSpan={10} className="h-32 text-center text-muted-foreground">
                 <div className="flex flex-col items-center gap-2">
                   <ListChecks className="size-8 text-muted-foreground/50" />
                   <span>

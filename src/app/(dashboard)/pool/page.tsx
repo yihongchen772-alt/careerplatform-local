@@ -11,7 +11,14 @@ export default async function PoolPage() {
   const [positions, resumeVersions] = await Promise.all([
     db.position.findMany({
       where: { userId: user.id },
-      include: { company: true, interviewPrep: true },
+      include: {
+        company: true,
+        interviewPrep: true,
+        // A position can have one PositionMatch per resume version it's been
+        // checked against — only the best score across those matters for a
+        // quick-scan list column, so just the two fields needed to pick it.
+        positionMatches: { select: { matchScore: true, recommendation: true } },
+      },
       orderBy: { createdAt: "desc" },
     }),
     db.resumeVersion.findMany({
@@ -33,13 +40,26 @@ export default async function PoolPage() {
       <Card>
         <CardContent className="pt-6">
           <PoolTable
-            positions={positions.map((p) => ({
-              ...p,
-              deadline: p.deadline?.toISOString() ?? null,
-              interviewPrep: p.interviewPrep
-                ? (p.interviewPrep.content as InterviewPrep)
-                : null,
-            }))}
+            positions={positions.map((p) => {
+              const { positionMatches, ...rest } = p;
+              const bestMatch = positionMatches.reduce<
+                { score: number; recommendation: string } | null
+              >(
+                (best, m) =>
+                  !best || m.matchScore > best.score
+                    ? { score: m.matchScore, recommendation: m.recommendation }
+                    : best,
+                null
+              );
+              return {
+                ...rest,
+                deadline: p.deadline?.toISOString() ?? null,
+                interviewPrep: p.interviewPrep
+                  ? (p.interviewPrep.content as InterviewPrep)
+                  : null,
+                bestMatch,
+              };
+            })}
             resumeVersions={resumeVersions}
             defaultResumeVersionId={defaultResumeVersionId}
           />
