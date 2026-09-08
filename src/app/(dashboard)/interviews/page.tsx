@@ -4,6 +4,7 @@ import {
   InterviewNotes,
   type InterviewNote,
 } from "@/components/interviews/interview-notes";
+import type { ExtractedQuestion } from "@/lib/actions/interview-note-extract";
 
 export default async function InterviewsPage() {
   const user = await requireUser();
@@ -19,7 +20,10 @@ export default async function InterviewsPage() {
         { interviewFormat: { not: null } },
       ],
     },
-    include: { application: { include: { company: true } } },
+    include: {
+      application: { include: { company: true } },
+      noteExtract: { select: { questions: true } },
+    },
     orderBy: { enteredAt: "desc" },
   });
 
@@ -33,6 +37,7 @@ export default async function InterviewsPage() {
     applicationId: h.applicationId,
     companyName: h.application.company.name,
     title: h.application.title,
+    extractedQuestions: (h.noteExtract?.questions as ExtractedQuestion[] | undefined) ?? null,
   }));
 
   return (

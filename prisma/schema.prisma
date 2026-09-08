@@ -78,6 +78,7 @@ model User {
   attachments    Attachment[]
   interviewPreps InterviewPrep[]
   coverLetters   CoverLetter[]
+  interviewNoteExtracts InterviewNoteExtract[]
   interviewQAs   InterviewQA[]
   personalTasks  PersonalTask[]
   interviewSessions InterviewSession[]
@@ -394,8 +395,30 @@ model StageHistory {
 
   application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   attachments Attachment[]
+  noteExtract InterviewNoteExtract?
 
   @@index([applicationId])
+}
+
+/// AI-structured version of one StageHistory.note — 面经库 notes are
+/// free-text a user typed after an interview ("问了我讲讲 Redis 持久化，
+/// 还问了一道场景题..."), never structured. Extracted on demand (a button
+/// per note, not automatic — same "don't spend the user's AI budget without
+/// an explicit click" convention as InterviewPrep/CoverLetter), one per
+/// StageHistory, regenerating overwrites.
+model InterviewNoteExtract {
+  id             String   @id @default(cuid())
+  userId         String
+  stageHistoryId String   @unique
+  /// [{question, category}]
+  questions      Json
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stageHistory StageHistory @relation(fields: [stageHistoryId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model Attachment {
