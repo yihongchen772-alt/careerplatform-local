@@ -93,6 +93,7 @@ model User {
   contacts               Contact[]
   positionMatches        PositionMatch[]
   resumeTailorings       ResumeTailoring[]
+  skillGapAnalyses       SkillGapAnalysis[]
   dailyDigests           DailyDigest[]
   weeklyReviews          WeeklyReview[]
 }
@@ -486,6 +487,7 @@ model ResumeVersion {
   autofillAnswers  AutofillAnswer[]
   positionMatches  PositionMatch[]
   resumeTailorings ResumeTailoring[]
+  skillGapAnalysis SkillGapAnalysis?
 
   @@index([userId])
 }
@@ -529,6 +531,26 @@ model ResumeTailoring {
   resumeVersion ResumeVersion @relation(fields: [resumeVersionId], references: [id], onDelete: Cascade)
 
   @@unique([positionId, resumeVersionId])
+  @@index([userId])
+}
+
+/// Aggregated across every tracked Position's jdText — not tied to one
+/// position the way ResumeTailoring/PositionMatch are, so it keys on just
+/// (userId, resumeVersionId). Regenerating overwrites, same as everywhere
+/// else in this file — it's a snapshot of "what the JDs I'm watching say"
+/// at generation time, not a live-updating view.
+model SkillGapAnalysis {
+  id              String   @id @default(cuid())
+  userId          String
+  resumeVersionId String   @unique
+  /// { summary, skills: [{skill, mentionCount, onResume, note}] }
+  result          Json
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resumeVersion ResumeVersion @relation(fields: [resumeVersionId], references: [id], onDelete: Cascade)
+
   @@index([userId])
 }
 

@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { SkillGapCard } from "@/components/insights/skill-gap-card";
 import {
   computeConversion,
   computeFunnel,
@@ -11,18 +12,33 @@ import {
   type ConversionRow,
   type FunnelStep,
 } from "@/lib/analytics";
+import type { SkillGapAnalysis } from "@/lib/actions/skill-gap";
 
 export default async function InsightsPage() {
   const user = await requireUser();
 
-  const applications = await db.application.findMany({
-    where: { userId: user.id },
-    include: {
-      resumeVersion: { select: { name: true } },
-      position: { select: { track: true } },
-      stageHistory: { select: { stage: true } },
-    },
-  });
+  const [applications, resumeVersions, skillGaps] = await Promise.all([
+    db.application.findMany({
+      where: { userId: user.id },
+      include: {
+        resumeVersion: { select: { name: true } },
+        position: { select: { track: true } },
+        stageHistory: { select: { stage: true } },
+      },
+    }),
+    db.resumeVersion.findMany({
+      where: { userId: user.id },
+      select: { id: true, name: true, isDefault: true },
+    }),
+    db.skillGapAnalysis.findMany({
+      where: { userId: user.id },
+      select: { resumeVersionId: true, result: true },
+    }),
+  ]);
+  const defaultResumeVersionId = resumeVersions.find((r) => r.isDefault)?.id ?? null;
+  const skillGapResults = Object.fromEntries(
+    skillGaps.map((s) => [s.resumeVersionId, s.result as SkillGapAnalysis])
+  );
 
   const { bySource, byResume, byTrack } = computeConversion(applications);
   const funnel = computeFunnel(applications);
@@ -67,6 +83,15 @@ export default async function InsightsPage() {
           )}
         </>
       )}
+
+      {/* Depends on Position.jdText, not Application data — kept outside the
+          hasApplications gate above so it works before you've applied to
+          anything, purely off what's sitting in the candidate pool. */}
+      <SkillGapCard
+        resumeVersions={resumeVersions}
+        defaultResumeVersionId={defaultResumeVersionId}
+        initialResults={skillGapResults}
+      />
     </div>
   );
 }
