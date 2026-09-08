@@ -16,6 +16,10 @@ import {
   type MatchResult,
   type ResumeMatch,
 } from "@/lib/actions/resume-match";
+import {
+  generateResumeTailoring,
+  type ResumeTailoring,
+} from "@/lib/actions/resume-tailoring";
 
 const RECOMMENDATION_VARIANT: Record<
   ResumeMatch["recommendation"],
@@ -46,6 +50,8 @@ export function MatchResumeDialog({
 }) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<MatchResult | null>(null);
+  const [tailoring, setTailoring] = useState<Record<string, ResumeTailoring>>({});
+  const [tailoringId, setTailoringId] = useState<string | null>(null);
 
   async function run() {
     setLoading(true);
@@ -55,6 +61,17 @@ export function MatchResumeDialog({
       else toast.error(res.message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function runTailoring(resumeVersionId: string) {
+    setTailoringId(resumeVersionId);
+    try {
+      const res = await generateResumeTailoring(positionId, resumeVersionId);
+      if (res.ok) setTailoring((prev) => ({ ...prev, [resumeVersionId]: res.data }));
+      else toast.error(res.message);
+    } finally {
+      setTailoringId(null);
     }
   }
 
@@ -125,6 +142,42 @@ export function MatchResumeDialog({
                 )}
 
                 <p className="text-sm">{m.suggestion}</p>
+
+                {!tailoring[m.resumeVersionId] ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-xs"
+                    disabled={tailoringId === m.resumeVersionId}
+                    onClick={() => runTailoring(m.resumeVersionId)}
+                  >
+                    {tailoringId === m.resumeVersionId ? "生成改写建议中..." : "改简历"}
+                  </Button>
+                ) : (
+                  <div className="space-y-2 rounded-md bg-muted/40 p-2">
+                    <p className="text-xs text-muted-foreground">
+                      {tailoring[m.resumeVersionId].summary}
+                    </p>
+                    <div className="space-y-2">
+                      {tailoring[m.resumeVersionId].rewrites.map((r, j) => (
+                        <div key={j} className="space-y-1 border-b pb-2 text-xs last:border-0 last:pb-0">
+                          <p className="text-muted-foreground line-through">{r.original}</p>
+                          <p className="font-medium">{r.suggested}</p>
+                          <p className="text-muted-foreground">{r.reason}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-2 text-xs"
+                      disabled={tailoringId === m.resumeVersionId}
+                      onClick={() => runTailoring(m.resumeVersionId)}
+                    >
+                      {tailoringId === m.resumeVersionId ? "重新生成中..." : "重新生成"}
+                    </Button>
+                  </div>
+                )}
               </div>
             ))}
 

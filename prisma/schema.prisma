@@ -91,6 +91,7 @@ model User {
   mailAccounts           MailAccount[]
   contacts               Contact[]
   positionMatches        PositionMatch[]
+  resumeTailorings       ResumeTailoring[]
   dailyDigests           DailyDigest[]
   weeklyReviews          WeeklyReview[]
 }
@@ -324,6 +325,7 @@ model Position {
   interviewSessions InterviewSession[]
   contacts      Contact[]
   positionMatches PositionMatch[]
+  resumeTailorings ResumeTailoring[]
 
   @@index([userId])
 }
@@ -481,6 +483,7 @@ model ResumeVersion {
   interviewSessions InterviewSession[]
   autofillAnswers  AutofillAnswer[]
   positionMatches  PositionMatch[]
+  resumeTailorings ResumeTailoring[]
 
   @@index([userId])
 }
@@ -497,6 +500,24 @@ model PositionMatch {
   /// 强烈建议投 / 可以投 / 海投备用 / 不建议浪费时间
   recommendation  String
   /// { breakdown: [{requirement, evidence, verdict}], suggestion }
+  result          Json
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  position      Position      @relation(fields: [positionId], references: [id], onDelete: Cascade)
+  resumeVersion ResumeVersion @relation(fields: [resumeVersionId], references: [id], onDelete: Cascade)
+
+  @@unique([positionId, resumeVersionId])
+  @@index([userId])
+}
+
+model ResumeTailoring {
+  id              String   @id @default(cuid())
+  userId          String
+  positionId      String
+  resumeVersionId String
+  /// { summary, rewrites: [{original, suggested, reason}] }
   result          Json
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
