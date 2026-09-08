@@ -14,6 +14,7 @@ export default async function PoolPage() {
       include: {
         company: true,
         interviewPrep: true,
+        coverLetter: { select: { content: true } },
         // A position can have one PositionMatch per resume version it's been
         // checked against — only the best score across those matters for a
         // quick-scan list column, so just the two fields needed to pick it.
@@ -41,7 +42,7 @@ export default async function PoolPage() {
         <CardContent className="pt-6">
           <PoolTable
             positions={positions.map((p) => {
-              const { positionMatches, ...rest } = p;
+              const { positionMatches, coverLetter, ...rest } = p;
               const bestMatch = positionMatches.reduce<
                 { score: number; recommendation: string } | null
               >(
@@ -58,6 +59,7 @@ export default async function PoolPage() {
                   ? (p.interviewPrep.content as InterviewPrep)
                   : null,
                 bestMatch,
+                coverLetter: coverLetter?.content ?? null,
               };
             })}
             resumeVersions={resumeVersions}
