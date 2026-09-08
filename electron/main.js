@@ -254,10 +254,16 @@ function readAppSettings() {
       autoLaunch: false,
       backgroundReminders: false,
       inboxScanIntervalHours: 0,
+      jobRadarIntervalHours: 0,
       ...JSON.parse(fs.readFileSync(settingsFile(), "utf8")),
     };
   } catch {
-    return { autoLaunch: false, backgroundReminders: false, inboxScanIntervalHours: 0 };
+    return {
+      autoLaunch: false,
+      backgroundReminders: false,
+      inboxScanIntervalHours: 0,
+      jobRadarIntervalHours: 0,
+    };
   }
 }
 
@@ -332,6 +338,13 @@ function buildTray() {
           maybeScanInbox();
         },
       },
+      {
+        label: "立即检查岗位雷达",
+        click: () => {
+          lastRadarCheckAt = 0;
+          maybeCheckJobRadar();
+        },
+      },
       { type: "separator" },
       {
         label: "退出",
@@ -401,11 +414,51 @@ async function maybeScanInbox() {
   }
 }
 
+// Same idea as the inbox scan, on the same company's careerUrl the user
+// saved in the company directory: fetch the page's HTML, diff its extracted
+// text against the last-seen hash, and surface a notification when it
+// changed. The diff/hash/HTTP work all lives server-side (checkAllCompanyRadars
+// in src/lib/actions/job-radar.ts) — this is just the timer that hits it.
+let lastRadarCheckAt = 0;
+
+async function maybeCheckJobRadar() {
+  const hours = Number(readAppSettings().jobRadarIntervalHours) || 0;
+  if (hours <= 0) return;
+  if (Date.now() - lastRadarCheckAt < hours * 3600 * 1000) return;
+  lastRadarCheckAt = Date.now();
+  try {
+    const res = await fetch(`http://localhost:${PORT}/api/job-radar/check`, { method: "POST" });
+    if (!res.ok) return;
+    const { changed } = await res.json();
+    if (!Array.isArray(changed) || changed.length === 0) return;
+
+    const { Notification } = require("electron");
+    if (!Notification.isSupported()) return;
+
+    const first = changed[0];
+    new Notification({
+      title: changed.length === 1 ? "岗位雷达" : `岗位雷达（${changed.length} 家公司）`,
+      body:
+        changed.length === 1
+          ? `${first.name} 的招聘页面可能有更新，去看看`
+          : `${first.name} 等 ${changed.length} 家公司的招聘页面可能有更新`,
+    })
+      .on("click", showWindow)
+      .show();
+  } catch {
+    // Server not up yet, or transient — the next tick will retry.
+  }
+}
+
 function startScanLoop() {
   if (scanTimer) return;
-  // Checked every 5 minutes; maybeScanInbox decides whether enough time has
-  // passed. That keeps a newly-shortened interval from waiting out the old one.
-  scanTimer = setInterval(maybeScanInbox, 5 * 60 * 1000);
+  // Checked every 5 minutes; maybeScanInbox/maybeCheckJobRadar each decide
+  // whether enough time has passed for their own interval. That keeps a
+  // newly-shortened interval from waiting out the old one.
+  scanTimer = setInterval(() => {
+    maybeScanInbox();
+    maybeCheckJobRadar();
+  }, 5 * 60 * 1000);
 }
 
 function startReminderLoop() {

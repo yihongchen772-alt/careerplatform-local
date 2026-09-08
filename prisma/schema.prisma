@@ -241,6 +241,16 @@ model Company {
   addedByUserId String?
   createdAt     DateTime @default(now())
 
+  /// 岗位雷达：定时抓取 careerUrl 的 HTML，用抓到的正文内容的 hash 做 diff。
+  /// 只是"内容变了"的粗糙信号，不是真解析出了新岗位——JS 渲染的 SPA 招聘页
+  /// 抓到的多半只是空壳，见 src/lib/actions/job-radar.ts 里的 SPA 启发式判断。
+  radarEnabled       Boolean   @default(false)
+  radarContentHash   String?
+  radarLastCheckedAt DateTime?
+  radarLastChangedAt DateTime?
+  radarLastError     String?
+  radarLastWarning   String?
+
   addedBy      User?         @relation(fields: [addedByUserId], references: [id])
   positions    Position[]
   applications Application[]

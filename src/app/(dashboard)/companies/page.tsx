@@ -33,6 +33,11 @@ export default async function CompaniesPage() {
             sector: c.sector,
             industry: c.industry,
             verified: c.verified,
+            radarEnabled: c.radarEnabled,
+            radarLastCheckedAt: c.radarLastCheckedAt,
+            radarLastChangedAt: c.radarLastChangedAt,
+            radarLastError: c.radarLastError,
+            radarLastWarning: c.radarLastWarning,
           }))}
       />
     </div>

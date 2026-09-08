@@ -20,6 +20,14 @@ export type AppSettings = {
    */
   inboxScanIntervalHours?: number;
   /**
+   * How often, in hours, the background process re-checks saved companies'
+   * career pages for content changes ("岗位雷达"). 0 disables it entirely —
+   * unlike the inbox scan, there is no "check once on launch" fallback here,
+   * since polling someone else's website even once without being asked
+   * would be a surprise.
+   */
+  jobRadarIntervalHours?: number;
+  /**
    * Written by the Electron main process when the OS refused to register the
    * login item (sandboxing, MDM policy, unsigned build). Read-only from the
    * app's side — it exists so a silently-ignored setting shows up as a
@@ -43,6 +51,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   autoLaunch: false,
   backgroundReminders: false,
   inboxScanIntervalHours: 0,
+  jobRadarIntervalHours: 0,
 };
 
 /** Options offered in settings; 0 keeps the launch-only behaviour. */
@@ -53,4 +62,17 @@ export const SCAN_INTERVAL_OPTIONS: { value: number; label: string }[] = [
   { value: 4, label: "每 4 小时" },
   { value: 6, label: "每 6 小时" },
   { value: 12, label: "每 12 小时" },
+];
+
+/**
+ * Fewer, longer options than SCAN_INTERVAL_OPTIONS on purpose: this hits an
+ * external site the user doesn't control, so nothing here defaults to
+ * checking more than once every 6 hours, and 0 means "off" rather than
+ * "once on launch" (see jobRadarIntervalHours above).
+ */
+export const RADAR_INTERVAL_OPTIONS: { value: number; label: string }[] = [
+  { value: 0, label: "不自动检查" },
+  { value: 6, label: "每 6 小时" },
+  { value: 12, label: "每 12 小时" },
+  { value: 24, label: "每 24 小时" },
 ];
