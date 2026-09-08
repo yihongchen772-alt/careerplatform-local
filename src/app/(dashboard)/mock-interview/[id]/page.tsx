@@ -47,6 +47,7 @@ export default async function MockInterviewDetailPage({
         }))}
         initialStatus={session.status}
         initialFeedback={session.feedback as InterviewFeedback | null}
+        includeCoding={session.includeCoding}
       />
     </div>
   );

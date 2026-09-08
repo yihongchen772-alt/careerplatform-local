@@ -1,4 +1,3 @@
-import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,7 +9,7 @@ export default async function MockInterviewPage() {
 
   const [resumeVersions, positions, standaloneApplications, sessions, dbUser] = await Promise.all([
     db.resumeVersion.findMany({
-      where: { userId: user.id, checkResult: { not: Prisma.DbNull } },
+      where: { userId: user.id },
       select: { id: true, name: true },
       orderBy: { createdAt: "desc" },
     }),

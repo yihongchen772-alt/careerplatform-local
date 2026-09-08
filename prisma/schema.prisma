@@ -653,6 +653,11 @@ model InterviewSession {
   // Free-text fallback ("后端开发") when no specific candidate position was
   // picked — the interview still needs *some* target to ask about.
   targetRole      String?
+  // When set, the interviewer AI is told to mix in LeetCode-style coding
+  // questions and to review any pasted code like a code reviewer would
+  // (correctness, edge cases, complexity) — not a real judge with test-case
+  // execution, see src/lib/actions/interview-session.ts.
+  includeCoding   Boolean                 @default(false)
   status          InterviewSessionStatus  @default(ACTIVE)
   feedback        Json?
   createdAt       DateTime                @default(now())

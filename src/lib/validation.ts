@@ -247,6 +247,7 @@ export const startInterviewSessionSchema = z.object({
   resumeVersionId: z.string().min(1),
   positionId: z.string().optional().nullable(),
   targetRole: z.string().optional(),
+  includeCoding: z.boolean().optional(),
 });
 
 export const sendInterviewMessageSchema = z.object({
