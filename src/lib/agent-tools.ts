@@ -40,7 +40,7 @@ export async function executeAgentTool(userId: string, decision: AgentDecision):
       : await db.resumeVersion.findFirst({ where: { userId }, orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }] });
     if (!resume) throw new UserFacingError("尚未找到简历，请先在简历版本页添加简历。");
     const context = await getResumeContext(resume.id, userId);
-    return { data: JSON.stringify(context), summary: `已读取「${resume.name}」的体检摘要；它不是简历全文。`, href: "/resumes" };
+    return { data: JSON.stringify(context), summary: `已读取「${resume.name}」的简历内容摘要；不是逐字原文。`, href: "/resumes" };
   }
   if (decision.tool === "research_web") {
     if (!query.trim()) throw new UserFacingError("研究问题不能为空。");

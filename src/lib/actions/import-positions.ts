@@ -292,8 +292,9 @@ export type PositionFit = { index: number; fitScore: number; reason: string };
  * Scores every parsed row against the resume in ONE call, rather than reusing
  * the existing per-position matchResumesToPosition (which reads the resume
  * PDF once per position — fine for one position, but 60 imported rows would
- * mean 60 file-reading calls). The resume here is the cached 体检 summary
- * text, so this also works on providers that can't read files at all.
+ * mean 60 file-reading calls). The resume here is the cached extracted-text
+ * summary (getResumeContext), so this also works on providers that can't
+ * read files at all.
  */
 export async function rankImportedPositions(
   rows: ImportedPosition[],
