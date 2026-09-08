@@ -3,7 +3,7 @@ import { requireUser } from "@/lib/session";
 import { Card, CardContent } from "@/components/ui/card";
 import { AddPositionDialog } from "@/components/pool/add-position-dialog";
 import { PoolTable } from "@/components/pool/pool-table";
-import type { InterviewPrep } from "@/lib/validation";
+import type { InterviewPrep, GroupInterviewPrep } from "@/lib/validation";
 
 export default async function PoolPage() {
   const user = await requireUser();
@@ -14,6 +14,7 @@ export default async function PoolPage() {
       include: {
         company: true,
         interviewPrep: true,
+        groupInterviewPrep: true,
         coverLetter: { select: { content: true } },
         // A position can have one PositionMatch per resume version it's been
         // checked against — only the best score across those matters for a
@@ -57,6 +58,9 @@ export default async function PoolPage() {
                 deadline: p.deadline?.toISOString() ?? null,
                 interviewPrep: p.interviewPrep
                   ? (p.interviewPrep.content as InterviewPrep)
+                  : null,
+                groupInterviewPrep: p.groupInterviewPrep
+                  ? (p.groupInterviewPrep.content as GroupInterviewPrep)
                   : null,
                 bestMatch,
                 coverLetter: coverLetter?.content ?? null,

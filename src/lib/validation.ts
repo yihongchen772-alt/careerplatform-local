@@ -193,6 +193,27 @@ export const interviewPrepSchema = z.object({
 
 export type InterviewPrep = z.infer<typeof interviewPrepSchema>;
 
+/// 群面（无领导小组讨论）是校招高频但和一对一面试完全不同的技能——发言
+/// 时机、角色分配、怎么在讨论里露脸而不抢话，这些一对一的 interviewPrep
+/// 答不上，所以是独立的 schema/生成流程，见 group-interview-prep.ts。
+export const groupInterviewPrepSchema = z.object({
+  overview: z.string(),
+  roleStrategy: z.string(),
+  tips: z.array(
+    z.object({
+      title: z.string(),
+      detail: z.string(),
+    })
+  ),
+  pitfalls: z.array(z.string()),
+  practiceTopic: z.object({
+    topic: z.string(),
+    instructions: z.string(),
+  }),
+});
+
+export type GroupInterviewPrep = z.infer<typeof groupInterviewPrepSchema>;
+
 export const interviewQaSchema = z.object({
   summary: z.string(),
   /// A JD-derived 备考大纲 — which modules to prepare and why, before the

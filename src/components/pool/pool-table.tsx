@@ -46,7 +46,7 @@ import {
   CoverLetterTrigger,
 } from "@/components/pool/cover-letter-dialog";
 import type { PositionStatus } from "@prisma/client";
-import type { InterviewPrep } from "@/lib/validation";
+import type { InterviewPrep, GroupInterviewPrep } from "@/lib/validation";
 
 export type PoolPosition = {
   id: string;
@@ -64,6 +64,7 @@ export type PoolPosition = {
   source: string | null;
   scoreBreakdown: unknown;
   interviewPrep: InterviewPrep | null;
+  groupInterviewPrep: GroupInterviewPrep | null;
   /** Best PositionMatch across every resume version checked against this
    * position (src/lib/actions/resume-match.ts) — null until "选简历" has
    * been run at least once. Distinct from interestScore: that's a manual
@@ -552,6 +553,7 @@ export function PoolTable({
           resumeVersions={resumeVersions}
           defaultResumeVersionId={defaultResumeVersionId}
           initialResult={preparing.interviewPrep}
+          initialGroupResult={preparing.groupInterviewPrep}
           open={!!prepId}
           onOpenChange={(open) => !open && setPrepId(null)}
         />
