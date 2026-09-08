@@ -115,6 +115,37 @@ function scoreVariant(score: number): "default" | "secondary" | "outline" {
   return "outline";
 }
 
+/**
+ * Pure recombination of signals that already exist elsewhere (JD text,
+ * PositionMatch, CoverLetter, InterviewPrep) into one glance — "are you
+ * actually ready to hit submit on this one" isn't answerable by any single
+ * existing column, especially right before a deadline.
+ */
+function readinessItems(p: PoolPosition): { label: string; done: boolean }[] {
+  return [
+    { label: "JD", done: !!p.jdText },
+    { label: "AI 匹配", done: !!p.bestMatch },
+    { label: "自荐信", done: !!p.coverLetter },
+    { label: "面试攻略", done: !!p.interviewPrep },
+  ];
+}
+
+function ReadinessBadge({ items }: { items: { label: string; done: boolean }[] }) {
+  const doneCount = items.filter((i) => i.done).length;
+  const missing = items.filter((i) => !i.done).map((i) => i.label);
+  const variant = doneCount === items.length ? "default" : doneCount === 0 ? "outline" : "secondary";
+  return (
+    <div className="space-y-0.5">
+      <Badge variant={variant}>
+        {doneCount}/{items.length} 就绪
+      </Badge>
+      {missing.length > 0 && (
+        <p className="text-xs text-muted-foreground">缺：{missing.join("、")}</p>
+      )}
+    </div>
+  );
+}
+
 function toEditInitial(p: PoolPosition) {
   return {
     companyName: p.company.name,
@@ -304,6 +335,7 @@ export function PoolTable({
                       AI {p.bestMatch.score}
                     </Badge>
                   )}
+                  <ReadinessBadge items={readinessItems(p)} />
                 </div>
               </div>
 
@@ -409,6 +441,7 @@ export function PoolTable({
             <TableHead>薪资</TableHead>
             <TableHead>综合得分</TableHead>
             <TableHead>AI 匹配</TableHead>
+            <TableHead>投递就绪</TableHead>
             <TableHead>截止日期</TableHead>
             <TableHead>状态</TableHead>
             <TableHead className="text-right">操作</TableHead>
@@ -462,6 +495,9 @@ export function PoolTable({
                   ) : (
                     <span className="text-xs text-muted-foreground">未匹配</span>
                   )}
+                </TableCell>
+                <TableCell>
+                  <ReadinessBadge items={readinessItems(p)} />
                 </TableCell>
                 <TableCell>
                   {deadline ? (
@@ -531,7 +567,7 @@ export function PoolTable({
           })}
           {sorted.length === 0 && (
             <TableRow>
-              <TableCell colSpan={10} className="h-32 text-center text-muted-foreground">
+              <TableCell colSpan={11} className="h-32 text-center text-muted-foreground">
                 <div className="flex flex-col items-center gap-2">
                   <ListChecks className="size-8 text-muted-foreground/50" />
                   <span>
