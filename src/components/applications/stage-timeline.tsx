@@ -19,6 +19,10 @@ import {
 import { AttachmentList } from "@/components/applications/attachment-list";
 import { STAGE_BADGE_VARIANT, STAGE_LABELS, STAGE_ORDER } from "@/lib/stage-labels";
 import { updateStageHistory, deleteStageHistory } from "@/lib/actions/applications";
+import {
+  generateStagePostmortem,
+  type StagePostmortem,
+} from "@/lib/actions/stage-postmortem";
 import type { ApplicationStage } from "@prisma/client";
 
 export type TimelineEntry = {
@@ -31,6 +35,7 @@ export type TimelineEntry = {
   nextDeadline: string | null;
   nextDeadlineEnd: string | null;
   attachments: { id: string; url: string; name: string }[];
+  postmortem: StagePostmortem | null;
 };
 
 /** Date -> the value a <input type="datetime-local"> expects (local time). */
@@ -76,6 +81,19 @@ function TimelineRow({
     entry.nextDeadlineEnd?.slice(0, 10) ?? ""
   );
   const [saving, setSaving] = useState(false);
+  const [postmortem, setPostmortem] = useState(entry.postmortem);
+  const [postmortemLoading, setPostmortemLoading] = useState(false);
+
+  async function handlePostmortem() {
+    setPostmortemLoading(true);
+    try {
+      const res = await generateStagePostmortem(entry.id);
+      if (res.ok) setPostmortem(res.data);
+      else toast.error(res.message);
+    } finally {
+      setPostmortemLoading(false);
+    }
+  }
 
   async function handleSave() {
     setSaving(true);
@@ -222,6 +240,53 @@ function TimelineRow({
         </p>
       )}
       {entry.note && <p className="mt-1 text-sm">{entry.note}</p>}
+      {entry.note && (
+        <div className="mt-1.5">
+          {!postmortem ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 px-2 text-xs"
+              disabled={postmortemLoading}
+              onClick={handlePostmortem}
+            >
+              {postmortemLoading ? "复盘中..." : "AI 复盘这场面试"}
+            </Button>
+          ) : (
+            <div className="space-y-1.5 rounded-md bg-muted/40 p-2 text-xs">
+              {postmortem.reflectionQuestions.length > 0 && (
+                <div>
+                  <p className="font-medium text-muted-foreground">值得想清楚的问题</p>
+                  <ul className="list-inside list-disc">
+                    {postmortem.reflectionQuestions.map((q, i) => (
+                      <li key={i}>{q}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {postmortem.improvements.length > 0 && (
+                <div>
+                  <p className="font-medium text-muted-foreground">下次可以怎么改</p>
+                  <ul className="list-inside list-disc">
+                    {postmortem.improvements.map((imp, i) => (
+                      <li key={i}>{imp}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2 text-xs"
+                disabled={postmortemLoading}
+                onClick={handlePostmortem}
+              >
+                {postmortemLoading ? "重新生成中..." : "重新生成"}
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
       {entry.nextDeadline && (
         <p className="mt-1 text-xs text-muted-foreground">
           {entry.nextDeadlineEnd

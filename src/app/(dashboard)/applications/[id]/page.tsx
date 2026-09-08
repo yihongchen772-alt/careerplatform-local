@@ -12,6 +12,7 @@ import { StageTimeline } from "@/components/applications/stage-timeline";
 import { InterviewQaCard } from "@/components/applications/interview-qa-card";
 import { STAGE_BADGE_VARIANT, STAGE_LABELS } from "@/lib/stage-labels";
 import type { InterviewQa } from "@/lib/validation";
+import type { StagePostmortem } from "@/lib/actions/stage-postmortem";
 
 export default async function ApplicationDetailPage({
   params,
@@ -31,7 +32,7 @@ export default async function ApplicationDetailPage({
         interviewQA: true,
         stageHistory: {
           orderBy: { enteredAt: "asc" },
-          include: { attachments: true },
+          include: { attachments: true, postmortem: { select: { content: true } } },
         },
       },
     }),
@@ -79,6 +80,9 @@ export default async function ApplicationDetailPage({
                   url: a.url,
                   name: a.name,
                 })),
+                postmortem: h.postmortem
+                  ? (h.postmortem.content as StagePostmortem)
+                  : null,
               }))}
             />
           </CardContent>

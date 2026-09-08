@@ -80,6 +80,7 @@ model User {
   groupInterviewPreps GroupInterviewPrep[]
   coverLetters   CoverLetter[]
   interviewNoteExtracts InterviewNoteExtract[]
+  stagePostmortems StagePostmortem[]
   interviewQAs   InterviewQA[]
   personalTasks  PersonalTask[]
   interviewSessions InterviewSession[]
@@ -411,6 +412,7 @@ model StageHistory {
   application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   attachments Attachment[]
   noteExtract InterviewNoteExtract?
+  postmortem  StagePostmortem?
 
   @@index([applicationId])
 }
@@ -427,6 +429,25 @@ model InterviewNoteExtract {
   stageHistoryId String   @unique
   /// [{question, category}]
   questions      Json
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stageHistory StageHistory @relation(fields: [stageHistoryId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// A per-interview reflection, distinct from WeeklyReview which aggregates
+/// across a whole week — this captures "what went wrong in THIS interview"
+/// right after it happens, while detail is still fresh, before it fades into
+/// a vague weekly summary.
+model StagePostmortem {
+  id             String   @id @default(cuid())
+  userId         String
+  stageHistoryId String   @unique
+  /// { reflectionQuestions: string[], improvements: string[] }
+  content        Json
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
