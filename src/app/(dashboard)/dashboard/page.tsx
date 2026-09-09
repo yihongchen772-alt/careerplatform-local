@@ -5,13 +5,8 @@ import { requireUser } from "@/lib/session";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { buildTodos, type Todo } from "@/lib/todos";
-import {
-  computeFunnel,
-  computeOutcomes,
-  type FunnelLevel,
-  type FunnelOutcomes,
-} from "@/lib/funnel";
-import { STAGE_LABELS } from "@/lib/stage-labels";
+import { computeFunnel, computeOutcomes } from "@/lib/funnel";
+import { FunnelCard } from "@/components/insights/funnel-card";
 import { PersonalTaskCard } from "@/components/dashboard/personal-task-card";
 import { SendDigestButton } from "@/components/dashboard/send-digest-button";
 import { DailyDigestCard } from "@/components/dashboard/daily-digest-card";
@@ -114,62 +109,6 @@ export default async function DashboardPage() {
 
       <FunnelCard levels={levels} total={total} outcomes={outcomes} />
     </div>
-  );
-}
-
-function FunnelCard({
-  levels,
-  total,
-  outcomes,
-}: {
-  levels: FunnelLevel[];
-  total: number;
-  outcomes: FunnelOutcomes;
-}) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>投递漏斗</CardTitle>
-        <p className="text-sm text-muted-foreground">
-          每一级是&ldquo;到达过这个阶段&rdquo;的投递数，右侧是相对上一级的转化率
-        </p>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {total === 0 ? (
-          <p className="text-sm text-muted-foreground">还没有投递记录</p>
-        ) : (
-          <>
-            {levels.map((level) => (
-              <div key={level.stage} className="flex items-center gap-3 text-sm">
-                <span className="w-16 shrink-0 truncate text-xs text-muted-foreground sm:w-20 sm:text-sm">
-                  {STAGE_LABELS[level.stage]}
-                </span>
-                <div className="h-6 flex-1 overflow-hidden rounded-sm bg-muted">
-                  <div
-                    className="h-6 rounded-r-sm bg-primary"
-                    style={{ width: `${Math.max(level.shareOfTotal * 100, level.count > 0 ? 2 : 0)}%` }}
-                  />
-                </div>
-                <span className="w-6 shrink-0 text-right font-medium tabular-nums">
-                  {level.count}
-                </span>
-                <span className="w-10 shrink-0 text-right text-xs text-muted-foreground tabular-nums">
-                  {level.stepRate === null
-                    ? ""
-                    : `${Math.round(level.stepRate * 100)}%`}
-                </span>
-              </div>
-            ))}
-            <div className="flex flex-wrap gap-x-4 gap-y-1 border-t pt-3 text-xs text-muted-foreground">
-              <span>已获 Offer {outcomes.offers}</span>
-              <span>已接受 {outcomes.accepted}</span>
-              <span>被拒 {outcomes.rejected}</span>
-              <span>本人拒绝 {outcomes.declined}</span>
-            </div>
-          </>
-        )}
-      </CardContent>
-    </Card>
   );
 }
 

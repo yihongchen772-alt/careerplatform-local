@@ -4,14 +4,14 @@ import { requireUser } from "@/lib/session";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { SkillGapCard } from "@/components/insights/skill-gap-card";
+import { FunnelCard } from "@/components/insights/funnel-card";
 import {
   computeConversion,
-  computeFunnel,
   formatPercent,
   SMALL_SAMPLE_THRESHOLD,
   type ConversionRow,
-  type FunnelStep,
 } from "@/lib/analytics";
+import { computeFunnel, computeOutcomes } from "@/lib/funnel";
 import type { SkillGapAnalysis } from "@/lib/actions/skill-gap";
 
 export default async function InsightsPage() {
@@ -41,7 +41,8 @@ export default async function InsightsPage() {
   );
 
   const { bySource, byResume, byTrack } = computeConversion(applications);
-  const funnel = computeFunnel(applications);
+  const { levels, total } = computeFunnel(applications);
+  const outcomes = computeOutcomes(applications);
   // The funnel only needs applications to exist at all — unlike the three
   // grouped cards below, it doesn't depend on source/resume/track being
   // filled in, so it must not be hidden by the same "no grouped data yet"
@@ -69,7 +70,7 @@ export default async function InsightsPage() {
         </div>
       ) : (
         <>
-          <FunnelCard steps={funnel} />
+          <FunnelCard levels={levels} total={total} outcomes={outcomes} />
           {hasGrouped ? (
             <div className="grid gap-4 lg:grid-cols-3">
               <ConversionCard title="按渠道" rows={bySource} emptyHint="投递记录里还没填渠道" />
@@ -93,54 +94,6 @@ export default async function InsightsPage() {
         initialResults={skillGapResults}
       />
     </div>
-  );
-}
-
-function FunnelCard({ steps }: { steps: FunnelStep[] }) {
-  const total = steps[0]?.reached ?? 0;
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">分阶段转化漏斗</CardTitle>
-        <p className="text-sm text-muted-foreground">
-          每一步之间的通过率——看看具体卡在哪一关，不是笼统的&ldquo;进面率&rdquo;
-        </p>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {steps.map((s) => {
-          const widthPct = total > 0 ? Math.max((s.reached / total) * 100, 2) : 0;
-          return (
-            <div key={s.stage} className="space-y-1">
-              <div className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="w-16 shrink-0 font-medium">{s.label}</span>
-                <span className="text-muted-foreground">{s.reached} 条</span>
-                {s.dropRate !== null && (
-                  <span className="text-xs text-muted-foreground">
-                    （上一关通过 {formatPercent(1 - s.dropRate)}）
-                  </span>
-                )}
-                {s.smallSample && (
-                  <Badge variant="outline" className="text-xs">
-                    样本少
-                  </Badge>
-                )}
-              </div>
-              <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                <div
-                  className="h-full rounded-full bg-primary"
-                  style={{ width: `${widthPct}%` }}
-                />
-              </div>
-            </div>
-          );
-        })}
-        <p className="text-xs text-muted-foreground">
-          统计口径是&ldquo;走到过这一关或更远&rdquo;，不要求每条记录都留下这一关的记录——
-          有些岗位没有笔试、直接进面试，不会被误算成&ldquo;卡在笔试关&rdquo;。
-          标了&ldquo;样本少&rdquo;的是这一关不足 {SMALL_SAMPLE_THRESHOLD} 条的，比例波动大。
-        </p>
-      </CardContent>
-    </Card>
   );
 }
 

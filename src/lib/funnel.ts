@@ -1,4 +1,5 @@
 import type { ApplicationStage } from "@prisma/client";
+import { SMALL_SAMPLE_THRESHOLD } from "@/lib/analytics";
 
 /**
  * The pipeline, in order. Deliberately excludes REJECTED / ACCEPTED / DECLINED:
@@ -25,6 +26,7 @@ export type FunnelLevel = {
   shareOfTotal: number;
   /** Conversion from the previous level; null for the first level. */
   stepRate: number | null;
+  smallSample: boolean;
 };
 
 export type FunnelOutcomes = {
@@ -71,6 +73,7 @@ export function computeFunnel(apps: FunnelApplication[]): {
       count,
       shareOfTotal: total > 0 ? count / total : 0,
       stepRate: null,
+      smallSample: count < SMALL_SAMPLE_THRESHOLD,
     });
   });
 
