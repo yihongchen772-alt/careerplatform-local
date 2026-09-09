@@ -3,12 +3,13 @@ import { requireUser } from "@/lib/session";
 import { Card, CardContent } from "@/components/ui/card";
 import { AddPositionDialog } from "@/components/pool/add-position-dialog";
 import { PoolTable } from "@/components/pool/pool-table";
+import { computeConversion, type ConversionRow } from "@/lib/analytics";
 import type { InterviewPrep, GroupInterviewPrep } from "@/lib/validation";
 
 export default async function PoolPage() {
   const user = await requireUser();
 
-  const [positions, resumeVersions] = await Promise.all([
+  const [positions, resumeVersions, applications] = await Promise.all([
     db.position.findMany({
       where: { userId: user.id },
       include: {
@@ -27,10 +28,23 @@ export default async function PoolPage() {
       where: { userId: user.id },
       select: { id: true, name: true, isDefault: true },
     }),
+    // Only needed for the "historical success rate by track" ingredient of
+    // the Opportunity Score below — nothing else on this page reads it.
+    db.application.findMany({
+      where: { userId: user.id },
+      include: {
+        resumeVersion: { select: { name: true } },
+        position: { select: { track: true } },
+        stageHistory: { select: { stage: true } },
+      },
+    }),
   ]);
 
   const defaultResumeVersionId =
     resumeVersions.find((r) => r.isDefault)?.id ?? null;
+  const historyByTrack: Record<string, ConversionRow> = Object.fromEntries(
+    computeConversion(applications).byTrack.map((row) => [row.key, row])
+  );
 
   return (
     <div className="space-y-6">
@@ -68,6 +82,7 @@ export default async function PoolPage() {
             })}
             resumeVersions={resumeVersions}
             defaultResumeVersionId={defaultResumeVersionId}
+            historyByTrack={historyByTrack}
           />
         </CardContent>
       </Card>

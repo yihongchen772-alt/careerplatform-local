@@ -47,6 +47,8 @@ import {
 } from "@/components/pool/cover-letter-dialog";
 import type { PositionStatus } from "@prisma/client";
 import type { InterviewPrep, GroupInterviewPrep } from "@/lib/validation";
+import type { ConversionRow } from "@/lib/analytics";
+import { computeOpportunityScore, TIER_META, type OpportunityScore } from "@/lib/opportunity-score";
 
 export type PoolPosition = {
   id: string;
@@ -77,7 +79,7 @@ export type PoolPosition = {
 type ResumeOption = { id: string; name: string };
 
 const ALL = "__all__";
-type SortKey = "score" | "deadline" | "added";
+type SortKey = "score" | "deadline" | "added" | "priority";
 
 function FilterSelect({
   value,
@@ -146,6 +148,38 @@ function ReadinessBadge({ items }: { items: { label: string; done: boolean }[] }
   );
 }
 
+/**
+ * Combines match score × historical same-track success rate × deadline
+ * urgency × how much prep is already done into one priority tier — see
+ * src/lib/opportunity-score.ts for why this is arithmetic on real numbers
+ * rather than another AI call.
+ */
+function getOpportunity(
+  p: PoolPosition,
+  historyByTrack: Record<string, ConversionRow>
+): OpportunityScore {
+  const readiness = readinessItems(p);
+  return computeOpportunityScore(
+    {
+      matchScore: p.bestMatch?.score ?? null,
+      track: p.track,
+      deadline: p.deadline ? new Date(p.deadline) : null,
+      readinessCount: readiness.filter((i) => i.done).length,
+      readinessTotal: readiness.length,
+    },
+    new Map(Object.entries(historyByTrack))
+  );
+}
+
+function OpportunityBadge({ opportunity }: { opportunity: OpportunityScore }) {
+  const meta = TIER_META[opportunity.tier];
+  return (
+    <Badge variant="outline" title={opportunity.reasons.join("；")}>
+      {meta.emoji} {meta.label}
+    </Badge>
+  );
+}
+
 function toEditInitial(p: PoolPosition) {
   return {
     companyName: p.company.name,
@@ -172,10 +206,12 @@ export function PoolTable({
   positions,
   resumeVersions,
   defaultResumeVersionId,
+  historyByTrack,
 }: {
   positions: PoolPosition[];
   resumeVersions: ResumeOption[];
   defaultResumeVersionId?: string | null;
+  historyByTrack: Record<string, ConversionRow>;
 }) {
   const [markingId, setMarkingId] = useState<string | null>(null);
   const [matchingId, setMatchingId] = useState<string | null>(null);
@@ -211,6 +247,9 @@ export function PoolTable({
 
     return [...filtered].sort((a, b) => {
       if (sort === "score") return (b.interestScore ?? -1) - (a.interestScore ?? -1);
+      if (sort === "priority") {
+        return getOpportunity(b, historyByTrack).score - getOpportunity(a, historyByTrack).score;
+      }
       if (sort === "deadline") {
         // Undated positions sort last rather than jumping to the front as 0.
         const av = a.deadline ? new Date(a.deadline).getTime() : Infinity;
@@ -219,7 +258,7 @@ export function PoolTable({
       }
       return 0;
     });
-  }, [positions, q, city, track, sort]);
+  }, [positions, q, city, track, sort, historyByTrack]);
   const markable = sorted.filter((p) => p.status !== "APPLIED");
   // Looked up from the full unfiltered list, not `sorted` — a dialog opened
   // for a position must keep working even if the search/filter above it
@@ -269,11 +308,18 @@ export function PoolTable({
             <SelectTrigger className="w-36">
               <SelectValue>
                 {() =>
-                  sort === "score" ? "按综合得分" : sort === "deadline" ? "按截止日期" : "按加入顺序"
+                  sort === "score"
+                    ? "按综合得分"
+                    : sort === "priority"
+                      ? "按优先级"
+                      : sort === "deadline"
+                        ? "按截止日期"
+                        : "按加入顺序"
                 }
               </SelectValue>
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="priority">按优先级</SelectItem>
               <SelectItem value="score">按综合得分</SelectItem>
               <SelectItem value="deadline">按截止日期</SelectItem>
               <SelectItem value="added">按加入顺序</SelectItem>
@@ -336,6 +382,7 @@ export function PoolTable({
                     </Badge>
                   )}
                   <ReadinessBadge items={readinessItems(p)} />
+                  <OpportunityBadge opportunity={getOpportunity(p, historyByTrack)} />
                 </div>
               </div>
 
@@ -442,6 +489,7 @@ export function PoolTable({
             <TableHead>综合得分</TableHead>
             <TableHead>AI 匹配</TableHead>
             <TableHead>投递就绪</TableHead>
+            <TableHead>优先级</TableHead>
             <TableHead>截止日期</TableHead>
             <TableHead>状态</TableHead>
             <TableHead className="text-right">操作</TableHead>
@@ -498,6 +546,9 @@ export function PoolTable({
                 </TableCell>
                 <TableCell>
                   <ReadinessBadge items={readinessItems(p)} />
+                </TableCell>
+                <TableCell>
+                  <OpportunityBadge opportunity={getOpportunity(p, historyByTrack)} />
                 </TableCell>
                 <TableCell>
                   {deadline ? (
@@ -567,7 +618,7 @@ export function PoolTable({
           })}
           {sorted.length === 0 && (
             <TableRow>
-              <TableCell colSpan={11} className="h-32 text-center text-muted-foreground">
+              <TableCell colSpan={12} className="h-32 text-center text-muted-foreground">
                 <div className="flex flex-col items-center gap-2">
                   <ListChecks className="size-8 text-muted-foreground/50" />
                   <span>
