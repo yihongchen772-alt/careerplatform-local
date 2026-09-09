@@ -14,7 +14,14 @@ const skillGapSchema = z.object({
     z.object({
       skill: z.string(),
       mentionCount: z.number(),
-      onResume: z.boolean(),
+      /// Upgraded from a plain boolean — "有没有" loses the difference
+      /// between "one bullet mentions it in passing" and "a whole project
+      /// is built on it," which is exactly the distinction worth acting on.
+      resumeEvidence: z.enum(["strong", "some", "none"]),
+      /// "" when nothing in the user's interview notes/postmortems relates
+      /// to this skill — most skills won't have interview evidence yet,
+      /// that's normal, not a gap to fill in.
+      interviewSignal: z.string(),
       note: z.string(),
     })
   ),
@@ -58,6 +65,25 @@ async function run(resumeVersionId: string): Promise<SkillGapAnalysis> {
 
   const { resumeText } = await getResumeContext(resumeVersionId, user.id);
 
+  // Real evidence of interview performance, not just what the resume claims
+  // — a skill can look "strong" on paper and still be the thing that got
+  // fumbled in an actual interview. Both tables are small (per-user, not
+  // per-position), so no MAX/slice needed the way the JD list has one.
+  const [noteExtracts, postmortems] = await Promise.all([
+    db.interviewNoteExtract.findMany({ where: { userId: user.id }, select: { questions: true } }),
+    db.stagePostmortem.findMany({ where: { userId: user.id }, select: { content: true } }),
+  ]);
+  const interviewEvidence = [
+    ...noteExtracts.flatMap((n) => {
+      const qs = n.questions as { question: string; category: string }[];
+      return qs.map((q) => `问题（${q.category}）：${q.question}`);
+    }),
+    ...postmortems.flatMap((p) => {
+      const c = p.content as { reflectionQuestions: string[]; improvements: string[] };
+      return [...c.reflectionQuestions, ...c.improvements];
+    }),
+  ].join("\n");
+
   const jdList = positions
     .map(
       (p, i) =>
@@ -65,20 +91,30 @@ async function run(resumeVersionId: string): Promise<SkillGapAnalysis> {
     )
     .join("\n\n");
 
-  const prompt = `你在帮一个中国应届生分析：TA 正在关注的这一批岗位的 JD 里，反复出现哪些技能/技术关键词，简历里有没有覆盖到。
+  const prompt = `你在帮一个中国应届生分析：TA 正在关注的这一批岗位的 JD 里，反复出现哪些技能/技术关键词，简历里有没有覆盖到，实际面试中有没有被验证过。
 
 下面是 TA 追踪的 ${positions.length} 个岗位的 JD：
 ${jdList}
 
 候选人当前简历内容：
 ${resumeText}
+${
+  interviewEvidence
+    ? `\nTA 过往面试里被问到的问题、以及面试复盘时记录的反思/改进建议（这些是真实面试证据，不是简历上的自我描述）：\n${interviewEvidence}\n`
+    : ""
+}
 
 请：
 - 从这些 JD 里提炼出被反复提到的技能/技术关键词（不是每个 JD 单独出现一次的冷门词，要挑跨多个 JD 反复出现、说明是这个方向普遍看重的），做归一化处理（比如"K8s"和"Kubernetes"算同一个）
-- 每个关键词给出：skill（关键词本身）、mentionCount（在这 ${positions.length} 个 JD 里出现的次数，如实统计，不要夸大）、onResume（简历里是否已经体现，true/false）、note（一句话，如果 onResume 为 false 就建议怎么去补，如果为 true 可以说简历里哪里已经覆盖了）
+- 每个关键词给出：
+  - skill：关键词本身
+  - mentionCount：在这 ${positions.length} 个 JD 里出现的次数，如实统计，不要夸大
+  - resumeEvidence：简历证据强度，三选一——"strong"（有具体项目/量化成果支撑，不只是技能列表里提了一个词）、"some"（提到了但比较笼统，缺具体案例）、"none"（简历里完全没有）
+  - interviewSignal：只有在上面的面试问题/复盘记录里确实出现了跟这个技能相关的内容才填（比如被问到过、或复盘里提到需要加强），用一句话说清楚是什么；跟这个技能完全无关的话，这个字段必须是空字符串，不要牵强附会
+  - note：一句话建议——resumeEvidence 不是 strong 的话说怎么补，是 strong 的话可以说简历里哪里已经覆盖得不错
 - 按 mentionCount 从高到低排序，挑最多 15 个最有代表性的，不用把所有零散提到一次的词都列出来
 - summary：一两句话总结这批岗位整体看重什么方向，简历目前最大的缺口是什么
-- 全部用中文，不要编造简历里没有的内容
+- 全部用中文，不要编造简历、面试记录里没有的内容
 
 返回 summary 和 skills 数组。`;
 
@@ -98,10 +134,11 @@ ${resumeText}
             properties: {
               skill: { type: "STRING" },
               mentionCount: { type: "NUMBER" },
-              onResume: { type: "BOOLEAN" },
+              resumeEvidence: { type: "STRING", enum: ["strong", "some", "none"] },
+              interviewSignal: { type: "STRING" },
               note: { type: "STRING" },
             },
-            required: ["skill", "mentionCount", "onResume", "note"],
+            required: ["skill", "mentionCount", "resumeEvidence", "interviewSignal", "note"],
           },
         },
       },

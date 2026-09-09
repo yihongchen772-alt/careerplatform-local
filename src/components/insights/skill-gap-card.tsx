@@ -17,6 +17,15 @@ import { generateSkillGapAnalysis, type SkillGapAnalysis } from "@/lib/actions/s
 
 type ResumeOption = { id: string; name: string };
 
+const EVIDENCE_LABEL: Record<
+  SkillGapAnalysis["skills"][number]["resumeEvidence"],
+  { text: string; variant: "default" | "secondary" | "destructive" }
+> = {
+  strong: { text: "简历证据充分", variant: "default" },
+  some: { text: "简历提及但笼统", variant: "secondary" },
+  none: { text: "简历里没有", variant: "destructive" },
+};
+
 export function SkillGapCard({
   resumeVersions,
   defaultResumeVersionId,
@@ -56,10 +65,10 @@ export function SkillGapCard({
       <CardHeader>
         <CardTitle className="flex items-center gap-1.5 text-base">
           <Sparkles className="size-4" />
-          跨岗位技能缺口
+          技能证据链
         </CardTitle>
         <p className="text-sm text-muted-foreground">
-          把候选池里带 JD 的岗位放一起看，哪些技能被反复提到，简历里还没体现
+          JD 反复提到的技能 → 简历证据强不强 → 有没有被真实面试验证过，三层一起看
         </p>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -92,21 +101,23 @@ export function SkillGapCard({
             <p className="text-sm text-muted-foreground">{result.summary}</p>
             <div className="space-y-1.5">
               {result.skills.map((s, i) => (
-                <div key={i} className="flex flex-wrap items-start gap-2 border-b pb-1.5 text-sm last:border-0">
-                  <span className="font-medium">{s.skill}</span>
-                  <Badge variant="outline" className="text-xs">
-                    {s.mentionCount} 篇提到
-                  </Badge>
-                  {s.onResume ? (
-                    <Badge className="text-xs">简历已覆盖</Badge>
-                  ) : (
-                    <Badge variant="destructive" className="text-xs">
-                      简历里没有
+                <div key={i} className="space-y-1 border-b pb-1.5 text-sm last:border-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium">{s.skill}</span>
+                    <Badge variant="outline" className="text-xs">
+                      {s.mentionCount} 篇提到
                     </Badge>
+                    <Badge variant={EVIDENCE_LABEL[s.resumeEvidence].variant} className="text-xs">
+                      {EVIDENCE_LABEL[s.resumeEvidence].text}
+                    </Badge>
+                  </div>
+                  {s.interviewSignal && (
+                    <p className="text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">面试验证：</span>
+                      {s.interviewSignal}
+                    </p>
                   )}
-                  <span className="w-full text-xs text-muted-foreground sm:w-auto sm:flex-1">
-                    {s.note}
-                  </span>
+                  <p className="text-xs text-muted-foreground">{s.note}</p>
                 </div>
               ))}
             </div>
