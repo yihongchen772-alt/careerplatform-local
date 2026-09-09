@@ -1,5 +1,15 @@
 import type { ApplicationStage } from "@prisma/client";
-import { SMALL_SAMPLE_THRESHOLD } from "@/lib/analytics";
+
+/**
+ * Owned here, not in analytics.ts — analytics.ts imports FUNNEL_STAGES/
+ * reachedStage from this file, so this file must not import anything back
+ * from analytics.ts (a circular import between the two previously caused a
+ * real "Cannot access 'FUNNEL_STAGES' before initialization" crash,
+ * depending on which page's module graph happened to evaluate first).
+ * analytics.ts re-exports this constant so existing `from "@/lib/analytics"`
+ * imports elsewhere keep working unchanged.
+ */
+export const SMALL_SAMPLE_THRESHOLD = 5;
 
 /**
  * The pipeline, in order. Deliberately excludes REJECTED / ACCEPTED / DECLINED:

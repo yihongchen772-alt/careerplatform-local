@@ -1,5 +1,10 @@
 import type { ApplicationStage } from "@prisma/client";
-import { FUNNEL_STAGES, reachedStage, type FunnelApplication } from "@/lib/funnel";
+import { FUNNEL_STAGES, reachedStage, SMALL_SAMPLE_THRESHOLD, type FunnelApplication } from "@/lib/funnel";
+
+// Re-exported so existing `from "@/lib/analytics"` imports elsewhere keep
+// working — the actual constant is owned by funnel.ts, see the comment
+// there for why (breaking a circular import between the two files).
+export { SMALL_SAMPLE_THRESHOLD };
 
 // Stages that mean "they actually engaged with me", not just "I applied".
 const ENGAGED_STAGES: ApplicationStage[] = [
@@ -13,9 +18,6 @@ const ENGAGED_STAGES: ApplicationStage[] = [
 ];
 
 const OFFER_STAGES: ApplicationStage[] = ["OFFER", "ACCEPTED"];
-
-/** Groups smaller than this are shown but flagged — 1/1 is not a 100% hit rate. */
-export const SMALL_SAMPLE_THRESHOLD = 5;
 
 export type ConversionRow = {
   key: string;
