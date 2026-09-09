@@ -98,6 +98,7 @@ model User {
   dailyDigests           DailyDigest[]
   weeklyReviews          WeeklyReview[]
   resumeComparisonSummary ResumeComparisonSummary?
+  interviewIntelligence   InterviewIntelligence?
 }
 
 /// One AI-curated "today's top priorities" per day, cached so opening the
@@ -147,6 +148,23 @@ model ResumeComparisonSummary {
   id        String   @id @default(cuid())
   userId    String   @unique
   narrative String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Aggregates InterviewNoteExtract (面经库 questions) + StagePostmortem
+/// (per-interview reflections) across the user's whole history into one
+/// "how am I doing across interview categories" view, plus a suggested
+/// category mix for the next mock interview — one per user, regenerated on
+/// demand, same "global summary, not periodic" shape as
+/// ResumeComparisonSummary above.
+model InterviewIntelligence {
+  id     String @id @default(cuid())
+  userId String @unique
+  /// { summary, categories: [{category, performance, note}], nextSessionMix: [{category, percent}] }
+  result Json
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -783,6 +801,11 @@ model InterviewSession {
   // (correctness, edge cases, complexity) — not a real judge with test-case
   // execution, see src/lib/actions/interview-session.ts.
   includeCoding   Boolean                 @default(false)
+  // Copied in at session-start time from an InterviewIntelligence
+  // recommendation ("40% C++ / 25% 算法比较 / ..."), if the user chose to
+  // start from one — a plain string the interviewer prompt weaves in each
+  // turn, not a structured field the app itself reasons about further.
+  focusMix        String?
   status          InterviewSessionStatus  @default(ACTIVE)
   feedback        Json?
   createdAt       DateTime                @default(now())

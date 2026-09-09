@@ -115,6 +115,7 @@ ${resumeText}
       positionId: data.positionId || undefined,
       targetRole: data.positionId ? undefined : data.targetRole || undefined,
       includeCoding: data.includeCoding ?? false,
+      focusMix: data.focusMix || undefined,
     },
   });
   const message = await db.interviewMessage.create({
@@ -184,6 +185,10 @@ ${transcript}
       ? "\n\n这场面试要包含代码题：找合适的时机（不用每轮都出）出一道 LeetCode 风格的算法/编程题，让候选人直接把代码写在对话框里（文字或代码块都行）。" +
         "如果候选人上一轮的回答里包含代码，要像 code review 一样认真检查——逻辑是否正确、边界条件有没有漏、时间/空间复杂度怎么样，明确指出具体的 bug 或可以优化的地方，不要只说\"写得不错\"这种空话。" +
         "但你不是真的在跑代码、也没有测试用例——不要说\"我运行了一下\"这类话，只做代码层面的推理和讨论。"
+      : ""
+  }${
+    session.focusMix
+      ? `\n\n根据候选人过往面试表现分析出的针对性练习配比：${session.focusMix}——出题时优先覆盖占比高的类别，不用严格按百分比出题数量，大方向覆盖到就行。`
       : ""
   }只返回你要说的这一段话（可能包含点评+下一个问题），不要写"面试官："这样的前缀。用中文。`;
 

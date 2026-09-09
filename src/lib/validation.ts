@@ -269,6 +269,10 @@ export const startInterviewSessionSchema = z.object({
   positionId: z.string().optional().nullable(),
   targetRole: z.string().optional(),
   includeCoding: z.boolean().optional(),
+  /// A suggested category weighting from InterviewIntelligence ("40% C++ /
+  /// 25% 算法比较 / ..."), copied onto the session at start time — see
+  /// interview-session.ts for where it's woven into the interviewer prompt.
+  focusMix: z.string().optional(),
 });
 
 export const sendInterviewMessageSchema = z.object({

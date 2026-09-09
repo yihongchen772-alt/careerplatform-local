@@ -4,28 +4,36 @@ import {
   InterviewNotes,
   type InterviewNote,
 } from "@/components/interviews/interview-notes";
+import { InterviewIntelligenceCard } from "@/components/interviews/interview-intelligence-card";
 import type { ExtractedQuestion } from "@/lib/actions/interview-note-extract";
+import type { InterviewIntelligence } from "@/lib/actions/interview-intelligence";
 
 export default async function InterviewsPage() {
   const user = await requireUser();
 
-  const histories = await db.stageHistory.findMany({
-    where: {
-      application: { userId: user.id },
-      // A stage row only belongs in the library if it carries something worth
-      // re-reading — a bare "moved to 一面" entry would just be noise.
-      OR: [
-        { note: { not: null } },
-        { interviewer: { not: null } },
-        { interviewFormat: { not: null } },
-      ],
-    },
-    include: {
-      application: { include: { company: true } },
-      noteExtract: { select: { questions: true } },
-    },
-    orderBy: { enteredAt: "desc" },
-  });
+  const [histories, intelligence] = await Promise.all([
+    db.stageHistory.findMany({
+      where: {
+        application: { userId: user.id },
+        // A stage row only belongs in the library if it carries something worth
+        // re-reading — a bare "moved to 一面" entry would just be noise.
+        OR: [
+          { note: { not: null } },
+          { interviewer: { not: null } },
+          { interviewFormat: { not: null } },
+        ],
+      },
+      include: {
+        application: { include: { company: true } },
+        noteExtract: { select: { questions: true } },
+      },
+      orderBy: { enteredAt: "desc" },
+    }),
+    db.interviewIntelligence.findUnique({
+      where: { userId: user.id },
+      select: { result: true },
+    }),
+  ]);
 
   const notes: InterviewNote[] = histories.map((h) => ({
     id: h.id,
@@ -48,6 +56,9 @@ export default async function InterviewsPage() {
           汇总所有投递里写过的面试复盘，面试前可以按公司或阶段翻一遍
         </p>
       </div>
+      <InterviewIntelligenceCard
+        initial={intelligence ? (intelligence.result as InterviewIntelligence) : null}
+      />
       <InterviewNotes notes={notes} />
     </div>
   );

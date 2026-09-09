@@ -4,8 +4,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { MockInterviewStartForm } from "@/components/mock-interview/start-form";
 import { MockInterviewSessionList } from "@/components/mock-interview/session-list";
 
-export default async function MockInterviewPage() {
+export default async function MockInterviewPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ focusMix?: string }>;
+}) {
   const user = await requireUser();
+  const { focusMix } = await searchParams;
 
   const [resumeVersions, positions, standaloneApplications, sessions, dbUser] = await Promise.all([
     db.resumeVersion.findMany({
@@ -55,6 +60,7 @@ export default async function MockInterviewPage() {
           label: `${a.company.name} · ${a.title}`,
         }))}
         hasOwnKey={!!dbUser?.defaultAiProvider}
+        initialFocusMix={focusMix ?? null}
       />
 
       {sessions.length > 0 && (
