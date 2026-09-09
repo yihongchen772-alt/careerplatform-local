@@ -5,22 +5,19 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { positionSchema } from "@/lib/validation";
 import { computeInterestScore } from "@/lib/scoring";
+import { resolveCompanyId } from "@/lib/company-resolver";
 import { z } from "zod";
 
 export async function createPosition(input: z.infer<typeof positionSchema>) {
   const user = await requireUser();
   const data = positionSchema.parse(input);
 
-  const company = await db.company.upsert({
-    where: { name: data.companyName },
-    update: {},
-    create: { name: data.companyName },
-  });
+  const companyId = await resolveCompanyId(data.companyName, { aiUserId: user.id });
 
   await db.position.create({
     data: {
       userId: user.id,
-      companyId: company.id,
+      companyId,
       title: data.title,
       track: data.track,
       department: data.department,
@@ -53,12 +50,7 @@ export async function updatePosition(
 
   let companyId = existing.companyId;
   if (data.companyName) {
-    const company = await db.company.upsert({
-      where: { name: data.companyName },
-      update: {},
-      create: { name: data.companyName },
-    });
-    companyId = company.id;
+    companyId = await resolveCompanyId(data.companyName, { aiUserId: user.id });
   }
 
   const mergedBreakdown = data.scoreBreakdown

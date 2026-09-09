@@ -11,6 +11,7 @@ import {
 } from "@/lib/validation";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
+import { resolveCompanyId } from "@/lib/company-resolver";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
 
 export async function createApplication(
@@ -19,18 +20,14 @@ export async function createApplication(
   const user = await requireUser();
   const data = applicationSchema.parse(input);
 
-  const company = await db.company.upsert({
-    where: { name: data.companyName },
-    update: {},
-    create: { name: data.companyName },
-  });
+  const companyId = await resolveCompanyId(data.companyName, { aiUserId: user.id });
 
   await db.$transaction(async (tx) => {
     const application = await tx.application.create({
       data: {
         userId: user.id,
         positionId: data.positionId ?? undefined,
-        companyId: company.id,
+        companyId,
         title: data.title,
         appliedDate: data.appliedDate,
         referrer: data.referrer,

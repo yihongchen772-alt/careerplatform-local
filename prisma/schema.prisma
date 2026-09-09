@@ -272,6 +272,23 @@ model Company {
   addedBy      User?         @relation(fields: [addedByUserId], references: [id])
   positions    Position[]
   applications Application[]
+  aliases      CompanyAlias[]
+}
+
+/// Recorded when src/lib/company-resolver.ts's AI-assisted check decides a
+/// newly-seen name (e.g. "DJI") refers to an existing Company (e.g. "大疆创
+/// 新") — zero string overlap between such pairs means plain substring/fuzzy
+/// matching can't catch them, only real-world knowledge can. Once recorded,
+/// re-seeing that exact string resolves instantly without another AI call.
+model CompanyAlias {
+  id        String   @id @default(cuid())
+  companyId String
+  alias     String   @unique
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
 }
 
 enum PositionStatus {

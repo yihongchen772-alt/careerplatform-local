@@ -8,6 +8,7 @@ import { getUserAiConfig, callTextAi } from "@/lib/ai-providers";
 import { getImageSearchKey, generateStructuredWithFile } from "@/lib/ai-file-search";
 import { getResumeContext } from "@/lib/resume-context";
 import { computeInterestScore } from "@/lib/scoring";
+import { resolveCompanyIds } from "@/lib/company-resolver";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
 import {
   sheetToText,
@@ -453,6 +454,13 @@ export async function promoteLeads(
       where: { id: { in: leadIds }, userId: user.id },
     });
 
+    // Resolved once for the whole batch — a multi-lead promotion should pay
+    // for at most one AI-assisted dedup call total, not one per lead.
+    const companyIdByName = await resolveCompanyIds(
+      leads.map((l) => l.companyName),
+      { aiUserId: user.id, addedByUserId: user.id }
+    );
+
     let created = 0;
     let skipped = 0;
 
@@ -462,14 +470,10 @@ export async function promoteLeads(
         continue;
       }
 
-      const company = await db.company.upsert({
-        where: { name: lead.companyName },
-        update: {},
-        create: { name: lead.companyName, addedByUserId: user.id },
-      });
+      const companyId = companyIdByName.get(lead.companyName.trim())!;
 
       const existing = await db.position.findFirst({
-        where: { userId: user.id, companyId: company.id, title: lead.title },
+        where: { userId: user.id, companyId, title: lead.title },
         select: { id: true },
       });
       if (existing) {
@@ -490,7 +494,7 @@ export async function promoteLeads(
       const position = await db.position.create({
         data: {
           userId: user.id,
-          companyId: company.id,
+          companyId,
           title: lead.title,
           track: lead.track ?? undefined,
           department: lead.department ?? undefined,

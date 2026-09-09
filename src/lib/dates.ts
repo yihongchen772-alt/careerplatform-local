@@ -32,3 +32,13 @@ export function weekStartKey(date: Date = new Date()): string {
   monday.setDate(date.getDate() - diff);
   return toDateKey(monday);
 }
+
+/**
+ * `daysAgo(14)` as a Date, for "gte" query bounds — a thin wrapper so
+ * `Date.now()` is called from a plain lib function rather than inline in a
+ * Server Component's render body, which the react-hooks/purity rule (rightly)
+ * flags as an impure call.
+ */
+export function daysAgo(days: number): Date {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+}

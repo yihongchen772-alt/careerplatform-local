@@ -9,6 +9,7 @@ import { buildTodos } from "@/lib/todos";
 import { STAGE_LABELS } from "@/lib/stage-labels";
 import { applicationStageValues } from "@/lib/validation";
 import { computeInterestScore } from "@/lib/scoring";
+import { resolveCompanyId } from "@/lib/company-resolver";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
 import { markPositionsApplied, deletePosition } from "@/lib/actions/positions";
 import { deleteApplication, updateApplication } from "@/lib/actions/applications";
@@ -419,16 +420,12 @@ export async function applyAssistantAction(
           throw new UserFacingError("公司或岗位名没给全，改成手动添加吧");
         }
         const appliedDate = parseDate(a.date) ?? new Date();
-        const company = await db.company.upsert({
-          where: { name: a.companyName },
-          update: {},
-          create: { name: a.companyName },
-        });
+        const companyId = await resolveCompanyId(a.companyName, { aiUserId: user.id });
         await db.$transaction(async (tx) => {
           const created = await tx.application.create({
             data: {
               userId: user.id,
-              companyId: company.id,
+              companyId,
               title: a.title!,
               appliedDate,
               source: a.note || undefined,
@@ -449,15 +446,11 @@ export async function applyAssistantAction(
         if (!a.companyName || !a.title) {
           throw new UserFacingError("公司或岗位名没给全，改成手动添加吧");
         }
-        const company = await db.company.upsert({
-          where: { name: a.companyName },
-          update: {},
-          create: { name: a.companyName },
-        });
+        const companyId = await resolveCompanyId(a.companyName, { aiUserId: user.id });
         await db.position.create({
           data: {
             userId: user.id,
-            companyId: company.id,
+            companyId,
             title: a.title,
             deadline: parseDate(a.date) ?? undefined,
             jdText: a.note || undefined,
@@ -509,15 +502,11 @@ export async function applyAssistantAction(
         if (lead.promotedPositionId) {
           throw new UserFacingError("这条已经在候选池里了");
         }
-        const company = await db.company.upsert({
-          where: { name: lead.companyName },
-          update: {},
-          create: { name: lead.companyName },
-        });
+        const companyId = await resolveCompanyId(lead.companyName, { aiUserId: user.id });
         const position = await db.position.create({
           data: {
             userId: user.id,
-            companyId: company.id,
+            companyId,
             title: lead.title,
             track: lead.track ?? undefined,
             department: lead.department ?? undefined,
