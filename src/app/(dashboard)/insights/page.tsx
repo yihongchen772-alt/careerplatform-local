@@ -5,8 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { SkillGapCard } from "@/components/insights/skill-gap-card";
 import { FunnelCard } from "@/components/insights/funnel-card";
+import { ResumeComparisonCard } from "@/components/insights/resume-comparison-card";
 import {
   computeConversion,
+  computeResumeComparison,
   formatPercent,
   SMALL_SAMPLE_THRESHOLD,
   type ConversionRow,
@@ -17,7 +19,7 @@ import type { SkillGapAnalysis } from "@/lib/actions/skill-gap";
 export default async function InsightsPage() {
   const user = await requireUser();
 
-  const [applications, resumeVersions, skillGaps] = await Promise.all([
+  const [applications, resumeVersions, skillGaps, resumeComparisonSummary] = await Promise.all([
     db.application.findMany({
       where: { userId: user.id },
       include: {
@@ -34,23 +36,27 @@ export default async function InsightsPage() {
       where: { userId: user.id },
       select: { resumeVersionId: true, result: true },
     }),
+    db.resumeComparisonSummary.findUnique({
+      where: { userId: user.id },
+      select: { narrative: true },
+    }),
   ]);
   const defaultResumeVersionId = resumeVersions.find((r) => r.isDefault)?.id ?? null;
   const skillGapResults = Object.fromEntries(
     skillGaps.map((s) => [s.resumeVersionId, s.result as SkillGapAnalysis])
   );
 
-  const { bySource, byResume, byTrack } = computeConversion(applications);
+  const { bySource, byTrack } = computeConversion(applications);
+  const resumeComparison = computeResumeComparison(applications);
   const { levels, total } = computeFunnel(applications);
   const outcomes = computeOutcomes(applications);
-  // The funnel only needs applications to exist at all — unlike the three
-  // grouped cards below, it doesn't depend on source/resume/track being
-  // filled in, so it must not be hidden by the same "no grouped data yet"
-  // check (an account with plenty of ungrouped applications would otherwise
-  // never see it).
+  // The funnel only needs applications to exist at all — unlike the two
+  // grouped cards below, it doesn't depend on source/track being filled in,
+  // so it must not be hidden by the same "no grouped data yet" check (an
+  // account with plenty of ungrouped applications would otherwise never
+  // see it).
   const hasApplications = applications.length > 0;
-  const hasGrouped =
-    bySource.length > 0 || byResume.length > 0 || byTrack.length > 0;
+  const hasGrouped = bySource.length > 0 || byTrack.length > 0;
 
   return (
     <div className="space-y-6">
@@ -71,15 +77,18 @@ export default async function InsightsPage() {
       ) : (
         <>
           <FunnelCard levels={levels} total={total} outcomes={outcomes} />
+          <ResumeComparisonCard
+            rows={resumeComparison}
+            initialNarrative={resumeComparisonSummary?.narrative ?? null}
+          />
           {hasGrouped ? (
-            <div className="grid gap-4 lg:grid-cols-3">
+            <div className="grid gap-4 lg:grid-cols-2">
               <ConversionCard title="按渠道" rows={bySource} emptyHint="投递记录里还没填渠道" />
-              <ConversionCard title="按简历版本" rows={byResume} emptyHint="投递时还没关联简历版本" />
               <ConversionCard title="按岗位方向" rows={byTrack} emptyHint="从候选池标记已投的记录才带方向" />
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">
-              投递记录里填了渠道、简历版本、岗位方向，这里还会有更细的对比
+              投递记录里填了渠道、岗位方向，这里还会有更细的对比
             </p>
           )}
         </>

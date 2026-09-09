@@ -36,16 +36,19 @@ export type FunnelOutcomes = {
   declined: number;
 };
 
-type FunnelApplication = {
+export type FunnelApplication = {
   stageHistory: { stage: ApplicationStage }[];
 };
 
 /**
  * "Reached" means this stage or any later pipeline stage appears in the
  * history. Counting `currentStage === stage` instead would report 已投递 = 0
- * for someone already at 二面, which is nonsense for a funnel.
+ * for someone already at 二面, which is nonsense for a funnel. Exported so
+ * other per-dimension breakdowns (e.g. resume-comparison.ts's "笔试/面试"
+ * columns) can reuse the same stage-order semantics instead of redefining
+ * their own ranking of ApplicationStage.
  */
-function reachedStage(app: FunnelApplication, stageIndex: number): boolean {
+export function reachedStage(app: FunnelApplication, stageIndex: number): boolean {
   return app.stageHistory.some((h) => {
     const idx = FUNNEL_STAGES.indexOf(h.stage);
     return idx >= stageIndex; // -1 (an outcome stage) never satisfies this

@@ -97,6 +97,7 @@ model User {
   skillGapAnalyses       SkillGapAnalysis[]
   dailyDigests           DailyDigest[]
   weeklyReviews          WeeklyReview[]
+  resumeComparisonSummary ResumeComparisonSummary?
 }
 
 /// One AI-curated "today's top priorities" per day, cached so opening the
@@ -137,6 +138,19 @@ model WeeklyReview {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, weekStart])
+}
+
+/// One per user, regenerated on demand — not periodic like WeeklyReview,
+/// just "the last comparison I asked for" since it's a global summary over
+/// every ResumeVersion's applications, not scoped to one entity.
+model ResumeComparisonSummary {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  narrative String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 /// One inbox to scan for job-related mail — a user routinely needs several:
