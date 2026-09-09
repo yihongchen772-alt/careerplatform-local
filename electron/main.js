@@ -349,7 +349,7 @@ function buildTray() {
         },
       },
       {
-        label: "立即检查招聘页监控",
+        label: "立即检查岗位雷达",
         click: () => {
           lastRadarCheckAt = 0;
           maybeCheckJobRadar();
@@ -446,12 +446,17 @@ async function maybeCheckJobRadar() {
     if (!Notification.isSupported()) return;
 
     const first = changed[0];
+    const totalNew = changed.reduce((sum, c) => sum + (c.newCount || 0), 0);
     new Notification({
-      title: changed.length === 1 ? "招聘页监控" : `招聘页监控（${changed.length} 家公司）`,
+      title: changed.length === 1 ? "岗位雷达" : `岗位雷达（${changed.length} 家公司）`,
       body:
         changed.length === 1
-          ? `${first.name} 的招聘页面可能有更新，去看看`
-          : `${first.name} 等 ${changed.length} 家公司的招聘页面可能有更新`,
+          ? totalNew > 0
+            ? `${first.name} 发现 ${totalNew} 个新岗位，去看看`
+            : `${first.name} 的招聘页面有更新，去看看`
+          : totalNew > 0
+            ? `${first.name} 等 ${changed.length} 家公司共发现 ${totalNew} 个新岗位`
+            : `${first.name} 等 ${changed.length} 家公司的招聘页面有更新`,
     })
       .on("click", showWindow)
       .show();

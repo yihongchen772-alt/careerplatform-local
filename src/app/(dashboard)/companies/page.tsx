@@ -30,6 +30,7 @@ export default async function CompaniesPage() {
             id: c.id,
             name: c.name,
             careerUrl: c.careerUrl as string,
+            structuredApiUrl: c.structuredApiUrl,
             sector: c.sector,
             industry: c.industry,
             verified: c.verified,

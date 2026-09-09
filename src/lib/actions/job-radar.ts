@@ -367,7 +367,7 @@ export async function checkSingleCompanyRadar(
  * wrapper (there's no UI waiting on a UserFacingError message).
  */
 export async function checkAllCompanyRadars(): Promise<{
-  changed: { companyId: string; name: string }[];
+  changed: { companyId: string; name: string; newCount: number }[];
   checkedCount: number;
   errorCount: number;
 }> {
@@ -380,11 +380,17 @@ export async function checkAllCompanyRadars(): Promise<{
   });
 
   const results = await Promise.allSettled(companies.map((c) => checkOne(c)));
-  const changed: { companyId: string; name: string }[] = [];
+  const changed: { companyId: string; name: string; newCount: number }[] = [];
   let errorCount = 0;
   for (const r of results) {
     if (r.status === "fulfilled") {
-      if (r.value.changed) changed.push({ companyId: r.value.companyId, name: r.value.name });
+      if (r.value.changed) {
+        changed.push({
+          companyId: r.value.companyId,
+          name: r.value.name,
+          newCount: r.value.events.filter((e) => e.type === "NEW").length,
+        });
+      }
       if (r.value.error) errorCount++;
     } else {
       errorCount++;
@@ -403,5 +409,47 @@ export async function getRecentRadarEvents(limit = 50) {
     orderBy: { createdAt: "desc" },
     take: limit,
     include: { company: { select: { id: true, name: true } } },
+  });
+}
+
+/**
+ * Turns one radar-detected NEW posting into a real JobLead row — deliberately
+ * a manual, per-click action rather than something the background check does
+ * automatically. Radar events are AI-parsed from whatever the page happened
+ * to render, not verified job postings, so silently writing them into the
+ * user's information library on a timer would risk polluting it with
+ * misreads with no one having actually looked.
+ */
+export async function importRadarJobToLeads(
+  companyId: string,
+  title: string
+): Promise<ActionResult<{ created: boolean }>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const [company, posting] = await Promise.all([
+      db.company.findUnique({ where: { id: companyId }, select: { name: true, careerUrl: true } }),
+      db.radarJobPosting.findUnique({ where: { companyId_title: { companyId, title } } }),
+    ]);
+    if (!company) throw new UserFacingError("公司不存在");
+    if (!posting) throw new UserFacingError("这个岗位记录不存在了，可能已经被移除");
+
+    const existing = await db.jobLead.findFirst({
+      where: { userId: user.id, companyName: company.name, title },
+      select: { id: true },
+    });
+    if (existing) return { created: false };
+
+    await db.jobLead.create({
+      data: {
+        userId: user.id,
+        companyName: company.name,
+        title,
+        note: posting.summary,
+        source: "岗位雷达",
+        jdUrl: company.careerUrl ?? undefined,
+      },
+    });
+    revalidatePath("/leads");
+    return { created: true };
   });
 }

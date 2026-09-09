@@ -16,12 +16,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { companyDirectorySectors } from "@/lib/validation";
-import { setCompanyRadar, checkSingleCompanyRadar } from "@/lib/actions/job-radar";
+import { setCompanyRadar, checkSingleCompanyRadar, setCompanyStructuredApiUrl } from "@/lib/actions/job-radar";
 
 export type CompanyDirectoryRow = {
   id: string;
   name: string;
   careerUrl: string;
+  structuredApiUrl: string | null;
   sector: string | null;
   industry: string | null;
   verified: boolean;
@@ -40,6 +41,8 @@ function formatCheckedAt(d: Date | null): string {
 export function CompanyDirectory({ companies: initial }: { companies: CompanyDirectoryRow[] }) {
   const [companies, setCompanies] = useState(initial);
   const [checkingId, setCheckingId] = useState<string | null>(null);
+  const [savingApiUrlId, setSavingApiUrlId] = useState<string | null>(null);
+  const [apiUrlDrafts, setApiUrlDrafts] = useState<Record<string, string>>({});
   const [query, setQuery] = useState("");
   const [sectorFilter, setSectorFilter] = useState("ALL");
 
@@ -55,7 +58,23 @@ export function CompanyDirectory({ companies: initial }: { companies: CompanyDir
       patch(c.id, { radarEnabled: !enabled });
       return;
     }
-    if (enabled) toast.success(`已开启「${c.name}」的招聘页监控`);
+    if (enabled) toast.success(`已开启「${c.name}」的岗位雷达`);
+  }
+
+  async function handleSaveApiUrl(c: CompanyDirectoryRow) {
+    const draft = apiUrlDrafts[c.id] ?? c.structuredApiUrl ?? "";
+    setSavingApiUrlId(c.id);
+    try {
+      const res = await setCompanyStructuredApiUrl(c.id, draft.trim() || null);
+      if (!res.ok) {
+        toast.error(res.message);
+        return;
+      }
+      patch(c.id, { structuredApiUrl: res.data.structuredApiUrl });
+      toast.success(res.data.structuredApiUrl ? "接口地址已保存，下次检查会优先用它" : "接口地址已清空");
+    } finally {
+      setSavingApiUrlId(null);
+    }
   }
 
   async function handleCheckNow(c: CompanyDirectoryRow) {
@@ -72,9 +91,15 @@ export function CompanyDirectory({ companies: initial }: { companies: CompanyDir
         radarLastError: res.data.error,
         radarLastWarning: res.data.warning,
       });
+      const newCount = res.data.events.filter((e) => e.type === "NEW").length;
       if (res.data.error) toast.error(res.data.error);
-      else if (res.data.changed) toast.success(`「${c.name}」的招聘页面内容变了，可能有新岗位`);
-      else toast.success("检查完成，内容跟上次一样");
+      else if (res.data.changed) {
+        toast.success(
+          newCount > 0
+            ? `「${c.name}」发现 ${newCount} 个新岗位`
+            : `「${c.name}」的岗位信息有更新`
+        );
+      } else toast.success("检查完成，没有变化");
     } finally {
       setCheckingId(null);
     }
@@ -149,7 +174,7 @@ export function CompanyDirectory({ companies: initial }: { companies: CompanyDir
                     onCheckedChange={(checked) => handleToggleRadar(c, checked === true)}
                   />
                   <Radar className="size-3.5 text-muted-foreground" />
-                  <span>招聘页监控</span>
+                  <span>岗位雷达</span>
                   {c.radarEnabled && (
                     <Button
                       size="sm"
@@ -171,7 +196,7 @@ export function CompanyDirectory({ companies: initial }: { companies: CompanyDir
                     <p>{formatCheckedAt(c.radarLastCheckedAt)}</p>
                     {c.radarLastChangedAt && (
                       <p>
-                        最近一次检测到内容变化：
+                        最近一次检测到岗位变化：
                         {new Date(c.radarLastChangedAt).toLocaleString("zh-CN", { hour12: false })}
                       </p>
                     )}
@@ -181,6 +206,23 @@ export function CompanyDirectory({ companies: initial }: { companies: CompanyDir
                     {c.radarLastWarning && (
                       <p className="text-amber-600 dark:text-amber-500">{c.radarLastWarning}</p>
                     )}
+                    <div className="flex items-center gap-1 pt-1">
+                      <Input
+                        value={apiUrlDrafts[c.id] ?? c.structuredApiUrl ?? ""}
+                        onChange={(e) => setApiUrlDrafts((prev) => ({ ...prev, [c.id]: e.target.value }))}
+                        placeholder="找到的公开岗位接口地址（可选，优先于官网抓取）"
+                        className="h-7 text-xs"
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 shrink-0 px-2 text-xs"
+                        disabled={savingApiUrlId === c.id}
+                        onClick={() => handleSaveApiUrl(c)}
+                      >
+                        {savingApiUrlId === c.id ? <Loader2 className="size-3 animate-spin" /> : "保存"}
+                      </Button>
+                    </div>
                   </div>
                 )}
               </div>
