@@ -29,8 +29,12 @@ export type { AssistantAction, AssistantChatMessage };
 // Keep the prompt bounded — a pool/application list that's grown large over
 // a whole job-search season shouldn't blow up every single chat turn's cost.
 const MAX_ITEMS = 25;
-const MAX_LEADS = 30;
 const MAX_HISTORY_TURNS = 8;
+// Positions/applications/leads are summarized to counts + this many
+// highlighted rows (still carrying real IDs) rather than dumped in full —
+// see buildSnapshot's comment above the highlight logic for why.
+const MAX_HIGHLIGHTS = 8;
+const MAX_LEAD_HIGHLIGHTS = 5;
 
 /**
  * Local-time YYYY-MM-DD. Deliberately not toISOString().slice(0,10), which
@@ -45,8 +49,20 @@ function ymd(d: Date): string {
 }
 
 async function buildSnapshot(userId: string): Promise<string> {
-  const [profile, positions, applications, stageHistories, personalTasks, resumeVersions, leads, contacts] =
-    await Promise.all([
+  const [
+    profile,
+    positions,
+    positionCount,
+    applications,
+    applicationCount,
+    positionMatches,
+    stageHistories,
+    personalTasks,
+    resumeVersions,
+    leads,
+    leadCount,
+    contacts,
+  ] = await Promise.all([
       db.user.findUnique({
         where: { id: userId },
         select: {
@@ -64,11 +80,20 @@ async function buildSnapshot(userId: string): Promise<string> {
         orderBy: { createdAt: "desc" },
         take: MAX_ITEMS,
       }),
+      db.position.count({ where: { userId } }),
       db.application.findMany({
         where: { userId },
         include: { company: true },
         orderBy: { appliedDate: "desc" },
         take: MAX_ITEMS,
+      }),
+      db.application.count({ where: { userId } }),
+      // Only the two fields the highlight logic below needs to rank and
+      // annotate positions — a full PositionMatch.result breakdown would be
+      // exactly the kind of per-record bulk this summary is trying to avoid.
+      db.positionMatch.findMany({
+        where: { userId },
+        select: { positionId: true, matchScore: true, recommendation: true },
       }),
       db.stageHistory.findMany({
         where: { application: { userId }, nextDeadline: { not: null } },
@@ -88,8 +113,9 @@ async function buildSnapshot(userId: string): Promise<string> {
         // Highest resume-match first, then soonest deadline: those are the
         // two things that actually decide what to apply to next.
         orderBy: [{ fitScore: "desc" }, { deadline: "asc" }],
-        take: MAX_LEADS,
+        take: MAX_LEAD_HIGHLIGHTS,
       }),
+      db.jobLead.count({ where: { userId, promotedPositionId: null } }),
       db.contact.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: MAX_ITEMS }),
     ]);
 
@@ -128,49 +154,88 @@ async function buildSnapshot(userId: string): Promise<string> {
     );
   }
 
+  // Positions/applications used to be dumped here in full every single turn
+  // regardless of what was actually asked — fine at a few dozen records, but
+  // it doesn't scale, and most turns don't need every record's detail
+  // anyway. This compacts each into counts + a short highlighted subset
+  // (still carrying real IDs, since actions need to reference a specific
+  // record without an extra round trip) — search_records is how the model
+  // reaches anything outside the highlights.
+  const positionMatchByPositionId = new Map(positionMatches.map((m) => [m.positionId, m]));
+  const positionStatusCounts = new Map<string, number>();
+  for (const p of positions) positionStatusCounts.set(p.status, (positionStatusCounts.get(p.status) ?? 0) + 1);
+  const highlightedPositions = positions
+    .filter((p) => p.status !== "APPLIED")
+    .sort((a, b) => {
+      const am = positionMatchByPositionId.get(a.id)?.matchScore ?? -1;
+      const bm = positionMatchByPositionId.get(b.id)?.matchScore ?? -1;
+      if (am !== bm) return bm - am;
+      const ad = a.deadline ? a.deadline.getTime() : Infinity;
+      const bd = b.deadline ? b.deadline.getTime() : Infinity;
+      return ad - bd;
+    })
+    .slice(0, MAX_HIGHLIGHTS);
+
   sections.push(
-    "候选岗位池（准备投但还没投的）：\n" +
-      (positions.length === 0
-        ? "（空）"
-        : positions
+    `候选岗位池（共 ${positionCount} 个${positionCount > positions.length ? `，本快照只取了最近 ${positions.length} 个算高亮，更早的用 search_records 查` : ""}；${[...positionStatusCounts.entries()].map(([s, n]) => `${s}:${n}`).join("，") || "空"}）：\n` +
+      (highlightedPositions.length === 0
+        ? "（没有还没投的岗位——完整列表用 search_records 查）"
+        : "以下是匹配度最高/截止最近的几个，其余用 search_records 按公司名或关键词查：\n" +
+          highlightedPositions
             .map((p) => {
+              const match = positionMatchByPositionId.get(p.id);
               const parts = [
-                `${p.company.name} · ${p.title}`,
                 p.track ? `方向：${p.track}` : null,
-                p.location ? `地点：${p.location}` : null,
-                p.salaryMin || p.salaryMax ? `薪资：${p.salaryMin ?? "?"}-${p.salaryMax ?? "?"}K` : null,
-                p.interestScore != null ? `综合得分：${p.interestScore}` : null,
                 p.deadline ? `截止：${ymd(p.deadline)}` : null,
+                match ? `AI 匹配度：${match.matchScore}（${match.recommendation}）` : "（还没跑过 AI 匹配）",
                 `状态：${p.status}`,
-                p.jdText ? `JD 摘要：${p.jdText.slice(0, 300)}` : "（无 JD 正文）",
               ].filter(Boolean);
-              return `- [岗位ID:${p.id}] ${parts.join("；")}`;
+              return `- [岗位ID:${p.id}] ${p.company.name} · ${p.title}；${parts.join("；")}`;
             })
             .join("\n"))
   );
 
+  const applicationStageCounts = new Map<string, number>();
+  for (const a of applications) applicationStageCounts.set(a.currentStage, (applicationStageCounts.get(a.currentStage) ?? 0) + 1);
+  const nextDeadlineByApplicationId = new Map(
+    stageHistories
+      .filter((h): h is typeof h & { nextDeadline: Date } => h.nextDeadline !== null)
+      .map((h) => [h.application.id, h.nextDeadline])
+  );
+  const highlightedApplications = applications
+    .slice()
+    .sort((a, b) => {
+      const ad = nextDeadlineByApplicationId.get(a.id)?.getTime() ?? Infinity;
+      const bd = nextDeadlineByApplicationId.get(b.id)?.getTime() ?? Infinity;
+      if (ad !== bd) return ad - bd;
+      return b.appliedDate.getTime() - a.appliedDate.getTime();
+    })
+    .slice(0, MAX_HIGHLIGHTS);
+
   sections.push(
-    "投递记录：\n" +
-      (applications.length === 0
-        ? "（空）"
-        : applications
+    `投递记录（共 ${applicationCount} 条${applicationCount > applications.length ? `，本快照只取了最近 ${applications.length} 条算高亮，更早的用 search_records 查` : ""}；按阶段：${[...applicationStageCounts.entries()].map(([s, n]) => `${STAGE_LABELS[s as keyof typeof STAGE_LABELS]}:${n}`).join("，") || "空"}）：\n` +
+      (highlightedApplications.length === 0
+        ? "（还没有投递记录）"
+        : "以下是有临近下一步/最近更新的几条，其余用 search_records 按公司名查：\n" +
+          highlightedApplications
             .map((a) => {
+              const nextDeadline = nextDeadlineByApplicationId.get(a.id);
               const parts = [
-                `${a.company.name} · ${a.title}`,
                 `阶段：${STAGE_LABELS[a.currentStage]}`,
                 `投递日期：${ymd(a.appliedDate)}`,
-                `进入当前阶段：${ymd(a.currentStageDate)}`,
+                nextDeadline ? `下一步：${ymd(nextDeadline)}` : null,
               ].filter(Boolean);
-              return `- [投递ID:${a.id}] ${parts.join("；")}`;
+              return `- [投递ID:${a.id}] ${a.company.name} · ${a.title}；${parts.join("；")}`;
             })
             .join("\n"))
   );
 
   sections.push(
-    "秋招信息库（导入的岗位线索，还没提到候选池）：\n" +
+    `秋招信息库（导入的岗位线索，还没提到候选池，共 ${leadCount} 条）：\n` +
       (leads.length === 0
         ? "（空——用户可以在「秋招信息库」页面导入群里流传的秋招信息表）"
-        : leads
+        : (leadCount > leads.length ? `以下是简历匹配分最高的 ${leads.length} 条，其余用 search_records 查：\n` : "") +
+          leads
             .map((l) => {
               const parts = [
                 `${l.companyName} · ${l.title}`,
