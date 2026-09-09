@@ -277,20 +277,77 @@ model Company {
   addedByUserId String?
   createdAt     DateTime @default(now())
 
-  /// 岗位雷达：定时抓取 careerUrl 的 HTML，用抓到的正文内容的 hash 做 diff。
-  /// 只是"内容变了"的粗糙信号，不是真解析出了新岗位——JS 渲染的 SPA 招聘页
-  /// 抓到的多半只是空壳，见 src/lib/actions/job-radar.ts 里的 SPA 启发式判断。
+  /// 岗位雷达：定时抓取招聘页内容，用 hash 做免费的前置过滤；hash 变化时才
+  /// 触发一次 AI 结构化提取 + 岗位快照 diff（见 RadarJobPosting/RadarJobEvent），
+  /// 算出具体 NEW/UPDATED/REMOVED 的岗位，而不是只说"内容变了"。
   radarEnabled       Boolean   @default(false)
   radarContentHash   String?
   radarLastCheckedAt DateTime?
   radarLastChangedAt DateTime?
   radarLastError     String?
   radarLastWarning   String?
+  /// 手动登记的公开岗位 JSON 接口（如果找到的话）——优先于 careerUrl 的
+  /// 静态 HTML/渲染抓取。不同招聘系统的接口形态千差万别，没有通用方式能
+  /// 自动探测，所以这是一个需要用户/维护者手动找到并填入的覆盖项，不是
+  /// 自动发现的。
+  structuredApiUrl   String?
 
   addedBy      User?         @relation(fields: [addedByUserId], references: [id])
   positions    Position[]
   applications Application[]
   aliases      CompanyAlias[]
+  radarJobPostings RadarJobPosting[]
+  radarJobEvents   RadarJobEvent[]
+}
+
+/// Current snapshot of postings believed still active on a company's
+/// careerUrl — one row per (company, title) the last successful radar
+/// extraction saw. removedAt is set (not deleted) when a later check no
+/// longer finds this title, so "岗位历史" (when did this posting first
+/// appear / last change / disappear) stays queryable.
+model RadarJobPosting {
+  id          String    @id @default(cuid())
+  companyId   String
+  title       String
+  /// A short AI-written one-line summary (direction/location/key
+  /// requirement) — not the full JD. Used only to detect "this posting's
+  /// content changed" between checks; exact-title matching means a renamed
+  /// posting will show as REMOVED+NEW rather than UPDATED, a known and
+  /// documented limitation rather than a silently wrong diff.
+  summary     String
+  firstSeenAt DateTime  @default(now())
+  lastSeenAt  DateTime  @default(now())
+  removedAt   DateTime?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, title])
+  @@index([companyId])
+}
+
+/// Append-only log of what RadarJobPosting diffs actually found — this is
+/// what gets surfaced in the UI (NEW postings offer a manual "导入到秋招
+/// 信息库" action; nothing here auto-creates a JobLead on its own, matching
+/// this app's "no silent background mutations" convention).
+model RadarJobEvent {
+  id        String   @id @default(cuid())
+  companyId String
+  title     String
+  type      RadarJobEventType
+  /// For UPDATED: the posting's new summary. Null for NEW/REMOVED.
+  detail    String?
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([createdAt])
+}
+
+enum RadarJobEventType {
+  NEW
+  UPDATED
+  REMOVED
 }
 
 /// Recorded when src/lib/company-resolver.ts's AI-assisted check decides a

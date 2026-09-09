@@ -5,6 +5,7 @@ const crypto = require("crypto");
 const { spawn } = require("child_process");
 const { setupBrowserViewIpc } = require("./browser-view");
 const { setupUpdater } = require("./updater");
+const { startRenderBridge } = require("./render-bridge");
 
 // Pinned regardless of the app's marketing name (package.json's
 // "productName", shown in the dock/menu bar/window title): app.getPath
@@ -114,6 +115,7 @@ function migrateLegacyUserData(userDataDir) {
 }
 
 let serverProcess;
+let renderBridge;
 
 async function runDataWorker(initialize = false) {
   const dir = app.getPath("userData");
@@ -135,6 +137,12 @@ async function startNextServer() {
   fs.mkdirSync(uploadsDir, { recursive: true });
   const dbPath = path.join(userDataDir, "local.db");
 
+  // The Next.js server below runs as a separate spawned process, not inside
+  // Electron itself, so it has no BrowserWindow access of its own — job-radar's
+  // rendered-page fetch tier calls back into this main process through this
+  // bridge for that. See electron/render-bridge.js for why.
+  renderBridge = await startRenderBridge();
+
   const env = {
     ...process.env,
     DATABASE_URL: `file:${dbPath}`,
@@ -144,6 +152,8 @@ async function startNextServer() {
     PORT: String(PORT),
     HOSTNAME: "127.0.0.1",
     NODE_ENV: isDev ? "development" : "production",
+    CAREERPLATFORM_RENDER_BRIDGE_URL: renderBridge.url,
+    CAREERPLATFORM_RENDER_BRIDGE_TOKEN: renderBridge.token,
   };
 
   const appRoot = getAppRoot();
@@ -552,6 +562,10 @@ function shutdown() {
   if (serverProcess) {
     serverProcess.kill();
     serverProcess = null;
+  }
+  if (renderBridge) {
+    renderBridge.close();
+    renderBridge = null;
   }
 }
 
