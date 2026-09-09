@@ -119,9 +119,9 @@ export function BackgroundReminderCard({ initial }: { initial: AppSettings }) {
         </div>
 
         <div className="space-y-1 rounded-md border p-3">
-          <p className="text-sm font-medium">岗位雷达检查频率</p>
+          <p className="text-sm font-medium">招聘页监控检查频率</p>
           <p className="text-xs text-muted-foreground">
-            对企业名录里开了「岗位雷达」的公司，定时抓一次招聘页面的 HTML，跟上次抓到的内容比对，
+            对企业名录里开了「招聘页监控」的公司，定时抓一次招聘页面的 HTML，跟上次抓到的内容比对，
             内容变了就弹通知提醒&ldquo;可能有新岗位&rdquo;——只是抓 HTML 做文本 diff，不是真的解析出了新岗位，
             JS 渲染的招聘页（内容都是打开后才用脚本加载出来的）大概率检测不到变化。默认关闭，
             且不像收件箱那样有&ldquo;打开 App 时查一次&rdquo;的兜底——请求的是别人的网站，不希望被同意就跑。

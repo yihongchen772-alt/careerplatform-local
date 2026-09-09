@@ -25,7 +25,7 @@ export default async function LeadsPage() {
       where: { userId: user.id },
       select: { id: true, name: true, isDefault: true },
     }),
-    // 岗位雷达 only ever proves "the page's content changed" — not that a
+    // 招聘页监控 only ever proves "the page's content changed" — not that a
     // specific new posting exists — so this stays a pointer to go look, not
     // an auto-created JobLead row (which would imply a real, parsed posting).
     db.company.findMany({
@@ -60,7 +60,7 @@ export default async function LeadsPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-1.5 text-base">
               <Radar className="size-4" />
-              岗位雷达最近检测到变化
+              招聘页监控最近检测到变化
             </CardTitle>
             <p className="text-sm text-muted-foreground">
               这些公司的招聘页内容变了，可能有新岗位——只是页面内容变化，不代表一定是新岗位，去看看再决定要不要手动加进来

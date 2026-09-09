@@ -55,7 +55,7 @@ export function CompanyDirectory({ companies: initial }: { companies: CompanyDir
       patch(c.id, { radarEnabled: !enabled });
       return;
     }
-    if (enabled) toast.success(`已开启「${c.name}」的岗位雷达`);
+    if (enabled) toast.success(`已开启「${c.name}」的招聘页监控`);
   }
 
   async function handleCheckNow(c: CompanyDirectoryRow) {
@@ -149,7 +149,7 @@ export function CompanyDirectory({ companies: initial }: { companies: CompanyDir
                     onCheckedChange={(checked) => handleToggleRadar(c, checked === true)}
                   />
                   <Radar className="size-3.5 text-muted-foreground" />
-                  <span>岗位雷达</span>
+                  <span>招聘页监控</span>
                   {c.radarEnabled && (
                     <Button
                       size="sm"

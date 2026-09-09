@@ -21,7 +21,7 @@ export type AppSettings = {
   inboxScanIntervalHours?: number;
   /**
    * How often, in hours, the background process re-checks saved companies'
-   * career pages for content changes ("岗位雷达"). 0 disables it entirely —
+   * career pages for content changes ("招聘页监控"). 0 disables it entirely —
    * unlike the inbox scan, there is no "check once on launch" fallback here,
    * since polling someone else's website even once without being asked
    * would be a surprise.

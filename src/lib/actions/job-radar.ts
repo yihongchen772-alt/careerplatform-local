@@ -115,7 +115,7 @@ export async function setCompanyRadar(
     });
     if (!company) throw new UserFacingError("公司不存在");
     if (enabled && !company.careerUrl) {
-      throw new UserFacingError("先给这家公司填上招聘官网链接，才能开启岗位雷达");
+      throw new UserFacingError("先给这家公司填上招聘官网链接，才能开启招聘页监控");
     }
     await db.company.update({ where: { id: companyId }, data: { radarEnabled: enabled } });
     revalidatePath("/companies");
