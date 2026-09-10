@@ -2,7 +2,7 @@
  * Pure metadata, no server-only imports — safe to import from client
  * components, mirrors the pattern in ai-provider-labels.ts.
  */
-export type EmailProviderId = "gmail" | "qq" | "163" | "outlook" | "custom";
+export type EmailProviderId = "gmail" | "qq" | "163" | "126" | "outlook" | "custom";
 
 export const EMAIL_PROVIDER_OPTIONS: {
   id: EmailProviderId;
@@ -39,6 +39,15 @@ export const EMAIL_PROVIDER_OPTIONS: {
     imapHost: "imap.163.com",
     imapPort: 993,
     help: "在 163 邮箱设置里开启 SMTP/IMAP 服务后生成的「授权密码」，不是登录密码",
+  },
+  {
+    id: "126",
+    label: "126 邮箱",
+    smtpHost: "smtp.126.com",
+    smtpPort: 465,
+    imapHost: "imap.126.com",
+    imapPort: 993,
+    help: "在 126 邮箱设置里开启 SMTP/IMAP 服务后生成的「授权密码」，不是登录密码——跟 163 邮箱是两套不同的服务器，不能混用",
   },
   {
     id: "outlook",
