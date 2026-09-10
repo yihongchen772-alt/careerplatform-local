@@ -226,13 +226,25 @@ async function afterPack(context) {
   const packagedRuntime = path.join(resources, "app-runtime");
   if (fs.existsSync(packagedRuntime)) fs.rmSync(packagedRuntime, { recursive: true, force: true });
   fs.cpSync(runtimeRoot, packagedRuntime, { recursive: true, dereference: true });
+  // Each platform only ever runs its own schema-engine — bundling the other
+  // one just adds dead weight (~19 MB) to an installer that can never use it.
+  const enginesDir = path.join(packagedRuntime, "node_modules", "@prisma", "engines");
+  const foreignEngine = path.join(enginesDir, context.electronPlatformName === "darwin" ? "schema-engine-windows.exe" : "schema-engine-darwin-arm64");
+  fs.rmSync(foreignEngine, { force: true });
   verifyDirectory(resources);
   const archive = path.join(resources, "app.asar");
   const asar = require("@electron/asar");
   for (const entry of asar.listPackage(archive)) {
     if (isPrivatePath(entry)) throw new Error(`Private path in Electron archive: ${entry}`);
   }
-  for (const required of ["server.js", "prisma/schema.prisma", "node_modules/prisma/build/index.js", ".next/BUILD_ID"]) {
+  const requiredEntries = ["server.js", "prisma/schema.prisma", "node_modules/prisma/build/index.js", ".next/BUILD_ID"];
+  // Without this, a Windows build silently ships with no schema-engine at
+  // all — Prisma CLI then falls back to downloading one over the network on
+  // the user's machine at first launch, and any network hiccup during that
+  // download crashes the whole app before it even opens (see
+  // scripts/fetch-prisma-windows-engine.cjs for the full story).
+  if (context.electronPlatformName !== "darwin") requiredEntries.push("node_modules/@prisma/engines/schema-engine-windows.exe");
+  for (const required of requiredEntries) {
     if (!fs.existsSync(path.join(resources, "app-runtime", required))) throw new Error(`Packaged runtime entry missing: ${required}`);
   }
   for (const required of ["backup-worker.cjs", "data-backup.cjs"]) {

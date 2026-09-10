@@ -51,13 +51,38 @@ function ensureSecret(userDataDir) {
 // this was tried (hung with no output, spawned extra Electron Helper
 // processes). ELECTRON_RUN_AS_NODE tells it to behave as plain Node instead.
 function nodeEnv(env) {
-  return { ...env, ELECTRON_RUN_AS_NODE: "1" };
+  return {
+    ...env,
+    ELECTRON_RUN_AS_NODE: "1",
+    // A purely local SQLite `migrate deploy` has no legitimate reason to
+    // need network access at all. CHECKPOINT_DISABLE is Prisma's documented
+    // env var to skip its own telemetry/update-check ping — belt-and-braces
+    // alongside bundling the schema-engine binary below, since that ping is
+    // exactly the kind of needless network dependency that turned into a
+    // startup crash once already (see PRISMA_SCHEMA_ENGINE_BINARY).
+    CHECKPOINT_DISABLE: "1",
+  };
 }
 
 function runPrismaMigrate(appRoot, env) {
   return new Promise((resolve, reject) => {
     const prismaCli = path.join(appRoot, "node_modules", "prisma", "build", "index.js");
     const schemaPath = path.join(appRoot, "prisma", "schema.prisma");
+    const migrateEnv = nodeEnv(env);
+    // `generator client { binaryTargets }` in schema.prisma only fetches the
+    // *query* engine for the listed targets — it has nothing to do with the
+    // *schema* engine `migrate deploy` actually runs, which Prisma's own
+    // postinstall only ever fetches for whichever platform `npm install` ran
+    // on (this Mac). Without this, a packaged Windows build has no
+    // schema-engine at all, so Prisma CLI falls back to downloading one over
+    // the network on first launch — and a reset connection during that
+    // download crashes the whole app before it opens. scripts/fetch-prisma-
+    // windows-engine.cjs bundles the real thing at build time; this just
+    // points the CLI straight at it so there is no discovery step, let alone
+    // a network fallback, to go wrong.
+    if (process.platform === "win32") {
+      migrateEnv.PRISMA_SCHEMA_ENGINE_BINARY = path.join(appRoot, "node_modules", "@prisma", "engines", "schema-engine-windows.exe");
+    }
     // "inherit" sends this straight to the parent's stdout/stderr, which is
     // exactly what Prisma's real error text needs — but a packaged app
     // launched by double-click (not from a terminal) has no visible stdout
@@ -68,7 +93,7 @@ function runPrismaMigrate(appRoot, env) {
     const proc = spawn(
       process.execPath,
       [prismaCli, "migrate", "deploy", "--schema", schemaPath],
-      { cwd: appRoot, env: nodeEnv(env), stdio: ["ignore", "pipe", "pipe"] }
+      { cwd: appRoot, env: migrateEnv, stdio: ["ignore", "pipe", "pipe"] }
     );
     let output = "";
     const collect = (chunk) => {

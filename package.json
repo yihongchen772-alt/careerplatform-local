@@ -1,6 +1,6 @@
 {
   "name": "careerplatform",
-  "version": "0.13.1",
+  "version": "0.13.2",
   "private": true,
   "description": "求职罗盘 本地单机版",
   "author": "yihong",
@@ -17,7 +17,7 @@
     "postinstall": "prisma generate",
     "electron:dev": "electron electron/main.js",
     "electron:build": "npm run desktop:prepare && electron-builder --config electron-builder.cjs --publish never",
-    "desktop:prepare": "node scripts/packaging-build.cjs && node scripts/packaging-prepare.cjs",
+    "desktop:prepare": "node scripts/fetch-prisma-windows-engine.cjs && node scripts/packaging-build.cjs && node scripts/packaging-prepare.cjs",
     "electron:build:win": "npm run desktop:prepare && electron-builder --config electron-builder.cjs --win --x64 --publish never",
     "electron:build:mac": "npm run desktop:prepare && electron-builder --config electron-builder.cjs --mac --arm64 --publish never",
     "test:desktop": "node --test tests/updater.test.cjs tests/desktop-data.test.cjs",
