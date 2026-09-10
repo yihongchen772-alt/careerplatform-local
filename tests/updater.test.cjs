@@ -211,8 +211,8 @@ test("progress is bounded, only received while downloading, and snapshot values 
   assert.ok(f.events.every(({ channel }) => channel === CHANNELS.changed));
 });
 
-test("Mac, development, and other architectures offer release downloads without running updater", async () => {
-  for (const options of [{ platform: "darwin", arch: "arm64" }, { isPackaged: false }, { arch: "arm64" }]) {
+test("development and non-Mac/non-win64 architectures offer release downloads without running updater", async () => {
+  for (const options of [{ isPackaged: false }, { arch: "arm64" }]) {
     const f = fixture(options);
     for (const channel of [CHANNELS.check, CHANNELS.download, CHANNELS.install]) await f.invoke(channel);
     assert.equal(f.controller.getState().status, "unsupported");
@@ -221,6 +221,24 @@ test("Mac, development, and other architectures offer release downloads without 
     await f.invoke(CHANNELS.releases);
     assert.deepEqual(f.opened, [RELEASES_URL]);
   }
+});
+
+test("Mac can check for updates but never downloads or installs in-app", async () => {
+  const f = fixture({ platform: "darwin", arch: "arm64" });
+  assert.equal(f.controller.getState().status, "idle");
+  assert.equal(f.controller.getState().mode, "check-only");
+  await f.invoke(CHANNELS.check);
+  assert.equal(f.calls.check, 1);
+  const state = f.controller.getState();
+  assert.equal(state.status, "available");
+  assert.equal(state.availableVersion, "0.9.0");
+  assert.match(state.message, /发布页面/);
+  await f.invoke(CHANNELS.download);
+  await f.invoke(CHANNELS.install);
+  assert.equal(f.calls.download, 0);
+  assert.equal(f.installs.length, 0);
+  await f.invoke(CHANNELS.releases);
+  assert.deepEqual(f.opened, [RELEASES_URL]);
 });
 
 test("dispose unregisters IPC and updater events", () => {

@@ -4,7 +4,7 @@ export type DesktopUpdateState = {
   availableVersion: string | null;
   platform: string;
   arch: string;
-  mode: "in-app" | "manual" | "development";
+  mode: "in-app" | "check-only" | "manual" | "development";
   status: "idle" | "unsupported" | "checking" | "available" | "not-available" | "downloading" | "downloaded" | "installing" | "error";
   progress: { percent: number; transferred: number; total: number; bytesPerSecond: number } | null;
   errorStage: "check" | "download" | "install" | null;

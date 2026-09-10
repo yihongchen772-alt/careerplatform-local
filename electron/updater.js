@@ -12,8 +12,20 @@ const CHANNELS = {
 function setupUpdater({ app, ipcMain, getMainWindow, beforeInstall, trustedOrigin = "http://localhost:3210" }, runtime = {}) {
   const platform = runtime.platform ?? process.platform;
   const arch = runtime.arch ?? process.arch;
-  const mode = !app.isPackaged ? "development" : platform === "win32" && arch === "x64" ? "in-app" : "manual";
-  const updater = mode === "in-app" ? runtime.autoUpdater ?? require("electron-updater").autoUpdater : null;
+  // Windows (x64) gets full in-app download+install. Mac is ad-hoc signed
+  // only (no paid Apple Developer certificate/notarization), so Squirrel.Mac
+  // would fail applying the update — but *checking* the latest version
+  // against latest-mac.yml needs no signature at all, so Mac still gets to
+  // know a new version exists, just not to install it in-app.
+  const mode = !app.isPackaged
+    ? "development"
+    : platform === "win32" && arch === "x64"
+      ? "in-app"
+      : platform === "darwin"
+        ? "check-only"
+        : "manual";
+  const checkCapable = mode === "in-app" || mode === "check-only";
+  const updater = checkCapable ? runtime.autoUpdater ?? require("electron-updater").autoUpdater : null;
   const openExternal = runtime.openExternal ?? require("electron").shell.openExternal;
   let busy = null;
   let disposed = false;
@@ -25,15 +37,15 @@ function setupUpdater({ app, ipcMain, getMainWindow, beforeInstall, trustedOrigi
     platform,
     arch,
     mode,
-    status: mode === "in-app" ? "idle" : "unsupported",
+    status: checkCapable ? "idle" : "unsupported",
     progress: null,
     errorStage: null,
     message: mode === "in-app"
       ? "点击检查更新，发现新版本后由你选择下载和安装。"
-      : mode === "development"
-        ? "当前是开发版，请下载安装包后使用桌面更新功能。"
-        : platform === "darwin"
-          ? "Mac 版请下载 Apple 芯片 DMG，退出应用后拖到「应用程序」替换。现阶段不支持应用内安装更新。"
+      : mode === "check-only"
+        ? "点击检查更新——发现新版本后请前往发布页面下载 DMG，退出应用后拖到「应用程序」替换（暂不支持应用内自动安装）。"
+        : mode === "development"
+          ? "当前是开发版，请下载安装包后使用桌面更新功能。"
           : "请从发布页面下载适合这台电脑的安装包。",
   };
 
@@ -108,7 +120,13 @@ function setupUpdater({ app, ipcMain, getMainWindow, beforeInstall, trustedOrigi
         fail("check");
         return;
       }
-      publish({ status: "available", availableVersion: info.version, message: `发现新版本 ${info.version}，可下载后选择重启安装。` });
+      publish({
+        status: "available",
+        availableVersion: info.version,
+        message: mode === "in-app"
+          ? `发现新版本 ${info.version}，可下载后选择重启安装。`
+          : `发现新版本 ${info.version}，请前往发布页面下载 DMG 并替换应用。`,
+      });
     });
     listen("update-not-available", () => {
       if (busy !== "check") return;
@@ -138,7 +156,7 @@ function setupUpdater({ app, ipcMain, getMainWindow, beforeInstall, trustedOrigi
   }
 
   async function check() {
-    if (!updater || busy || downloaded || state.status === "installing") return snapshot();
+    if (!checkCapable || busy || downloaded || state.status === "installing") return snapshot();
     busy = "check";
     publish({ status: "checking", availableVersion: null, progress: null, errorStage: null, message: "正在检查 GitHub 发布的新版本…" });
     try {
@@ -153,7 +171,7 @@ function setupUpdater({ app, ipcMain, getMainWindow, beforeInstall, trustedOrigi
   }
 
   async function download() {
-    if (!updater || busy || downloaded || !state.availableVersion || !(state.status === "available" || state.status === "error" && state.errorStage === "download")) return snapshot();
+    if (mode !== "in-app" || busy || downloaded || !state.availableVersion || !(state.status === "available" || state.status === "error" && state.errorStage === "download")) return snapshot();
     busy = "download";
     publish({ status: "downloading", errorStage: null, progress: null, message: "正在下载更新，下载完成后由你选择安装时间。" });
     try {
@@ -169,7 +187,7 @@ function setupUpdater({ app, ipcMain, getMainWindow, beforeInstall, trustedOrigi
   }
 
   async function install() {
-    if (!updater || busy || !downloaded || !(state.status === "downloaded" || state.status === "error" && state.errorStage === "install")) return snapshot();
+    if (mode !== "in-app" || busy || !downloaded || !(state.status === "downloaded" || state.status === "error" && state.errorStage === "install")) return snapshot();
     busy = "install";
     publish({ status: "installing", errorStage: null, message: "正在准备更新并备份本地数据，即将重启安装…" });
     try {

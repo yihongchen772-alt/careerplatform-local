@@ -56,7 +56,7 @@ export function UpdateCard({ currentVersion }: { currentVersion: string }) {
           {state?.availableVersion && <span className="text-muted-foreground">→ {state.availableVersion}</span>}
         </div>
         <p className="text-sm text-muted-foreground" role="status" aria-live="polite">
-          {state?.message ?? "桌面安装包提供 Windows x64 和 Apple 芯片 Mac DMG。Windows 桌面版可在应用内检查和安装更新，Mac 请下载 DMG 替换应用。"}
+          {state?.message ?? "桌面安装包提供 Windows x64 和 Apple 芯片 Mac DMG。Windows 桌面版可在应用内检查和安装更新，Mac 可以检查是否有新版本，但需要手动下载 DMG 替换应用。"}
         </p>
         {state?.status === "downloading" && (
           <div className="space-y-1">
@@ -83,6 +83,12 @@ export function UpdateCard({ currentVersion }: { currentVersion: string }) {
                 {state.status === "checking" ? "检查中…" : state.status === "downloading" ? "下载中…" : state.status === "installing" ? "准备安装…" : "检查更新"}
               </Button>
             )
+          )}
+          {state?.mode === "check-only" && (
+            <Button type="button" disabled={busy} onClick={() => run("check")}>
+              {busy ? <LoaderCircle className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+              {state.status === "checking" ? "检查中…" : "检查更新"}
+            </Button>
           )}
           {state ? (
             <Button type="button" variant="outline" disabled={state.status === "installing" || requestPending} onClick={() => run("openReleases")}>
