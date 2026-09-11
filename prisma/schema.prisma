@@ -1,5 +1,5 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
   // Prisma only bundles the query engine binary for whatever platform
   // `prisma generate` actually ran on — this repo has only ever been built
   // on this Mac, so every packaged Windows release so far shipped with
@@ -21,82 +21,83 @@ datasource db {
 // ---------- Auth (NextAuth / Auth.js) ----------
 
 model User {
-  id             String    @id @default(cuid())
-  email          String    @unique
-  passwordHash   String?
-  name           String?
-  phone          String?
+  id                    String    @id @default(cuid())
+  email                 String    @unique
+  passwordHash          String?
+  name                  String?
+  phone                 String?
   /// A real contact email for filling into 网申 forms — `email` above is the
   /// local single-user account's internal identifier (defaults to a
   /// placeholder like "me@local") and must never be used for that.
-  contactEmail   String?
+  contactEmail          String?
   /// Free text rather than an enum, matching this app's convention
   /// elsewhere (see Contact.role) — a fixed list doesn't fit everyone.
-  gender         String?
+  gender                String?
   /// Stored as plain text (YYYY-MM-DD from a date input), not DateTime —
   /// this is purely informational for 网申 autofill, never used in date
   /// arithmetic elsewhere, so there's no reason to deal with timezones.
-  birthDate      String?
-  school         String?
-  targetTrack    String?
-  graduationYear Int?
-  skills         String?
-  preferredCities String?
-  expectedSalaryMin Int?
-  emailVerified  DateTime?
-  image          String?
+  birthDate             String?
+  school                String?
+  targetTrack           String?
+  graduationYear        Int?
+  skills                String?
+  preferredCities       String?
+  expectedSalaryMin     Int?
+  emailVerified         DateTime?
+  image                 String?
   // Bring-your-own AI key(s) — see AiKey below, one row per provider, AES
   // -encrypted at rest (src/lib/crypto.ts). defaultAiProvider picks which
   // configured key the general text-only AI features use; file-reading
   // features (JD parsing, resume check, resume match) ignore this and
   // always look up the "gemini" key specifically, since only Gemini's API
   // here can read a PDF/image directly.
-  defaultAiProvider   String?
+  defaultAiProvider     String?
   // Local build only: sends reminder digests via the user's own mailbox
   // (SMTP) since there's no always-on server here to run a hosted email
   // service against. Password is AES-encrypted the same way as the AI key.
-  smtpHost               String?
-  smtpPort               Int?
-  smtpUser               String?
-  smtpPasswordEncrypted  String?
-  smtpFrom               String?
+  smtpHost              String?
+  smtpPort              Int?
+  smtpUser              String?
+  smtpPasswordEncrypted String?
+  smtpFrom              String?
   // This build has no cloud sync — a user running the app on two machines
   // (e.g. Windows + Mac) has two entirely independent local databases, kept
   // in step only by manually exporting/importing a backup. Tracked so the
   // settings page can nudge "it's been N days" instead of the user finding
   // out their data diverged only after it already has.
-  lastBackupAt   DateTime?
-  createdAt      DateTime  @default(now())
+  lastBackupAt          DateTime?
+  createdAt             DateTime  @default(now())
 
-  accounts       Account[]
-  sessions       Session[]
-  positions      Position[]
-  applications   Application[]
-  resumeVersions ResumeVersion[]
-  autofillAnswers AutofillAnswer[]
-  addedCompanies Company[]
-  attachments    Attachment[]
-  interviewPreps InterviewPrep[]
-  groupInterviewPreps GroupInterviewPrep[]
-  coverLetters   CoverLetter[]
-  interviewNoteExtracts InterviewNoteExtract[]
-  stagePostmortems StagePostmortem[]
-  interviewQAs   InterviewQA[]
-  personalTasks  PersonalTask[]
-  interviewSessions InterviewSession[]
-  personalityTestResults PersonalityTestResult[]
-  careerFitAnalysis      CareerFitAnalysis?
-  aiKeys                 AiKey[]
-  jobLeads               JobLead[]
-  questionBanks          QuestionBank[]
-  examSessions           ExamSession[]
-  mailAccounts           MailAccount[]
-  contacts               Contact[]
-  positionMatches        PositionMatch[]
-  resumeTailorings       ResumeTailoring[]
-  skillGapAnalyses       SkillGapAnalysis[]
-  dailyDigests           DailyDigest[]
-  weeklyReviews          WeeklyReview[]
+  accounts                Account[]
+  sessions                Session[]
+  positions               Position[]
+  applications            Application[]
+  resumeVersions          ResumeVersion[]
+  autofillAnswers         AutofillAnswer[]
+  addedCompanies          Company[]
+  attachments             Attachment[]
+  interviewPreps          InterviewPrep[]
+  groupInterviewPreps     GroupInterviewPrep[]
+  coverLetters            CoverLetter[]
+  interviewNoteExtracts   InterviewNoteExtract[]
+  stagePostmortems        StagePostmortem[]
+  interviewQAs            InterviewQA[]
+  personalTasks           PersonalTask[]
+  interviewSessions       InterviewSession[]
+  personalityTestResults  PersonalityTestResult[]
+  careerFitAnalysis       CareerFitAnalysis?
+  aiKeys                  AiKey[]
+  jobLeads                JobLead[]
+  questionBanks           QuestionBank[]
+  examSessions            ExamSession[]
+  mailAccounts            MailAccount[]
+  contacts                Contact[]
+  positionMatches         PositionMatch[]
+  resumeTailorings        ResumeTailoring[]
+  skillGapAnalyses        SkillGapAnalysis[]
+  resumeDrills            ResumeDrill[]
+  dailyDigests            DailyDigest[]
+  weeklyReviews           WeeklyReview[]
   resumeComparisonSummary ResumeComparisonSummary?
   interviewIntelligence   InterviewIntelligence?
 }
@@ -161,10 +162,10 @@ model ResumeComparisonSummary {
 /// demand, same "global summary, not periodic" shape as
 /// ResumeComparisonSummary above.
 model InterviewIntelligence {
-  id     String @id @default(cuid())
-  userId String @unique
+  id        String   @id @default(cuid())
+  userId    String   @unique
   /// { summary, categories: [{category, performance, note}], nextSessionMix: [{category, percent}] }
-  result Json
+  result    Json
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -178,21 +179,21 @@ model InterviewIntelligence {
 /// User's smtp* fields, which are the *sending* identity for reminder
 /// digests — that's a separate concern from which inboxes get read.
 model MailAccount {
-  id              String    @id @default(cuid())
-  userId          String
+  id                String    @id @default(cuid())
+  userId            String
   /// User-given name so multiple accounts are distinguishable at a glance
   /// ("QQ邮箱" / "网易邮箱") — falls back to the email address if blank.
-  label           String?
-  imapHost        String
-  imapPort        Int
-  email           String
+  label             String?
+  imapHost          String
+  imapPort          Int
+  email             String
   passwordEncrypted String
-  enabled         Boolean   @default(true)
+  enabled           Boolean   @default(true)
   /// Per-account, not global — accounts added at different times must not
   /// all inherit one shared "since" cursor, or a newly-added account would
   /// either re-scan years of mail (cursor null) or skip its own backlog
   /// (cursor copied from an older account).
-  lastCheckedAt   DateTime?
+  lastCheckedAt     DateTime?
   /// IMAP UID high-water mark — the actual de-dup cursor. lastCheckedAt
   /// alone isn't enough: IMAP's SEARCH SINCE only has day granularity (no
   /// time-of-day), so two scans on the same calendar day both re-match
@@ -200,8 +201,8 @@ model MailAccount {
   /// processed earlier that day. UIDs are stable and strictly increasing
   /// within one mailbox, so "uid > lastSeenUid" never re-matches a message
   /// already seen, regardless of how many times per day this runs.
-  lastSeenUid     Int?
-  createdAt       DateTime  @default(now())
+  lastSeenUid       Int?
+  createdAt         DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -292,10 +293,10 @@ model Company {
   /// 自动发现的。
   structuredApiUrl   String?
 
-  addedBy      User?         @relation(fields: [addedByUserId], references: [id])
-  positions    Position[]
-  applications Application[]
-  aliases      CompanyAlias[]
+  addedBy          User?             @relation(fields: [addedByUserId], references: [id])
+  positions        Position[]
+  applications     Application[]
+  aliases          CompanyAlias[]
   radarJobPostings RadarJobPosting[]
   radarJobEvents   RadarJobEvent[]
 }
@@ -330,13 +331,13 @@ model RadarJobPosting {
 /// 信息库" action; nothing here auto-creates a JobLead on its own, matching
 /// this app's "no silent background mutations" convention).
 model RadarJobEvent {
-  id        String   @id @default(cuid())
+  id        String            @id @default(cuid())
   companyId String
   title     String
   type      RadarJobEventType
   /// For UPDATED: the posting's new summary. Null for NEW/REMOVED.
   detail    String?
-  createdAt DateTime @default(now())
+  createdAt DateTime          @default(now())
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -380,26 +381,26 @@ enum PositionStatus {
 /// until the user promotes one, at which point promotedPositionId is set so
 /// the library can show it's already been taken.
 model JobLead {
-  id          String    @id @default(cuid())
-  userId      String
-  companyName String
-  title       String
-  track       String?
-  department  String?
-  location    String?
-  salaryMin   Int?
-  salaryMax   Int?
-  deadline    DateTime?
-  source      String?
-  jdUrl       String?
-  note        String?
+  id                 String    @id @default(cuid())
+  userId             String
+  companyName        String
+  title              String
+  track              String?
+  department         String?
+  location           String?
+  salaryMin          Int?
+  salaryMax          Int?
+  deadline           DateTime?
+  source             String?
+  jdUrl              String?
+  note               String?
   /// 0-100 from the AI resume match; null until the user runs a match.
-  fitScore    Int?
-  fitReason   String?
+  fitScore           Int?
+  fitReason          String?
   /// Filename of the sheet this came from, so a bad import can be found again.
-  batch       String?
+  batch              String?
   promotedPositionId String?
-  createdAt   DateTime  @default(now())
+  createdAt          DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -425,17 +426,18 @@ model Position {
   status         PositionStatus @default(EVALUATING)
   createdAt      DateTime       @default(now())
 
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  company      Company       @relation(fields: [companyId], references: [id])
-  applications Application[]
-  interviewPrep InterviewPrep?
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company            Company             @relation(fields: [companyId], references: [id])
+  applications       Application[]
+  interviewPrep      InterviewPrep?
   groupInterviewPrep GroupInterviewPrep?
-  coverLetter   CoverLetter?
-  personalTasks PersonalTask[]
-  interviewSessions InterviewSession[]
-  contacts      Contact[]
-  positionMatches PositionMatch[]
-  resumeTailorings ResumeTailoring[]
+  coverLetter        CoverLetter?
+  personalTasks      PersonalTask[]
+  interviewSessions  InterviewSession[]
+  contacts           Contact[]
+  positionMatches    PositionMatch[]
+  resumeTailorings   ResumeTailoring[]
+  resumeDrills       ResumeDrill[]
 
   @@index([userId])
 }
@@ -486,10 +488,10 @@ model Application {
   growthNote       String?
   createdAt        DateTime         @default(now())
 
-  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  position      Position?       @relation(fields: [positionId], references: [id])
-  company       Company         @relation(fields: [companyId], references: [id])
-  resumeVersion ResumeVersion?  @relation(fields: [resumeVersionId], references: [id])
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  position      Position?      @relation(fields: [positionId], references: [id])
+  company       Company        @relation(fields: [companyId], references: [id])
+  resumeVersion ResumeVersion? @relation(fields: [resumeVersionId], references: [id])
   stageHistory  StageHistory[]
   attachments   Attachment[]
   interviewQA   InterviewQA?
@@ -515,7 +517,7 @@ model StageHistory {
   /// nextDeadlineEnd] is the window.
   nextDeadlineEnd DateTime?
 
-  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  application Application           @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   attachments Attachment[]
   noteExtract InterviewNoteExtract?
   postmortem  StagePostmortem?
@@ -586,17 +588,17 @@ model Attachment {
 }
 
 model ResumeVersion {
-  id          String   @id @default(cuid())
-  userId      String
-  name        String
-  fileUrl     String?
-  targetTrack String?
-  isDefault   Boolean  @default(false)
+  id            String    @id @default(cuid())
+  userId        String
+  name          String
+  fileUrl       String?
+  targetTrack   String?
+  isDefault     Boolean   @default(false)
   // Cached AI review — each run is a paid call, so results persist instead of
   // re-running every time the page is opened.
-  checkScore  Int?
-  checkResult Json?
-  checkedAt   DateTime?
+  checkScore    Int?
+  checkResult   Json?
+  checkedAt     DateTime?
   // Plain-text extraction of the resume's actual content (education/
   // experience/projects/skills) — read once so features that need real
   // resume content (网申自动填充) stop re-reading and re-sending the whole
@@ -606,15 +608,16 @@ model ResumeVersion {
   // reading the raw file in that case, so this is a pure optimization.
   extractedText String?
   extractedAt   DateTime?
-  createdAt   DateTime @default(now())
+  createdAt     DateTime  @default(now())
 
-  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  applications     Application[]
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  applications      Application[]
   interviewSessions InterviewSession[]
-  autofillAnswers  AutofillAnswer[]
-  positionMatches  PositionMatch[]
-  resumeTailorings ResumeTailoring[]
-  skillGapAnalysis SkillGapAnalysis?
+  resumeDrill       ResumeDrill?
+  autofillAnswers   AutofillAnswer[]
+  positionMatches   PositionMatch[]
+  resumeTailorings  ResumeTailoring[]
+  skillGapAnalysis  SkillGapAnalysis?
 
   @@index([userId])
 }
@@ -658,6 +661,32 @@ model ResumeTailoring {
   resumeVersion ResumeVersion @relation(fields: [resumeVersionId], references: [id], onDelete: Cascade)
 
   @@unique([positionId, resumeVersionId])
+  @@index([userId])
+}
+
+/// 简历深挖模拟: an interviewer's follow-up tree over the candidate's own
+/// resume, one per resume version (regenerating overwrites the tree AND
+/// wipes answers — the question ids don't survive regeneration, so stale
+/// answers would point at nothing). Different from InterviewSession, which
+/// is a free-flowing chat: here the questions are fixed up front, grouped
+/// per project/experience and layered L1→L3, so the user can drill one
+/// project at a time and see exactly which probes they haven't survived yet.
+model ResumeDrill {
+  id              String   @id @default(cuid())
+  userId          String
+  resumeVersionId String   @unique
+  positionId      String?
+  /// { projects: [{ id, name, summary, questions: [{ id, level, question, intent, keyPoints }] }] }
+  tree            Json
+  /// { [questionId]: { answer, score, feedback, betterAnswer, followUp, answeredAt } }
+  answers         Json
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resumeVersion ResumeVersion @relation(fields: [resumeVersionId], references: [id], onDelete: Cascade)
+  position      Position?     @relation(fields: [positionId], references: [id], onDelete: SetNull)
+
   @@index([userId])
 }
 
@@ -846,7 +875,7 @@ enum InterviewSessionStatus {
 // key configured (see src/lib/actions/interview-session.ts) so one long
 // session can't burn through the shared free-tier quota for everyone else.
 model InterviewSession {
-  id              String                  @id @default(cuid())
+  id              String                 @id @default(cuid())
   userId          String
   resumeVersionId String
   positionId      String?
@@ -857,16 +886,16 @@ model InterviewSession {
   // questions and to review any pasted code like a code reviewer would
   // (correctness, edge cases, complexity) — not a real judge with test-case
   // execution, see src/lib/actions/interview-session.ts.
-  includeCoding   Boolean                 @default(false)
+  includeCoding   Boolean                @default(false)
   // Copied in at session-start time from an InterviewIntelligence
   // recommendation ("40% C++ / 25% 算法比较 / ..."), if the user chose to
   // start from one — a plain string the interviewer prompt weaves in each
   // turn, not a structured field the app itself reasons about further.
   focusMix        String?
-  status          InterviewSessionStatus  @default(ACTIVE)
+  status          InterviewSessionStatus @default(ACTIVE)
   feedback        Json?
-  createdAt       DateTime                @default(now())
-  updatedAt       DateTime                @updatedAt
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
 
   user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   resumeVersion ResumeVersion      @relation(fields: [resumeVersionId], references: [id])
@@ -877,16 +906,16 @@ model InterviewSession {
 }
 
 model InterviewMessage {
-  id        String               @id @default(cuid())
-  sessionId String
-  role      InterviewMessageRole
-  content   String
+  id           String               @id @default(cuid())
+  sessionId    String
+  role         InterviewMessageRole
+  content      String
   /// Only set on spoken answers: what the audio reveals that a transcript
   /// can't — pace, filler words, hesitation. Kept out of `content` so the
   /// transcript stays a clean record of *what* was said while the
   /// end-of-session feedback can still judge *how* it was said.
   deliveryNote String?
-  createdAt DateTime             @default(now())
+  createdAt    DateTime             @default(now())
 
   session InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
@@ -927,28 +956,28 @@ enum ExamSessionStatus {
 /// (AI re-classifies modules, answers get filled in), and a past exam's
 /// content must not silently change out from under its own score history.
 model ExamSession {
-  id        String            @id @default(cuid())
-  userId    String
+  id              String            @id @default(cuid())
+  userId          String
   /// The source bank, kept only so "重考一次" can re-pull from the same
   /// pool — never dereferenced to render the exam itself.
-  bankId    String?
-  bankName  String
+  bankId          String?
+  bankName        String
   /// Modules selected when starting, or null if the whole bank was used.
-  modules   Json?
+  modules         Json?
   /// QuestionBankItem[] snapshot at exam start (question/module/category/
   /// referenceAnswer/tips) — see src/lib/question-bank-shared.ts.
-  questions Json
+  questions       Json
   /// Parallel array to `questions`, filled in on submit:
   /// {answer, score, feedback}[]. Null until the exam is submitted.
-  answers      Json?
-  status       ExamSessionStatus @default(ACTIVE)
-  overallScore Int?
-  summary      String?
+  answers         Json?
+  status          ExamSessionStatus @default(ACTIVE)
+  overallScore    Int?
+  summary         String?
   /// Minutes the user was given — advisory (client auto-submits at zero),
   /// not enforced server-side.
   durationMinutes Int
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -992,4 +1021,3 @@ model CareerFitAnalysis {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
-
