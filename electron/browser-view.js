@@ -86,6 +86,15 @@ function scanPageFields() {
   return results;
 }
 
+// Visible text of the page the user is looking at, for "收藏这个岗位" —
+// innerText (not textContent) so hidden nav menus, <script> bodies and
+// collapsed panels don't drown the actual posting. Capped because job
+// boards render huge sidebars of "recommended jobs" below the real JD.
+function capturePageText() {
+  const text = (document.body && document.body.innerText) || "";
+  return text.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim().slice(0, 12000);
+}
+
 // AI's honest "couldn't find this in the resume" answer for a short/choice
 // field — distinct from a real value so it never gets written into the page
 // (a sentence dropped into a 性别 dropdown would be worse than leaving it
@@ -304,6 +313,11 @@ function setupBrowserViewIpc(mainWindow, port) {
   ipcMain.handle("browser:zoom-reset", () => {
     view.webContents.setZoomFactor(1);
     sendNavState();
+  });
+
+  ipcMain.handle("browser:capture-page", async () => {
+    const text = await view.webContents.executeJavaScript(`(${capturePageText.toString()})()`);
+    return { url: view.webContents.getURL(), title: view.webContents.getTitle(), text };
   });
 
   ipcMain.handle("browser:set-bounds", (_e, rect) => {

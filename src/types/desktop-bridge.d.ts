@@ -12,6 +12,8 @@ export type DesktopBridgeAutofillStatus = {
   message: string;
 };
 
+export type DesktopBridgeCapturedPage = { url: string; title: string; text: string };
+
 export type DesktopBridgeRect = { x: number; y: number; width: number; height: number };
 
 export type DesktopBridge = {
@@ -22,6 +24,7 @@ export type DesktopBridge = {
   setBounds(rect: DesktopBridgeRect | null): Promise<void>;
   autofill(resumeVersionId?: string): Promise<void>;
   saveCorrections(): Promise<{ saved: number }>;
+  capturePage(): Promise<DesktopBridgeCapturedPage>;
   zoomIn(): Promise<void>;
   zoomOut(): Promise<void>;
   zoomReset(): Promise<void>;

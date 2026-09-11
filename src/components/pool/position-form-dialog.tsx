@@ -96,13 +96,26 @@ export function PositionFormDialog({
   positionId,
   initial,
   trigger,
+  open: controlledOpen,
+  onOpenChange,
 }: {
   mode: "create" | "edit";
   positionId?: string;
   initial?: PositionFormInitial;
-  trigger: React.ReactElement;
+  /** Omit when driving `open` from outside (the 网申浏览器's 收藏岗位 flow
+   * opens this without any button of its own). A controlled open skips
+   * handleOpenChange's reset, so the caller should remount with a fresh
+   * `key` whenever it has a new `initial` to show. */
+  trigger?: React.ReactElement;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = (next: boolean) => {
+    setUncontrolledOpen(next);
+    onOpenChange?.(next);
+  };
   const [loading, setLoading] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [jdText, setJdText] = useState(initial?.jdText ?? "");
@@ -209,7 +222,7 @@ export function PositionFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger render={trigger} />
+      {trigger && <DialogTrigger render={trigger} />}
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{mode === "edit" ? "编辑候选岗位" : "添加候选岗位"}</DialogTitle>

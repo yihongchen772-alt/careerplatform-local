@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, ChevronLeft, RotateCw, Sparkles, Check, ZoomIn, ZoomOut } from "lucide-react";
+import { ArrowLeft, ArrowRight, Bookmark, ChevronLeft, RotateCw, Sparkles, Check, ZoomIn, ZoomOut } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +13,28 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { parseJd } from "@/lib/actions/jd-parse";
+import { PositionFormDialog, type PositionFormInitial } from "@/components/pool/position-form-dialog";
 import type { DesktopBridgeAutofillStatus, DesktopBridgeNavState } from "@/types/desktop-bridge";
+
+// Best-effort 渠道 from the page's host, so the saved position already says
+// where it came from; anything unrecognised is treated as the company's own
+// careers site, which is what the embedded browser is mostly used for.
+function sourceFromUrl(url: string): string {
+  try {
+    const host = new URL(url).hostname;
+    if (host.includes("zhipin.com")) return "BOSS直聘";
+    if (host.includes("nowcoder.com")) return "牛客";
+    if (host.includes("liepin.com")) return "猎聘";
+    if (host.includes("lagou.com")) return "拉勾";
+    if (host.includes("zhaopin.com")) return "智联";
+    if (host.includes("51job.com")) return "前程无忧";
+    if (host.includes("shixiseng.com")) return "实习僧";
+    return "官网";
+  } catch {
+    return "官网";
+  }
+}
 
 type ResumeOption = { id: string; name: string; isDefault: boolean };
 
@@ -31,6 +52,12 @@ export function EmbeddedBrowser({
   const [status, setStatus] = useState<DesktopBridgeAutofillStatus | null>(null);
   const [autofilling, setAutofilling] = useState(false);
   const [savingCorrections, setSavingCorrections] = useState(false);
+  const [capturing, setCapturing] = useState(false);
+  const [captureInitial, setCaptureInitial] = useState<PositionFormInitial | null>(null);
+  const [captureOpen, setCaptureOpen] = useState(false);
+  // Bumped per capture so the dialog remounts with the new `initial` instead
+  // of showing stale form state from the previous page's parse.
+  const [captureKey, setCaptureKey] = useState(0);
   const [resumeVersionId, setResumeVersionId] = useState(
     resumeVersions.find((r) => r.isDefault)?.id ?? resumeVersions[0]?.id ?? ""
   );
@@ -61,6 +88,13 @@ export function EmbeddedBrowser({
     if (!bridge || !panelRef.current) return;
     const el = panelRef.current;
     const report = () => {
+      // The WebContentsView is a native layer composited *above* this page's
+      // DOM, so any dialog we open would render underneath it — detach the
+      // view while one is up and put it back at the same bounds after.
+      if (captureOpen) {
+        bridge.setBounds(null);
+        return;
+      }
       const rect = el.getBoundingClientRect();
       bridge.setBounds({ x: rect.x, y: rect.y, width: rect.width, height: rect.height });
     };
@@ -73,7 +107,7 @@ export function EmbeddedBrowser({
       window.removeEventListener("resize", report);
       bridge.setBounds(null);
     };
-  }, [bridge]);
+  }, [bridge, captureOpen]);
 
   function handleNavigate(e: React.FormEvent) {
     e.preventDefault();
@@ -101,6 +135,48 @@ export function EmbeddedBrowser({
       toast.error(err instanceof Error ? err.message : "保存修改失败");
     } finally {
       setSavingCorrections(false);
+    }
+  }
+
+  async function handleCapture() {
+    if (!bridge || capturing) return;
+    setCapturing(true);
+    try {
+      const page = await bridge.capturePage();
+      if (!page.text || page.text.length < 20) {
+        toast.error("这个页面上读不到岗位内容，等它加载完再试");
+        return;
+      }
+      const res = await parseJd({ text: page.text });
+      const parsed = res.ok ? res.data : null;
+      if (!res.ok) toast.warning(`AI 没能解析这页（${res.message}），先帮你把链接和正文带过去，手动填一下`);
+      setCaptureInitial({
+        companyName: parsed?.companyName ?? "",
+        title: parsed?.title ?? page.title ?? "",
+        track: parsed?.track ?? null,
+        department: parsed?.department ?? null,
+        location: parsed?.location ?? null,
+        salaryMin: parsed?.salaryMin ?? null,
+        salaryMax: parsed?.salaryMax ?? null,
+        jdUrl: page.url,
+        jdText: page.text,
+        source: sourceFromUrl(page.url),
+        deadline: null,
+        scoreBreakdown: parsed
+          ? {
+              techFit: Math.round(parsed.techFit),
+              salary: Math.round(parsed.salaryScore),
+              location: Math.round(parsed.locationScore),
+              growth: Math.round(parsed.growthScore),
+            }
+          : null,
+      });
+      setCaptureKey((k) => k + 1);
+      setCaptureOpen(true);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "读取页面失败");
+    } finally {
+      setCapturing(false);
     }
   }
 
@@ -208,6 +284,17 @@ export function EmbeddedBrowser({
             </SelectContent>
           </Select>
         )}
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={capturing || !navState?.url || navState.url === "about:blank"}
+          onClick={handleCapture}
+          title="把当前页面的岗位信息用 AI 解析后加进候选岗位池"
+        >
+          <Bookmark className="size-4" />
+          {capturing ? "读取中..." : "收藏岗位"}
+        </Button>
         <Button type="button" size="sm" disabled={autofilling} onClick={handleAutofill}>
           <Sparkles className="size-4" />
           {autofilling ? "填充中..." : "AI 一键填充"}
@@ -240,6 +327,16 @@ export function EmbeddedBrowser({
       )}
 
       <div ref={panelRef} className="min-h-0 flex-1 rounded-lg border bg-muted/30" />
+
+      {captureInitial && (
+        <PositionFormDialog
+          key={captureKey}
+          mode="create"
+          initial={captureInitial}
+          open={captureOpen}
+          onOpenChange={setCaptureOpen}
+        />
+      )}
     </div>
   );
 }
