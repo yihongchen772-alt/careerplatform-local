@@ -32,9 +32,27 @@ export type DesktopBridge = {
   onAutofillStatus(callback: (status: DesktopBridgeAutofillStatus) => void): () => void;
 };
 
+export type WhisperModelName = "small" | "medium";
+
+export type WhisperStatus = {
+  binaryAvailable: boolean;
+  models: Record<WhisperModelName, { file: string; bytes: number; label: string; installed: boolean }>;
+  activeModel: WhisperModelName | null;
+  downloading: { name: WhisperModelName; received: number; total: number } | null;
+};
+
+export type DesktopWhisper = {
+  getStatus(): Promise<WhisperStatus>;
+  downloadModel(name: WhisperModelName): Promise<void>;
+  cancelDownload(): Promise<void>;
+  deleteModel(name: WhisperModelName): Promise<void>;
+  onStatus(callback: (status: WhisperStatus) => void): () => void;
+};
+
 declare global {
   interface Window {
     desktopBridge?: DesktopBridge;
+    desktopWhisper?: DesktopWhisper;
   }
 }
 

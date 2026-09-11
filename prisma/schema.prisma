@@ -100,6 +100,7 @@ model User {
   weeklyReviews           WeeklyReview[]
   resumeComparisonSummary ResumeComparisonSummary?
   interviewIntelligence   InterviewIntelligence?
+  interviewRecordings     InterviewRecording[]
 }
 
 /// One AI-curated "today's top priorities" per day, cached so opening the
@@ -501,11 +502,12 @@ model Application {
   growthNote       String?
   createdAt        DateTime         @default(now())
 
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  position      Position?      @relation(fields: [positionId], references: [id])
-  company       Company        @relation(fields: [companyId], references: [id])
-  resumeVersion ResumeVersion? @relation(fields: [resumeVersionId], references: [id])
+  user          User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  position      Position?            @relation(fields: [positionId], references: [id])
+  company       Company              @relation(fields: [companyId], references: [id])
+  resumeVersion ResumeVersion?       @relation(fields: [resumeVersionId], references: [id])
   stageHistory  StageHistory[]
+  recordings    InterviewRecording[]
   attachments   Attachment[]
   interviewQA   InterviewQA?
   personalTasks PersonalTask[]
@@ -533,6 +535,7 @@ model StageHistory {
   application Application           @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   attachments Attachment[]
   noteExtract InterviewNoteExtract?
+  recordings  InterviewRecording[]
   postmortem  StagePostmortem?
 
   @@index([applicationId])
@@ -675,6 +678,50 @@ model ResumeTailoring {
 
   @@unique([positionId, resumeVersionId])
   @@index([userId])
+}
+
+/// 面试录音复盘: one real interview, recorded from this machine, transcribed
+/// (locally with whisper.cpp when a model is installed, otherwise Gemini)
+/// and reviewed by AI. The audio itself lives on disk under uploads/
+/// recordings/<id>/ as 5-minute WAV chunks — chunked so a crash mid-interview
+/// loses at most the last few minutes, and so a long interview never has
+/// to be decoded in one piece. `chunks` mirrors what's on disk plus each
+/// chunk's transcript as it lands, which is also the progress indicator.
+model InterviewRecording {
+  id             String                   @id @default(cuid())
+  userId         String
+  applicationId  String?
+  /// The 面经库 entry this was filed into via "存入面经库", if done.
+  stageHistoryId String?
+  title          String
+  status         InterviewRecordingStatus @default(RECORDING)
+  error          String?
+  /// "whisper-local" | "gemini" — which transcriber produced `transcript`.
+  transcriber    String?
+  durationSec    Int                      @default(0)
+  /// [{ index, file, durationSec, transcript? }]
+  chunks         Json
+  transcript     String?
+  /// { summary, questions: [{question, yourAnswer, assessment, betterAnswer}], strengths, improvements, knowledgeGaps }
+  review         Json?
+  startedAt      DateTime                 @default(now())
+  endedAt        DateTime?
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  application  Application?  @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  stageHistory StageHistory? @relation(fields: [stageHistoryId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+}
+
+enum InterviewRecordingStatus {
+  RECORDING
+  TRANSCRIBING
+  REVIEWING
+  DONE
+  FAILED
 }
 
 /// 简历深挖模拟: an interviewer's follow-up tree over the candidate's own

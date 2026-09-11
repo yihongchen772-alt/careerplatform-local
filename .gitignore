@@ -16,3 +16,4 @@ app-settings.json
 .local-desktop.json
 .env.*
 !.env.example
+build/whisper/

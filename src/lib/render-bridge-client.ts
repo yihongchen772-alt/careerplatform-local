@@ -50,3 +50,50 @@ export async function renderPageText(
     clearTimeout(timer);
   }
 }
+
+export type WhisperSegment = { from: number; to: number; text: string };
+
+function bridgeEnv() {
+  const bridgeUrl = process.env.CAREERPLATFORM_RENDER_BRIDGE_URL;
+  const token = process.env.CAREERPLATFORM_RENDER_BRIDGE_TOKEN;
+  if (!bridgeUrl || !token) return null;
+  return { bridgeUrl, token };
+}
+
+/** Whether the desktop app can transcribe locally right now (binary + a downloaded model). */
+export async function localWhisperReady(): Promise<boolean> {
+  const env = bridgeEnv();
+  if (!env) return false;
+  try {
+    const res = await fetch(`${env.bridgeUrl}/whisper/status`, {
+      headers: { Authorization: `Bearer ${env.token}` },
+    });
+    if (!res.ok) return false;
+    const status = (await res.json()) as { binaryAvailable?: boolean; activeModel?: string | null };
+    return !!status.binaryAvailable && !!status.activeModel;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Runs whisper.cpp in the main process on a 16 kHz mono WAV the Next server
+ * wrote under its uploads dir. No timeout on purpose: a 5-minute chunk on a
+ * slow laptop with the medium model can legitimately take several minutes.
+ */
+export async function transcribeWithLocalWhisper(
+  file: string
+): Promise<{ model: string; segments: WhisperSegment[]; elapsedMs: number }> {
+  const env = bridgeEnv();
+  if (!env) throw new Error("本地转写只在桌面 App 里可用");
+  const res = await fetch(`${env.bridgeUrl}/whisper/transcribe`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.token}` },
+    body: JSON.stringify({ file }),
+  });
+  const data = (await res.json().catch(() => null)) as
+    | { error?: string; model?: string; segments?: WhisperSegment[]; elapsedMs?: number }
+    | null;
+  if (!res.ok || !data || !data.segments) throw new Error(data?.error || `本地转写失败：HTTP ${res.status}`);
+  return { model: data.model ?? "", segments: data.segments, elapsedMs: data.elapsedMs ?? 0 };
+}

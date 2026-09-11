@@ -7,6 +7,7 @@ import { EmailSettingsForm } from "@/components/settings/email-settings-form";
 import { MailAccountsCard } from "@/components/settings/mail-accounts-card";
 import { BackupCard } from "@/components/settings/backup-card";
 import { BackgroundReminderCard } from "@/components/settings/background-reminder-card";
+import { WhisperCard } from "@/components/settings/whisper-card";
 import { getAiKeysOverview } from "@/lib/actions/ai-keys";
 import { getAppSettings } from "@/lib/actions/app-settings";
 import { listMailAccounts } from "@/lib/actions/mail-accounts";
@@ -49,6 +50,7 @@ export default async function SettingsPage() {
         <EmailSettingsForm currentUser={user.smtpUser} />
         <MailAccountsCard accounts={mailAccounts} />
         <BackgroundReminderCard initial={appSettings} />
+        <WhisperCard initial={appSettings} />
         <BackupCard initialFreshness={freshness} />
         <UpdateCard currentVersion={version} />
       </div>
