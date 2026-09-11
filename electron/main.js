@@ -6,7 +6,6 @@ const { spawn } = require("child_process");
 const { setupBrowserViewIpc } = require("./browser-view");
 const { setupUpdater } = require("./updater");
 const { startRenderBridge } = require("./render-bridge");
-const whisper = require("./whisper");
 
 // Pinned regardless of the app's marketing name (package.json's
 // "productName", shown in the dock/menu bar/window title): app.getPath
@@ -22,16 +21,6 @@ if (!ownsInstance) app.quit();
 app.on("second-instance", () => { if (mainWindow) { mainWindow.restore(); showWindow(); } });
 
 const isDev = !app.isPackaged;
-
-// Test hook: feeds a WAV file in as the microphone so 面试录音 can be driven
-// end-to-end without a human speaking into the machine. Chromium ignores
-// these switches when passed on Electron's argv, so they have to be set
-// here — and only ever in test mode.
-if (process.env.CAREERPLATFORM_TEST_MODE === "1" && process.env.CAREERPLATFORM_FAKE_AUDIO_FILE) {
-  app.commandLine.appendSwitch("use-fake-device-for-media-stream");
-  app.commandLine.appendSwitch("use-fake-ui-for-media-stream");
-  app.commandLine.appendSwitch("use-file-for-fake-audio-capture", process.env.CAREERPLATFORM_FAKE_AUDIO_FILE);
-}
 const PORT = process.env.CAREERPLATFORM_TEST_MODE === "1" ? Number(process.env.CAREERPLATFORM_TEST_PORT || 3210) : 3210;
 
 // Dev: this file is at <project>/electron/main.js, so the project root is one
@@ -177,13 +166,7 @@ async function startNextServer() {
   // Electron itself, so it has no BrowserWindow access of its own — job-radar's
   // rendered-page fetch tier calls back into this main process through this
   // bridge for that. See electron/render-bridge.js for why.
-  renderBridge = await startRenderBridge({
-    uploadsDir,
-    whisper: {
-      getStatus: () => whisper.getStatus(readAppSettings().whisperModel),
-      transcribe: (file) => whisper.transcribeFile(file, { preferredModel: readAppSettings().whisperModel }),
-    },
-  });
+  renderBridge = await startRenderBridge();
 
   const env = {
     ...process.env,
@@ -266,23 +249,8 @@ function createWindow({ show = true } = {}) {
       callback(permission === "media" || permission === "audioCapture");
     }
   );
-  // 面试录音's "含系统声音" option: getDisplayMedia({audio:true}) lands here.
-  // System-audio loopback is Windows-only in this Electron; on macOS the
-  // request is answered with just a screen source and no audio, and the
-  // recorder page falls back to microphone-only (it explains why).
-  mainWindow.webContents.session.setDisplayMediaRequestHandler((_request, callback) => {
-    const { desktopCapturer } = require("electron");
-    desktopCapturer
-      .getSources({ types: ["screen"] })
-      .then((sources) => {
-        if (!sources.length) return callback({});
-        callback(process.platform === "win32" ? { video: sources[0], audio: "loopback" } : { video: sources[0] });
-      })
-      .catch(() => callback({}));
-  });
 
   setupBrowserViewIpc(mainWindow, PORT);
-  setupWhisperIpc();
 
   mainWindow.loadURL(`http://localhost:${PORT}`);
 
@@ -307,22 +275,6 @@ function showWindow() {
     mainWindow.show();
     mainWindow.focus();
   }
-}
-
-// ---------- local transcription (whisper.cpp) ----------
-
-let whisperIpcRegistered = false;
-function setupWhisperIpc() {
-  const { ipcMain } = require("electron");
-  whisper.onProgress((status) => {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("whisper:status", status);
-  });
-  if (whisperIpcRegistered) return;
-  whisperIpcRegistered = true;
-  ipcMain.handle("whisper:get-status", () => whisper.getStatus(readAppSettings().whisperModel));
-  ipcMain.handle("whisper:download-model", (_e, name) => whisper.downloadModel(name));
-  ipcMain.handle("whisper:cancel-download", () => whisper.cancelDownload());
-  ipcMain.handle("whisper:delete-model", (_e, name) => whisper.deleteModel(name));
 }
 
 // ---------- shared settings file (written by the Next app) ----------

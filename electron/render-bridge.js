@@ -1,5 +1,4 @@
 const http = require("http");
-const path = require("path");
 const crypto = require("crypto");
 
 // Job radar's static-HTML fetch runs in the Next.js server child process,
@@ -93,55 +92,16 @@ async function renderOne(url, partition) {
  * gated only by the token, so it must not be reachable from anywhere but
  * this machine's own Next.js child process.
  */
-function startRenderBridge({ uploadsDir, whisper } = {}) {
+function startRenderBridge() {
   const token = crypto.randomBytes(24).toString("hex");
-  const json = (res, code, payload) =>
-    res.writeHead(code, { "Content-Type": "application/json" }).end(JSON.stringify(payload));
-
-  // Only files the Next server itself wrote (under uploadsDir) may be handed
-  // to whisper — this endpoint would otherwise be "transcribe any audio file
-  // on disk" for whoever holds the token.
-  function isUnderUploads(file) {
-    if (!uploadsDir || typeof file !== "string") return false;
-    const resolved = path.resolve(file);
-    const root = path.resolve(uploadsDir);
-    return resolved === root || resolved.startsWith(root + path.sep);
-  }
 
   const server = http.createServer((req, res) => {
-    if (req.headers.authorization !== `Bearer ${token}`) {
-      res.writeHead(401).end();
-      return;
-    }
-    if (req.method === "GET" && req.url === "/whisper/status") {
-      json(res, 200, whisper ? whisper.getStatus() : { binaryAvailable: false, activeModel: null });
-      return;
-    }
-    if (req.method === "POST" && req.url === "/whisper/transcribe") {
-      let body = "";
-      req.on("data", (chunk) => {
-        body += chunk;
-        if (body.length > 10_000) req.destroy();
-      });
-      req.on("end", async () => {
-        let file;
-        try {
-          ({ file } = JSON.parse(body));
-        } catch {
-          return json(res, 400, { error: "无效请求体" });
-        }
-        if (!whisper) return json(res, 503, { error: "本地转写不可用" });
-        if (!isUnderUploads(file)) return json(res, 400, { error: "只能转写上传目录里的文件" });
-        try {
-          json(res, 200, await whisper.transcribe(file));
-        } catch (err) {
-          json(res, 502, { error: String(err && err.message ? err.message : err) });
-        }
-      });
-      return;
-    }
     if (req.method !== "POST" || req.url !== "/render") {
       res.writeHead(404).end();
+      return;
+    }
+    if (req.headers.authorization !== `Bearer ${token}`) {
+      res.writeHead(401).end();
       return;
     }
     let body = "";

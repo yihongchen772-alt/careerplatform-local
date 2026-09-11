@@ -36,12 +36,6 @@ export type AppSettings = {
    */
   applicationSyncIntervalHours?: number;
   /**
-   * Which whisper.cpp model 面试录音 transcribes with locally ("small" |
-   * "medium"). Only a preference — electron/whisper.js falls back to
-   * whatever's actually downloaded, and to Gemini if nothing is.
-   */
-  whisperModel?: "small" | "medium";
-  /**
    * Written by the Electron main process when the OS refused to register the
    * login item (sandboxing, MDM policy, unsigned build). Read-only from the
    * app's side — it exists so a silently-ignored setting shows up as a

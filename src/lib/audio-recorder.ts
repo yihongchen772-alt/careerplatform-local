@@ -66,7 +66,7 @@ export async function startRecording(): Promise<Recorder> {
   };
 }
 
-export async function toWav(encoded: ArrayBuffer): Promise<Blob> {
+async function toWav(encoded: ArrayBuffer): Promise<Blob> {
   // decodeAudioData understands whatever container MediaRecorder produced,
   // so nothing here depends on which one that turned out to be.
   const decodeCtx = new AudioContext();

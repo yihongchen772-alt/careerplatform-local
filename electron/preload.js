@@ -40,18 +40,3 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     return () => ipcRenderer.removeListener("browser:autofill-status", listener);
   },
 });
-
-// 面试录音's local-transcription settings: model download/status. The
-// transcription itself never goes through here — the Next server asks the
-// main process over the render bridge (see electron/render-bridge.js).
-contextBridge.exposeInMainWorld("desktopWhisper", {
-  getStatus: () => ipcRenderer.invoke("whisper:get-status"),
-  downloadModel: (name) => ipcRenderer.invoke("whisper:download-model", name),
-  cancelDownload: () => ipcRenderer.invoke("whisper:cancel-download"),
-  deleteModel: (name) => ipcRenderer.invoke("whisper:delete-model", name),
-  onStatus: (callback) => {
-    const listener = (_event, status) => callback(status);
-    ipcRenderer.on("whisper:status", listener);
-    return () => ipcRenderer.removeListener("whisper:status", listener);
-  },
-});
