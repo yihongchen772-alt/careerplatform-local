@@ -28,6 +28,14 @@ export type AppSettings = {
    */
   jobRadarIntervalHours?: number;
   /**
+   * How often, in hours, the background process re-reads each company's
+   * candidate portal ("我的投递" page, set from the 网申浏览器) and moves
+   * matching applications forward on the board ("网申进度同步"). 0 disables
+   * it, same reasoning as the radar: it loads someone else's site using
+   * the user's own login, so it never runs unless asked.
+   */
+  applicationSyncIntervalHours?: number;
+  /**
    * Written by the Electron main process when the OS refused to register the
    * login item (sandboxing, MDM policy, unsigned build). Read-only from the
    * app's side — it exists so a silently-ignored setting shows up as a
@@ -52,6 +60,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   backgroundReminders: false,
   inboxScanIntervalHours: 0,
   jobRadarIntervalHours: 0,
+  applicationSyncIntervalHours: 0,
 };
 
 /** Options offered in settings; 0 keeps the launch-only behaviour. */

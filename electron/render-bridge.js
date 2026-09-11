@@ -28,7 +28,7 @@ function runNext() {
   if (activeCount >= MAX_CONCURRENT_RENDERS || queue.length === 0) return;
   activeCount++;
   const job = queue.shift();
-  renderOne(job.url)
+  renderOne(job.url, job.partition)
     .then(job.resolve, job.reject)
     .finally(() => {
       activeCount--;
@@ -36,18 +36,30 @@ function runNext() {
     });
 }
 
-function enqueueRender(url) {
+function enqueueRender(url, partition) {
   return new Promise((resolve, reject) => {
-    queue.push({ url, resolve, reject });
+    queue.push({ url, partition, resolve, reject });
     runNext();
   });
 }
 
-async function renderOne(url) {
-  const { BrowserWindow } = require("electron");
+// The only session a caller may borrow besides the default one: the 网申
+// 浏览器's, so 网申进度同步 can read a candidate portal the user is already
+// logged into. Whitelisted by name rather than accepting arbitrary
+// partitions — this bridge is reachable by anything holding the token.
+const APPLICATION_BROWSER_PARTITION = "persist:job-application-browser";
+
+async function renderOne(url, partition) {
+  const { BrowserWindow, session } = require("electron");
   const win = new BrowserWindow({
     show: false,
-    webPreferences: { javascript: true, images: false },
+    webPreferences: {
+      javascript: true,
+      images: false,
+      ...(partition === APPLICATION_BROWSER_PARTITION
+        ? { session: session.fromPartition(APPLICATION_BROWSER_PARTITION) }
+        : {}),
+    },
   });
   try {
     const loaded = new Promise((resolve, reject) => {
@@ -104,8 +116,9 @@ function startRenderBridge() {
     req.on("end", async () => {
       if (tooLarge) return;
       let url;
+      let partition;
       try {
-        ({ url } = JSON.parse(body));
+        ({ url, partition } = JSON.parse(body));
       } catch {
         res.writeHead(400, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "无效请求体" }));
         return;
@@ -114,8 +127,12 @@ function startRenderBridge() {
         res.writeHead(400, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "无效 URL" }));
         return;
       }
+      if (partition != null && partition !== APPLICATION_BROWSER_PARTITION) {
+        res.writeHead(400, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "不支持的会话分区" }));
+        return;
+      }
       try {
-        const text = await enqueueRender(url);
+        const text = await enqueueRender(url, partition);
         res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ text }));
       } catch (err) {
         res

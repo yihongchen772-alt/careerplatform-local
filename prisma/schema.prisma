@@ -281,17 +281,25 @@ model Company {
   /// 岗位雷达：定时抓取招聘页内容，用 hash 做免费的前置过滤；hash 变化时才
   /// 触发一次 AI 结构化提取 + 岗位快照 diff（见 RadarJobPosting/RadarJobEvent），
   /// 算出具体 NEW/UPDATED/REMOVED 的岗位，而不是只说"内容变了"。
-  radarEnabled       Boolean   @default(false)
-  radarContentHash   String?
-  radarLastCheckedAt DateTime?
-  radarLastChangedAt DateTime?
-  radarLastError     String?
-  radarLastWarning   String?
+  radarEnabled        Boolean   @default(false)
+  radarContentHash    String?
+  radarLastCheckedAt  DateTime?
+  radarLastChangedAt  DateTime?
+  radarLastError      String?
+  radarLastWarning    String?
   /// 手动登记的公开岗位 JSON 接口（如果找到的话）——优先于 careerUrl 的
   /// 静态 HTML/渲染抓取。不同招聘系统的接口形态千差万别，没有通用方式能
   /// 自动探测，所以这是一个需要用户/维护者手动找到并填入的覆盖项，不是
   /// 自动发现的。
-  structuredApiUrl   String?
+  structuredApiUrl    String?
+  /// 网申进度同步: the company's candidate portal ("我的投递" page), set
+  /// from the 网申浏览器 while logged in. Rendered through that browser's
+  /// own session (persist:job-application-browser) so the login carries
+  /// over; the hash gates the AI read the same way the radar's does.
+  portalUrl           String?
+  portalContentHash   String?
+  portalLastCheckedAt DateTime?
+  portalLastError     String?
 
   addedBy          User?             @relation(fields: [addedByUserId], references: [id])
   positions        Position[]
@@ -469,6 +477,11 @@ model Application {
   source           String?
   currentStage     ApplicationStage @default(APPLIED)
   currentStageDate DateTime         @default(now())
+  /// What the company's portal literally said last time 网申进度同步 read
+  /// it ("简历评估中"), kept verbatim next to our mapped stage — the
+  /// portal's wording is often more specific than our enum.
+  portalStatus     String?
+  portalStatusAt   DateTime?
   salaryMin        Int?
   salaryMax        Int?
   offerNote        String?

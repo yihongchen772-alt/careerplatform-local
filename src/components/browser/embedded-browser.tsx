@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, Bookmark, ChevronLeft, RotateCw, Sparkles, Check, ZoomIn, ZoomOut } from "lucide-react";
+import { ArrowLeft, ArrowRight, Bookmark, ChevronLeft, Radar, RotateCw, Sparkles, Check, ZoomIn, ZoomOut } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { parseJd } from "@/lib/actions/jd-parse";
 import { PositionFormDialog, type PositionFormInitial } from "@/components/pool/position-form-dialog";
+import { PortalSyncDialog, type PortalCompany } from "@/components/browser/portal-sync-dialog";
 import type { DesktopBridgeAutofillStatus, DesktopBridgeNavState } from "@/types/desktop-bridge";
 
 // Best-effort 渠道 from the page's host, so the saved position already says
@@ -41,9 +42,11 @@ type ResumeOption = { id: string; name: string; isDefault: boolean };
 export function EmbeddedBrowser({
   initialUrl,
   resumeVersions,
+  portalCompanies,
 }: {
   initialUrl?: string;
   resumeVersions: ResumeOption[];
+  portalCompanies: PortalCompany[];
 }) {
   const router = useRouter();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -58,6 +61,8 @@ export function EmbeddedBrowser({
   // Bumped per capture so the dialog remounts with the new `initial` instead
   // of showing stale form state from the previous page's parse.
   const [captureKey, setCaptureKey] = useState(0);
+  const [portalOpen, setPortalOpen] = useState(false);
+  const anyDialogOpen = captureOpen || portalOpen;
   const [resumeVersionId, setResumeVersionId] = useState(
     resumeVersions.find((r) => r.isDefault)?.id ?? resumeVersions[0]?.id ?? ""
   );
@@ -91,7 +96,7 @@ export function EmbeddedBrowser({
       // The WebContentsView is a native layer composited *above* this page's
       // DOM, so any dialog we open would render underneath it — detach the
       // view while one is up and put it back at the same bounds after.
-      if (captureOpen) {
+      if (anyDialogOpen) {
         bridge.setBounds(null);
         return;
       }
@@ -107,7 +112,7 @@ export function EmbeddedBrowser({
       window.removeEventListener("resize", report);
       bridge.setBounds(null);
     };
-  }, [bridge, captureOpen]);
+  }, [bridge, anyDialogOpen]);
 
   function handleNavigate(e: React.FormEvent) {
     e.preventDefault();
@@ -299,6 +304,16 @@ export function EmbeddedBrowser({
           <Sparkles className="size-4" />
           {autofilling ? "填充中..." : "AI 一键填充"}
         </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => setPortalOpen(true)}
+          title="把当前的「我的投递」页面设为某家公司的进度页，之后自动同步投递阶段"
+        >
+          <Radar className="size-4" />
+          进度同步
+        </Button>
         {status?.phase === "done" && (
           <Button
             type="button"
@@ -327,6 +342,16 @@ export function EmbeddedBrowser({
       )}
 
       <div ref={panelRef} className="min-h-0 flex-1 rounded-lg border bg-muted/30" />
+
+      {portalOpen && (
+        <PortalSyncDialog
+          open={portalOpen}
+          onOpenChange={setPortalOpen}
+          currentUrl={navState?.url ?? null}
+          currentTitle={navState?.title ?? null}
+          companies={portalCompanies}
+        />
+      )}
 
       {captureInitial && (
         <PositionFormDialog

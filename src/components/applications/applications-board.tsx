@@ -20,6 +20,8 @@ export type BoardApplication = {
   currentStageDate: string;
   nextDeadline: string | null;
   nextDeadlineEnd: string | null;
+  /** Verbatim wording from the company's portal, via 网申进度同步. */
+  portalStatus?: string | null;
 };
 
 /**
@@ -155,6 +157,11 @@ export function ApplicationsBoard({
                         >
                           停留 {stalled} 天
                         </p>
+                        {app.portalStatus && (
+                          <p className="mt-0.5 truncate text-xs text-muted-foreground" title={`官网显示：${app.portalStatus}`}>
+                            官网：{app.portalStatus}
+                          </p>
+                        )}
                         {app.nextDeadline && (
                           <p className="mt-0.5 text-xs text-amber-600 dark:text-amber-400">
                             {

@@ -290,6 +290,7 @@ function readAppSettings() {
       backgroundReminders: false,
       inboxScanIntervalHours: 0,
       jobRadarIntervalHours: 0,
+      applicationSyncIntervalHours: 0,
       ...JSON.parse(fs.readFileSync(settingsFile(), "utf8")),
     };
   } catch {
@@ -298,6 +299,7 @@ function readAppSettings() {
       backgroundReminders: false,
       inboxScanIntervalHours: 0,
       jobRadarIntervalHours: 0,
+      applicationSyncIntervalHours: 0,
     };
   }
 }
@@ -378,6 +380,13 @@ function buildTray() {
         click: () => {
           lastRadarCheckAt = 0;
           maybeCheckJobRadar();
+        },
+      },
+      {
+        label: "立即同步网申进度",
+        click: () => {
+          lastApplicationSyncAt = 0;
+          maybeSyncApplications();
         },
       },
       { type: "separator" },
@@ -490,6 +499,53 @@ async function maybeCheckJobRadar() {
   }
 }
 
+// 网申进度同步: same timer pattern as the radar, but the page it reads is
+// the company's candidate portal behind the user's own login (rendered in
+// the 网申浏览器's session — see electron/render-bridge.js), and the result
+// is a stage change on the user's own applications. Server-side logic in
+// src/lib/actions/application-sync.ts; this is just the timer + notification.
+let lastApplicationSyncAt = 0;
+
+async function maybeSyncApplications() {
+  const hours = Number(readAppSettings().applicationSyncIntervalHours) || 0;
+  if (hours <= 0) return;
+  if (Date.now() - lastApplicationSyncAt < hours * 3600 * 1000) return;
+  lastApplicationSyncAt = Date.now();
+  try {
+    const res = await fetch(`http://localhost:${PORT}/api/application-sync/check`, { method: "POST" });
+    if (!res.ok) return;
+    const { changed, errors } = await res.json();
+    const { Notification } = require("electron");
+    if (!Notification.isSupported()) return;
+
+    if (Array.isArray(changed) && changed.length > 0) {
+      const first = changed[0];
+      new Notification({
+        title: changed.length === 1 ? "网申进度有更新" : `网申进度有更新（${changed.length} 条）`,
+        body:
+          changed.length === 1
+            ? `${first.companyName} · ${first.title}：官网显示「${first.portalStatus}」`
+            : `${first.companyName} 等 ${changed.length} 条投递的官网状态变了，去看板看看`,
+      })
+        .on("click", showWindow)
+        .show();
+    }
+    // A login that expired is the one error worth interrupting for — the
+    // sync silently does nothing until the user logs back in.
+    const expired = Array.isArray(errors) ? errors.filter((e) => /登录已过期/.test(e.message || "")) : [];
+    if (expired.length > 0) {
+      new Notification({
+        title: "网申进度同步：需要重新登录",
+        body: `${expired.map((e) => e.companyName).join("、")} 的招聘系统登录已过期，去网申浏览器重新登录`,
+      })
+        .on("click", showWindow)
+        .show();
+    }
+  } catch {
+    // Server not up yet, or transient — the next tick will retry.
+  }
+}
+
 function startScanLoop() {
   if (scanTimer) return;
   // Checked every 5 minutes; maybeScanInbox/maybeCheckJobRadar each decide
@@ -498,6 +554,7 @@ function startScanLoop() {
   scanTimer = setInterval(() => {
     maybeScanInbox();
     maybeCheckJobRadar();
+    maybeSyncApplications();
   }, 5 * 60 * 1000);
 }
 

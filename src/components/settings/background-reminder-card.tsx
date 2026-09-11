@@ -154,6 +154,41 @@ export function BackgroundReminderCard({ initial }: { initial: AppSettings }) {
           )}
         </div>
 
+        <div className="space-y-1 rounded-md border p-3">
+          <p className="text-sm font-medium">网申进度同步频率</p>
+          <p className="text-xs text-muted-foreground">
+            在网申浏览器里登录某家公司的招聘系统、打开「我的投递」页面后点「设为进度页」，这里就会按频率用那个
+            登录态悄悄重新打开该页面，让 AI 读出每条投递现在到哪一步了，跟看板对不上就自动往前推进（只前进不后退，
+            已结束的不会动），并弹通知。登录过期会提醒你回去重新登录。默认关闭，理由同岗位雷达。
+          </p>
+          <Select
+            value={String(settings.applicationSyncIntervalHours ?? 0)}
+            onValueChange={(v) => v && set({ applicationSyncIntervalHours: Number(v) })}
+          >
+            <SelectTrigger className="mt-1 w-full sm:w-64" disabled={saving || !settings.backgroundReminders}>
+              <SelectValue>
+                {() =>
+                  RADAR_INTERVAL_OPTIONS.find(
+                    (o) => o.value === (settings.applicationSyncIntervalHours ?? 0)
+                  )?.label ?? "不自动检查"
+                }
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {RADAR_INTERVAL_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={String(o.value)}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {!settings.backgroundReminders && (
+            <p className="text-xs text-muted-foreground">
+              需要先打开上面的「常驻托盘」——App 不在后台跑就没人执行定时同步。
+            </p>
+          )}
+        </div>
+
         {settings.autoLaunchFailed && (
           <p className="rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive">
             上次启动时系统拒绝了开机自启的设置（这个 App 没有做代码签名，macOS

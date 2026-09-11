@@ -41,6 +41,8 @@ export type ApplicationRow = {
   salaryMax: number | null;
   nextDeadline: string | null;
   nextDeadlineEnd: string | null;
+  /** Verbatim wording from the company's portal, via 网申进度同步. */
+  portalStatus?: string | null;
   company: { name: string };
 };
 

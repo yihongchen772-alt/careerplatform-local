@@ -9,7 +9,15 @@
 
 const RENDER_TIMEOUT_MS = 25000;
 
-export async function renderPageText(url: string): Promise<string> {
+/**
+ * `useApplicationSession` renders inside the 网申浏览器's own cookie jar
+ * (persist:job-application-browser) instead of a blank one — the only way
+ * to read a page that's behind the login the user did in that panel.
+ */
+export async function renderPageText(
+  url: string,
+  options: { useApplicationSession?: boolean } = {}
+): Promise<string> {
   const bridgeUrl = process.env.CAREERPLATFORM_RENDER_BRIDGE_URL;
   const token = process.env.CAREERPLATFORM_RENDER_BRIDGE_TOKEN;
   if (!bridgeUrl || !token) {
@@ -23,7 +31,10 @@ export async function renderPageText(url: string): Promise<string> {
       method: "POST",
       signal: controller.signal,
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ url }),
+      body: JSON.stringify({
+        url,
+        ...(options.useApplicationSession ? { partition: "persist:job-application-browser" } : {}),
+      }),
     });
     const data: unknown = await res.json().catch(() => null);
     if (!res.ok) {

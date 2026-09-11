@@ -53,6 +53,7 @@ export function ApplicationsView({ applications }: { applications: ApplicationRo
             currentStageDate: a.currentStageDate,
             nextDeadline: a.nextDeadline,
             nextDeadlineEnd: a.nextDeadlineEnd,
+            portalStatus: a.portalStatus,
           }))}
         />
       ) : (
