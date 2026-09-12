@@ -74,7 +74,7 @@ export function ApplicationsTable({
     const csv = toCsv(filtered, [
       { header: "公司", value: (a) => a.company.name },
       { header: "岗位", value: (a) => a.title },
-      { header: "投递日期", value: (a) => new Date(a.appliedDate).toLocaleDateString() },
+      { header: "投递日期", value: (a) => new Date(a.appliedDate).toLocaleDateString("zh-CN") },
       { header: "当前状态", value: (a) => STAGE_LABELS[a.currentStage] },
       { header: "距上次更新(天)", value: (a) => daysSince(new Date(a.currentStageDate)) },
       { header: "渠道", value: (a) => a.source ?? "" },
@@ -147,7 +147,7 @@ export function ApplicationsTable({
                   </Badge>
                 </div>
                 <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                  <span>{new Date(app.appliedDate).toLocaleDateString()} 投递</span>
+                  <span>{new Date(app.appliedDate).toLocaleDateString("zh-CN")} 投递</span>
                   <span
                     className={
                       !terminal && stale >= 14 ? "font-medium text-destructive" : ""
@@ -207,7 +207,7 @@ export function ApplicationsTable({
                   </Link>
                 </TableCell>
                 <TableCell>
-                  {new Date(app.appliedDate).toLocaleDateString()}
+                  {new Date(app.appliedDate).toLocaleDateString("zh-CN")}
                 </TableCell>
                 <TableCell>
                   <Badge variant={STAGE_BADGE_VARIANT[app.currentStage]}>

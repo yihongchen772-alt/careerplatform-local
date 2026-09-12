@@ -82,7 +82,7 @@ export function ResumeCheckDialog({
               <span className="text-sm text-muted-foreground">/ 100</span>
               {checkedAt && !loading && (
                 <span className="ml-auto text-xs text-muted-foreground">
-                  {new Date(checkedAt).toLocaleDateString()} 体检
+                  {new Date(checkedAt).toLocaleDateString("zh-CN")} 体检
                 </span>
               )}
             </div>

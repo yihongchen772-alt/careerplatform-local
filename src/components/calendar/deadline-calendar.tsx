@@ -154,8 +154,8 @@ export function DeadlineCalendar({
                 <span>{e.label}</span>
                 <span className="text-xs text-muted-foreground">
                   {e.dateEnd
-                    ? `${new Date(e.date).toLocaleDateString()} - ${new Date(e.dateEnd).toLocaleDateString()}`
-                    : new Date(e.date).toLocaleDateString()}
+                    ? `${new Date(e.date).toLocaleDateString("zh-CN")} - ${new Date(e.dateEnd).toLocaleDateString("zh-CN")}`
+                    : new Date(e.date).toLocaleDateString("zh-CN")}
                 </span>
               </Link>
             ))

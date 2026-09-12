@@ -146,7 +146,7 @@ function ContactRow({
         )}
         {!followUp && contact.lastContactedAt && (
           <p className="text-xs text-muted-foreground">
-            上次联系：{new Date(contact.lastContactedAt).toLocaleDateString()}
+            上次联系：{new Date(contact.lastContactedAt).toLocaleDateString("zh-CN")}
           </p>
         )}
         {contact.note && <p className="mt-1 text-xs">{contact.note}</p>}

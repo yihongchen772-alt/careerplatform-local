@@ -65,8 +65,8 @@ export default async function ComparePage() {
                   overtimeNote: app.overtimeNote,
                   growthNote: app.growthNote,
                   offerNote: app.offerNote,
-                  offerDate: offerStage?.enteredAt.toLocaleDateString() ?? null,
-                  decideBy: offerStage?.nextDeadline?.toLocaleDateString() ?? null,
+                  offerDate: offerStage?.enteredAt.toLocaleDateString("zh-CN") ?? null,
+                  decideBy: offerStage?.nextDeadline?.toLocaleDateString("zh-CN") ?? null,
                 };
               })}
             />
@@ -112,14 +112,14 @@ export default async function ComparePage() {
                   {offerStage && (
                     <div className="flex items-center gap-2">
                       <span className="text-muted-foreground">拿到日期</span>
-                      <span>{offerStage.enteredAt.toLocaleDateString()}</span>
+                      <span>{offerStage.enteredAt.toLocaleDateString("zh-CN")}</span>
                     </div>
                   )}
                   {offerStage?.nextDeadline && (
                     <div className="flex items-center gap-2">
                       <span className="text-muted-foreground">决策截止</span>
                       <span className="text-destructive">
-                        {offerStage.nextDeadline.toLocaleDateString()}
+                        {offerStage.nextDeadline.toLocaleDateString("zh-CN")}
                       </span>
                     </div>
                   )}

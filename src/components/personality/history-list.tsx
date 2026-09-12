@@ -36,7 +36,7 @@ export function PersonalityHistoryList({ results }: { results: HistoryRow[] }) {
             <Badge variant="outline">{PERSONALITY_TESTS[r.testType].title}</Badge>
             <span className="truncate font-medium">{r.resultLabel}</span>
             <span className="shrink-0 text-xs text-muted-foreground">
-              {new Date(r.createdAt).toLocaleDateString()}
+              {new Date(r.createdAt).toLocaleDateString("zh-CN")}
             </span>
           </div>
           <ConfirmDeleteButton

@@ -154,8 +154,8 @@ function TaskRow({
           {[
             task.dueDate &&
               (task.dueDateEnd
-                ? `${new Date(task.dueDate).toLocaleDateString()} - ${new Date(task.dueDateEnd).toLocaleDateString()}`
-                : new Date(task.dueDate).toLocaleDateString()),
+                ? `${new Date(task.dueDate).toLocaleDateString("zh-CN")} - ${new Date(task.dueDateEnd).toLocaleDateString("zh-CN")}`
+                : new Date(task.dueDate).toLocaleDateString("zh-CN")),
             linked?.label,
           ]
             .filter(Boolean)

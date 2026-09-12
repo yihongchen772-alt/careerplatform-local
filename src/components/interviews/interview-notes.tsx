@@ -168,7 +168,7 @@ export function InterviewNotes({ notes }: { notes: InterviewNote[] }) {
                 <span className="font-medium">{n.companyName}</span>
                 <span className="text-sm text-muted-foreground">{n.title}</span>
                 <span className="ml-auto text-xs text-muted-foreground">
-                  {new Date(n.enteredAt).toLocaleDateString()}
+                  {new Date(n.enteredAt).toLocaleDateString("zh-CN")}
                 </span>
               </div>
 

@@ -22,21 +22,51 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   back: () => ipcRenderer.invoke("browser:back"),
   forward: () => ipcRenderer.invoke("browser:forward"),
   reload: () => ipcRenderer.invoke("browser:reload"),
+  stop: () => ipcRenderer.invoke("browser:stop"),
   setBounds: (rect) => ipcRenderer.invoke("browser:set-bounds", rect),
   autofill: (resumeVersionId) => ipcRenderer.invoke("browser:autofill", resumeVersionId),
   saveCorrections: () => ipcRenderer.invoke("browser:save-corrections"),
+  clearMarks: () => ipcRenderer.invoke("browser:clear-marks"),
   capturePage: () => ipcRenderer.invoke("browser:capture-page"),
+  screenshot: () => ipcRenderer.invoke("browser:screenshot"),
   zoomIn: () => ipcRenderer.invoke("browser:zoom-in"),
   zoomOut: () => ipcRenderer.invoke("browser:zoom-out"),
   zoomReset: () => ipcRenderer.invoke("browser:zoom-reset"),
-  onNavState: (callback) => {
+  newTab: (url) => ipcRenderer.invoke("browser:new-tab", url),
+  switchTab: (id) => ipcRenderer.invoke("browser:switch-tab", id),
+  closeTab: (id) => ipcRenderer.invoke("browser:close-tab", id),
+  getTabs: () => ipcRenderer.invoke("browser:get-tabs"),
+  openExternal: () => ipcRenderer.invoke("browser:open-external"),
+  copyUrl: () => ipcRenderer.invoke("browser:copy-url"),
+  history: () => ipcRenderer.invoke("browser:history"),
+  clearHistory: () => ipcRenderer.invoke("browser:clear-history"),
+  showDownload: (file) => ipcRenderer.invoke("browser:show-download", file),
+  clearSiteData: () => ipcRenderer.invoke("browser:clear-site-data"),
+  find: (options) => ipcRenderer.invoke("browser:find", options),
+  findStop: () => ipcRenderer.invoke("browser:find-stop"),
+  onTabs: (callback) => {
     const listener = (_event, state) => callback(state);
-    ipcRenderer.on("browser:nav-state", listener);
-    return () => ipcRenderer.removeListener("browser:nav-state", listener);
+    ipcRenderer.on("browser:tabs", listener);
+    return () => ipcRenderer.removeListener("browser:tabs", listener);
   },
   onAutofillStatus: (callback) => {
     const listener = (_event, status) => callback(status);
     ipcRenderer.on("browser:autofill-status", listener);
     return () => ipcRenderer.removeListener("browser:autofill-status", listener);
+  },
+  onShortcut: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("browser:shortcut", listener);
+    return () => ipcRenderer.removeListener("browser:shortcut", listener);
+  },
+  onDownload: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("browser:download", listener);
+    return () => ipcRenderer.removeListener("browser:download", listener);
+  },
+  onFindResult: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("browser:find-result", listener);
+    return () => ipcRenderer.removeListener("browser:find-result", listener);
   },
 });

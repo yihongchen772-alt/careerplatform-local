@@ -183,7 +183,7 @@ function FileCard({ file }: { file: LibraryFile }) {
           </Link>
         )}
         <p className="mt-0.5 text-xs text-muted-foreground">
-          {new Date(file.createdAt).toLocaleDateString()}
+          {new Date(file.createdAt).toLocaleDateString("zh-CN")}
         </p>
       </div>
       <ConfirmDeleteButton

@@ -290,8 +290,8 @@ function TimelineRow({
       {entry.nextDeadline && (
         <p className="mt-1 text-xs text-muted-foreground">
           {entry.nextDeadlineEnd
-            ? `下一步窗口：${new Date(entry.nextDeadline).toLocaleDateString()} - ${new Date(entry.nextDeadlineEnd).toLocaleDateString()}`
-            : `下一步截止：${new Date(entry.nextDeadline).toLocaleDateString()}`}
+            ? `下一步窗口：${new Date(entry.nextDeadline).toLocaleDateString("zh-CN")} - ${new Date(entry.nextDeadlineEnd).toLocaleDateString("zh-CN")}`
+            : `下一步截止：${new Date(entry.nextDeadline).toLocaleDateString("zh-CN")}`}
         </p>
       )}
       {entry.attachments.length > 0 && (

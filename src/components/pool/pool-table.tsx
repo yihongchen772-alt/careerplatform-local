@@ -403,7 +403,7 @@ export function PoolTable({
                         : ""
                     }
                   >
-                    {deadline.toLocaleDateString()} 截止
+                    {deadline.toLocaleDateString("zh-CN")} 截止
                   </span>
                 )}
               </div>
@@ -559,7 +559,7 @@ export function PoolTable({
                           : ""
                       }
                     >
-                      {deadline.toLocaleDateString()}
+                      {deadline.toLocaleDateString("zh-CN")}
                     </span>
                   ) : (
                     "-"
