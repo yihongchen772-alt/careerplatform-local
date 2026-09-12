@@ -12,7 +12,7 @@ import {
   type InterviewMessageDTO,
 } from "@/lib/actions/interview-session";
 import type { InterviewFeedback } from "@/lib/validation";
-import { startRecording, type Recorder } from "@/lib/audio-recorder";
+import { startRecording, MicAccessDeniedError, type Recorder } from "@/lib/audio-recorder";
 
 /**
  * Splits on ```fenced``` blocks so pasted/discussed code renders in a
@@ -113,8 +113,14 @@ export function MockInterviewChat({
       const started = await startRecording();
       setSeconds(0);
       setRecorder(started);
-    } catch {
-      toast.error("打不开麦克风——检查一下系统里有没有给这个 App 麦克风权限");
+    } catch (err) {
+      if (err instanceof MicAccessDeniedError) {
+        toast.error("系统没给这个 App 麦克风权限，录了也是静音——去系统设置里开一下", {
+          action: { label: "打开系统设置", onClick: () => window.desktopMic?.openSettings() },
+        });
+      } else {
+        toast.error("打不开麦克风——检查一下系统里有没有给这个 App 麦克风权限");
+      }
     }
   }
 

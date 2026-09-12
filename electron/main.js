@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog } = require("electron");
+const { app, BrowserWindow, dialog, systemPreferences, shell, ipcMain } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
@@ -225,6 +225,21 @@ function waitForServer(url, timeoutMs) {
 
 let mainWindow = null;
 
+// Registered once at module load (not inside createWindow, which can run
+// again after the window is closed and reopened) so the renderer can check
+// real OS-level mic authorization instead of inferring it from whether
+// getUserMedia happened to throw — see the askForMediaAccess call above for
+// why that inference is unreliable on macOS.
+ipcMain.handle("mic:status", () => {
+  if (process.platform !== "darwin") return "granted";
+  return systemPreferences.getMediaAccessStatus("microphone");
+});
+ipcMain.handle("mic:open-settings", () => {
+  if (process.platform === "darwin") {
+    shell.openExternal("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone");
+  }
+});
+
 function createWindow({ show = true } = {}) {
   mainWindow = new BrowserWindow({
     width: 1320,
@@ -249,6 +264,21 @@ function createWindow({ show = true } = {}) {
       callback(permission === "media" || permission === "audioCapture");
     }
   );
+
+  // This handler being granted is necessary but not sufficient on macOS:
+  // it only controls whether Chromium's getUserMedia call is *allowed to
+  // ask*, not whether the OS (TCC) has actually authorized this app to
+  // read the microphone. Without an explicit askForMediaAccess call, an
+  // app whose TCC entry is unset or stale (e.g. after an ad-hoc-signed
+  // rebuild, which macOS can treat as a different binary identity) gets a
+  // getUserMedia() that resolves normally but hands back a silent stream
+  // instead of throwing — the mic button looks like it's recording, but
+  // the "recording" is empty. Asking here, at launch, surfaces the native
+  // permission prompt (or confirms it's already granted) before the user
+  // ever reaches the mock interview page.
+  if (process.platform === "darwin") {
+    systemPreferences.askForMediaAccess("microphone").catch(() => {});
+  }
 
   setupBrowserViewIpc(mainWindow, PORT);
 

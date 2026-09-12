@@ -13,6 +13,15 @@ contextBridge.exposeInMainWorld("desktopUpdates", {
   },
 });
 
+// Lets the mock interview's mic button check real OS-level microphone
+// authorization before recording, instead of only finding out after the
+// fact that a "successful" recording was actually silent (see main.js's
+// askForMediaAccess call for why getUserMedia succeeding isn't enough).
+contextBridge.exposeInMainWorld("desktopMic", {
+  status: () => ipcRenderer.invoke("mic:status"),
+  openSettings: () => ipcRenderer.invoke("mic:open-settings"),
+});
+
 // This app's first contextBridge. Kept deliberately narrow — only what the
 // embedded 网申浏览器 panel needs — since anything exposed here is reachable
 // from every page this window ever loads (all of them are our own Next app,

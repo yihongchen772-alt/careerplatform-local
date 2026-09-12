@@ -19,7 +19,31 @@ export type Recorder = {
   cancel: () => void;
 };
 
+type DesktopMicBridge = { status(): Promise<string>; openSettings(): Promise<void> };
+declare global {
+  interface Window {
+    desktopMic?: DesktopMicBridge;
+  }
+}
+
+/**
+ * Distinguished from a generic getUserMedia failure: on macOS, Electron's
+ * in-app permission handler being granted does not mean the OS (TCC) has
+ * actually authorized the app to read the microphone. When it hasn't,
+ * getUserMedia can resolve successfully anyway and just hand back silence —
+ * no exception, a recording that looks normal, a transcript that's the
+ * model guessing at content from the prompt alone. Checking desktopMic.status()
+ * (only present inside the Electron shell) catches that case before it
+ * wastes a recording.
+ */
+export class MicAccessDeniedError extends Error {}
+
 export async function startRecording(): Promise<Recorder> {
+  if (window.desktopMic) {
+    const status = await window.desktopMic.status();
+    if (status !== "granted") throw new MicAccessDeniedError(status);
+  }
+
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: {
       // The browser's own cleanup is better than anything done afterwards,
