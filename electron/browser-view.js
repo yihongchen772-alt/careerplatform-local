@@ -320,8 +320,18 @@ const BASIC_FIELD_RULES = [
   { keys: ["学校", "毕业院校", "院校", "school", "university"], get: (p) => p.school },
   {
     keys: ["毕业年份", "毕业时间", "graduate"],
-    get: (p) => (p.graduationYear ? String(p.graduationYear) : ""),
+    get: (p) => p.educationEnd || (p.graduationYear ? String(p.graduationYear) : ""),
   },
+  { keys: ["入学时间", "入学年份", "入学年月"], get: (p) => p.educationStart },
+  { keys: ["专业", "major"], get: (p) => p.major },
+  { keys: ["学历", "最高学历", "degree", "education level"], get: (p) => p.degree },
+  // Before GPA: "英语成绩" must land here, not in the GPA rule below.
+  { keys: ["英语", "外语", "cet", "english", "语言能力"], get: (p) => p.english },
+  { keys: ["gpa", "绩点", "平均分", "平均成绩", "学习成绩", "加权"], get: (p) => p.gpa },
+  { keys: ["政治面貌", "politic"], get: (p) => p.politics },
+  { keys: ["籍贯", "户籍", "户口所在地", "hometown"], get: (p) => p.hometown },
+  { keys: ["民族", "ethnic"], get: (p) => p.ethnicity },
+  { keys: ["现居", "现住", "所在城市", "常住"], get: (p) => p.currentCity },
   { keys: ["意向城市", "期望城市", "工作城市", "city"], get: (p) => p.preferredCities },
 ];
 

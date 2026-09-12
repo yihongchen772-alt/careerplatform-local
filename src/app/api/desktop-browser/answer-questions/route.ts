@@ -23,6 +23,20 @@ const profileSchema = z
     targetTrack: z.string().nullish(),
     graduationYear: z.number().nullish(),
     preferredCities: z.string().nullish(),
+    major: z.string().nullish(),
+    degree: z.string().nullish(),
+    gpa: z.string().nullish(),
+    educationStart: z.string().nullish(),
+    educationEnd: z.string().nullish(),
+    latestCompany: z.string().nullish(),
+    latestRole: z.string().nullish(),
+    politics: z.string().nullish(),
+    hometown: z.string().nullish(),
+    ethnicity: z.string().nullish(),
+    english: z.string().nullish(),
+    currentCity: z.string().nullish(),
+    /** Readable digest of the structured 网申资料 (education/experience rows). */
+    extra: z.string().nullish(),
   })
   .partial();
 

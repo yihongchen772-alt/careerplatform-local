@@ -30,6 +30,11 @@ model User {
   /// local single-user account's internal identifier (defaults to a
   /// placeholder like "me@local") and must never be used for that.
   contactEmail          String?
+  /// Structured 网申 facts the resume doesn't reliably carry and the
+  /// keyword matcher needs verbatim: education rows (学校/专业/学历/GPA/
+  /// 起止), experience rows, and the odd fields every Chinese form asks
+  /// (政治面貌/籍贯/民族/英语水平). See src/lib/application-profile.ts.
+  applicationProfile    Json?
   /// Free text rather than an enum, matching this app's convention
   /// elsewhere (see Contact.role) — a fixed list doesn't fit everyone.
   gender                String?

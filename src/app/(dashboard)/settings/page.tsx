@@ -12,15 +12,23 @@ import { getAppSettings } from "@/lib/actions/app-settings";
 import { listMailAccounts } from "@/lib/actions/mail-accounts";
 import { getDataFreshness } from "@/lib/actions/backup";
 import { UpdateCard } from "@/components/settings/update-card";
+import { ApplicationProfileCard } from "@/components/settings/application-profile-card";
+import { parseApplicationProfile } from "@/lib/application-profile";
+import { db } from "@/lib/db";
 import { version } from "../../../../package.json";
 
 export default async function SettingsPage() {
   const user = await requireUser();
-  const [aiKeys, appSettings, mailAccounts, freshnessResult] = await Promise.all([
+  const [aiKeys, appSettings, mailAccounts, freshnessResult, resumeVersions] = await Promise.all([
     getAiKeysOverview(user.id),
     getAppSettings(),
     listMailAccounts(user.id),
     getDataFreshness(),
+    db.resumeVersion.findMany({
+      where: { userId: user.id },
+      select: { id: true, name: true },
+      orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }],
+    }),
   ]);
   const freshness = freshnessResult.ok ? freshnessResult.data : null;
 
@@ -43,6 +51,7 @@ export default async function SettingsPage() {
             expectedSalaryMin: user.expectedSalaryMin,
           }}
         />
+        <ApplicationProfileCard initial={parseApplicationProfile(user.applicationProfile)} resumeVersions={resumeVersions} />
         <AppearanceForm />
         <AiSettingsForm keys={aiKeys} />
         <ProxySettingsCard initial={appSettings} />
