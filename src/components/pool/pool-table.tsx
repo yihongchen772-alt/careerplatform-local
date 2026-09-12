@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Globe, ListChecks } from "lucide-react";
+import { Crosshair, Globe, ListChecks } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -435,6 +435,14 @@ export function PoolTable({
                       打开网申页面
                     </Link>
                   )}
+                  <Link
+                    href={`/resume-drill?position=${p.id}`}
+                    className={buttonVariants({ size: "sm", variant: "outline" })}
+                    title="针对这个岗位的 JD，让 AI 按你的简历生成三层追问来练"
+                  >
+                    <Crosshair className="size-3.5" />
+                    简历深挖
+                  </Link>
                   <PositionFormDialog
                     mode="edit"
                     positionId={p.id}
@@ -593,6 +601,14 @@ export function PoolTable({
                       打开网申页面
                     </Link>
                   )}
+                  <Link
+                    href={`/resume-drill?position=${p.id}`}
+                    className={buttonVariants({ size: "sm", variant: "outline" })}
+                    title="针对这个岗位的 JD，让 AI 按你的简历生成三层追问来练"
+                  >
+                    <Crosshair className="size-3.5" />
+                    简历深挖
+                  </Link>
                   <PositionFormDialog
                     mode="edit"
                     positionId={p.id}

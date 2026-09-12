@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ChevronDown, Lock, RefreshCw, Sparkles } from "lucide-react";
+import { ChevronDown, Library, Lock, RefreshCw, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,7 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { answerDrillQuestion, generateResumeDrill } from "@/lib/actions/resume-drill";
+import { answerDrillQuestion, generateResumeDrill, saveDrillAsBank } from "@/lib/actions/resume-drill";
 import type { DrillAnswer, DrillProject, DrillQuestion, ResumeDrillDTO } from "@/lib/resume-drill";
 
 type ResumeOption = { id: string; name: string; isDefault: boolean };
@@ -35,18 +35,34 @@ export function ResumeDrillWorkbench({
   positions,
   selectedResumeId,
   initialDrill,
+  initialPositionId,
   hasOwnKey,
 }: {
   resumeVersions: ResumeOption[];
   positions: PositionOption[];
   selectedResumeId: string | null;
   initialDrill: ResumeDrillDTO | null;
+  /** From ?position= — the pool row's "简历深挖" link preselects its position. */
+  initialPositionId?: string | null;
   hasOwnKey: boolean;
 }) {
   const router = useRouter();
-  const [positionId, setPositionId] = useState(initialDrill?.positionId ?? NONE);
+  const [positionId, setPositionId] = useState(initialPositionId ?? initialDrill?.positionId ?? NONE);
+  const [savingBank, setSavingBank] = useState(false);
   const [drill, setDrill] = useState<ResumeDrillDTO | null>(initialDrill);
   const [generating, setGenerating] = useState(false);
+
+  async function handleSaveBank() {
+    if (!drill || savingBank) return;
+    setSavingBank(true);
+    try {
+      const res = await saveDrillAsBank(drill.id);
+      if (!res.ok) return void toast.error(res.message);
+      toast.success(`已存为题库（${res.data.count} 题），在「题库」页能看到`);
+    } finally {
+      setSavingBank(false);
+    }
+  }
 
   async function handleGenerate() {
     if (!selectedResumeId || generating) return;
@@ -159,10 +175,16 @@ export function ResumeDrillWorkbench({
               {generating ? "AI 正在读简历…" : drill ? "重新生成追问树" : "生成追问树"}
             </Button>
             {drill && (
-              <p className="text-xs text-muted-foreground">
-                {drill.positionLabel ? `针对：${drill.positionLabel} · ` : ""}
-                生成于 {new Date(drill.updatedAt).toLocaleString("zh-CN")}
-              </p>
+              <>
+                <Button type="button" variant="outline" disabled={savingBank} onClick={handleSaveBank} title="把追问和你的作答存成一份题库，方便面试前复习">
+                  <Library className="size-4" />
+                  {savingBank ? "保存中…" : "存为题库"}
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  {drill.positionLabel ? `针对：${drill.positionLabel} · ` : ""}
+                  生成于 {new Date(drill.updatedAt).toLocaleString("zh-CN")}
+                </p>
+              </>
             )}
           </div>
         </CardContent>

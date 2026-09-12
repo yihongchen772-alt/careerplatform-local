@@ -250,3 +250,43 @@ ${answerText}
     return record;
   });
 }
+
+/**
+ * Turns the drill tree into a 题库 — the questions are the interviewer's
+ * probes for THIS resume, and the answered ones carry the user's own graded
+ * answer as the reference, which beats any generic 面经 for rehearsal.
+ */
+export async function saveDrillAsBank(drillId: string): Promise<ActionResult<{ id: string; count: number }>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const drill = await db.resumeDrill.findFirst({
+      where: { id: drillId, userId: user.id },
+      include: { resumeVersion: true, position: { include: { company: true } } },
+    });
+    if (!drill) throw new UserFacingError("未找到这份深挖记录");
+    const tree = drillTreeSchema.parse(drill.tree);
+    const answers = parseAnswers(drill.answers);
+    const questions = tree.projects.flatMap((p) =>
+      p.questions.map((q) => {
+        const a = answers[q.id];
+        return {
+          question: q.question,
+          category: `项目深挖 · ${p.name}`,
+          module: null,
+          referenceAnswer: a ? `${a.score}/10 分的回答：${a.answer}\n\n更好的说法：${a.betterAnswer}` : null,
+          tips: `面试官想验证：${q.intent}。要点：${q.keyPoints.join("；")}`,
+        };
+      })
+    );
+    const bank = await db.questionBank.create({
+      data: {
+        userId: user.id,
+        name: `简历深挖 · ${drill.resumeVersion.name}${drill.position ? ` · ${drill.position.company.name}` : ""}`,
+        source: "简历深挖",
+        questions,
+      },
+    });
+    revalidatePath("/question-banks");
+    return { id: bank.id, count: questions.length };
+  });
+}

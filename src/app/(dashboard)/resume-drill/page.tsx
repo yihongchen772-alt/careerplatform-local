@@ -6,10 +6,10 @@ import { ResumeDrillWorkbench } from "@/components/resume-drill/workbench";
 export default async function ResumeDrillPage({
   searchParams,
 }: {
-  searchParams: Promise<{ resume?: string }>;
+  searchParams: Promise<{ resume?: string; position?: string }>;
 }) {
   const user = await requireUser();
-  const { resume } = await searchParams;
+  const { resume, position } = await searchParams;
 
   const [resumeVersions, positions, dbUser] = await Promise.all([
     db.resumeVersion.findMany({
@@ -45,6 +45,7 @@ export default async function ResumeDrillPage({
         positions={positions.map((p) => ({ id: p.id, label: `${p.company.name} · ${p.title}` }))}
         selectedResumeId={selectedResumeId}
         initialDrill={drill}
+        initialPositionId={positions.find((p) => p.id === position)?.id ?? null}
         hasOwnKey={!!dbUser?.defaultAiProvider}
       />
     </div>
