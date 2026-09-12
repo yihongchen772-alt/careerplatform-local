@@ -53,6 +53,8 @@ export type DesktopBridge = {
   clearHistory(): Promise<void>;
   showDownload(file: string): Promise<void>;
   clearSiteData(): Promise<void>;
+  dismissForm(payload: { tabId: number; signature: string }): Promise<void>;
+  onFormDetected(callback: (payload: { tabId: number; count: number; signature: string }) => void): () => void;
   find(options: { text: string; forward?: boolean; findNext?: boolean }): Promise<void>;
   findStop(): Promise<void>;
   onTabs(callback: (state: DesktopBridgeTabsState) => void): () => void;

@@ -13,6 +13,10 @@ function scanPageFields(prefix) {
   const results = [];
   let counter = 0;
   const seenRadioGroups = new Set();
+  // Wizard pages keep earlier steps in the DOM, hidden. Their ids from the
+  // last scan would collide with this scan's and querySelector would hand
+  // the value to the hidden old field — clear them first.
+  document.querySelectorAll("[data-cp-fill-id]").forEach((el) => el.removeAttribute("data-cp-fill-id"));
   const elements = document.querySelectorAll(
     'input[type="text"], input[type="tel"], input[type="email"], input[type="number"], input[type="date"], input[type="month"], input[type="url"], input[type="radio"], input:not([type]), textarea, select'
   );
@@ -121,8 +125,38 @@ function scanPageFields(prefix) {
     return { radios, options, label };
   }
 
+  // Component-library dropdowns: a div that only becomes a list when
+  // clicked (Ant Design .ant-select, Element .el-select, and anything using
+  // the ARIA combobox pattern). No options are read here — the fill step
+  // opens each one and picks the closest match to the value it's given.
+  const customSelectors = ".ant-select, .el-select, [role='combobox']:not(input):not(select), input[role='combobox'][readonly], input[aria-haspopup='listbox']";
+  document.querySelectorAll(customSelectors).forEach((el) => {
+    const container = el.closest(".ant-select, .el-select") || el;
+    if (container.getAttribute("data-cp-fill-id")) return;
+    if (!isVisible(container)) return;
+    if (container.classList.contains("ant-select-disabled") || container.classList.contains("is-disabled") || container.getAttribute("aria-disabled") === "true") return;
+    const multiple = container.classList.contains("ant-select-multiple") || container.getAttribute("aria-multiselectable") === "true";
+    if (multiple) return; // never guess multi-selects
+    const shown = container.querySelector(".ant-select-selection-item, .el-select__selected-item, .el-select__tags");
+    const innerInput = container.querySelector("input");
+    const hasValue = !!(shown && shown.textContent.trim()) || !!(innerInput && innerInput.readOnly && innerInput.value && innerInput.value.trim());
+    const id = prefix + "s" + counter++;
+    container.setAttribute("data-cp-fill-id", id);
+    results.push({
+      id,
+      tag: "custom-select",
+      type: "",
+      label: labelFor(innerInput || container) || labelFor(container),
+      placeholder: (innerInput && innerInput.getAttribute("placeholder")) || (container.querySelector(".ant-select-selection-placeholder, .el-select__placeholder") || {}).textContent || "",
+      name: (innerInput && innerInput.getAttribute("name")) || container.id || "",
+      hasValue,
+    });
+  });
+
   elements.forEach((el) => {
     if (el.type === "password" || el.disabled || el.readOnly || !isVisible(el)) return;
+    // Inner inputs of custom selects were handled above.
+    if (el.closest("[data-cp-fill-id^='" + prefix + "s']")) return;
     if (el.type === "radio") {
       const group = radioGroup(el);
       if (!group) return;
@@ -279,6 +313,116 @@ function findInPageText(text, forward, restart) {
     return { active: st.active, total };
   }
   return { active: 0, total };
+}
+
+// Opens each custom dropdown, reads whatever options it renders, clicks the
+// best match for the wanted value, and closes it again if nothing fits.
+// Async because these libraries render the option list on the next tick.
+async function fillCustomSelects(pairs) {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const filled = [];
+  const failed = [];
+  function visibleOptions() {
+    const nodes = document.querySelectorAll(
+      ".ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option:not(.ant-select-item-option-disabled), " +
+        ".el-select-dropdown:not([style*='display: none']) .el-select-dropdown__item:not(.is-disabled), " +
+        "[role='listbox'] [role='option']:not([aria-disabled='true'])"
+    );
+    return Array.from(nodes).filter((n) => {
+      const r = n.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    });
+  }
+  function optionText(n) {
+    const inner = n.querySelector(".ant-select-item-option-content");
+    return ((inner || n).textContent || "").trim();
+  }
+  function pick(options, value) {
+    const v = String(value).trim();
+    return (
+      options.find((o) => optionText(o) === v) ||
+      options.find((o) => optionText(o).includes(v)) ||
+      options.find((o) => v.includes(optionText(o)) && optionText(o).length >= 2) ||
+      null
+    );
+  }
+  function mark(el, source) {
+    el.setAttribute("data-cp-filled", source);
+    el.style.setProperty("outline", (source === "ai" ? "2px solid #d946ef" : "2px solid #8b5cf6"), "important");
+    el.style.setProperty("outline-offset", "1px", "important");
+  }
+  for (const p of pairs) {
+    const container = document.querySelector('[data-cp-fill-id="' + p.id + '"]');
+    if (!container || !p.value) continue;
+    // Innermost first: a click on the inner input bubbles up through the
+    // wrapper/selector, so every library's own handler sees it.
+    const trigger = container.querySelector("input:not([type='hidden'])") || container.querySelector(".ant-select-selector, .el-select__wrapper") || container;
+    trigger.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    trigger.click();
+    await sleep(350);
+    let options = visibleOptions();
+    let target = pick(options, p.value);
+    // Searchable selects (and virtual lists that only render a screenful):
+    // type the value to narrow the list, then look again.
+    const searchInput = container.querySelector("input:not([readonly]):not([type='hidden'])");
+    if (!target && searchInput) {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+      setter.call(searchInput, String(p.value));
+      searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+      await sleep(450);
+      options = visibleOptions();
+      target = pick(options, p.value);
+      if (!target) {
+        setter.call(searchInput, "");
+        searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+    }
+    if (target) {
+      target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      target.click();
+      await sleep(150);
+      mark(container, p.source || "profile");
+      filled.push(p.id);
+    } else {
+      failed.push(p.label || p.id);
+      document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      document.body.click();
+      await sleep(100);
+    }
+  }
+  return { filled, failed };
+}
+
+// Side-effect-free count of what an autofill could touch right now — used
+// by the multi-step form watcher to notice "a new form page just appeared".
+function countFillableFields() {
+  function isVisible(el) {
+    const rect = el.getBoundingClientRect();
+    const style = window.getComputedStyle(el);
+    return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+  }
+  let count = 0;
+  const seenRadio = new Set();
+  const labels = [];
+  document
+    .querySelectorAll('input[type="text"], input[type="tel"], input[type="email"], input[type="number"], input[type="date"], input[type="month"], input[type="radio"], input:not([type]), textarea, select, .ant-select, .el-select')
+    .forEach((el) => {
+      if (el.disabled || !isVisible(el)) return;
+      if (el.type === "radio") {
+        const name = el.getAttribute("name") || "";
+        if (seenRadio.has(name)) return;
+        seenRadio.add(name);
+        const group = el.form ? el.form.querySelectorAll('input[type="radio"][name="' + name + '"]') : [el];
+        if (Array.from(group).some((r) => r.checked)) return;
+      } else if (el.classList && (el.classList.contains("ant-select") || el.classList.contains("el-select"))) {
+        if (el.querySelector(".ant-select-selection-item, .el-select__selected-item")) return;
+      } else if (el.readOnly || (el.value && String(el.value).trim())) {
+        return;
+      }
+      count++;
+      if (labels.length < 6) labels.push((el.getAttribute("name") || el.getAttribute("placeholder") || el.id || "").slice(0, 20));
+    });
+  return { count, signature: location.href.split("#")[0] + "|" + count + "|" + labels.join(",") };
 }
 
 function clearFillMarks() {
@@ -638,9 +782,10 @@ async function scanAllFrames(wc) {
   const frames = allFrames(wc);
   const fields = [];
   const frameById = new Map();
+  const run = Date.now().toString(36).slice(-4);
   for (let i = 0; i < frames.length; i++) {
     try {
-      const found = await frames[i].executeJavaScript(`(${scanPageFields.toString()})(${JSON.stringify(`c${i}-`)})`);
+      const found = await frames[i].executeJavaScript(`(${scanPageFields.toString()})(${JSON.stringify(`c${i}${run}-`)})`);
       for (const f of found || []) {
         frameById.set(f.id, frames[i]);
         fields.push(f);
@@ -661,14 +806,58 @@ async function fillAllFrames(pairs, frameById) {
     byFrame.get(frame).push(p);
   }
   let filled = 0;
+  const failedSelects = [];
   for (const [frame, subset] of byFrame) {
+    const plain = subset.filter((p) => !/-s\d+$/.test(p.id));
+    const custom = subset.filter((p) => /-s\d+$/.test(p.id));
     try {
-      filled += await frame.executeJavaScript(`(${fillFields.toString()})(${JSON.stringify(subset)})`);
+      if (plain.length) filled += await frame.executeJavaScript(`(${fillFields.toString()})(${JSON.stringify(plain)})`);
+      if (custom.length) {
+        const result = await frame.executeJavaScript(`(${fillCustomSelects.toString()})(${JSON.stringify(custom)})`);
+        filled += result.filled.length;
+        failedSelects.push(...result.failed);
+      }
     } catch {
       // Frame navigated away between scan and fill.
     }
   }
-  return filled;
+  return { filled, failedSelects };
+}
+
+// ---- multi-step form watcher ----
+// 网申 wizards (基本信息 → 教育经历 → 实习 → 开放题) swap forms without a
+// page load, so the "new form appeared" signal has to come from polling the
+// active tab for a change in what's fillable. Signatures already filled or
+// dismissed are remembered per tab so the hint doesn't nag.
+const formWatch = { lastSignature: new Map(), settled: new Map(), timer: null };
+
+async function checkForms() {
+  const tab = activeTab();
+  if (!tab || !lastBounds || tab.view.webContents.isLoading()) return;
+  const wc = tab.view.webContents;
+  let count = 0;
+  const sigs = [];
+  for (const frame of allFrames(wc)) {
+    try {
+      const r = await frame.executeJavaScript(`(${countFillableFields.toString()})()`);
+      count += r.count;
+      sigs.push(r.signature);
+    } catch {
+      // frame gone / scripts blocked
+    }
+  }
+  const signature = sigs.join("||");
+  if (signature === formWatch.lastSignature.get(tab.id)) return;
+  formWatch.lastSignature.set(tab.id, signature);
+  const settled = formWatch.settled.get(tab.id) || new Set();
+  if (count >= 3 && !settled.has(signature)) {
+    send("browser:form-detected", { tabId: tab.id, count, signature });
+  }
+}
+
+function markFormSettled(tabId, signature) {
+  if (!formWatch.settled.has(tabId)) formWatch.settled.set(tabId, new Set());
+  formWatch.settled.get(tabId).add(signature);
 }
 
 /**
@@ -801,6 +990,9 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     return { dataUrl: image.toDataURL(), url: tab.view.webContents.getURL(), title: tab.view.webContents.getTitle() };
   });
 
+  ipcMain.handle("browser:form-dismiss", (_e, { tabId, signature }) => markFormSettled(tabId, signature));
+  if (!formWatch.timer) formWatch.timer = setInterval(() => checkForms().catch(() => {}), 2500);
+
   ipcMain.handle("browser:clear-marks", async () => {
     const tab = activeTab();
     if (!tab) return;
@@ -839,7 +1031,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
         }
         const value = matchBasicField(field, profile);
         if (value) {
-          pairs.push({ id: field.id, value, source: "profile" });
+          pairs.push({ id: field.id, value, source: "profile", label: field.label });
           continue;
         }
         const label = field.label || field.placeholder || field.name;
@@ -848,6 +1040,10 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
           candidates.push({ id: field.id, label, kind: "essay" });
         } else if (field.tag === "select" || field.tag === "radio") {
           candidates.push({ id: field.id, label, kind: "choice", options: field.options || [] });
+        } else if (field.tag === "custom-select") {
+          // Options aren't known until it's opened — ask for a plain value
+          // and let fillCustomSelects match it against what appears.
+          candidates.push({ id: field.id, label, kind: "short" });
         } else {
           candidates.push({ id: field.id, label, kind: "short" });
         }
@@ -878,7 +1074,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
               const kind = kindById.get(a.id);
               const isSentinel = a.answer.trim().toUpperCase() === NEEDS_MANUAL_INPUT;
               if (kind !== "essay" && isSentinel) continue; // leave for manual entry
-              pairs.push({ id: a.id, value: a.answer, source: "ai" });
+              pairs.push({ id: a.id, value: a.answer, source: "ai", label: candidates.find((c) => c.id === a.id)?.label });
               // Only fields actually written to the page, and only ones with
               // a cache row behind them (answerId), are correction-worthy —
               // matches basic profile fields aren't AI answers at all, so a
@@ -900,7 +1096,13 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
         }
       }
 
-      await fillAllFrames(pairs, frameById);
+      const { failedSelects } = await fillAllFrames(pairs, frameById);
+      // Whatever this page looked like, it's handled — don't re-prompt for it.
+      for (const frame of allFrames(wc)) {
+        const r = await frame.executeJavaScript(`(${countFillableFields.toString()})()`).catch(() => null);
+        if (r) markFormSettled(tab.id, r.signature);
+      }
+      formWatch.lastSignature.delete(tab.id);
 
       const parts = [`已填 ${basicCount} 个基础字段`];
       if (essayCount > 0) {
@@ -914,10 +1116,13 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
         parts.push(`AI 从简历里补全了 ${shortFilledCount} 个其他字段`);
       }
       if (alreadyFilled > 0) parts.push(`${alreadyFilled} 个已有内容的字段没动`);
+      if (failedSelects.length > 0) {
+        parts.push(`${failedSelects.length} 个下拉框没找到匹配选项（${failedSelects.slice(0, 3).join("、")}${failedSelects.length > 3 ? "…" : ""}），需要手选`);
+      }
       if (neverGuessCount > 0) {
         parts.push(`${neverGuessCount} 个涉及证件号/密码/同意条款，没有自动填`);
       }
-      const attempted = basicCount + essayCount + shortFilledCount + neverGuessCount + alreadyFilled;
+      const attempted = basicCount + essayCount + shortFilledCount + neverGuessCount + alreadyFilled + failedSelects.length;
       const stillManual = fields.length - attempted;
       if (stillManual > 0) {
         parts.push(

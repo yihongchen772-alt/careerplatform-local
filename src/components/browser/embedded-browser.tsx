@@ -145,6 +145,29 @@ export function EmbeddedBrowser({
   const [resumeVersionId, setResumeVersionId] = useState(
     resumeVersions.find((r) => r.isDefault)?.id ?? resumeVersions[0]?.id ?? ""
   );
+  // Multi-step wizard support: the main process reports "a form with N
+  // empty fields just appeared" for the active tab; either show a one-line
+  // prompt or, with 自动填每一页 on, just fill it.
+  const [detected, setDetected] = useState<{ tabId: number; count: number; signature: string } | null>(null);
+  const autoFillEveryPage = useSyncExternalStore(
+    noop,
+    () => {
+      try {
+        return localStorage.getItem("careerplatform.browser.autofillEveryPage") === "1";
+      } catch {
+        return false;
+      }
+    },
+    () => false
+  );
+  const [autoFillOverride, setAutoFillOverride] = useState<boolean | null>(null);
+  const autoFill = autoFillOverride ?? autoFillEveryPage;
+  // Latest values for the long-lived IPC listener below, updated in an
+  // effect (the lint rule forbids touching refs during render).
+  const liveRef = useRef({ resumeVersionId, autoFill, autofilling });
+  useEffect(() => {
+    liveRef.current = { resumeVersionId, autoFill, autofilling };
+  }, [resumeVersionId, autoFill, autofilling]);
 
   const bridge = useDesktopBridge();
   const activeTab = tabsState.tabs.find((t) => t.id === tabsState.activeId) ?? null;
@@ -180,6 +203,18 @@ export function EmbeddedBrowser({
       }
     });
     const offFind = bridge.onFindResult((r) => setFindResult({ active: r.active, total: r.total }));
+    const offForm = bridge.onFormDetected((payload) => {
+      const live = liveRef.current;
+      if (live.autofilling) return;
+      if (live.autoFill && live.resumeVersionId) {
+        setDetected(null);
+        setAutofilling(true);
+        setStatus({ phase: "scanning", message: `检测到新一页表单（${payload.count} 个字段），自动填充中…` });
+        void bridge.autofill(live.resumeVersionId);
+      } else {
+        setDetected(payload);
+      }
+    });
     bridge.getTabs().then(setTabsState).catch(() => {});
     if (initialUrl) bridge.navigate(initialUrl);
     return () => {
@@ -188,6 +223,7 @@ export function EmbeddedBrowser({
       offShortcut();
       offDownload();
       offFind();
+      offForm();
     };
     // Only wire this up once per mount — re-running on every initialUrl
     // change would re-navigate away from wherever the user has since clicked.
@@ -275,8 +311,18 @@ export function EmbeddedBrowser({
     addressRef.current?.blur();
   }
 
+  function setAutoFillEveryPage(next: boolean) {
+    setAutoFillOverride(next);
+    try {
+      localStorage.setItem("careerplatform.browser.autofillEveryPage", next ? "1" : "0");
+    } catch {
+      // per-device convenience only
+    }
+  }
+
   function handleAutofill() {
     if (!bridge || autofilling) return;
+    setDetected(null);
     setAutofilling(true);
     setStatus({ phase: "scanning", message: "正在读取页面…" });
     bridge.autofill(resumeVersionId || undefined);
@@ -564,6 +610,10 @@ export function EmbeddedBrowser({
           <Sparkles className="size-4" />
           {autofilling ? "填充中..." : "AI 一键填充"}
         </Button>
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground" title="网申分好几页时（基本信息→教育→实习→开放题），每翻到一页有空表单就自动填，不用每页点一次">
+          <input type="checkbox" checked={autoFill} onChange={(e) => setAutoFillEveryPage(e.target.checked)} />
+          每页自动填
+        </label>
         {status?.phase === "done" && (
           <Button
             type="button"
@@ -592,6 +642,29 @@ export function EmbeddedBrowser({
         </Button>
       </div>
 
+      {detected && !autofilling && detected.tabId === tabsState.activeId && (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs">
+          <span>这页有 {detected.count} 个可填字段。</span>
+          <Button type="button" size="sm" className="h-7" onClick={handleAutofill}>
+            <Sparkles className="size-3.5" />
+            填这页
+          </Button>
+          <label className="flex items-center gap-1.5">
+            <input type="checkbox" checked={autoFill} onChange={(e) => setAutoFillEveryPage(e.target.checked)} />
+            以后每一页自动填
+          </label>
+          <button
+            type="button"
+            className="ml-auto text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              void bridge.dismissForm({ tabId: detected.tabId, signature: detected.signature });
+              setDetected(null);
+            }}
+          >
+            这页不用
+          </button>
+        </div>
+      )}
       <AiProgress
         active={autofilling && status?.phase === "ai"}
         expectedSeconds={30}

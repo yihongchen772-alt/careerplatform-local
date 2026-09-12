@@ -42,6 +42,12 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   clearHistory: () => ipcRenderer.invoke("browser:clear-history"),
   showDownload: (file) => ipcRenderer.invoke("browser:show-download", file),
   clearSiteData: () => ipcRenderer.invoke("browser:clear-site-data"),
+  dismissForm: (payload) => ipcRenderer.invoke("browser:form-dismiss", payload),
+  onFormDetected: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("browser:form-detected", listener);
+    return () => ipcRenderer.removeListener("browser:form-detected", listener);
+  },
   find: (options) => ipcRenderer.invoke("browser:find", options),
   findStop: () => ipcRenderer.invoke("browser:find-stop"),
   onTabs: (callback) => {
