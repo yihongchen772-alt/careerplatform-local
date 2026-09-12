@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Sparkles, X, Send, Check, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { AiProgress } from "@/components/ui/ai-progress";
 import { Input } from "@/components/ui/input";
 import {
   askAssistant,
@@ -242,7 +243,11 @@ export function AssistantWidget() {
                 </div>
               ))
             )}
-            {sending && <p role="status" className="text-xs text-muted-foreground">正在分析任务并按需调用工具，研究任务可能需要几分钟...</p>}
+            <AiProgress
+              active={sending}
+              expectedSeconds={60}
+              stages={["正在整理你的候选池、投递记录和待办…", "正在分析问题、按需调用工具…", "正在组织回答…", "研究类任务会更久一些，还在跑…"]}
+            />
             <div ref={bottomRef} />
           </div>
 

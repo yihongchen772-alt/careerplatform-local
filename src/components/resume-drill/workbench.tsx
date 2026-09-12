@@ -3,9 +3,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ChevronDown, Library, Lock, RefreshCw, Sparkles } from "lucide-react";
+import Link from "next/link";
+import { ChevronDown, Library, Lock, MessageSquare, RefreshCw, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import {
@@ -16,6 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { AiProgress } from "@/components/ui/ai-progress";
 import { answerDrillQuestion, generateResumeDrill, saveDrillAsBank } from "@/lib/actions/resume-drill";
 import type { DrillAnswer, DrillProject, DrillQuestion, ResumeDrillDTO } from "@/lib/resume-drill";
 
@@ -169,6 +171,11 @@ export function ResumeDrillWorkbench({
               </Select>
             </div>
           </div>
+          <AiProgress
+            active={generating}
+            expectedSeconds={60}
+            stages={["正在读整份简历…", "正在挑最可能被深挖的经历…", "正在给每段经历写三层追问…", "快好了，正在整理要点…"]}
+          />
           <div className="flex flex-wrap items-center gap-3">
             <Button type="button" disabled={generating || !selectedResumeId} onClick={handleGenerate}>
               {drill ? <RefreshCw className="size-4" /> : <Sparkles className="size-4" />}
@@ -291,6 +298,16 @@ function ProjectCard({
       </CardHeader>
       {open && (
         <CardContent className="space-y-5">
+          <Link
+            href={`/mock-interview?focusMix=${encodeURIComponent(
+              `本场只围绕候选人简历上的「${project.name}」这段经历深挖（${project.summary}）。按这些追问的思路层层推进，答得含糊就追问到底：${project.questions.map((q) => q.question).join("；")}`
+            )}`}
+            className={buttonVariants({ size: "sm", variant: "outline" })}
+            title="带着这一段的追问去 AI 模拟面试里真刀真枪地聊一场"
+          >
+            <MessageSquare className="size-3.5" />
+            就这段经历模拟一场面试
+          </Link>
           {levels.map(({ level, questions }) => {
             if (questions.length === 0) return null;
             // Layered on purpose: an interviewer never opens with the L3
@@ -388,6 +405,7 @@ function QuestionBlock({
                 rows={4}
                 placeholder="像面试时口头回答那样写，说具体的：你做了什么、为什么这样做、结果是什么"
               />
+              <AiProgress active={submitting} expectedSeconds={20} stages={["面试官在听…", "正在对照要点评分…", "正在想接下来追问什么…"]} />
               <div className="flex flex-wrap items-center gap-2">
                 <Button type="button" size="sm" disabled={submitting || draft.trim().length < 10} onClick={handleSubmit}>
                   {submitting ? "面试官在听…" : record ? "重新提交" : "提交回答"}

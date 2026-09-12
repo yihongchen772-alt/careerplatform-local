@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Pencil } from "lucide-react";
+import { Pencil, Radar } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -221,8 +221,14 @@ function TimelineRow({
           {STAGE_LABELS[entry.stage]}
         </Badge>
         <span className="text-xs text-muted-foreground">
-          {new Date(entry.enteredAt).toLocaleString()}
+          {new Date(entry.enteredAt).toLocaleString("zh-CN")}
         </span>
+        {entry.note?.startsWith("网申进度同步：") && (
+          <Badge variant="outline" className="gap-1 text-xs font-normal text-muted-foreground" title="这一步是 App 从公司官网「我的投递」页自动读出来推进的，不是你手动填的">
+            <Radar className="size-3" />
+            官网同步
+          </Badge>
+        )}
         <Button
           type="button"
           variant="ghost"

@@ -14,6 +14,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { AiProgress } from "@/components/ui/ai-progress";
 import { createPosition, updatePosition } from "@/lib/actions/positions";
 import { parseJd } from "@/lib/actions/jd-parse";
 
@@ -244,6 +245,7 @@ export function PositionFormDialog({
                 placeholder="https://..."
               />
             </Field>
+            <AiProgress active={parsing} expectedSeconds={15} stages={["正在读 JD…", "AI 正在提取字段并按你的偏好打分…"]} />
             <div className="flex items-center gap-2">
               <Button
                 type="button"

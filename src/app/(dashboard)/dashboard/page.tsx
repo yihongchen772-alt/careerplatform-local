@@ -13,6 +13,7 @@ import { DailyDigestCard } from "@/components/dashboard/daily-digest-card";
 import { getTodayDigest } from "@/lib/actions/daily-digest";
 import { WeeklyReviewCard } from "@/components/dashboard/weekly-review-card";
 import { getWeeklyReview } from "@/lib/actions/weekly-review";
+import { OnboardingCard } from "@/components/dashboard/onboarding-card";
 
 export default async function DashboardPage() {
   const user = await requireUser();
@@ -64,6 +65,42 @@ export default async function DashboardPage() {
   const dailyDigest = await getTodayDigest();
   const weeklyReview = await getWeeklyReview();
 
+  const [dbUser, resumeCount, leadCount] = await Promise.all([
+    db.user.findUnique({ where: { id: user.id }, select: { name: true, phone: true, contactEmail: true, defaultAiProvider: true } }),
+    db.resumeVersion.count({ where: { userId: user.id } }),
+    db.jobLead.count({ where: { userId: user.id } }),
+  ]);
+  const onboardingSteps = [
+    {
+      key: "resume",
+      title: "上传一份简历",
+      hint: "简历体检、岗位匹配、网申自动填充、简历深挖都从它出发",
+      href: "/resumes",
+      done: resumeCount > 0,
+    },
+    {
+      key: "ai",
+      title: "配置一个 AI Key",
+      hint: "DeepSeek / Kimi / Qwen / 智谱 / Gemini 都行，Gemini 有免费额度",
+      href: "/settings",
+      done: !!dbUser?.defaultAiProvider,
+    },
+    {
+      key: "profile",
+      title: "填好网申资料",
+      hint: "姓名、手机、邮箱、学校——网申表单一键填充靠它",
+      href: "/settings",
+      done: !!(dbUser?.name && dbUser.phone && dbUser.contactEmail),
+    },
+    {
+      key: "position",
+      title: "加第一个岗位",
+      hint: "导入秋招信息表，或在网申浏览器里逛到岗位直接「收藏」",
+      href: allPositions.length > 0 || leadCount > 0 ? "/pool" : "/leads",
+      done: allPositions.length > 0 || leadCount > 0 || applications.length > 0,
+    },
+  ];
+
   // Prefixed because a position and the application it turned into share the
   // same company/title — without this the picker shows two identical rows.
   const positionOptions = allPositions.map((p) => ({
@@ -78,6 +115,8 @@ export default async function DashboardPage() {
   return (
     <div className="space-y-6">
       <h1 className="text-3xl font-semibold tracking-tight">总览</h1>
+
+      <OnboardingCard steps={onboardingSteps} />
 
       <DailyDigestCard initial={dailyDigest} />
 

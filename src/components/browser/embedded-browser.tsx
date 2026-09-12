@@ -27,6 +27,7 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AiProgress } from "@/components/ui/ai-progress";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -591,6 +592,12 @@ export function EmbeddedBrowser({
         </Button>
       </div>
 
+      <AiProgress
+        active={autofilling && status?.phase === "ai"}
+        expectedSeconds={30}
+        stages={["正在把简历和字段交给 AI…", "AI 正在从简历里找对应信息、写开放题…", "正在写回页面…"]}
+      />
+      <AiProgress active={capturing} expectedSeconds={15} stages={["正在读页面正文…", "AI 正在解析公司/岗位/薪资并打分…"]} />
       {status && (
         <p
           className={

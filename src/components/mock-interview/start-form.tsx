@@ -192,7 +192,7 @@ export function MockInterviewStartForm({
 
             {focusMix && (
               <div className="rounded-md border border-primary/30 bg-primary/5 p-2 text-xs">
-                <span className="font-medium">已按面试情报的推荐配比出题：</span>
+                <span className="font-medium">{focusMix.startsWith("本场只围绕") ? "本场按简历深挖的追问来问：" : "已按面试情报的推荐配比出题："}</span>
                 {focusMix}
               </div>
             )}
