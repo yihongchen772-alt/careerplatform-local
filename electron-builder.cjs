@@ -32,6 +32,14 @@ module.exports = {
     // DMG upgrades remain manual until that's configured. No unsigned
     // auto-update ZIP.
     identity: "-",
+    // electron-builder's own default entitlements (allow-jit,
+    // allow-unsigned-executable-memory, disable-library-validation) don't
+    // include audio-input — under Hardened Runtime that silently blocks mic
+    // capture below the TCC layer, so the app never even shows up in
+    // System Settings > Privacy & Security > Microphone. See
+    // build/entitlements.mac.plist.
+    entitlements: "build/entitlements.mac.plist",
+    entitlementsInherit: "build/entitlements.mac.plist",
     extendInfo: {
       NSMicrophoneUsageDescription: "模拟面试的口头作答需要使用麦克风录音。录音只发送到你自己配置的 AI 服务商做转写，不会上传到别处。",
     },
