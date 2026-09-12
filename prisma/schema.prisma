@@ -738,6 +738,9 @@ model AutofillAnswer {
   resumeVersionId String
   questionLabel   String
   answer          String
+  /// Optional company/position context for portal-specific answers. Null is a
+  /// deliberately generic answer and may be reused across companies.
+  contextKey      String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -745,6 +748,7 @@ model AutofillAnswer {
   resumeVersion ResumeVersion @relation(fields: [resumeVersionId], references: [id], onDelete: Cascade)
 
   @@index([userId, resumeVersionId])
+  @@index([userId, resumeVersionId, contextKey])
 }
 
 // Pre-application prep guide: what to prepare before applying. Lives on

@@ -1062,10 +1062,11 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
           message: `已填 ${basicCount} 个基础字段，正在用 AI 补全 ${candidates.length} 个字段…`,
         });
         try {
+          const pageContext = `${wc.getURL()}\n${wc.getTitle()}`.slice(0, 300);
           const answerRes = await fetch(`http://localhost:${port}/api/desktop-browser/answer-questions`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ questions: candidates, resumeVersionId, profile }),
+            body: JSON.stringify({ questions: candidates, resumeVersionId, profile, contextKey: pageContext }),
           });
           if (answerRes.ok) {
             const { answers } = await answerRes.json();

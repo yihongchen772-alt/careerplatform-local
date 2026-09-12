@@ -1,9 +1,28 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { WeakPoint } from "@/lib/actions/exam";
+"use client";
 
-/** Pure display — no navigation into a specific bank/module, since modules
- * are scoped per-bank in this app (no cross-bank module URL to link to). */
+import { useRouter } from "next/navigation";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+import { startExam, type WeakPoint } from "@/lib/actions/exam";
+
 export function WeakPointsPanel({ points }: { points: WeakPoint[] }) {
+  const router = useRouter();
+  async function practice(p: WeakPoint) {
+    if (!p.bankId) return;
+    const res = await startExam({
+      bankId: p.bankId,
+      modules: [p.module],
+      questionTexts: p.lowQuestions.map((q) => q.question),
+      count: Math.max(3, Math.min(10, p.questionCount)),
+      durationMinutes: Math.max(5, Math.min(30, p.questionCount * 3)),
+    });
+    if (!res.ok) {
+      toast.error(res.message);
+      return;
+    }
+    router.push(`/question-banks/exam/${res.data.id}`);
+  }
   if (points.length === 0) {
     return (
       <Card>
@@ -29,7 +48,8 @@ export function WeakPointsPanel({ points }: { points: WeakPoint[] }) {
       </CardHeader>
       <CardContent className="space-y-2">
         {points.map((p) => (
-          <div key={p.module} className="flex items-center gap-3">
+          <div key={`${p.bankId}-${p.module}`} className="space-y-1 rounded-md border p-2">
+            <div className="flex items-center gap-3">
             <span className="w-24 shrink-0 truncate text-sm">{p.module}</span>
             <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
               <div
@@ -49,6 +69,15 @@ export function WeakPointsPanel({ points }: { points: WeakPoint[] }) {
             <span className="w-16 shrink-0 text-right text-xs text-muted-foreground">
               {p.questionCount} 题
             </span>
+              <Button size="sm" variant="outline" disabled={!p.bankId || p.module === "未分类"} onClick={() => void practice(p)}>
+                重练
+              </Button>
+            </div>
+            {p.lowQuestions.length > 0 && (
+              <div className="pl-1 text-xs text-muted-foreground">
+                低分题：{p.lowQuestions.map((q) => `${q.question}（${q.score}分）`).join("；")}
+              </div>
+            )}
           </div>
         ))}
       </CardContent>

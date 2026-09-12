@@ -49,9 +49,35 @@ export type ExamSummary = {
 
 export type ExamDetail = ExamSummary & {
   questions: ExamQuestion[];
-  answers: { answer: string; score: number; feedback: string }[] | null;
+  answers: ExamAnswer[] | null;
   summary: string | null;
 };
+
+export type ExamAnswer = {
+  answer: string;
+  score: number | null;
+  feedback: string;
+  status: "graded" | "pending";
+};
+
+const examAnswerSchema = z.object({
+  answer: z.string(),
+  score: z.number().nullable().optional(),
+  feedback: z.string().optional(),
+  status: z.enum(["graded", "pending"]).optional(),
+});
+const examAnswersSchema = z.array(examAnswerSchema);
+
+function parseExamAnswers(raw: unknown): ExamAnswer[] | null {
+  const parsed = examAnswersSchema.safeParse(raw);
+  if (!parsed.success) return null;
+  return parsed.data.map((a) => ({
+    answer: a.answer,
+    score: typeof a.score === "number" ? a.score : null,
+    feedback: a.feedback ?? "",
+    status: a.status ?? (typeof a.score === "number" ? "graded" : "pending"),
+  }));
+}
 
 function toSummary(e: {
   id: string;
@@ -96,15 +122,10 @@ export async function getExamSession(id: string): Promise<ActionResult<ExamDetai
       referenceAnswer: q.referenceAnswer ?? null,
       tips: q.tips ?? null,
     }));
-    const answersSchema = z.array(
-      z.object({ answer: z.string(), score: z.number(), feedback: z.string() })
-    );
-    const parsedAnswers = answersSchema.safeParse(session.answers);
-
     return {
       ...toSummary(session),
       questions,
-      answers: parsedAnswers.success ? parsedAnswers.data : null,
+      answers: parseExamAnswers(session.answers),
       summary: session.summary,
     };
   });
@@ -119,6 +140,7 @@ export async function getExamSession(id: string): Promise<ActionResult<ExamDetai
 export async function startExam(input: {
   bankId: string;
   modules: string[] | null;
+  questionTexts?: string[];
   count: number;
   durationMinutes: number;
 }): Promise<ActionResult<{ id: string }>> {
@@ -130,9 +152,12 @@ export async function startExam(input: {
     if (!bank) throw new UserFacingError("找不到这个题库");
 
     const all = readItems(bank.questions);
-    const pool = input.modules?.length
-      ? all.filter((q) => q.module && input.modules!.includes(q.module))
+    const modulePool = input.modules?.length
+      ? all.filter((q) => input.modules!.some((module) => module === "未分类" ? !q.module : q.module === module))
       : all;
+    const requested = new Set(input.questionTexts ?? []);
+    const lowPool = requested.size > 0 ? modulePool.filter((q) => requested.has(q.question)) : modulePool;
+    const pool = lowPool.length >= MIN_QUESTIONS ? lowPool : modulePool;
     if (pool.length < MIN_QUESTIONS) {
       throw new UserFacingError(
         `选中的范围里只有 ${pool.length} 道题，至少要 ${MIN_QUESTIONS} 道才能组成一场考试`
@@ -159,10 +184,39 @@ export async function startExam(input: {
   });
 }
 
+/** Persist the current answer sheet while an exam is still in progress. */
+export async function saveExamDraft(
+  examSessionId: string,
+  answers: { index: number; answer: string }[]
+): Promise<ActionResult<null>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const session = await db.examSession.findFirst({ where: { id: examSessionId, userId: user.id } });
+    if (!session) throw new UserFacingError("找不到这场考试");
+    if (session.status === "ENDED") return null;
+    const questions = readItems(session.questions);
+    const answerByIndex = new Map(answers.map((a) => [a.index, a.answer]));
+    const existing = parseExamAnswers(session.answers);
+    const draft = questions.map((_, i) => {
+      const answer = answerByIndex.has(i) ? answerByIndex.get(i)!.trim() : existing?.[i]?.answer ?? "";
+      const old = existing?.[i];
+      return {
+        answer,
+        score: old?.answer === answer ? old.score : null,
+        feedback: old?.answer === answer ? old.feedback : "",
+        status: old?.answer === answer && old.status === "graded" ? "graded" : "pending",
+      } satisfies ExamAnswer;
+    });
+    await db.examSession.update({ where: { id: session.id }, data: { answers: draft } });
+    return null;
+  });
+}
+
 const gradedItemSchema = z.object({
   score: z.number(),
   feedback: z.string(),
 });
+const gradesResponseSchema = z.object({ grades: z.array(gradedItemSchema) });
 
 /**
  * Grades the whole exam in one pass after the user submits (or the timer
@@ -192,15 +246,20 @@ export async function submitExam(
     // Bounded per call, same reasoning as fillBankAnswers: a 30-question
     // exam in one request risks the output getting cut off mid-JSON.
     const BATCH = 6;
-    const graded: { answer: string; score: number; feedback: string }[] = new Array(
-      questions.length
-    );
+    const previous = parseExamAnswers(session.answers);
+    const graded: ExamAnswer[] = questions.map((_, i) => {
+      const old = previous?.[i];
+      return old?.answer === filledAnswers[i] && old.status === "graded"
+        ? old
+        : { answer: filledAnswers[i], score: null, feedback: "", status: "pending" };
+    });
 
     for (let start = 0; start < questions.length; start += BATCH) {
       const batchIdx = Array.from(
         { length: Math.min(BATCH, questions.length - start) },
         (_, k) => start + k
-      );
+      ).filter((i) => graded[i].status === "pending");
+      if (batchIdx.length === 0) continue;
       const prompt = `你在给一场技术模拟考试打分。下面是几道题、参考答案（可能为空）、和候选人的实际作答。逐题打分。
 
 ${batchIdx
@@ -219,43 +278,52 @@ ${batchIdx
 
 按题目顺序返回，数量必须和上面的题目数量一致。全部用中文。`;
 
-      const raw = await callTextAi({
-        config,
-        prompt,
-        thinkingBudget: 1024,
-        timeoutMs: 90000,
-        schema: {
-          type: "OBJECT",
-          properties: {
-            grades: {
-              type: "ARRAY",
-              items: {
-                type: "OBJECT",
-                properties: {
-                  score: { type: "NUMBER" },
-                  feedback: { type: "STRING" },
+      let raw: unknown = null;
+      try {
+        raw = await callTextAi({
+          config,
+          prompt,
+          thinkingBudget: 1024,
+          timeoutMs: 90000,
+          schema: {
+            type: "OBJECT",
+            properties: {
+              grades: {
+                type: "ARRAY",
+                items: {
+                  type: "OBJECT",
+                  properties: {
+                    score: { type: "NUMBER" },
+                    feedback: { type: "STRING" },
+                  },
+                  required: ["score", "feedback"],
                 },
-                required: ["score", "feedback"],
               },
             },
+            required: ["grades"],
           },
-          required: ["grades"],
-        },
-      });
-
-      const parsed = z.object({ grades: z.array(gradedItemSchema) }).safeParse(raw);
+        });
+      } catch { /* leave raw null so this batch remains pending */ }
+      const parsed = gradesResponseSchema.safeParse(raw);
       batchIdx.forEach((qi, n) => {
         const g = parsed.success ? parsed.data.grades[n] : undefined;
         graded[qi] = {
           answer: filledAnswers[qi],
-          score: g ? Math.max(0, Math.min(100, Math.round(g.score))) : 0,
-          feedback: g?.feedback ?? "AI 没能给出这道题的反馈，可能是批量打分时出了点问题。",
+          score: g ? Math.max(0, Math.min(100, Math.round(g.score))) : null,
+          feedback: g?.feedback ?? "AI 暂时没能给出这道题的反馈，请重试评分。",
+          status: g ? "graded" : "pending",
         };
       });
     }
 
+    if (graded.some((g) => g.status === "pending")) {
+      await db.examSession.update({ where: { id: session.id }, data: { answers: graded } });
+      revalidatePath(`/question-banks/exam/${session.id}`);
+      throw new UserFacingError("部分题目暂时未完成评分，已保存答案，请再次提交重试");
+    }
+
     const overallScore = Math.round(
-      graded.reduce((sum, g) => sum + g.score, 0) / Math.max(1, graded.length)
+      graded.reduce((sum, g) => sum + (g.score ?? 0), 0) / Math.max(1, graded.length)
     );
 
     // One more call for a short overall summary — cheap relative to the
@@ -265,9 +333,10 @@ ${batchIdx
     questions.forEach((q, i) => {
       const key = q.module || "未分类";
       if (!moduleBreakdown.has(key)) moduleBreakdown.set(key, []);
-      moduleBreakdown.get(key)!.push(graded[i].score);
+      if (graded[i].score !== null) moduleBreakdown.get(key)!.push(graded[i].score);
     });
     const breakdownText = Array.from(moduleBreakdown.entries())
+      .filter(([, scores]) => scores.length > 0)
       .map(([m, scores]) => `${m}：平均 ${Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)} 分`)
       .join("；");
 
@@ -300,11 +369,15 @@ ${batchIdx
   });
 }
 
-export type WeakPoint = { module: string; avgScore: number; questionCount: number };
-
-const gradedAnswerSchema = z.array(
-  z.object({ answer: z.string(), score: z.number(), feedback: z.string() })
-);
+export type WeakQuestion = { question: string; score: number };
+export type WeakPoint = {
+  bankId: string | null;
+  bankName: string;
+  module: string;
+  avgScore: number;
+  questionCount: number;
+  lowQuestions: WeakQuestion[];
+};
 
 /**
  * Aggregates every ended exam's per-question module + score into a
@@ -318,28 +391,34 @@ export async function getWeakPointSummary(): Promise<WeakPoint[]> {
   const user = await requireUser();
   const sessions = await db.examSession.findMany({
     where: { userId: user.id, status: "ENDED" },
-    select: { questions: true, answers: true },
+    select: { bankId: true, bankName: true, questions: true, answers: true },
   });
 
-  const byModule = new Map<string, number[]>();
+  const byModule = new Map<string, { bankId: string | null; bankName: string; scores: number[]; lowQuestions: WeakQuestion[] }>();
   for (const session of sessions) {
     const questions = readItems(session.questions);
-    const answers = gradedAnswerSchema.safeParse(session.answers);
-    if (!answers.success) continue;
+    const answers = parseExamAnswers(session.answers);
+    if (!answers) continue;
     questions.forEach((q, i) => {
-      const score = answers.data[i]?.score;
-      if (score === undefined) return;
+      const score = answers[i]?.score;
+      if (score === undefined || score === null || answers[i]?.status !== "graded") return;
       const key = q.module || "未分类";
-      if (!byModule.has(key)) byModule.set(key, []);
-      byModule.get(key)!.push(score);
+      const scopedKey = `${session.bankId ?? ""}:${key}`;
+      if (!byModule.has(scopedKey)) byModule.set(scopedKey, { bankId: session.bankId, bankName: session.bankName, scores: [], lowQuestions: [] });
+      const item = byModule.get(scopedKey)!;
+      item.scores.push(score);
+      if (score < 60 && item.lowQuestions.length < 3) item.lowQuestions.push({ question: q.question, score });
     });
   }
 
   return Array.from(byModule.entries())
-    .map(([module, scores]) => ({
-      module,
-      avgScore: Math.round(scores.reduce((a, b) => a + b, 0) / scores.length),
-      questionCount: scores.length,
+    .map(([scopedKey, item]) => ({
+      bankId: item.bankId,
+      bankName: item.bankName,
+      module: scopedKey.slice(scopedKey.indexOf(":") + 1),
+      avgScore: Math.round(item.scores.reduce((a, b) => a + b, 0) / item.scores.length),
+      questionCount: item.scores.length,
+      lowQuestions: item.lowQuestions,
     }))
     .sort((a, b) => a.avgScore - b.avgScore);
 }

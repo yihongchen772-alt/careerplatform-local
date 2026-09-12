@@ -50,10 +50,26 @@ export type PortalSyncChange = {
   portalStatus: string;
 };
 
+export type PortalSyncMatch = {
+  companyName: string;
+  applicationId: string;
+  title: string;
+  portalStatus: string;
+};
+
+export type PortalSyncUnmatched = {
+  companyName: string;
+  applicationId: string;
+  title: string;
+};
+
 export type PortalSyncResult = {
   checked: number;
   skipped: number;
   changed: PortalSyncChange[];
+  matched: PortalSyncMatch[];
+  unmatched: PortalSyncUnmatched[];
+  unchanged: string[];
   errors: { companyName: string; message: string }[];
 };
 
@@ -157,25 +173,41 @@ async function syncOne(company: {
   name: string;
   portalUrl: string | null;
   portalContentHash: string | null;
-}): Promise<{ status: "changed" | "unchanged" | "skipped"; changes: PortalSyncChange[] }> {
-  if (!company.portalUrl) return { status: "skipped", changes: [] };
+}, force = false): Promise<{
+  status: "changed" | "unchanged" | "skipped";
+  changes: PortalSyncChange[];
+  matched: PortalSyncMatch[];
+  unmatched: PortalSyncUnmatched[];
+}> {
+  if (!company.portalUrl) return { status: "skipped", changes: [], matched: [], unmatched: [] };
 
   const applications = await db.application.findMany({
     where: { companyId: company.id, userId: LOCAL_USER_ID, currentStage: { notIn: TERMINAL_STAGES } },
     select: { id: true, title: true, currentStage: true },
   });
   // Nothing in flight at this company — no point loading the page.
-  if (applications.length === 0) return { status: "skipped", changes: [] };
+  if (applications.length === 0) return { status: "skipped", changes: [], matched: [], unmatched: [] };
 
   const text = (await renderPageText(company.portalUrl, { useApplicationSession: true })).trim();
   if (!text) throw new Error("进度页渲染出来是空的");
-  const hash = crypto.createHash("sha256").update(text).digest("hex");
-  if (hash === company.portalContentHash) {
+  const pageHash = crypto.createHash("sha256").update(text).digest("hex");
+  // A page can stay unchanged while the user's local list gains or loses an
+  // application. Include stable ids and titles in the gate so that local
+  // list changes trigger recognition without re-running on every stage move.
+  const applicationSignature = applications
+    .map((a) => `${a.id}\u0000${a.title}`)
+    .sort()
+    .join("\u0001");
+  const hash = crypto
+    .createHash("sha256")
+    .update(`${pageHash}\u0000${applicationSignature}`)
+    .digest("hex");
+  if (!force && hash === company.portalContentHash) {
     await db.company.update({
       where: { id: company.id },
       data: { portalLastCheckedAt: new Date(), portalLastError: null },
     });
-    return { status: "unchanged", changes: [] };
+    return { status: "unchanged", changes: [], matched: [], unmatched: [] };
   }
 
   const extraction = await extractStatuses(text.slice(0, PAGE_TEXT_CAP), company.name, applications);
@@ -187,10 +219,22 @@ async function syncOne(company: {
 
   const now = new Date();
   const changes: PortalSyncChange[] = [];
+  const matched: PortalSyncMatch[] = [];
+  const matchedIds = new Set<string>();
   for (const entry of extraction.entries) {
     const app = applications.find((a) => a.id === entry.applicationId);
     if (!app || !entry.confident) continue;
+    // A malformed model response should not make one local application count
+    // as several matches or write its portal status repeatedly.
+    if (matchedIds.has(app.id)) continue;
     const portalStatus = entry.portalStatus.trim().slice(0, 100);
+    matchedIds.add(app.id);
+    matched.push({
+      companyName: company.name,
+      applicationId: app.id,
+      title: app.title,
+      portalStatus,
+    });
     const next = SYNCABLE_STAGES.find((s) => s === entry.stage) ?? null;
 
     await db.$transaction(async (tx) => {
@@ -226,24 +270,44 @@ async function syncOne(company: {
     where: { id: company.id },
     data: { portalContentHash: hash, portalLastCheckedAt: now, portalLastError: null },
   });
-  return { status: "changed", changes };
+  return {
+    status: "changed",
+    changes,
+    matched,
+    unmatched: applications
+      .filter((a) => !matchedIds.has(a.id))
+      .map((a) => ({ companyName: company.name, applicationId: a.id, title: a.title })),
+  };
 }
 
-async function runSync(companyIds?: string[]): Promise<PortalSyncResult> {
+async function runSync(companyIds?: string[], force = false): Promise<PortalSyncResult> {
   const companies = await db.company.findMany({
     where: { portalUrl: { not: null }, ...(companyIds ? { id: { in: companyIds } } : {}) },
     select: { id: true, name: true, portalUrl: true, portalContentHash: true },
   });
 
-  const result: PortalSyncResult = { checked: 0, skipped: 0, changed: [], errors: [] };
+  const result: PortalSyncResult = {
+    checked: 0,
+    skipped: 0,
+    changed: [],
+    matched: [],
+    unmatched: [],
+    unchanged: [],
+    errors: [],
+  };
   // Sequential on purpose: each check may open a hidden window and make an
   // AI call, and the render bridge already caps concurrency at 2.
   for (const company of companies) {
     try {
-      const outcome = await syncOne(company);
+      const outcome = await syncOne(company, force);
       if (outcome.status === "skipped") result.skipped++;
-      else result.checked++;
+      else {
+        result.checked++;
+        if (outcome.status === "unchanged") result.unchanged.push(company.name);
+      }
       result.changed.push(...outcome.changes);
+      result.matched.push(...outcome.matched);
+      result.unmatched.push(...outcome.unmatched);
     } catch (err) {
       const message = err instanceof Error ? err.message : "同步失败";
       result.errors.push({ companyName: company.name, message });
@@ -268,9 +332,12 @@ export async function syncAllPortals(): Promise<PortalSyncResult> {
   return runSync();
 }
 
-export async function syncPortalsNow(companyId?: string): Promise<ActionResult<PortalSyncResult>> {
+export async function syncPortalsNow(
+  companyId?: string,
+  force = false
+): Promise<ActionResult<PortalSyncResult>> {
   return toActionResult(async () => {
     await requireUser();
-    return runSync(companyId ? [companyId] : undefined);
+    return runSync(companyId ? [companyId] : undefined, force);
   });
 }

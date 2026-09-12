@@ -94,7 +94,12 @@ export async function fetchRecentEmails(
         sinceUid ? { uid: `${sinceUid + 1}:*` } : { since },
         { uid: true }
       );
-      const recentUids = uids ? uids.slice(-MAX_EMAILS_PER_CHECK) : [];
+      // A mailbox can have a backlog much larger than one check. Process the
+      // oldest matching UIDs first so advancing the cursor never jumps over
+      // mail that is still waiting for classification.
+      const recentUids = uids
+        ? [...uids].sort((a, b) => a - b).slice(0, MAX_EMAILS_PER_CHECK)
+        : [];
 
       // `{ uid: true }` MUST be the third (options) argument, not part of the
       // second (query) argument. In the query it only means "also return the
@@ -118,6 +123,9 @@ export async function fetchRecentEmails(
           snippet: bodyText.slice(0, 600),
         });
       }
+      // ImapFlow normally yields in UID order, but keep the contract explicit
+      // for callers that use the result as a cursor-ordered batch.
+      results.sort((a, b) => a.uid - b.uid);
     } finally {
       lock.release();
     }

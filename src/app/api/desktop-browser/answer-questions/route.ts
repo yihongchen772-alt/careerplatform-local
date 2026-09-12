@@ -53,6 +53,8 @@ const bodySchema = z.object({
     .min(1),
   resumeVersionId: z.string().min(1, "没选简历"),
   profile: profileSchema.optional(),
+  /** Stable page context supplied by the embedded browser. Empty means generic. */
+  contextKey: z.string().trim().max(300).optional(),
 });
 
 // The AI's honest "not derivable from the resume" answer for a short/choice
@@ -97,6 +99,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "请求格式不对" }, { status: 400 });
   }
   const { questions, resumeVersionId, profile } = parsed.data;
+  const contextKey = parsed.data.contextKey || null;
 
   const resume = await db.resumeVersion.findFirst({
     where: { id: resumeVersionId, userId: user.id },
@@ -109,7 +112,14 @@ export async function POST(request: Request) {
   }
 
   // Cache lookup first — reused answers cost nothing and need no AI key.
-  const cached = await db.autofillAnswer.findMany({ where: { userId: user.id, resumeVersionId } });
+  const cached = await db.autofillAnswer.findMany({
+    where: {
+      userId: user.id,
+      resumeVersionId,
+      OR: [{ contextKey }, { contextKey: null }],
+    },
+    orderBy: { contextKey: "desc" },
+  });
   // answerId ties a returned answer back to the AutofillAnswer row backing
   // it (existing for a reuse, newly created for a fresh generation) — the
   // embedded browser uses this to let the user's post-fill edits correct
@@ -119,6 +129,9 @@ export async function POST(request: Request) {
   for (const q of questions) {
     let best: { answer: string; score: number; id: string } | null = null;
     for (const c of cached) {
+      // A portal-specific answer is only reusable in the same portal context;
+      // null-context rows remain the generic fallback for every portal.
+      if (c.contextKey && c.contextKey !== contextKey) continue;
       const score = similarity(q.label, c.questionLabel);
       if (score >= SIMILARITY_THRESHOLD && (!best || score > best.score)) {
         best = { answer: c.answer, score, id: c.id };
@@ -260,7 +273,7 @@ export async function POST(request: Request) {
               const label = labelById.get(a.id);
               if (label) {
                 const created = await db.autofillAnswer.create({
-                  data: { userId: user.id, resumeVersionId, questionLabel: label, answer: a.answer },
+                  data: { userId: user.id, resumeVersionId, questionLabel: label, answer: a.answer, contextKey },
                 });
                 answerId = created.id;
               }

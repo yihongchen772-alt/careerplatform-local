@@ -47,7 +47,7 @@ async function computeStats(userId: string, weekStart: string): Promise<WeeklyRe
     db.application.count({ where: { userId, appliedDate: { gte: start, lt: end } } }),
     db.stageHistory.findMany({
       where: { application: { userId }, enteredAt: { gte: start, lt: end } },
-      select: { stage: true },
+      select: { applicationId: true, stage: true },
     }),
     db.positionMatch.count({
       where: {
@@ -65,21 +65,28 @@ async function computeStats(userId: string, weekStart: string): Promise<WeeklyRe
 
   const offerStages = new Set(["OFFER", "ACCEPTED"]);
   const rejectionStages = new Set(["REJECTED", "DECLINED"]);
-  let offers = 0;
-  let rejections = 0;
+  // A single application commonly has multiple history rows for one terminal
+  // outcome (OFFER -> ACCEPTED, or REJECTED -> DECLINED). Count each outcome
+  // once per投递, while keeping ordinary stage movement separate.
+  const offerApplications = new Set<string>();
+  const rejectionApplications = new Set<string>();
   let stageAdvances = 0;
   for (const e of stageEvents) {
     if (e.stage === "APPLIED") continue; // the application's own creation, not a step forward
-    stageAdvances++;
-    if (offerStages.has(e.stage)) offers++;
-    if (rejectionStages.has(e.stage)) rejections++;
+    if (offerStages.has(e.stage)) {
+      offerApplications.add(e.applicationId);
+    } else if (rejectionStages.has(e.stage)) {
+      rejectionApplications.add(e.applicationId);
+    } else {
+      stageAdvances++;
+    }
   }
 
   return {
     applicationsSubmitted,
     stageAdvances,
-    offers,
-    rejections,
+    offers: offerApplications.size,
+    rejections: rejectionApplications.size,
     highMatchNotApplied,
     resumeCheckScore: defaultResume?.checkScore ?? null,
   };

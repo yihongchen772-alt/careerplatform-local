@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
-import { submitExam, type ExamDetail } from "@/lib/actions/exam";
+import { saveExamDraft, submitExam, type ExamDetail } from "@/lib/actions/exam";
 
 function formatClock(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -24,7 +24,9 @@ export function ExamRunner({ exam }: { exam: ExamDetail }) {
 }
 
 function ExamTaking({ exam, onSubmitted }: { exam: ExamDetail; onSubmitted: () => void }) {
-  const [answers, setAnswers] = useState<string[]>(() => exam.questions.map(() => ""));
+  const [answers, setAnswers] = useState<string[]>(() =>
+    exam.questions.map((_, i) => exam.answers?.[i]?.answer ?? "")
+  );
   // Deadline derived from the exam's own createdAt rather than "now +
   // duration" — it's the same value on every render (createdAt/duration
   // are immutable props for a given exam), so recomputing it is harmless
@@ -44,6 +46,20 @@ function ExamTaking({ exam, onSubmitted }: { exam: ExamDetail; onSubmitted: () =
   useEffect(() => {
     answersRef.current = answers;
   }, [answers]);
+
+  // Persist a draft while the exam is open. This is deliberately debounced so
+  // typing into a textarea does not create a database write per keystroke.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!submittedRef.current) {
+        void saveExamDraft(
+          exam.id,
+          answers.map((answer, index) => ({ index, answer }))
+        );
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [answers, exam.id]);
 
   async function handleSubmit(auto = false) {
     if (submittedRef.current) return;
@@ -186,8 +202,8 @@ function ExamResults({ exam }: { exam: ExamDetail }) {
                         {q.module}
                       </Badge>
                     )}
-                    <Badge variant={a && a.score >= 60 ? "secondary" : "destructive"}>
-                      {a?.score ?? 0} 分
+                    <Badge variant={a?.status === "pending" ? "outline" : a && (a.score ?? 0) >= 60 ? "secondary" : "destructive"}>
+                      {a?.status === "pending" ? "待评分" : `${a?.score ?? 0} 分`}
                     </Badge>
                   </div>
                 </div>

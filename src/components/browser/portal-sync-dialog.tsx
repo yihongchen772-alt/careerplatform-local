@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { RefreshCw, Trash2 } from "lucide-react";
+import { RefreshCw, ScanSearch, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -59,6 +59,11 @@ export function PortalSyncDialog({
   const [companyId, setCompanyId] = useState(guessed);
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState<string | "all" | null>(null);
+  const [syncSummary, setSyncSummary] = useState<{
+    matched: number;
+    unmatched: number;
+    unchanged: number;
+  } | null>(null);
 
   const canSet = !!currentUrl && currentUrl !== "about:blank";
   const configured = companies.filter((c) => c.portalUrl);
@@ -88,16 +93,17 @@ export function PortalSyncDialog({
     router.refresh();
   }
 
-  async function handleSync(id?: string) {
+  async function handleSync(id?: string, force = false) {
     if (syncing) return;
     setSyncing(id ?? "all");
     try {
-      const res = await syncPortalsNow(id);
+      const res = await syncPortalsNow(id, force);
       if (!res.ok) {
         toast.error(res.message);
         return;
       }
-      const { changed, errors, checked } = res.data;
+      const { changed, errors, checked, matched, unmatched, unchanged } = res.data;
+      setSyncSummary({ matched: matched.length, unmatched: unmatched.length, unchanged: unchanged.length });
       if (changed.length > 0) {
         toast.success(
           `${changed.length} 条投递阶段已更新：` +
@@ -105,9 +111,12 @@ export function PortalSyncDialog({
               .map((c) => `${c.companyName} ${c.title} ${STAGE_LABELS[c.from]}→${STAGE_LABELS[c.to]}`)
               .join("；")
         );
-      } else if (errors.length === 0) {
-        toast.info(checked > 0 ? "读了一遍，官网状态和看板一致" : "没有需要检查的投递（都已结束，或没设进度页）");
+      } else if (errors.length === 0 && checked === 0) {
+        toast.info("没有需要检查的投递（都已结束，或没设进度页）");
       }
+      if (matched.length > 0) toast.success(`成功匹配 ${matched.length} 条官网投递`);
+      if (unmatched.length > 0) toast.info(`有 ${unmatched.length} 条本地投递未匹配到官网记录`);
+      if (unchanged.length > 0) toast.info(`有 ${unchanged.length} 家公司状态未变化`);
       for (const e of errors) toast.error(`${e.companyName}：${e.message}`);
       router.refresh();
     } finally {
@@ -164,18 +173,36 @@ export function PortalSyncDialog({
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium">已设进度页的公司（{configured.length}）</p>
             {configured.length > 0 && (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={syncing !== null}
-                onClick={() => handleSync()}
-              >
-                <RefreshCw className={syncing === "all" ? "size-4 animate-spin" : "size-4"} />
-                全部同步
-              </Button>
+              <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={syncing !== null}
+                  onClick={() => handleSync()}
+                >
+                  <RefreshCw className={syncing === "all" ? "size-4 animate-spin" : "size-4"} />
+                  全部同步
+                </Button>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="outline"
+                  aria-label="全部强制重识别"
+                  title="全部强制重识别"
+                  disabled={syncing !== null}
+                  onClick={() => handleSync(undefined, true)}
+                >
+                  <ScanSearch className={syncing === "all" ? "size-4 animate-pulse" : "size-4"} />
+                </Button>
+              </div>
             )}
           </div>
+          {syncSummary && (
+            <p className="text-xs text-muted-foreground">
+              最近结果：成功匹配 {syncSummary.matched} 条，未匹配 {syncSummary.unmatched} 条，未变化 {syncSummary.unchanged} 家
+            </p>
+          )}
           {configured.length === 0 ? (
             <p className="text-xs text-muted-foreground">还没有——设一个试试。</p>
           ) : (
@@ -212,6 +239,17 @@ export function PortalSyncDialog({
                       onClick={() => handleSync(c.id)}
                     >
                       <RefreshCw className={syncing === c.id ? "size-4 animate-spin" : "size-4"} />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      aria-label="强制重识别"
+                      title="强制重识别"
+                      disabled={syncing !== null}
+                      onClick={() => handleSync(c.id, true)}
+                    >
+                      <ScanSearch className={syncing === c.id ? "size-4 animate-pulse" : "size-4"} />
                     </Button>
                     <Button
                       type="button"
