@@ -45,6 +45,7 @@ export async function updateApplicationProfile(input: unknown): Promise<ActionRe
     const cleaned: ApplicationProfile = {
       education: data.education.filter((e) => Object.values(e).some(Boolean)),
       experiences: data.experiences.filter((x) => Object.values(x).some(Boolean)),
+      projects: data.projects.filter((project) => Object.values(project).some(Boolean)),
       extras: Object.fromEntries(Object.entries(data.extras).filter(([, v]) => v)),
     };
     await db.user.update({
@@ -76,6 +77,7 @@ ${resumeText}
 要求：
 - education：每段教育经历一条，按时间倒序（最高/最近学历在前）。school 学校全称；major 专业；degree 学历（本科/硕士/博士/大专）；gpa 原样（如 "3.8/4.0" 或 "85/100"）；start/end 用 yyyy-MM，没有月份就 yyyy。
 - experiences：实习/工作经历，按时间倒序。company 单位；role 职位；start/end 同上；description 一两句概括做了什么（用简历原文的关键表述）。
+- projects：项目经历，按时间倒序。name 项目名称；role 在项目中的角色；start/end 同上；description 项目背景、目标和内容；responsibilities 本人负责的工作与成果。只提取简历明确写出的项目，不要把实习单位当作项目。
 - extras：politics 政治面貌、hometown 籍贯、ethnicity 民族、english 英语水平（如 CET-6 580）、currentCity 现居城市——简历里有才填。
 全部用中文。`,
       thinkingBudget: 512,
@@ -105,6 +107,17 @@ ${resumeText}
               required: ["company", "role", "start", "end", "description"],
             },
           },
+          projects: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                name: { type: "STRING" }, role: { type: "STRING" }, start: { type: "STRING" },
+                end: { type: "STRING" }, description: { type: "STRING" }, responsibilities: { type: "STRING" },
+              },
+              required: ["name", "role", "start", "end", "description", "responsibilities"],
+            },
+          },
           extras: {
             type: "OBJECT",
             properties: {
@@ -114,7 +127,7 @@ ${resumeText}
             required: ["politics", "hometown", "ethnicity", "english", "currentCity"],
           },
         },
-        required: ["education", "experiences", "extras"],
+        required: ["education", "experiences", "projects", "extras"],
       },
     });
     const parsed = applicationProfileSchema.safeParse(raw);

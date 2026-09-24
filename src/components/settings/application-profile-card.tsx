@@ -19,21 +19,24 @@ import { AiProgress } from "@/components/ui/ai-progress";
 import { extractApplicationProfile, updateApplicationProfile } from "@/lib/actions/account";
 import {
   EXTRA_FIELDS,
+  mergeProjectRows,
   type ApplicationProfile,
   type EducationRow,
   type ExperienceRow,
+  type ProjectRow,
 } from "@/lib/application-profile";
 
 type ResumeOption = { id: string; name: string };
 
 const emptyEducation: EducationRow = { school: "", major: "", degree: "", gpa: "", start: "", end: "" };
 const emptyExperience: ExperienceRow = { company: "", role: "", start: "", end: "", description: "" };
+const emptyProject: ProjectRow = { name: "", role: "", start: "", end: "", description: "", responsibilities: "" };
 
 /**
  * The 网申 facts the account profile above doesn't hold and the resume
  * doesn't carry reliably: education rows (专业/学历/GPA/起止 are asked on
  * every form and were previously guessed by AI from the resume each time),
- * experience rows, and the 政治面貌/籍贯/民族 trio no resume mentions.
+ * experience and project rows, plus facts such as 政治面貌/籍贯/民族.
  * Read by /api/desktop-browser/profile for the keyword matcher.
  */
 export function ApplicationProfileCard({
@@ -52,6 +55,8 @@ export function ApplicationProfileCard({
     setProfile((p) => ({ ...p, education: p.education.map((e, j) => (j === i ? { ...e, ...patch } : e)) }));
   const setExp = (i: number, patch: Partial<ExperienceRow>) =>
     setProfile((p) => ({ ...p, experiences: p.experiences.map((e, j) => (j === i ? { ...e, ...patch } : e)) }));
+  const setProject = (i: number, patch: Partial<ProjectRow>) =>
+    setProfile((p) => ({ ...p, projects: p.projects.map((project, j) => (j === i ? { ...project, ...patch } : project)) }));
 
   async function handleSave() {
     setSaving(true);
@@ -71,10 +76,11 @@ export function ApplicationProfileCard({
     try {
       const res = await extractApplicationProfile(resumeId);
       if (!res.ok) return void toast.error(res.message);
-      // Merge: AI rows replace the lists, but hand-typed extras survive.
+      // Keep hand-typed rows when the resume does not contain that section.
       setProfile((p) => ({
         education: res.data.education.length ? res.data.education : p.education,
         experiences: res.data.experiences.length ? res.data.experiences : p.experiences,
+        projects: mergeProjectRows(p.projects, res.data.projects),
         extras: { ...res.data.extras, ...Object.fromEntries(Object.entries(p.extras).filter(([, v]) => v)) },
       }));
       toast.success("已从简历里提取，检查一下再保存");
@@ -88,8 +94,7 @@ export function ApplicationProfileCard({
       <CardHeader>
         <CardTitle>网申资料</CardTitle>
         <p className="text-sm text-muted-foreground">
-          网申表单每次都问的东西：学校/专业/学历/GPA/起止时间、实习经历、政治面貌/籍贯/民族/英语。填在这里，「AI
-          一键填充」就直接照抄，不用每次靠 AI 从简历里猜。教育经历把最高学历放第一行。
+          学校、实习、项目经历和其他常问信息都可以在这里维护。一键填充会优先使用已保存的事实；教育经历把最高学历、项目经历把最常投递的项目放在第一行。
         </p>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -112,7 +117,7 @@ export function ApplicationProfileCard({
               <Sparkles className="size-4" />
               {extracting ? "提取中…" : "提取"}
             </Button>
-            <AiProgress active={extracting} expectedSeconds={20} stages={["正在读简历…", "正在整理教育/实习经历…"]} className="w-full space-y-1.5" />
+            <AiProgress active={extracting} expectedSeconds={20} stages={["正在读简历…", "正在整理教育/实习/项目经历…"]} className="w-full space-y-1.5" />
           </div>
         )}
 
@@ -135,6 +140,33 @@ export function ApplicationProfileCard({
               <Field label="毕业"><Input value={e.end} onChange={(ev) => setEdu(i, { end: ev.target.value })} placeholder="2027-06" /></Field>
               <div className="flex items-end sm:col-span-4 sm:justify-end">
                 <Button type="button" size="sm" variant="ghost" onClick={() => setProfile((p) => ({ ...p, education: p.education.filter((_, j) => j !== i) }))}>
+                  <Trash2 className="size-4" />
+                  删除
+                </Button>
+              </div>
+            </div>
+          ))}
+        </section>
+
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium">项目经历</p>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setProfile((p) => ({ ...p, projects: [...p.projects, { ...emptyProject }] }))}>
+              <Plus className="size-4" />
+              加一个项目
+            </Button>
+          </div>
+          {profile.projects.length === 0 && <p className="text-xs text-muted-foreground">还没有——可以手动添加，也可以从简历提取。</p>}
+          {profile.projects.map((project, i) => (
+            <div key={i} className="grid gap-2 rounded-md border p-3 sm:grid-cols-4">
+              <Field label="项目名称" className="sm:col-span-2"><Input value={project.name} onChange={(ev) => setProject(i, { name: ev.target.value })} /></Field>
+              <Field label="我的角色" className="sm:col-span-2"><Input value={project.role} onChange={(ev) => setProject(i, { role: ev.target.value })} placeholder="项目负责人 / 核心成员" /></Field>
+              <Field label="开始"><Input value={project.start} onChange={(ev) => setProject(i, { start: ev.target.value })} placeholder="2025-06" /></Field>
+              <Field label="结束"><Input value={project.end} onChange={(ev) => setProject(i, { end: ev.target.value })} placeholder="2025-09" /></Field>
+              <Field label="项目描述" className="sm:col-span-4"><Textarea rows={2} value={project.description} onChange={(ev) => setProject(i, { description: ev.target.value })} placeholder="项目背景、目标、做了什么" /></Field>
+              <Field label="个人职责与成果" className="sm:col-span-4"><Textarea rows={3} value={project.responsibilities} onChange={(ev) => setProject(i, { responsibilities: ev.target.value })} placeholder="你具体负责什么，取得了什么结果" /></Field>
+              <div className="flex justify-end sm:col-span-4">
+                <Button type="button" size="sm" variant="ghost" onClick={() => setProfile((p) => ({ ...p, projects: p.projects.filter((_, j) => j !== i) }))}>
                   <Trash2 className="size-4" />
                   删除
                 </Button>

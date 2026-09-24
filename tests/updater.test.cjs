@@ -17,6 +17,14 @@ function fixture(options = {}) {
   const installs = [];
   const updater = new EventEmitter();
   const calls = { check: 0, download: 0, backup: 0 };
+  const proxySettings = [];
+  const networkSession = {
+    setProxy: async (config) => { proxySettings.push(config); },
+    fetch: options.fetchRelease ?? (async () => ({ ok: true, json: async () => ({
+      tag_name: "v0.9.0", draft: false, prerelease: false,
+      assets: [{ name: "JobCompass-0.9.0-mac-arm64.dmg" }],
+    }) })),
+  };
   const url = "http://localhost:3210/settings";
   const contents = {
     mainFrame: { url },
@@ -34,14 +42,16 @@ function fixture(options = {}) {
     ipcMain: { handle: (channel, fn) => handlers.set(channel, fn), removeHandler: (channel) => handlers.delete(channel) },
     getMainWindow: () => window,
     beforeInstall: options.beforeInstall ?? (async () => { calls.backup++; }),
+    getProxyUrl: () => options.proxyUrl,
   }, {
     platform: options.platform ?? "win32",
     arch: options.arch ?? "x64",
     autoUpdater: updater,
+    networkSession,
     openExternal: async (url) => { opened.push(url); },
   });
   const invoke = (channel, source = event, ...args) => handlers.get(channel)(source, ...args);
-  return { updater, controller, handlers, events, event, window, contents, calls, installs, opened, invoke };
+  return { updater, controller, handlers, events, event, window, contents, calls, installs, opened, proxySettings, invoke };
 }
 
 test("updates do nothing until requested and never install on normal quit", async () => {
@@ -228,7 +238,7 @@ test("Mac can check for updates but never downloads or installs in-app", async (
   assert.equal(f.controller.getState().status, "idle");
   assert.equal(f.controller.getState().mode, "check-only");
   await f.invoke(CHANNELS.check);
-  assert.equal(f.calls.check, 1);
+  assert.equal(f.calls.check, 0);
   const state = f.controller.getState();
   assert.equal(state.status, "available");
   assert.equal(state.availableVersion, "0.9.0");
@@ -239,6 +249,32 @@ test("Mac can check for updates but never downloads or installs in-app", async (
   assert.equal(f.installs.length, 0);
   await f.invoke(CHANNELS.releases);
   assert.deepEqual(f.opened, [RELEASES_URL]);
+});
+
+test("Mac checks a published DMG release without missing update metadata", async () => {
+  const f = fixture({ platform: "darwin", arch: "arm64", proxyUrl: "http://127.0.0.1:7890",
+    fetchRelease: async (url) => {
+      assert.equal(url, "https://api.github.com/repos/yihongchen772-alt/careerplatform-local/releases/latest");
+      return { ok: true, json: async () => ({ tag_name: "v0.8.0", draft: false, prerelease: false,
+        assets: [{ name: "JobCompass-0.8.0-mac-arm64.dmg" }] }) };
+    },
+  });
+  assert.equal((await f.invoke(CHANNELS.check)).status, "not-available");
+  assert.deepEqual(f.proxySettings, [{ mode: "fixed_servers", proxyRules: "http=127.0.0.1:7890;https=127.0.0.1:7890" }]);
+});
+
+test("incomplete Mac releases show a check error, not a false update", async () => {
+  const f = fixture({ platform: "darwin", fetchRelease: async () => ({ ok: true, json: async () => ({ tag_name: "v0.9.0", assets: [] }) }) });
+  assert.equal((await f.invoke(CHANNELS.check)).errorStage, "check");
+});
+
+test("Windows checks and downloads use the configured proxy", async () => {
+  const f = fixture({ proxyUrl: "http://127.0.0.1:7890" });
+  await f.invoke(CHANNELS.check);
+  await f.invoke(CHANNELS.download);
+  assert.equal(f.proxySettings.length, 2);
+  assert.equal(f.proxySettings[0].mode, "fixed_servers");
+  assert.equal(f.proxySettings[1].proxyRules, f.proxySettings[0].proxyRules);
 });
 
 test("dispose unregisters IPC and updater events", () => {

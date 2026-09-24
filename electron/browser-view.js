@@ -281,6 +281,7 @@ async function fillFields(pairs) {
   function mark(el, source, answerId) {
     el.setAttribute("data-cp-filled", source);
     if (answerId) el.setAttribute("data-cp-answer-id", answerId);
+    if (source === "profile") el.setAttribute("data-cp-profile-filled", "1");
     el.style.setProperty("outline", (source === "ai" ? "2px solid #d946ef" : source === "remembered" ? "2px solid #16a34a" : "2px solid #8b5cf6"), "important");
     el.style.setProperty("outline-offset", "1px", "important");
   }
@@ -506,12 +507,21 @@ function readFieldValues(ids) {
     if (!el) return;
     if (el.tagName.toLowerCase() === "select") {
       const selected = el.options[el.selectedIndex];
-      result[id] = { value: selected ? selected.textContent.trim() : "", answerId: el.getAttribute("data-cp-answer-id") };
+      result[id] = { value: selected ? selected.textContent.trim() : "", answerId: el.getAttribute("data-cp-answer-id"), profileFilled: el.getAttribute("data-cp-profile-filled") === "1" };
     } else {
-      result[id] = { value: el.value, answerId: el.getAttribute("data-cp-answer-id") };
+      result[id] = { value: el.value, answerId: el.getAttribute("data-cp-answer-id"), profileFilled: el.getAttribute("data-cp-profile-filled") === "1" };
     }
   });
   return result;
+}
+
+function memoryCandidate(snapshot, filledList) {
+  if (snapshot.profileFilled) return null;
+  const value = String(snapshot.value || "").trim();
+  if (!value) return null;
+  const draft = filledList.findLast((entry) => entry.answerId === snapshot.answerId);
+  if (draft && draft.filledValue === value) return null;
+  return { value, answerId: draft?.answerId };
 }
 
 // Runs in the main process, not injected — matches detected form fields to
@@ -576,11 +586,42 @@ function isOpenEndedQuestionField(field) {
   return /[?？]|为什么|为何|请描述|请介绍|请说明|谈谈|自我评价|个人优势|求职动机|职业规划|相关经历|why|describe|tell us|motivation|strength|experience|career plan|interested in/i.test(label);
 }
 
-function matchBasicField(field, profile) {
+function projectFieldKind(haystack) {
+  if (/项目(?:名称|名)(?!称)|project[\s_-]*(?:name|title)/i.test(haystack)) return "name";
+  if (/项目(?:角色|职位)|project[\s_-]*role/i.test(haystack)) return "role";
+  if (/项目(?:开始|起始)|project[\s_-]*start/i.test(haystack)) return "start";
+  if (/项目(?:结束|截止)|project[\s_-]*end/i.test(haystack)) return "end";
+  if (/项目(?:职责|负责|贡献|成果)|project[\s_-]*(?:responsibilit|contribution|achievement)/i.test(haystack)) return "responsibilities";
+  if (/项目(?:描述|简介|介绍|内容)|project[\s_-]*(?:description|summary|overview)/i.test(haystack)) return "description";
+  if (/项目经历|project[\s_-]*experience/i.test(haystack)) return "summary";
+  return null;
+}
+
+function matchFieldOption(field, value) {
+  if (!value) return null;
+  if (!field.options) return value;
+  return field.options.find((option) => option === value) ||
+    field.options.find((option) => option.includes(value) || value.includes(option)) || null;
+}
+
+function matchBasicField(field, profile, projectIndexes) {
   const haystack = fieldHaystack(field);
   // A saved full name cannot safely be split into first/last/given/family
   // names (especially for bilingual forms). Leave these for the applicant.
   if (isSplitNameField(field)) return null;
+  const projectKind = projectFieldKind(haystack);
+  if (projectKind) {
+    const index = projectIndexes?.get(projectKind) || 0;
+    projectIndexes?.set(projectKind, index + 1);
+    const project = profile.projects?.[index];
+    if (!project) return null;
+    const value = projectKind === "summary"
+      ? [project.name, project.role, project.description, project.responsibilities].filter(Boolean).join("；")
+      : projectKind === "description" ? project.description || project.responsibilities
+      : projectKind === "responsibilities" ? project.responsibilities || project.description
+      : project[projectKind];
+    return matchFieldOption(field, value);
+  }
   // Broad English tokens often occur inside a different question's label.
   if (/company.?name|employer.?name|school.?name|岗位名称|公司名称|企业名称/.test(haystack)) return null;
   for (const rule of BASIC_FIELD_RULES) {
@@ -590,13 +631,9 @@ function matchBasicField(field, profile) {
     })) {
       const value = rule.get(profile);
       if (!value) continue;
-      // A choice field still has to hit one of its own options exactly.
-      if (field.options && !field.options.includes(value)) {
-        const loose = field.options.find((o) => o.includes(value) || value.includes(o));
-        if (!loose) continue;
-        return loose;
-      }
-      return value;
+      // A choice field still has to hit one of its own options.
+      const matched = matchFieldOption(field, value);
+      if (matched) return matched;
     }
   }
   return null;
@@ -658,8 +695,39 @@ let attachedView = null;
 const lastAiFilled = new Map();
 const submittedSignatures = new Map();
 
+function assertTrustedBrowserEvent(event, window, expectedOrigin) {
+  if (!window || window.isDestroyed() || event.sender !== window.webContents || event.sender.isDestroyed()) {
+    throw new Error("仅允许求职罗盘主窗口操作网申浏览器。");
+  }
+  const frame = event.senderFrame;
+  if (!frame || frame !== window.webContents.mainFrame) throw new Error("网申浏览器请求来源不受信任。");
+  try {
+    if (new URL(frame.url).origin !== expectedOrigin || new URL(event.sender.getURL()).origin !== expectedOrigin) {
+      throw new Error("origin");
+    }
+  } catch {
+    throw new Error("网申浏览器请求来源不受信任。");
+  }
+}
+
 function send(channel, payload) {
   if (currentWindow && !currentWindow.isDestroyed()) currentWindow.webContents.send(channel, payload);
+}
+
+function safeDownloadFilename(rawName) {
+  const filename = path.basename(String(rawName || "").replace(/\\/g, "/"));
+  return filename && filename !== "." && filename !== ".." ? filename : "download";
+}
+
+function openSafeExternalUrl(rawUrl) {
+  try {
+    const url = new URL(rawUrl);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+    shell.openExternal(url.href).catch(() => {});
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function historyFile() {
@@ -741,7 +809,7 @@ function createTab(url, { activate = true } = {}) {
   tabs.push(tab);
   const wc = view.webContents;
 
-  wc.on("did-navigate", () => sendTabsState());
+  wc.on("did-navigate", () => { lastAiFilled.delete(tab.id); sendTabsState(); });
   wc.on("did-navigate-in-page", () => sendTabsState());
   wc.on("page-title-updated", () => {
     recordHistory(wc.getURL(), wc.getTitle());
@@ -818,7 +886,7 @@ function createTab(url, { activate = true } = {}) {
       { label: "刷新", click: () => wc.reload() },
       { type: "separator" },
       { label: "复制当前页面地址", click: () => clipboard.writeText(wc.getURL()) },
-      { label: "在系统浏览器中打开", click: () => shell.openExternal(wc.getURL()) }
+        { label: "在系统浏览器中打开", enabled: /^https?:\/\//i.test(wc.getURL()), click: () => openSafeExternalUrl(wc.getURL()) }
     );
     Menu.buildFromTemplate(template).popup({ window: currentWindow });
   });
@@ -1032,17 +1100,23 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
   if (registered) return;
   registered = true;
 
+  const handle = (channel, handler) => ipcMain.handle(channel, (event, ...args) => {
+    assertTrustedBrowserEvent(event, currentWindow, `http://localhost:${port}`);
+    return handler(event, ...args);
+  });
+
   const browserSession = session.fromPartition(PARTITION);
   // 网申 sites hand out 测评说明/offer letters as downloads. Save straight
   // to ~/Downloads (no dialog — the page is already inside a panel) and tell
   // the renderer where it went.
   browserSession.on("will-download", (_event, item) => {
     const dir = app.getPath("downloads");
-    let target = path.join(dir, item.getFilename());
+    const filename = safeDownloadFilename(item.getFilename());
+    let target = path.join(dir, filename);
     let n = 1;
     while (fs.existsSync(target)) {
-      const ext = path.extname(item.getFilename());
-      target = path.join(dir, `${path.basename(item.getFilename(), ext)} (${n++})${ext}`);
+      const ext = path.extname(filename);
+      target = path.join(dir, `${path.basename(filename, ext)} (${n++})${ext}`);
     }
     item.setSavePath(target);
     item.once("done", (_e, state) => {
@@ -1051,54 +1125,54 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
   });
 
   // ---- tabs & navigation ----
-  ipcMain.handle("browser:new-tab", (_e, url) => createTab(url || "about:blank").id);
-  ipcMain.handle("browser:switch-tab", (_e, id) => switchTab(id));
-  ipcMain.handle("browser:close-tab", (_e, id) => closeTab(id));
-  ipcMain.handle("browser:get-tabs", () => ({ tabs: tabs.map(tabState), activeId }));
-  ipcMain.handle("browser:navigate", (_e, url) => {
+  handle("browser:new-tab", (_e, url) => createTab(url || "about:blank").id);
+  handle("browser:switch-tab", (_e, id) => switchTab(id));
+  handle("browser:close-tab", (_e, id) => closeTab(id));
+  handle("browser:get-tabs", () => ({ tabs: tabs.map(tabState), activeId }));
+  handle("browser:navigate", (_e, url) => {
     const tab = activeTab();
     if (tab) tab.view.webContents.loadURL(normalizeUrl(url));
     else createTab(url);
   });
-  ipcMain.handle("browser:back", () => withActive((wc) => wc.navigationHistory.canGoBack() && wc.navigationHistory.goBack()));
-  ipcMain.handle("browser:forward", () => withActive((wc) => wc.navigationHistory.canGoForward() && wc.navigationHistory.goForward()));
-  ipcMain.handle("browser:reload", () => withActive((wc) => wc.reload()));
-  ipcMain.handle("browser:stop", () => withActive((wc) => wc.stop()));
-  ipcMain.handle("browser:zoom-in", () =>
+  handle("browser:back", () => withActive((wc) => wc.navigationHistory.canGoBack() && wc.navigationHistory.goBack()));
+  handle("browser:forward", () => withActive((wc) => wc.navigationHistory.canGoForward() && wc.navigationHistory.goForward()));
+  handle("browser:reload", () => withActive((wc) => wc.reload()));
+  handle("browser:stop", () => withActive((wc) => wc.stop()));
+  handle("browser:zoom-in", () =>
     withActive((wc) => {
       wc.setZoomFactor(Math.min(wc.getZoomFactor() + ZOOM_STEP, ZOOM_MAX));
       sendTabsState();
     })
   );
-  ipcMain.handle("browser:zoom-out", () =>
+  handle("browser:zoom-out", () =>
     withActive((wc) => {
       wc.setZoomFactor(Math.max(wc.getZoomFactor() - ZOOM_STEP, ZOOM_MIN));
       sendTabsState();
     })
   );
-  ipcMain.handle("browser:zoom-reset", () =>
+  handle("browser:zoom-reset", () =>
     withActive((wc) => {
       wc.setZoomFactor(1);
       sendTabsState();
     })
   );
-  ipcMain.handle("browser:open-external", () => withActive((wc) => shell.openExternal(wc.getURL())));
-  ipcMain.handle("browser:copy-url", () => withActive((wc) => clipboard.writeText(wc.getURL())));
-  ipcMain.handle("browser:history", () => readHistory());
-  ipcMain.handle("browser:clear-history", () => {
+  handle("browser:open-external", () => withActive((wc) => openSafeExternalUrl(wc.getURL())));
+  handle("browser:copy-url", () => withActive((wc) => clipboard.writeText(wc.getURL())));
+  handle("browser:history", () => readHistory());
+  handle("browser:clear-history", () => {
     fs.rmSync(historyFile(), { force: true });
   });
-  ipcMain.handle("browser:show-download", (_e, file) => shell.showItemInFolder(file));
+  handle("browser:show-download", (_e, file) => shell.showItemInFolder(file));
   // Logging out of every 网申 site at once — for switching accounts, or
   // just not leaving a term's worth of sessions lying around.
-  ipcMain.handle("browser:clear-site-data", async () => {
+  handle("browser:clear-site-data", async () => {
     await browserSession.clearStorageData();
     await browserSession.clearCache();
     for (const t of tabs) t.view.webContents.reload();
   });
 
   // ---- find in page ----
-  ipcMain.handle("browser:find", async (_e, { text, forward = true, findNext = false }) => {
+  handle("browser:find", async (_e, { text, forward = true, findNext = false }) => {
     const tab = activeTab();
     if (!tab) return { active: 0, total: 0 };
     const result = await tab.view.webContents
@@ -1107,11 +1181,11 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     send("browser:find-result", { tabId: tab.id, active: result.active, total: result.total });
     return result;
   });
-  ipcMain.handle("browser:find-stop", () =>
+  handle("browser:find-stop", () =>
     withActive((wc) => wc.executeJavaScript(`(${findInPageText.toString()})("", true, true)`).catch(() => {}))
   );
 
-  ipcMain.handle("browser:set-bounds", (_e, rect) => {
+  handle("browser:set-bounds", (_e, rect) => {
     if (!rect) {
       lastBounds = null;
       detach();
@@ -1127,7 +1201,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     attach(tab);
   });
 
-  ipcMain.handle("browser:capture-page", async () => {
+  handle("browser:capture-page", async () => {
     const tab = activeTab();
     if (!tab) return { url: "", title: "", text: "" };
     const wc = tab.view.webContents;
@@ -1138,20 +1212,20 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
   // Full-page-visible screenshot of the current tab as a PNG data URL —
   // the renderer posts it to the Next server to file as an attachment
   // (投递成功页 proof, 测评 instructions).
-  ipcMain.handle("browser:screenshot", async () => {
+  handle("browser:screenshot", async () => {
     const tab = activeTab();
     if (!tab) throw new Error("没有打开的页面");
     const image = await tab.view.webContents.capturePage();
     return { dataUrl: image.toDataURL(), url: tab.view.webContents.getURL(), title: tab.view.webContents.getTitle() };
   });
 
-  ipcMain.handle("browser:form-dismiss", (_e, { tabId, signature }) => markFormSettled(tabId, signature));
+  handle("browser:form-dismiss", (_e, { tabId, signature }) => markFormSettled(tabId, signature));
   if (!formWatch.timer) formWatch.timer = setInterval(() => {
     checkForms().catch(() => {});
     checkApplicationSubmitted().catch(() => {});
   }, 2500);
 
-  ipcMain.handle("browser:clear-marks", async () => {
+  handle("browser:clear-marks", async () => {
     const tab = activeTab();
     if (!tab) return;
     for (const frame of allFrames(tab.view.webContents)) {
@@ -1159,12 +1233,11 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     }
   });
 
-  ipcMain.handle("browser:autofill", async (_e, resumeVersionId) => {
+  handle("browser:autofill", async (_e, resumeVersionId) => {
     const tab = activeTab();
     if (!tab) return;
     const wc = tab.view.webContents;
     const initialUrl = wc.getURL();
-    lastAiFilled.set(tab.id, []);
     try {
       send("browser:autofill-status", { phase: "scanning", message: "正在读取页面…" });
 
@@ -1179,10 +1252,15 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
 
       const pairs = [];
       const candidates = []; // fields going to AI: {id, label, kind, options?}
+      const projectIndexes = new Map();
       let neverGuessCount = 0;
       let alreadyFilled = 0;
       for (const field of fields) {
         if (field.hasValue) {
+          // A prefilled first project still occupies row one. Otherwise the
+          // next empty "项目名称" would incorrectly receive project one again.
+          const projectKind = projectFieldKind(fieldHaystack(field));
+          if (projectKind) projectIndexes.set(projectKind, (projectIndexes.get(projectKind) || 0) + 1);
           alreadyFilled++;
           continue;
         }
@@ -1190,7 +1268,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
           neverGuessCount++;
           continue;
         }
-        const value = matchBasicField(field, profile);
+        const value = matchBasicField(field, profile, projectIndexes);
         if (value) {
           pairs.push({ id: field.id, value, source: "profile", label: field.label, tag: field.tag });
           continue;
@@ -1249,8 +1327,10 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       if (wc.isDestroyed() || wc.getURL() !== initialUrl || activeId !== tab.id) throw new Error("页面或标签已切换，已停止写入；请在当前页面重新填充");
       const { filled, failed } = await fillAllFrames(pairs, frameById);
       const filledSet = new Set(filled);
-      lastAiFilled.set(tab.id, pairs.filter((p) => p.source !== "profile" && p.answerId && filledSet.has(p.id) && isOpenEndedQuestionField(fields.find((f) => f.id === p.id) || p))
-        .map((p) => ({ id: p.id, answerId: p.answerId, label: p.label, filledValue: p.value })));
+      const rememberedDrafts = pairs.filter((p) => p.source !== "profile" && p.answerId && filledSet.has(p.id) && isOpenEndedQuestionField(fields.find((f) => f.id === p.id) || p))
+        .map((p) => ({ id: p.id, answerId: p.answerId, label: p.label, filledValue: p.value }));
+      const newIds = new Set(rememberedDrafts.map((draft) => draft.answerId));
+      lastAiFilled.set(tab.id, [...(lastAiFilled.get(tab.id) || []).filter((draft) => !newIds.has(draft.answerId)), ...rememberedDrafts]);
       const basicFilled = pairs.filter((p) => p.source === "profile" && filledSet.has(p.id)).length;
       const essayFilled = pairs.filter((p) => p.tag === "textarea" && p.source !== "profile" && filledSet.has(p.id)).length;
       const shortFilled = filled.length - basicFilled - essayFilled;
@@ -1329,7 +1409,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
   });
 
   // Remember essays the user wrote from scratch or changed after AI fill.
-  ipcMain.handle("browser:save-corrections", async (_e, resumeVersionId) => {
+  handle("browser:save-corrections", async (_e, resumeVersionId) => {
     const tab = activeTab();
     if (!tab || !resumeVersionId) return { saved: 0 };
     const filledList = lastAiFilled.get(tab.id) || [];
@@ -1344,13 +1424,11 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       if (!frame) continue;
       const values = await frame.executeJavaScript(`(${readFieldValues.toString()})(${JSON.stringify([field.id])})`).catch(() => ({}));
       const snapshot = values[field.id] || {};
-      const value = String(snapshot.value || "").trim();
-      if (!value) continue;
-      // A text area filled by AI but left untouched is still only a draft.
-      const ai = filledList.find((f) => f.answerId === snapshot.answerId && f.filledValue === value);
-      if (ai) continue;
-      const changed = filledList.find((f) => f.answerId === snapshot.answerId);
-      answers.push({ questionLabel: label, answer: value, answerId: changed?.answerId, kind: field.tag === "textarea" ? "essay" : "short" });
+      // A field copied from saved facts isn't a newly confirmed answer, and
+      // an unchanged AI draft stays unconfirmed even after another autofill.
+      const candidate = memoryCandidate(snapshot, filledList);
+      if (!candidate) continue;
+      answers.push({ questionLabel: label, answer: candidate.value, answerId: candidate.answerId, kind: field.tag === "textarea" ? "essay" : "short" });
     }
     if (!answers.length) return { saved: 0 };
 
@@ -1361,6 +1439,8 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "保存回答失败");
     const body = await res.json();
+    const confirmedIds = new Set(answers.map((answer) => answer.answerId).filter(Boolean));
+    lastAiFilled.set(tab.id, filledList.filter((entry) => !confirmedIds.has(entry.answerId)));
     return { saved: body.saved ?? answers.length };
   });
 }

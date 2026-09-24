@@ -1,4 +1,6 @@
 const RELEASES_URL = "https://github.com/yihongchen772-alt/careerplatform-local/releases/latest";
+const LATEST_RELEASE_API = "https://api.github.com/repos/yihongchen772-alt/careerplatform-local/releases/latest";
+const VERSION_RE = /^\d+\.\d+\.\d+$/;
 const CHANNELS = {
   state: "updates:get-state",
   check: "updates:check",
@@ -9,14 +11,12 @@ const CHANNELS = {
 };
 
 // The second argument is a test seam. Renderer code cannot supply any of it.
-function setupUpdater({ app, ipcMain, getMainWindow, beforeInstall, trustedOrigin = "http://localhost:3210" }, runtime = {}) {
+function setupUpdater({ app, ipcMain, getMainWindow, beforeInstall, getProxyUrl = () => undefined, trustedOrigin = "http://localhost:3210" }, runtime = {}) {
   const platform = runtime.platform ?? process.platform;
   const arch = runtime.arch ?? process.arch;
   // Windows (x64) gets full in-app download+install. Mac is ad-hoc signed
   // only (no paid Apple Developer certificate/notarization), so Squirrel.Mac
-  // would fail applying the update — but *checking* the latest version
-  // against latest-mac.yml needs no signature at all, so Mac still gets to
-  // know a new version exists, just not to install it in-app.
+  // cannot apply the update. Mac checks the published DMG release instead.
   const mode = !app.isPackaged
     ? "development"
     : platform === "win32" && arch === "x64"
@@ -26,6 +26,7 @@ function setupUpdater({ app, ipcMain, getMainWindow, beforeInstall, trustedOrigi
         : "manual";
   const checkCapable = mode === "in-app" || mode === "check-only";
   const updater = checkCapable ? runtime.autoUpdater ?? require("electron-updater").autoUpdater : null;
+  const networkSession = checkCapable ? runtime.networkSession ?? updater.netSession : null;
   const openExternal = runtime.openExternal ?? require("electron").shell.openExternal;
   let busy = null;
   let disposed = false;
@@ -101,6 +102,58 @@ function setupUpdater({ app, ipcMain, getMainWindow, beforeInstall, trustedOrigi
     });
   }
 
+  async function configureNetwork() {
+    const raw = getProxyUrl();
+    let proxy;
+    if (typeof raw === "string" && raw.trim()) {
+      const url = new URL(raw.trim());
+      if (url.protocol !== "http:" || !url.hostname || url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
+        throw new Error("Invalid update proxy");
+      }
+      const address = `${url.hostname}:${url.port || "80"}`;
+      proxy = { mode: "fixed_servers", proxyRules: `http=${address};https=${address}` };
+    } else {
+      proxy = { mode: "system" };
+    }
+    await networkSession.setProxy(proxy);
+  }
+
+  // Mac publishes a DMG only: there is no latest-mac.yml for electron-updater
+  // to read. Check the published release instead, using Chromium's network
+  // session so the same system/user proxy works on both platforms.
+  async function checkMacRelease() {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+    try {
+      const response = await networkSession.fetch(LATEST_RELEASE_API, {
+        headers: { Accept: "application/vnd.github+json" },
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error("Release lookup failed");
+      const release = await response.json();
+      const version = typeof release?.tag_name === "string" ? release.tag_name.replace(/^v/, "") : "";
+      if (!VERSION_RE.test(version) || release.draft || release.prerelease ||
+          !Array.isArray(release.assets) ||
+          !release.assets.some((asset) => asset.name === `JobCompass-${version}-mac-arm64.dmg`)) {
+        throw new Error("Invalid or incomplete release");
+      }
+      const current = app.getVersion();
+      if (!VERSION_RE.test(current)) throw new Error("Invalid installed version");
+      const newer = version.split(".").some((part, index) => {
+        const currentPart = Number(current.split(".")[index]);
+        const nextPart = Number(part);
+        return nextPart > currentPart && version.split(".").slice(0, index).every((prior, i) => Number(prior) === Number(current.split(".")[i]));
+      });
+      if (newer) {
+        publish({ status: "available", availableVersion: version, message: `发现新版本 ${version}，请前往发布页面下载 DMG 并替换应用。` });
+      } else {
+        publish({ status: "not-available", availableVersion: null, message: "当前已是可获取的最新正式版本。" });
+      }
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   const listeners = [];
   function listen(event, callback) {
     updater.on(event, callback);
@@ -160,7 +213,9 @@ function setupUpdater({ app, ipcMain, getMainWindow, beforeInstall, trustedOrigi
     busy = "check";
     publish({ status: "checking", availableVersion: null, progress: null, errorStage: null, message: "正在检查 GitHub 发布的新版本…" });
     try {
-      await updater.checkForUpdates();
+      await configureNetwork();
+      if (mode === "check-only") await checkMacRelease();
+      else await updater.checkForUpdates();
       if (state.status === "checking") fail("check");
     } catch {
       fail("check");
@@ -175,6 +230,7 @@ function setupUpdater({ app, ipcMain, getMainWindow, beforeInstall, trustedOrigi
     busy = "download";
     publish({ status: "downloading", errorStage: null, progress: null, message: "正在下载更新，下载完成后由你选择安装时间。" });
     try {
+      await configureNetwork();
       await updater.downloadUpdate();
       if (state.status === "downloading") fail("download");
     } catch {

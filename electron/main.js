@@ -255,6 +255,29 @@ function createWindow({ show = true } = {}) {
       preload: path.join(__dirname, "preload.js"),
     },
   });
+  // The preload exposes privileged desktop operations. Keep the main window
+  // on our own local app; external links belong in the system browser.
+  const trustedOrigin = `http://localhost:${PORT}`;
+  const isTrustedNavigation = (url) => {
+    try { return new URL(url).origin === trustedOrigin; } catch { return false; }
+  };
+  const openExternalLink = (url) => {
+    try {
+      const parsed = new URL(url);
+      if (["http:", "https:", "mailto:"].includes(parsed.protocol)) shell.openExternal(url).catch(() => {});
+    } catch { /* Ignore malformed links. */ }
+  };
+  const guardNavigation = (details) => {
+    if (!details.isMainFrame || isTrustedNavigation(details.url)) return;
+    details.preventDefault();
+    openExternalLink(details.url);
+  };
+  mainWindow.webContents.on("will-navigate", guardNavigation);
+  mainWindow.webContents.on("will-redirect", guardNavigation);
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    openExternalLink(url);
+    return { action: "deny" };
+  });
   // Spoken answers in the mock interview need getUserMedia. Electron denies
   // every permission request by default, so without this the mic button
   // fails with no visible reason. Only media is granted — anything else
@@ -639,6 +662,7 @@ app.whenReady().then(async () => {
       app,
       ipcMain: require("electron").ipcMain,
       getMainWindow: () => mainWindow,
+      getProxyUrl: () => readAppSettings().proxyUrl,
       trustedOrigin: `http://localhost:${PORT}`,
       beforeInstall: async () => {
         await backupUserData();
