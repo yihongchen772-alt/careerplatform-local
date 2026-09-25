@@ -863,6 +863,9 @@ model InterviewQA {
 model PersonalTask {
   id            String    @id @default(cuid())
   userId        String
+  /// Stable identity for an inbox-created task, so concurrent/retried scans
+  /// cannot create another row for the same mailbox message.
+  sourceMailKey String?   @unique
   title         String
   note          String?
   dueDate       DateTime?

@@ -13,6 +13,9 @@ import {
   Copy,
   ExternalLink,
   Eraser,
+  GripHorizontal,
+  Maximize2,
+  Minimize2,
   MoreHorizontal,
   NotebookPen,
   Plus,
@@ -124,6 +127,13 @@ export function EmbeddedBrowser({
   const [status, setStatus] = useState<DesktopBridgeAutofillStatus | null>(null);
   const [autofilling, setAutofilling] = useState(false);
   const [savingCorrections, setSavingCorrections] = useState(false);
+  const [rememberedCount, setRememberedCount] = useState(0);
+  const [expanded, setExpanded] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(true);
+  const [browserHeight, setBrowserHeight] = useState(650);
+  const resizeStart = useRef<{ y: number; height: number } | null>(null);
+  const autoSavingRef = useRef(false);
+  const autoSaveErrorRef = useRef(false);
   const [capturing, setCapturing] = useState(false);
   const [captureInitial, setCaptureInitial] = useState<PositionFormInitial | null>(null);
   const [captureOpen, setCaptureOpen] = useState(false);
@@ -169,6 +179,16 @@ export function EmbeddedBrowser({
   );
   const [autoFillOverride, setAutoFillOverride] = useState<boolean | null>(null);
   const autoFill = autoFillOverride ?? autoFillEveryPage;
+  const rememberedPreference = useSyncExternalStore(
+    noop,
+    () => {
+      try { return localStorage.getItem("careerplatform.browser.autoRememberAnswers") !== "0"; }
+      catch { return true; }
+    },
+    () => true
+  );
+  const [rememberOverride, setRememberOverride] = useState<boolean | null>(null);
+  const autoRemember = rememberOverride ?? rememberedPreference;
   // Latest values for the long-lived IPC listener below, updated in an
   // effect (the lint rule forbids touching refs during render).
   const liveRef = useRef({ resumeVersionId, autoFill, autofilling });
@@ -267,6 +287,38 @@ export function EmbeddedBrowser({
     };
   }, [bridge, overlayOpen]);
 
+  useEffect(() => {
+    if (!expanded) return;
+    const main = panelRef.current?.closest("main") as HTMLElement | null;
+    const previousZ = main?.style.zIndex ?? "";
+    const previousOverflow = document.body.style.overflow;
+    if (main) main.style.zIndex = "60";
+    document.body.style.overflow = "hidden";
+    return () => {
+      if (main) main.style.zIndex = previousZ;
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [expanded]);
+
+  useEffect(() => {
+    if (!bridge || !autoRemember || !currentUrl || autofilling || savingCorrections) return;
+    const timer = window.setInterval(async () => {
+      if (autoSavingRef.current) return;
+      autoSavingRef.current = true;
+      try {
+        const { saved } = await bridge.saveCorrections(resumeVersionId || undefined, true);
+        if (saved > 0) setRememberedCount((count) => count + saved);
+        autoSaveErrorRef.current = false;
+      } catch {
+        if (!autoSaveErrorRef.current) toast.error("自动记住手填内容失败；可点「记住本页」重试");
+        autoSaveErrorRef.current = true;
+      } finally {
+        autoSavingRef.current = false;
+      }
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [bridge, autoRemember, currentUrl, autofilling, savingCorrections, resumeVersionId]);
+
   // Keyboard shortcuts while focus is in our own chrome (the guest page's
   // shortcuts are forwarded by the main process and arrive via onShortcut).
   useEffect(() => {
@@ -332,6 +384,12 @@ export function EmbeddedBrowser({
     }
   }
 
+  function setAutoRememberAnswers(next: boolean) {
+    setRememberOverride(next);
+    try { localStorage.setItem("careerplatform.browser.autoRememberAnswers", next ? "1" : "0"); }
+    catch { /* per-device preference only */ }
+  }
+
   function handleAutofill() {
     if (!bridge || autofilling) return;
     setDetected(null);
@@ -341,14 +399,14 @@ export function EmbeddedBrowser({
   }
 
   async function handleSaveCorrections() {
-    if (!bridge || savingCorrections || !resumeVersionId) return;
+    if (!bridge || savingCorrections) return;
     setSavingCorrections(true);
     try {
-      const { saved } = await bridge.saveCorrections(resumeVersionId);
+      const { saved } = await bridge.saveCorrections(resumeVersionId || undefined);
       if (saved > 0) {
-        toast.success(`已记住 ${saved} 个你写的开放题回答，下次遇到相似问题会优先复用`);
+        toast.success(`已记住 ${saved} 项你手填的内容，下次网申会优先复用`);
       } else {
-        toast.info("这页没有可记住的新开放题回答");
+        toast.info("这页没有可记住的新内容");
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "保存修改失败");
@@ -421,15 +479,15 @@ export function EmbeddedBrowser({
   const zoomPercent = Math.round((activeTab?.zoomFactor ?? 1) * 100);
 
   return (
-    <div className="flex h-full flex-col gap-2">
-      <button
+    <div className={expanded ? "fixed inset-0 z-[60] flex flex-col gap-2 overflow-hidden bg-background p-3" : "flex min-h-[44rem] flex-col gap-2"}>
+      {!expanded && <button
         type="button"
         onClick={() => router.back()}
         className="inline-flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
       >
         <ChevronLeft className="size-4" />
         返回
-      </button>
+      </button>}
 
       {/* tab strip */}
       <div className="flex items-end gap-1 overflow-x-auto">
@@ -513,6 +571,10 @@ export function EmbeddedBrowser({
             <ZoomIn className="size-4" />
           </Button>
         </div>
+        <Button type="button" variant={expanded ? "secondary" : "outline"} size="sm" onClick={() => { setExpanded((value) => !value); setToolsOpen(!expanded ? false : true); }} title={expanded ? "退出专注模式" : "让网申页面占满工作区"}>
+          {expanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
+          {expanded ? "退出专注" : "专注展开"}
+        </Button>
         <DropdownMenu open={moreOpen} onOpenChange={setMoreOpen}>
           <DropdownMenuTrigger
             render={<Button type="button" variant="ghost" size="icon" aria-label="更多" />}
@@ -600,8 +662,12 @@ export function EmbeddedBrowser({
         </div>
       )}
 
+      <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+        <span>{autoRemember ? `手填内容自动记忆已开启${rememberedCount > 0 ? ` · 本次已记住 ${rememberedCount} 项` : ""}` : "手填内容自动记忆已关闭"}</span>
+        <Button type="button" size="sm" variant="ghost" className="h-7" onClick={() => setToolsOpen((value) => !value)}>{toolsOpen ? "收起工具" : "展开工具"}</Button>
+      </div>
       {/* action row */}
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-2">
+      {toolsOpen && <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-2">
         {resumeVersions.length > 0 && (
           <Select value={resumeVersionId} onValueChange={(v) => v && setResumeVersionId(v)} onOpenChange={setResumeMenuOpen}>
             <SelectTrigger className="h-9 w-44 shrink-0">
@@ -626,22 +692,26 @@ export function EmbeddedBrowser({
           <input type="checkbox" checked={autoFill} onChange={(e) => setAutoFillEveryPage(e.target.checked)} />
           每页自动填
         </label>
-        {currentUrl && resumeVersionId && (
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground" title="记住你手填或修改的基础资料与开放题；密码、证件、银行卡、验证码不保存">
+          <input type="checkbox" checked={autoRemember} onChange={(e) => setAutoRememberAnswers(e.target.checked)} />
+          自动记住手填内容
+        </label>
+        {currentUrl && (
           <Button
             type="button"
             size="sm"
             variant="outline"
             disabled={savingCorrections}
             onClick={handleSaveCorrections}
-            title="把这页你自己写过或修改过的开放题回答存进记忆库，下次优先复用"
+            title="把这页你自己填写或修改的基础资料、开放题存进记忆库"
           >
             <Check className="size-4" />
-            {savingCorrections ? "记忆中..." : "记住本页回答"}
+            {savingCorrections ? "记忆中..." : "记住本页"}
           </Button>
         )}
-        <Button type="button" size="sm" variant="ghost" onClick={() => router.push("/settings#answer-memory")} title="查看、修改或删除已记住的网申回答">
+        <Button type="button" size="sm" variant="ghost" onClick={() => router.push("/settings#answer-memory")} title="查看、修改或删除已记住的网申资料和回答">
           <NotebookPen className="size-4" />
-          回答库
+          记忆库
         </Button>
         <span className="mx-1 h-5 w-px bg-border" />
         <Button type="button" size="sm" variant="outline" disabled={capturing || !currentUrl} onClick={handleCapture} title="把当前页面的岗位信息用 AI 解析后加进候选岗位池">
@@ -656,7 +726,7 @@ export function EmbeddedBrowser({
           <Radar className="size-4" />
           进度同步
         </Button>
-      </div>
+      </div>}
 
       {detected && !autofilling && detected.tabId === tabsState.activeId && (
         <div className="flex flex-wrap items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs">
@@ -730,7 +800,34 @@ export function EmbeddedBrowser({
         </div>
       )}
 
-      <div ref={panelRef} className="relative min-h-0 flex-1 rounded-lg border bg-muted/30">
+      <div className={expanded ? "flex min-h-0 flex-1" : "flex shrink-0 gap-1"}>
+      {!expanded && <div
+        role="separator"
+        aria-label="拖动调整网页高度"
+        aria-orientation="vertical"
+        aria-valuenow={browserHeight}
+        aria-valuemin={384}
+        aria-valuemax={1600}
+        tabIndex={0}
+        title="上下拖动调整网页高度；方向键也可以微调"
+        className="flex w-5 shrink-0 cursor-ns-resize touch-none items-start justify-center rounded-md pt-4 text-muted-foreground hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+        onPointerDown={(event) => {
+          resizeStart.current = { y: event.clientY, height: browserHeight };
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }}
+        onPointerMove={(event) => {
+          if (!resizeStart.current) return;
+          setBrowserHeight(Math.max(384, Math.min(1600, resizeStart.current.height + event.clientY - resizeStart.current.y)));
+        }}
+        onPointerUp={() => { resizeStart.current = null; }}
+        onPointerCancel={() => { resizeStart.current = null; }}
+        onKeyDown={(event) => {
+          if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+          event.preventDefault();
+          setBrowserHeight((height) => Math.max(384, Math.min(1600, height + (event.key === "ArrowDown" ? 40 : -40))));
+        }}
+      ><GripHorizontal className="size-4 shrink-0 rotate-90" /></div>}
+      <div ref={panelRef} role="region" aria-label="网页内容" style={expanded ? undefined : { height: browserHeight }} className={expanded ? "relative min-h-0 flex-1 rounded-lg border bg-muted/30" : "relative min-h-[24rem] min-w-0 flex-1 rounded-lg border bg-muted/30"}>
         {overlayOpen && (
           <p className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">
             页面暂时隐藏，关掉弹窗后恢复
@@ -745,6 +842,7 @@ export function EmbeddedBrowser({
             </Button>
           </div>
         )}
+      </div>
       </div>
 
       <QuickOpenDialog

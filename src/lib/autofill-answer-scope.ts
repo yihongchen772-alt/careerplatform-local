@@ -14,3 +14,13 @@ export function canUpdateReferencedAnswer(
   if (existing.confirmed) return existing.contextKey === desiredScope;
   return existing.contextKey === currentContext;
 }
+
+/** A different hand-written answer on a company page is a local variant,
+ * even when the question wording itself is generic. */
+export function shouldForkGlobalAnswer(
+  existing: { contextKey: string | null; answer: string } | null,
+  currentContext: string | null,
+  nextAnswer: string,
+): boolean {
+  return !!(existing && existing.contextKey === null && currentContext && existing.answer !== nextAnswer);
+}

@@ -13,8 +13,8 @@ const context = {
   module: { exports: {} },
   URL,
 };
-vm.runInNewContext(`${source}\nmodule.exports.__test = { matchBasicField, isNeverGuessField, isOpenEndedQuestionField, portalContext, memoryCandidate, assertTrustedBrowserEvent, safeDownloadFilename, openSafeExternalUrl };`, context);
-const { matchBasicField, isNeverGuessField, isOpenEndedQuestionField, portalContext, memoryCandidate, assertTrustedBrowserEvent, safeDownloadFilename, openSafeExternalUrl } = context.module.exports.__test;
+vm.runInNewContext(`${source}\nmodule.exports.__test = { matchBasicField, matchRememberedField, fieldMemoryKey, isForbiddenMemoryField, isNeverGuessField, isOpenEndedQuestionField, isSensitiveMemoryField, portalContext, memoryCandidate, trackUserEdits, assertTrustedBrowserEvent, safeDownloadFilename, openSafeExternalUrl };`, context);
+const { matchBasicField, matchRememberedField, fieldMemoryKey, isForbiddenMemoryField, isNeverGuessField, isOpenEndedQuestionField, isSensitiveMemoryField, portalContext, memoryCandidate, trackUserEdits, assertTrustedBrowserEvent, safeDownloadFilename, openSafeExternalUrl } = context.module.exports.__test;
 
 const profile = { name: "陈奕宏", email: "me@example.invalid" };
 
@@ -32,6 +32,8 @@ test("open-ended text inputs join textareas in answer memory", () => {
   assert.equal(isOpenEndedQuestionField({ tag: "input", type: "text", label: "为什么申请这个岗位？", placeholder: "", name: "" }), true);
   assert.equal(isOpenEndedQuestionField({ tag: "input", type: "text", label: "邮箱", placeholder: "", name: "" }), false);
   assert.equal(isOpenEndedQuestionField({ tag: "input", type: "number", label: "相关经历年数", placeholder: "", name: "" }), false);
+  assert.equal(isSensitiveMemoryField({ tag: "textarea", label: "家庭住址", placeholder: "", name: "" }), true);
+  assert.equal(isSensitiveMemoryField({ tag: "textarea", label: "自我介绍", placeholder: "", name: "" }), false);
 });
 
 test("company context survives own-site paths but isolates shared job board paths", () => {
@@ -81,6 +83,47 @@ test("only hand-written or edited answers are confirmed", () => {
   assert.equal(memoryCandidate({ value: "项目描述", profileFilled: true }, drafts), null);
   assert.equal(memoryCandidate({ value: "我改写的回答", answerId: "answer-1" }, drafts).answerId, "answer-1");
   assert.equal(memoryCandidate({ value: "我手写的回答", answerId: null }, drafts).value, "我手写的回答");
+  assert.equal(memoryCandidate({ value: "网站预填", userEdited: false }, drafts, true), null);
+  assert.equal(memoryCandidate({ value: "AI 草稿", answerId: "answer-1", userEdited: true, editedAt: Date.now() - 4000 }, drafts, true), null);
+  assert.equal(memoryCandidate({ value: "我亲手写的回答", userEdited: true, editedAt: Date.now() - 4000 }, drafts, true).value, "我亲手写的回答");
+  assert.equal(memoryCandidate({ value: "还没写完", userEdited: true, editedAt: Date.now() }, drafts, true), null);
+  assert.equal(memoryCandidate({ value: "我改过的学校", profileFilled: true, userEdited: true, editedAt: Date.now() - 4000 }, drafts, true).value, "我改过的学校");
+});
+
+test("manually entered basic facts are reusable, company-specific fields stay local", () => {
+  const field = (label, options) => ({ label, placeholder: "", name: "", tag: "input", type: "text", options });
+  assert.equal(fieldMemoryKey(field("毕业院校 *")), "学校");
+  assert.equal(fieldMemoryKey(field("详细地址")), "地址");
+  assert.equal(fieldMemoryKey(field("学校推荐人")), "学校推荐人");
+  for (const label of ["密码", "身份证号码", "银行卡号", "验证码", "紧急联系人"]) {
+    assert.equal(isForbiddenMemoryField(field(label)), true, label);
+    assert.equal(fieldMemoryKey(field(label)), null, label);
+  }
+  const memories = [
+    { questionLabel: "学校", answer: "通用大学", contextKey: null },
+    { questionLabel: "学校", answer: "本企业校区", contextKey: "https://one.example" },
+    { questionLabel: "地址", answer: "Singapore", contextKey: null },
+    { questionLabel: "内部推荐码", answer: "ONE123", contextKey: "https://one.example" },
+  ];
+  assert.equal(matchRememberedField(field("毕业院校"), memories, "https://two.example"), "通用大学");
+  assert.equal(matchRememberedField(field("毕业院校"), memories, "https://one.example"), "本企业校区");
+  assert.equal(matchRememberedField(field("通讯地址"), memories, "https://two.example"), "Singapore");
+  assert.equal(matchRememberedField(field("内部推荐码"), memories, "https://two.example"), null);
+  assert.equal(matchRememberedField(field("内部推荐码"), memories, "https://one.example"), "ONE123");
+  assert.equal(matchRememberedField(field("性别", ["男", "女"]), [{ questionLabel: "性别", answer: "未知", contextKey: null }], "https://one.example"), null);
+});
+
+test("automatic memory marks trusted typing, not synthetic autofill events", () => {
+  const listeners = {};
+  context.document = { addEventListener: (type, callback) => { listeners[type] = callback; } };
+  trackUserEdits();
+  const attrs = new Map();
+  const field = { matches: () => true, disabled: false, readOnly: false, setAttribute: (key, value) => attrs.set(key, value) };
+  listeners.input({ isTrusted: false, target: field });
+  assert.equal(attrs.size, 0);
+  listeners.input({ isTrusted: true, target: field });
+  assert.equal(attrs.get("data-cp-user-edited"), "1");
+  assert.ok(Number(attrs.get("data-cp-user-edited-at")) > 0);
 });
 
 test("confirmed global answers cannot be overwritten from another portal", () => {
@@ -88,10 +131,13 @@ test("confirmed global answers cannot be overwritten from another portal", () =>
   const compiled = ts.transpileModule(scopeSource, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
   const scopeModule = { exports: {} };
   vm.runInNewContext(compiled, { module: scopeModule, exports: scopeModule.exports, require });
-  const { canUpdateReferencedAnswer } = scopeModule.exports;
+  const { canUpdateReferencedAnswer, shouldForkGlobalAnswer } = scopeModule.exports;
   assert.equal(canUpdateReferencedAnswer({ confirmed: true, contextKey: null }, "https://careers.example.com", "https://careers.example.com"), false);
   assert.equal(canUpdateReferencedAnswer({ confirmed: true, contextKey: "https://careers.example.com" }, "https://careers.example.com", "https://careers.example.com"), true);
   assert.equal(canUpdateReferencedAnswer({ confirmed: false, contextKey: "https://careers.example.com" }, null, "https://careers.example.com"), true);
+  assert.equal(shouldForkGlobalAnswer({ contextKey: null, answer: "通用回答" }, "https://careers.another.com", "为这家公司重写"), true);
+  assert.equal(shouldForkGlobalAnswer({ contextKey: null, answer: "通用回答" }, "https://careers.another.com", "通用回答"), false);
+  assert.equal(shouldForkGlobalAnswer({ contextKey: "https://careers.example.com", answer: "旧答案" }, "https://careers.example.com", "新答案"), false);
 });
 
 test("browser IPC rejects guest frames and an external main-window navigation", () => {

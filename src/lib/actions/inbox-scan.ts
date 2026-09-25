@@ -2,11 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { getUserScanAccounts, fetchRecentEmails, type InboxEmail } from "@/lib/imap";
 import { getUserAiConfig, callTextAi } from "@/lib/ai-providers";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
+import { mailTaskKey } from "@/lib/inbox-identity";
 
 const classificationSchema = z.object({
   results: z.array(
@@ -133,14 +135,22 @@ async function runScan(
         if (!c.isJobRelated) continue;
         const email = emails[c.index];
         if (!email) continue;
-        await db.personalTask.create({
-          data: {
-            userId,
-            title: `${c.type}${c.company ? `：${c.company}` : ""}`,
-            note: `${c.summary}\n\n邮件主题：${email.subject}\n来自：${email.from}\n收件箱：${account.label}`,
-          },
-        });
-        found += 1;
+        try {
+          await db.personalTask.create({
+            data: {
+              userId,
+              sourceMailKey: mailTaskKey(account.id, email.uid),
+              title: `${c.type}${c.company ? `：${c.company}` : ""}`,
+              note: `${c.summary}\n\n邮件主题：${email.subject}\n来自：${email.from}\n收件箱：${account.label}`,
+            },
+          });
+          found += 1;
+        } catch (error) {
+          // Another launch/manual scan may have inserted this exact message
+          // after our UID cursor was read. Only the unique-key conflict is
+          // harmless; any other write failure must remain visible.
+          if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")) throw error;
+        }
       }
     }
 
@@ -152,11 +162,14 @@ async function runScan(
     // gets relied on the more it's *only one bug away* from silently
     // reprocessing everything again).
     const maxUid = emails.length > 0 ? Math.max(...emails.map((e) => e.uid)) : undefined;
-    await db.mailAccount.update({
-      where: { id: account.id },
+    await db.mailAccount.updateMany({
+      where: {
+        id: account.id,
+        ...(maxUid === undefined ? {} : { OR: [{ lastSeenUid: null }, { lastSeenUid: { lte: maxUid } }] }),
+      },
       data: {
         lastCheckedAt: new Date(),
-        lastSeenUid: maxUid !== undefined ? Math.max(maxUid, stored?.lastSeenUid ?? 0) : stored?.lastSeenUid,
+        ...(maxUid === undefined ? {} : { lastSeenUid: maxUid }),
       },
     });
   }

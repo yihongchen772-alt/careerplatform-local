@@ -55,11 +55,11 @@ export default async function BrowserPage({
   ]);
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] flex-col gap-4 md:h-[calc(100vh-5rem)]">
+    <div className="flex min-h-[calc(100vh-8rem)] flex-col gap-3 md:min-h-[calc(100vh-5rem)]">
       <div>
         <h1 className="text-3xl font-semibold tracking-tight">网申浏览器</h1>
         <p className="text-sm text-muted-foreground">
-          多标签浏览网申页面。选好简历点「AI 一键填充」；开放题写好或改好后点「记住本页回答」，下次遇到相似问题会优先复用。提交前检查填充结果和标记，提交完成后再点「记为已投递」。
+          拖动网页左侧的细轨可调整高度，也可进入专注模式。你手填的基础资料和开放题会自动记住；可在记忆库修改或删除。提交前请核对填充结果，完成后再点「记为已投递」。
         </p>
       </div>
       <EmbeddedBrowser

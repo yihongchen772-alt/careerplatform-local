@@ -14,6 +14,7 @@ import { getTodayDigest } from "@/lib/actions/daily-digest";
 import { WeeklyReviewCard } from "@/components/dashboard/weekly-review-card";
 import { getWeeklyReview } from "@/lib/actions/weekly-review";
 import { OnboardingCard } from "@/components/dashboard/onboarding-card";
+import { duplicateImportedTaskIds } from "@/lib/inbox-identity";
 
 export default async function DashboardPage() {
   const user = await requireUser();
@@ -151,6 +152,7 @@ export default async function DashboardPage() {
         </div>
         <div className="space-y-5">
           <PersonalTaskCard
+            duplicateMailTaskCount={duplicateImportedTaskIds(personalTasks).length}
             tasks={personalTasks.map((t) => ({
               id: t.id,
               title: t.title,

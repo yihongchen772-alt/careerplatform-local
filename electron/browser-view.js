@@ -497,26 +497,74 @@ function clearFillMarks() {
   });
 }
 
+// Installed inside each guest frame. Only real user input marks a field for
+// automatic memory; our own fillFields dispatches synthetic events and never
+// confirms an AI draft by accident.
+function trackUserEdits() {
+  if (document.__cpUserEditTrackerInstalled) return;
+  document.__cpUserEditTrackerInstalled = true;
+  const mark = (event) => {
+    if (!event.isTrusted) return;
+    const el = event.target;
+    if (!el || !el.matches || !el.matches('textarea, select, input[type="text"], input[type="email"], input[type="tel"], input[type="number"], input[type="date"], input[type="month"], input[type="url"], input[type="radio"], input:not([type])')) return;
+    if (el.disabled || el.readOnly) return;
+    el.setAttribute("data-cp-user-edited", "1");
+    el.setAttribute("data-cp-user-edited-at", String(Date.now()));
+  };
+  document.addEventListener("input", mark, true);
+  document.addEventListener("change", mark, true);
+}
+
+function hasUserEditedFields() {
+  return !!document.querySelector('[data-cp-user-edited="1"]');
+}
+
 // Read side of fillFields — same element lookup and same "select reads by
 // visible option text" rule, so a value read back here compares cleanly
 // against what fillFields originally wrote.
 function readFieldValues(ids) {
   const result = {};
   ids.forEach((id) => {
+    const radio = Array.from(document.querySelectorAll('[data-cp-fill-id^="' + id + ':"]'));
+    if (radio.length) {
+      const selected = radio.find((el) => el.checked);
+      const label = selected && (selected.closest("label")?.textContent || selected.nextSibling?.textContent || selected.value || "");
+      result[id] = { value: (label || "").trim(), answerId: null, profileFilled: radio.some((el) => el.getAttribute("data-cp-profile-filled") === "1"), userEdited: radio.some((el) => el.getAttribute("data-cp-user-edited") === "1"), editedAt: Math.max(...radio.map((el) => Number(el.getAttribute("data-cp-user-edited-at")) || 0)) };
+      return;
+    }
     const el = document.querySelector('[data-cp-fill-id="' + id + '"]');
     if (!el) return;
     if (el.tagName.toLowerCase() === "select") {
       const selected = el.options[el.selectedIndex];
-      result[id] = { value: selected ? selected.textContent.trim() : "", answerId: el.getAttribute("data-cp-answer-id"), profileFilled: el.getAttribute("data-cp-profile-filled") === "1" };
+      result[id] = { value: selected ? selected.textContent.trim() : "", answerId: el.getAttribute("data-cp-answer-id"), profileFilled: el.getAttribute("data-cp-profile-filled") === "1", userEdited: el.getAttribute("data-cp-user-edited") === "1", editedAt: Number(el.getAttribute("data-cp-user-edited-at")) || 0 };
     } else {
-      result[id] = { value: el.value, answerId: el.getAttribute("data-cp-answer-id"), profileFilled: el.getAttribute("data-cp-profile-filled") === "1" };
+      result[id] = { value: el.value, answerId: el.getAttribute("data-cp-answer-id"), profileFilled: el.getAttribute("data-cp-profile-filled") === "1", userEdited: el.getAttribute("data-cp-user-edited") === "1", editedAt: Number(el.getAttribute("data-cp-user-edited-at")) || 0 };
     }
   });
   return result;
 }
 
-function memoryCandidate(snapshot, filledList) {
-  if (snapshot.profileFilled) return null;
+function clearSavedUserEdits(saved) {
+  for (const item of saved) {
+    const radios = Array.from(document.querySelectorAll('[data-cp-fill-id^="' + item.id + ':"]'));
+    if (radios.length) {
+      const selected = radios.find((el) => el.checked);
+      const value = String(selected && (selected.closest("label")?.textContent || selected.nextSibling?.textContent || selected.value || "") || "").trim();
+      if (value === item.value) radios.forEach((el) => { el.removeAttribute("data-cp-user-edited"); el.removeAttribute("data-cp-user-edited-at"); });
+      continue;
+    }
+    const el = document.querySelector('[data-cp-fill-id="' + item.id + '"]');
+    const value = el?.tagName.toLowerCase() === "select" ? el.options[el.selectedIndex]?.textContent.trim() : el?.value;
+    if (el && String(value || "").trim() === item.value) {
+      el.removeAttribute("data-cp-user-edited");
+      el.removeAttribute("data-cp-user-edited-at");
+    }
+  }
+}
+
+function memoryCandidate(snapshot, filledList, onlyUserEdited = false) {
+  if (onlyUserEdited && (!snapshot.userEdited || !snapshot.editedAt || Date.now() - snapshot.editedAt < 2500)) return null;
+  if (snapshot.profileFilled && !snapshot.userEdited) return null;
   const value = String(snapshot.value || "").trim();
   if (!value) return null;
   const draft = filledList.findLast((entry) => entry.answerId === snapshot.answerId);
@@ -584,6 +632,43 @@ function isOpenEndedQuestionField(field) {
   if (field.tag !== "input" || !["text", "", undefined].includes(field.type)) return false;
   const label = fieldHaystack(field);
   return /[?？]|为什么|为何|请描述|请介绍|请说明|谈谈|自我评价|个人优势|求职动机|职业规划|相关经历|why|describe|tell us|motivation|strength|experience|career plan|interested in/i.test(label);
+}
+
+function isSensitiveMemoryField(field) {
+  return /身份证|证件|护照|银行卡|银行账号|卡号|密码|验证码|手机号|电话号码|邮箱地址|电子邮箱|详细地址|家庭住址|通讯地址|紧急联系人|家庭成员|出生日期|birth.?date|passport|password|captcha|bank.?account|phone.?number|email.?address|home.?address/i.test(fieldHaystack(field));
+}
+
+// Ordinary contact/education details can be remembered, but credentials,
+// identity numbers and payment details never enter the reusable library.
+function isForbiddenMemoryField(field) {
+  return /身份证|证件(?:号|号码)|护照|签名|密码|验证码|银行卡|银行账号|卡号|信用卡|支付|社保号|税号|紧急联系人|家庭成员|passport|password|captcha|bank.?account|credit.?card|social.?security|verification.?code|one.?time.?code/i.test(fieldHaystack(field));
+}
+
+function fieldMemoryKey(field) {
+  const raw = String(field.label || field.placeholder || field.name || "").trim();
+  const label = raw.replace(/[＊*：:\s]+/g, " ").trim().toLowerCase();
+  if (!label || isForbiddenMemoryField(field)) return null;
+  if (/^(?:姓名|真实姓名|full name|name)$/.test(label)) return "姓名";
+  if (/^(?:学校|毕业院校|院校|school|university|school name)$/.test(label)) return "学校";
+  if (/^(?:手机|手机号|电话|电话号码|联系电话|phone|mobile|mobile phone|phone number|tel)$/.test(label)) return "手机";
+  if (/^(?:邮箱|电子邮箱|邮箱地址|email|email address|e-mail)$/.test(label)) return "邮箱";
+  if (/^(?:地址|详细地址|通讯地址|联系地址|现住址|家庭住址|address|mailing address|home address)$/.test(label)) return "地址";
+  if (/^(?:专业|所学专业|major)$/.test(label)) return "专业";
+  if (/^(?:学历|最高学历|degree|education level)$/.test(label)) return "学历";
+  if (/^(?:性别|gender)$/.test(label)) return "性别";
+  if (/^(?:出生日期|出生年月|生日|date of birth|birth date)$/.test(label)) return "出生日期";
+  // Unknown labels stay portal-local: do not reuse an employer-specific field
+  // on another company's site just because its wording happens to match.
+  return raw.slice(0, 500);
+}
+
+function matchRememberedField(field, memories, contextKey) {
+  if (isForbiddenMemoryField(field)) return null;
+  const key = fieldMemoryKey(field);
+  if (!key) return null;
+  const matches = (memories || []).filter((item) => item.questionLabel === key && (!item.contextKey || item.contextKey === contextKey));
+  const selected = matches.find((item) => item.contextKey === contextKey) || matches.find((item) => !item.contextKey);
+  return selected ? matchFieldOption(field, selected.answer) : null;
 }
 
 function projectFieldKind(haystack) {
@@ -693,6 +778,7 @@ let attachedView = null;
 // AI-answered fields from the most recent autofill run, per tab id —
 // [{id, answerId, filledValue, frame}]. Reset on every autofill call.
 const lastAiFilled = new Map();
+const savingAnswersForTabs = new Set();
 const submittedSignatures = new Map();
 
 function assertTrustedBrowserEvent(event, window, expectedOrigin) {
@@ -819,6 +905,7 @@ function createTab(url, { activate = true } = {}) {
   wc.on("did-stop-loading", () => {
     recordHistory(wc.getURL(), wc.getTitle());
     sendTabsState();
+    void installUserEditTrackers(wc);
   });
   // Cmd/Ctrl shortcuts land in the guest page when it has focus, which is
   // most of the time — forward the browser-chrome ones to our own UI.
@@ -943,6 +1030,12 @@ function allFrames(wc) {
   return [main, ...main.framesInSubtree.filter((f) => f !== main)];
 }
 
+async function installUserEditTrackers(wc) {
+  for (const frame of allFrames(wc)) {
+    await frame.executeJavaScript(`(${trackUserEdits.toString()})()`).catch(() => {});
+  }
+}
+
 async function scanAllFrames(wc) {
   const frames = allFrames(wc);
   const fields = [];
@@ -950,6 +1043,7 @@ async function scanAllFrames(wc) {
   const run = Date.now().toString(36).slice(-4);
   for (let i = 0; i < frames.length; i++) {
     try {
+      await frames[i].executeJavaScript(`(${trackUserEdits.toString()})()`);
       const found = await frames[i].executeJavaScript(`(${scanPageFields.toString()})(${JSON.stringify(`c${i}${run}-`)})`);
       for (const f of found || []) {
         frameById.set(f.id, frames[i]);
@@ -1241,7 +1335,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     try {
       send("browser:autofill-status", { phase: "scanning", message: "正在读取页面…" });
 
-      const profileRes = await fetch(`http://localhost:${port}/api/desktop-browser/profile`);
+      const profileRes = await fetch(`http://localhost:${port}/api/desktop-browser/profile?contextKey=${encodeURIComponent(portalContext(initialUrl))}`);
       if (!profileRes.ok) throw new Error("拿不到你的资料，先去账号设置填一下");
       const profile = await profileRes.json();
 
@@ -1253,6 +1347,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       const pairs = [];
       const candidates = []; // fields going to AI: {id, label, kind, options?}
       const projectIndexes = new Map();
+      const pageContext = portalContext(initialUrl);
       let neverGuessCount = 0;
       let alreadyFilled = 0;
       for (const field of fields) {
@@ -1262,6 +1357,11 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
           const projectKind = projectFieldKind(fieldHaystack(field));
           if (projectKind) projectIndexes.set(projectKind, (projectIndexes.get(projectKind) || 0) + 1);
           alreadyFilled++;
+          continue;
+        }
+        const rememberedValue = matchRememberedField(field, profile.fieldMemories, pageContext);
+        if (rememberedValue) {
+          pairs.push({ id: field.id, value: rememberedValue, source: "remembered-field", label: field.label, tag: field.tag, remembered: true });
           continue;
         }
         if (isNeverGuessField(field)) {
@@ -1298,7 +1398,6 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
           message: `已填 ${basicCount} 个基础字段，正在用 AI 补全 ${candidates.length} 个字段…`,
         });
         try {
-          const pageContext = portalContext(initialUrl);
           const answerRes = await fetch(`http://localhost:${port}/api/desktop-browser/answer-questions`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1327,14 +1426,14 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       if (wc.isDestroyed() || wc.getURL() !== initialUrl || activeId !== tab.id) throw new Error("页面或标签已切换，已停止写入；请在当前页面重新填充");
       const { filled, failed } = await fillAllFrames(pairs, frameById);
       const filledSet = new Set(filled);
-      const rememberedDrafts = pairs.filter((p) => p.source !== "profile" && p.answerId && filledSet.has(p.id) && isOpenEndedQuestionField(fields.find((f) => f.id === p.id) || p))
+      const rememberedDrafts = pairs.filter((p) => p.source !== "profile" && p.source !== "remembered-field" && p.answerId && filledSet.has(p.id) && isOpenEndedQuestionField(fields.find((f) => f.id === p.id) || p))
         .map((p) => ({ id: p.id, answerId: p.answerId, label: p.label, filledValue: p.value }));
       const newIds = new Set(rememberedDrafts.map((draft) => draft.answerId));
       lastAiFilled.set(tab.id, [...(lastAiFilled.get(tab.id) || []).filter((draft) => !newIds.has(draft.answerId)), ...rememberedDrafts]);
-      const basicFilled = pairs.filter((p) => p.source === "profile" && filledSet.has(p.id)).length;
-      const essayFilled = pairs.filter((p) => p.tag === "textarea" && p.source !== "profile" && filledSet.has(p.id)).length;
+      const basicFilled = pairs.filter((p) => (p.source === "profile" || p.source === "remembered-field") && filledSet.has(p.id)).length;
+      const essayFilled = pairs.filter((p) => p.tag === "textarea" && p.source !== "profile" && p.source !== "remembered-field" && filledSet.has(p.id)).length;
       const shortFilled = filled.length - basicFilled - essayFilled;
-      const rememberedFilled = pairs.filter((p) => p.remembered && filledSet.has(p.id)).length;
+      const rememberedFilled = pairs.filter((p) => p.tag === "textarea" && p.source !== "remembered-field" && p.remembered && filledSet.has(p.id)).length;
       const essayReused = pairs.filter((p) => p.tag === "textarea" && p.reused && filledSet.has(p.id)).length;
       const aiReused = essayReused - rememberedFilled;
       const details = fields.map((field) => ({
@@ -1397,7 +1496,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
             : `${stillManual} 个字段简历里没有对应信息，需要自己填`
         );
       }
-      parts.push("自己修改或写完开放题后，点「记住本页回答」；可在账号设置查看和修改；提交前检查标出的字段");
+      parts.push("手写或修改的基础资料和开放题会自动记住；可在账号设置查看和修改；提交前请核对所有填入内容");
 
       send("browser:autofill-status", { phase: "done", message: parts.join("；"), details });
     } catch (err) {
@@ -1408,40 +1507,70 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     }
   });
 
-  // Remember essays the user wrote from scratch or changed after AI fill.
-  handle("browser:save-corrections", async (_e, resumeVersionId) => {
+  // Remember manually entered facts and essays; never save untouched drafts.
+  handle("browser:save-corrections", async (_e, resumeVersionId, onlyUserEdited = false) => {
     const tab = activeTab();
-    if (!tab || !resumeVersionId) return { saved: 0 };
-    const filledList = lastAiFilled.get(tab.id) || [];
-    const answers = [];
-    // A fresh scan also includes answers the user wrote entirely by hand.
-    // Read the original AI ids first; scanning replaces the temporary DOM ids.
-    const { fields, frameById } = await scanAllFrames(tab.view.webContents);
-    for (const field of fields) {
-      const label = field.label || field.placeholder || field.name;
-      if (!isOpenEndedQuestionField(field) || !label || isNeverGuessField(field)) continue;
-      const frame = frameById.get(field.id);
-      if (!frame) continue;
-      const values = await frame.executeJavaScript(`(${readFieldValues.toString()})(${JSON.stringify([field.id])})`).catch(() => ({}));
-      const snapshot = values[field.id] || {};
-      // A field copied from saved facts isn't a newly confirmed answer, and
-      // an unchanged AI draft stays unconfirmed even after another autofill.
-      const candidate = memoryCandidate(snapshot, filledList);
-      if (!candidate) continue;
-      answers.push({ questionLabel: label, answer: candidate.value, answerId: candidate.answerId, kind: field.tag === "textarea" ? "essay" : "short" });
-    }
-    if (!answers.length) return { saved: 0 };
+    if (!tab) return { saved: 0 };
+    if (savingAnswersForTabs.has(tab.id)) return { saved: 0 };
+    savingAnswersForTabs.add(tab.id);
+    try {
+      const pageUrl = tab.view.webContents.getURL();
+      if (onlyUserEdited) {
+        let hasEdits = false;
+        for (const frame of allFrames(tab.view.webContents)) {
+          if (await frame.executeJavaScript(`(${hasUserEditedFields.toString()})()`).catch(() => false)) {
+            hasEdits = true;
+            break;
+          }
+        }
+        if (!hasEdits) return { saved: 0 };
+      }
+      const filledList = lastAiFilled.get(tab.id) || [];
+      const answers = [];
+      const savedFields = [];
+      // A fresh scan also includes answers the user wrote entirely by hand.
+      // Read the original AI ids first; scanning replaces the temporary DOM ids.
+      const { fields, frameById } = await scanAllFrames(tab.view.webContents);
+      for (const field of fields) {
+        const label = field.label || field.placeholder || field.name;
+        if (!label || isForbiddenMemoryField(field)) continue;
+        if (field.tag === "custom-select") continue;
+        const frame = frameById.get(field.id);
+        if (!frame) continue;
+        const values = await frame.executeJavaScript(`(${readFieldValues.toString()})(${JSON.stringify([field.id])})`).catch(() => ({}));
+        const snapshot = values[field.id] || {};
+        // A field copied from saved facts isn't a newly confirmed answer, and
+        // an unchanged AI draft stays unconfirmed even after another autofill.
+        const candidate = memoryCandidate(snapshot, filledList, onlyUserEdited);
+        if (!candidate || label.length < 2 || label.length > 500 || candidate.value.length > 10000) continue;
+        const openEnded = isOpenEndedQuestionField(field) && !isSensitiveMemoryField(field);
+        if (!openEnded && !snapshot.userEdited) continue;
+        const key = openEnded ? label : fieldMemoryKey(field);
+        if (!key) continue;
+        answers.push({ questionLabel: key, answer: candidate.value, answerId: openEnded ? candidate.answerId : undefined, kind: openEnded ? field.tag === "textarea" ? "essay" : "short" : "field" });
+        savedFields.push({ frame, id: field.id, value: candidate.value });
+      }
+      if (!answers.length || tab.view.webContents.getURL() !== pageUrl) return { saved: 0 };
 
-    const res = await fetch(`http://localhost:${port}/api/desktop-browser/save-corrections`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ resumeVersionId, contextKey: portalContext(tab.view.webContents.getURL()), answers }),
-    });
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "保存回答失败");
-    const body = await res.json();
-    const confirmedIds = new Set(answers.map((answer) => answer.answerId).filter(Boolean));
-    lastAiFilled.set(tab.id, filledList.filter((entry) => !confirmedIds.has(entry.answerId)));
-    return { saved: body.saved ?? answers.length };
+      const res = await fetch(`http://localhost:${port}/api/desktop-browser/save-corrections`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resumeVersionId, contextKey: portalContext(pageUrl), answers }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "保存回答失败");
+      const body = await res.json();
+      if (body.saved === answers.length) {
+        for (const frame of new Set(savedFields.map((field) => field.frame))) {
+          const entries = savedFields.filter((field) => field.frame === frame).map(({ id, value }) => ({ id, value }));
+          await frame.executeJavaScript(`(${clearSavedUserEdits.toString()})(${JSON.stringify(entries)})`).catch(() => {});
+        }
+        const confirmedIds = new Set(answers.map((answer) => answer.answerId).filter(Boolean));
+        lastAiFilled.set(tab.id, filledList.filter((entry) => !confirmedIds.has(entry.answerId)));
+      }
+      return { saved: body.saved ?? 0 };
+    } finally {
+      savingAnswersForTabs.delete(tab.id);
+    }
   });
 }
 

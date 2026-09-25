@@ -3,6 +3,7 @@ import { simpleParser } from "mailparser";
 import { db } from "@/lib/db";
 import { decryptSecret } from "@/lib/crypto";
 import { UserFacingError } from "@/lib/action-result";
+import { unseenUids } from "@/lib/inbox-identity";
 
 export type InboxEmail = {
   uid: number;
@@ -97,9 +98,7 @@ export async function fetchRecentEmails(
       // A mailbox can have a backlog much larger than one check. Process the
       // oldest matching UIDs first so advancing the cursor never jumps over
       // mail that is still waiting for classification.
-      const recentUids = uids
-        ? [...uids].sort((a, b) => a - b).slice(0, MAX_EMAILS_PER_CHECK)
-        : [];
+      const recentUids = unseenUids(Array.isArray(uids) ? uids : [], sinceUid).slice(0, MAX_EMAILS_PER_CHECK);
 
       // `{ uid: true }` MUST be the third (options) argument, not part of the
       // second (query) argument. In the query it only means "also return the

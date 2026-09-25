@@ -11,7 +11,7 @@ import {
   PersonalTaskFormDialog,
   type PersonalTaskInitial,
 } from "@/components/dashboard/personal-task-form-dialog";
-import { toggleTaskDone, deletePersonalTask } from "@/lib/actions/personal-tasks";
+import { toggleTaskDone, deletePersonalTask, cleanupDuplicateImportedTasks } from "@/lib/actions/personal-tasks";
 
 type LinkOption = { id: string; label: string };
 
@@ -21,10 +21,12 @@ export function PersonalTaskCard({
   tasks,
   positions,
   applications,
+  duplicateMailTaskCount,
 }: {
   tasks: PersonalTaskRow[];
   positions: LinkOption[];
   applications: LinkOption[];
+  duplicateMailTaskCount: number;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -60,18 +62,33 @@ export function PersonalTaskCard({
 
   return (
     <Card className="rounded-[1.5rem] border-border/65 bg-card/75 shadow-[0_16px_45px_-38px_rgba(0,0,0,0.55)] backdrop-blur-xl">
-      <CardHeader className="flex-row items-center justify-between space-y-0">
+      <CardHeader className="flex-col items-start justify-between gap-2 space-y-0 sm:flex-row sm:items-center">
         <CardTitle>我的日程</CardTitle>
-        <PersonalTaskFormDialog
-          positions={positions}
-          applications={applications}
-          trigger={
-            <Button size="sm" variant="outline">
-              <Plus />
-              添加
-            </Button>
-          }
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          {duplicateMailTaskCount > 0 && <ConfirmDeleteButton
+            trigger={<Button size="sm" variant="ghost">清理重复邮件（{duplicateMailTaskCount}）</Button>}
+            title={`清理 ${duplicateMailTaskCount} 条重复邮件日程？`}
+            description="只删除内容完全相同、未完成且没有日期或岗位关联的旧邮件导入项；其他日程不会删除。"
+            onConfirm={async () => {
+              try {
+                const count = await cleanupDuplicateImportedTasks();
+                toast.success(count > 0 ? `已清理 ${count} 条重复日程` : "没有可清理的重复日程");
+              } catch {
+                toast.error("清理失败，请重试");
+              }
+            }}
+          />}
+          <PersonalTaskFormDialog
+            positions={positions}
+            applications={applications}
+            trigger={
+              <Button size="sm" variant="outline">
+                <Plus />
+                添加
+              </Button>
+            }
+          />
+        </div>
       </CardHeader>
       <CardContent className="space-y-2">
         {tasks.length === 0 ? (

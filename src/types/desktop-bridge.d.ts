@@ -37,7 +37,7 @@ export type DesktopBridge = {
   stop(): Promise<void>;
   setBounds(rect: DesktopBridgeRect | null): Promise<void>;
   autofill(resumeVersionId?: string): Promise<void>;
-  saveCorrections(resumeVersionId: string): Promise<{ saved: number }>;
+  saveCorrections(resumeVersionId?: string, onlyUserEdited?: boolean): Promise<{ saved: number }>;
   clearMarks(): Promise<void>;
   capturePage(): Promise<DesktopBridgeCapturedPage>;
   screenshot(): Promise<{ dataUrl: string; url: string; title: string }>;

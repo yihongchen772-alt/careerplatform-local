@@ -5,6 +5,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { personalTaskSchema } from "@/lib/validation";
+import { duplicateImportedTaskIds } from "@/lib/inbox-identity";
 
 function revalidateTaskPaths() {
   revalidatePath("/dashboard");
@@ -72,4 +73,29 @@ export async function deletePersonalTask(id: string) {
   const user = await requireUser();
   await db.personalTask.deleteMany({ where: { id, userId: user.id } });
   revalidateTaskPaths();
+}
+
+/** User-confirmed cleanup of only identical, untouched pre-fix mail imports. */
+export async function cleanupDuplicateImportedTasks(): Promise<number> {
+  const user = await requireUser();
+  const count = await db.$transaction(async (tx) => {
+    const tasks = await tx.personalTask.findMany({ where: { userId: user.id } });
+    const ids = duplicateImportedTaskIds(tasks);
+    if (ids.length === 0) return 0;
+    const result = await tx.personalTask.deleteMany({
+      where: {
+        userId: user.id,
+        id: { in: ids },
+        sourceMailKey: null,
+        done: false,
+        dueDate: null,
+        dueDateEnd: null,
+        positionId: null,
+        applicationId: null,
+      },
+    });
+    return result.count;
+  });
+  if (count > 0) revalidateTaskPaths();
+  return count;
 }
