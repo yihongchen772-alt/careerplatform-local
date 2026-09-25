@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { BriefcaseBusiness, CalendarClock, LayoutGrid, List, MessagesSquare, Sparkles } from "lucide-react";
+import { BriefcaseBusiness, CircleX, LayoutGrid, List, MessagesSquare, Sparkles } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import {
@@ -22,12 +22,12 @@ export function ApplicationsView({ applications }: { applications: ApplicationRo
   const active = applications.filter((a) => !["REJECTED", "ACCEPTED", "DECLINED"].includes(a.currentStage)).length;
   const interviews = applications.filter((a) => a.currentStage.startsWith("INTERVIEW") || a.currentStage === "HR_INTERVIEW").length;
   const offers = applications.filter((a) => a.currentStage === "OFFER" || a.currentStage === "ACCEPTED").length;
-  const deadlines = applications.filter((a) => a.nextDeadline && !["REJECTED", "ACCEPTED", "DECLINED"].includes(a.currentStage)).length;
+  const rejected = applications.filter((a) => a.currentStage === "REJECTED").length;
   const metrics = [
     { label: "累计投递", value: applications.length, icon: BriefcaseBusiness, caption: "所有投递记录" },
     { label: "进行中", value: active, icon: Sparkles, caption: "仍在推进的机会" },
     { label: "面试阶段", value: interviews, icon: MessagesSquare, caption: "值得重点准备" },
-    { label: "待办截止", value: deadlines, icon: CalendarClock, caption: offers > 0 ? `${offers} 个 Offer / 已接受` : "留意下一步时间" },
+    { label: "未通过", value: rejected, icon: CircleX, caption: offers > 0 ? `另有 ${offers} 个 Offer / 已接受` : "公司结束的流程" },
   ];
 
   return (
@@ -93,11 +93,13 @@ export function ApplicationsView({ applications }: { applications: ApplicationRo
             companyName: a.company.name,
             title: a.title,
             currentStage: a.currentStage,
+            currentStageLabel: a.currentStageLabel,
             appliedDate: a.appliedDate,
             currentStageDate: a.currentStageDate,
             nextDeadline: a.nextDeadline,
             nextDeadlineEnd: a.nextDeadlineEnd,
             portalStatus: a.portalStatus,
+            portalSuggestedStage: a.portalSuggestedStage,
           }))}
         />
       ) : (

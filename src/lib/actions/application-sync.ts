@@ -9,6 +9,8 @@ import { LOCAL_USER_ID, requireUser } from "@/lib/session";
 import { getUserAiConfig, callTextAi } from "@/lib/ai-providers";
 import { renderPageText } from "@/lib/render-bridge-client";
 import { STAGE_LABELS, STAGE_ORDER } from "@/lib/stage-labels";
+import { classifyPortalTransition, isExplicitRejectionStatus } from "@/lib/application-flow";
+import { portalOwnsApplication } from "@/lib/application-portal-scope";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
 
 // 网申进度同步 — reads each company's candidate portal ("我的投递") through
@@ -72,22 +74,10 @@ export type PortalSyncResult = {
   review: PortalSyncReview[];
   matched: PortalSyncMatch[];
   unmatched: PortalSyncUnmatched[];
+  unassigned: PortalSyncUnmatched[];
   unchanged: string[];
   errors: { companyName: string; message: string }[];
 };
-
-function stageIndex(stage: ApplicationStage) {
-  return STAGE_ORDER.indexOf(stage);
-}
-
-/** Forward-only, never out of a terminal stage, never into a user-decision stage. */
-function shouldApply(current: ApplicationStage, next: ApplicationStage) {
-  if (current === next) return false;
-  if (TERMINAL_STAGES.includes(current)) return false;
-  if (!SYNCABLE_STAGES.includes(next)) return false;
-  if (next === "REJECTED") return true;
-  return stageIndex(next) > stageIndex(current);
-}
 
 export async function setCompanyPortalUrl(
   companyId: string,
@@ -100,10 +90,16 @@ export async function setCompanyPortalUrl(
     if (!/^https?:\/\//i.test(trimmed)) throw new UserFacingError("进度页地址要以 http(s):// 开头");
     const company = await db.company.findUnique({ where: { id: companyId } });
     if (!company) throw new UserFacingError("未找到该公司");
-    await db.applicationPortal.upsert({
-      where: { companyId_url: { companyId, url: trimmed } },
-      create: { companyId, url: trimmed, label: label?.trim() || null },
-      update: { label: label?.trim() || null, contentHash: null, lastError: null },
+    await db.$transaction(async (tx) => {
+      const existingCount = await tx.applicationPortal.count({ where: { companyId } });
+      const portal = await tx.applicationPortal.upsert({
+        where: { companyId_url: { companyId, url: trimmed } },
+        create: { companyId, url: trimmed, label: label?.trim() || null },
+        update: { label: label?.trim() || null, contentHash: null, lastError: null },
+      });
+      if (existingCount === 0) {
+        await tx.application.updateMany({ where: { companyId, portalId: null }, data: { portalId: portal.id } });
+      }
     });
     revalidatePath("/applications");
     revalidatePath("/browser");
@@ -119,6 +115,32 @@ export async function deleteApplicationPortal(id: string): Promise<ActionResult<
     if (!portal) throw new UserFacingError("未找到这个进度页");
     await db.applicationPortal.delete({ where: { id } });
     revalidatePath("/applications");
+    revalidatePath("/browser");
+    return null;
+  });
+}
+
+export async function setApplicationPortal(applicationId: string, portalId: string | null): Promise<ActionResult<null>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const application = await db.application.findFirst({
+      where: { id: applicationId, userId: user.id },
+      select: { id: true, companyId: true },
+    });
+    if (!application) throw new UserFacingError("未找到这条投递");
+    if (portalId) {
+      const portal = await db.applicationPortal.findFirst({ where: { id: portalId, companyId: application.companyId } });
+      if (!portal) throw new UserFacingError("进度页不属于这家公司");
+    }
+    await db.$transaction(async (tx) => {
+      await tx.application.update({
+        where: { id: applicationId },
+        data: { portalId, portalStatus: null, portalStatusAt: null, portalSuggestedStage: null, portalSuggestedAt: null },
+      });
+      if (portalId) await tx.applicationPortal.update({ where: { id: portalId }, data: { contentHash: null } });
+    });
+    revalidatePath("/applications");
+    revalidatePath(`/applications/${applicationId}`);
     revalidatePath("/browser");
     return null;
   });
@@ -143,8 +165,8 @@ ${pageText}
 1. needsLogin：如果页面明显是登录页/要求重新登录/会话过期（比如只有"登录""验证码""扫码"而没有任何投递记录），填 true，entries 留空。
 2. entries：只列出页面上确实出现、且能对应到上面某条本地投递的记录。岗位名可能不完全一样（页面可能带部门、地点、编号），按语义对应；对应不上的不要硬凑。
 3. portalStatus：页面上原样的进度文字，比如"简历筛选中""笔试已安排""面试中（一面）""已发 offer""流程终止"。
-4. stage：把 portalStatus 映射到这些阶段之一：${stageList}。映射规则：投递成功/已投递/待处理 → APPLIED；简历筛选/评估/初筛 → SCREENING；测评/性格测试 → ASSESSMENT；笔试/在线测试/机试 → OA；一面/初面/业务面 → INTERVIEW_1；二面/复试 → INTERVIEW_2；三面/终面（非 HR）→ INTERVIEW_3；HR 面/HRBP 面 → HR_INTERVIEW；已发 offer/录用/待签约 → OFFER；不合适/流程终止/未通过/已淘汰/感谢信 → REJECTED。看不出是哪个阶段就填 null，不要猜。
-5. confident：对"这条对应哪个 applicationId"和"stage 映射"都有把握才 true。
+4. stage：把 portalStatus 映射到这些宽泛类别之一：${stageList}。企业流程不一定按固定顺序，有的会跳过笔试、有的先 HR 面、有的有群面或多轮业务面；只按官网当前文字判断，不根据本地阶段推测下一步。已投递/待处理 → APPLIED；简历筛选 → SCREENING；测评 → ASSESSMENT；笔试/机试 → OA；一面/初面/群面/业务面 → INTERVIEW_1；二面/复试 → INTERVIEW_2；三面/终面 → INTERVIEW_3；HR 面 → HR_INTERVIEW；已发 Offer/待签约 → OFFER；未录用/未通过/已淘汰/流程终止/感谢参与 → REJECTED。看不出类别填 null，不要猜；仅仅长时间无消息或岗位下架不等于淘汰。
+5. confident：只表示"这条官网记录确实对应哪个 applicationId"有把握；即使不能映射到标准阶段，也要保留原始 portalStatus、stage 填 null，不能让官网状态消失。
 
 全部用 JSON 返回。`;
 
@@ -193,10 +215,11 @@ async function syncOne(portal: {
 }> {
   const company = portal.company;
 
-  const applications = await db.application.findMany({
+  const companyApplications = await db.application.findMany({
     where: { companyId: company.id, userId: LOCAL_USER_ID, currentStage: { notIn: TERMINAL_STAGES } },
-    select: { id: true, title: true, currentStage: true },
+    select: { id: true, title: true, currentStage: true, portalId: true },
   });
+  const applications = companyApplications.filter((app) => portalOwnsApplication(portal.id, app.portalId));
   // Nothing in flight at this company — no point loading the page.
   if (applications.length === 0) return { status: "skipped", changes: [], review: [], matched: [], unmatched: [] };
 
@@ -217,7 +240,7 @@ async function syncOne(portal: {
   if (!force && hash === portal.contentHash) {
     await db.applicationPortal.update({
       where: { id: portal.id },
-      data: { lastCheckedAt: new Date(), lastError: null },
+      data: { lastCheckedAt: new Date(), lastSuccessfulAt: new Date(), lastError: null },
     });
     return { status: "unchanged", changes: [], review: [], matched: [], unmatched: [] };
   }
@@ -241,6 +264,7 @@ async function syncOne(portal: {
     // as several matches or write its portal status repeatedly.
     if (matchedIds.has(app.id)) continue;
     const portalStatus = entry.portalStatus.trim().slice(0, 100);
+    if (!portalStatus) continue;
     matchedIds.add(app.id);
     matched.push({
       companyName: company.name,
@@ -248,35 +272,42 @@ async function syncOne(portal: {
       title: app.title,
       portalStatus,
     });
-    const next = SYNCABLE_STAGES.find((s) => s === entry.stage) ?? null;
+    const next = isExplicitRejectionStatus(portalStatus)
+      ? "REJECTED"
+      : SYNCABLE_STAGES.find((s) => s === entry.stage) ?? null;
 
     await db.$transaction(async (tx) => {
-      const requiresReview = !!next && shouldApply(app.currentStage, next) && (next === "OFFER" || next === "REJECTED");
+      // Terminal outcomes and non-standard ordering always require a human
+      // check. A company may run HR first or add an OA after interviews;
+      // silently treating that as a regression would be wrong.
+      const transition = classifyPortalTransition(app.currentStage, next);
+      const requiresReview = transition === "review";
       await tx.application.update({
         where: { id: app.id },
         data: {
           portalStatus,
           portalStatusAt: now,
-          portalSuggestedStage: requiresReview ? next : null,
-          portalSuggestedAt: requiresReview ? now : null,
+          ...(requiresReview ? { portalSuggestedStage: next, portalSuggestedAt: now } :
+            transition === "apply" ? { portalSuggestedStage: null, portalSuggestedAt: null } : {}),
         },
       });
       if (requiresReview && next) {
         review.push({ companyName: company.name, applicationId: app.id, title: app.title, from: app.currentStage, to: next, portalStatus });
         return;
       }
-      if (!next || !shouldApply(app.currentStage, next)) return;
+      if (!next || transition !== "apply") return;
       await tx.stageHistory.create({
         data: {
           applicationId: app.id,
           stage: next,
+          stageLabel: portalStatus,
           enteredAt: now,
           note: `${PORTAL_SYNC_NOTE_PREFIX}：官网显示「${portalStatus}」`,
         },
       });
       await tx.application.update({
         where: { id: app.id },
-        data: { currentStage: next, currentStageDate: now },
+        data: { currentStage: next, currentStageLabel: portalStatus, currentStageDate: now },
       });
       changes.push({
         companyName: company.name,
@@ -291,7 +322,7 @@ async function syncOne(portal: {
 
   await db.applicationPortal.update({
     where: { id: portal.id },
-    data: { contentHash: hash, lastCheckedAt: now, lastError: null },
+    data: { contentHash: hash, lastCheckedAt: now, lastSuccessfulAt: now, lastError: null },
   });
   return {
     status: "changed",
@@ -317,9 +348,18 @@ async function runSync(portalIds?: string[], force = false): Promise<PortalSyncR
     review: [],
     matched: [],
     unmatched: [],
+    unassigned: [],
     unchanged: [],
     errors: [],
   };
+  const portalCompanyIds = [...new Set(portals.map((portal) => portal.company.id))];
+  if (portalCompanyIds.length > 0) {
+    const unassigned = await db.application.findMany({
+      where: { userId: LOCAL_USER_ID, companyId: { in: portalCompanyIds }, portalId: null, currentStage: { notIn: TERMINAL_STAGES } },
+      select: { id: true, title: true, company: { select: { name: true } } },
+    });
+    result.unassigned = unassigned.map((app) => ({ companyName: app.company.name, applicationId: app.id, title: app.title }));
+  }
   // Sequential on purpose: each check may open a hidden window and make an
   // AI call, and the render bridge already caps concurrency at 2.
   for (const portal of portals) {
@@ -330,8 +370,8 @@ async function runSync(portalIds?: string[], force = false): Promise<PortalSyncR
         result.checked++;
         if (outcome.status === "unchanged") result.unchanged.push(portal.company.name);
       }
-    result.changed.push(...outcome.changes);
-    result.review.push(...outcome.review);
+      result.changed.push(...outcome.changes);
+      result.review.push(...outcome.review);
       result.matched.push(...outcome.matched);
       result.unmatched.push(...outcome.unmatched);
     } catch (err) {
@@ -344,10 +384,10 @@ async function runSync(portalIds?: string[], force = false): Promise<PortalSyncR
     }
   }
 
-  if (result.changed.length > 0 || result.review.length > 0 || result.errors.length > 0) {
+  if (result.matched.length > 0 || result.changed.length > 0 || result.review.length > 0 || result.errors.length > 0) {
     revalidatePath("/applications");
     revalidatePath("/dashboard");
-    for (const c of result.changed) revalidatePath(`/applications/${c.applicationId}`);
+    for (const id of new Set(result.matched.map((item) => item.applicationId))) revalidatePath(`/applications/${id}`);
   }
   revalidatePath("/browser");
   return result;
@@ -377,7 +417,8 @@ export async function resolvePortalStageSuggestion(applicationId: string, accept
       select: { id: true, currentStage: true, portalSuggestedStage: true, portalSuggestedAt: true, portalStatus: true },
     });
     if (!application?.portalSuggestedStage) throw new UserFacingError("这条官网建议已处理或不存在");
-    if (accept && !shouldApply(application.currentStage, application.portalSuggestedStage)) {
+    if (accept && (TERMINAL_STAGES.includes(application.currentStage) ||
+      application.currentStage === application.portalSuggestedStage)) {
       throw new UserFacingError("投递阶段已变化，请刷新后核对");
     }
     await db.$transaction(async (tx) => {
@@ -391,7 +432,7 @@ export async function resolvePortalStageSuggestion(applicationId: string, accept
         data: {
           portalSuggestedStage: null,
           portalSuggestedAt: null,
-          ...(accept ? { currentStage: application.portalSuggestedStage!, currentStageDate: application.portalSuggestedAt ?? new Date() } : {}),
+          ...(accept ? { currentStage: application.portalSuggestedStage!, currentStageLabel: application.portalStatus, currentStageDate: application.portalSuggestedAt ?? new Date() } : {}),
         },
       });
       if (updated.count !== 1) throw new UserFacingError("官网建议已变化，请刷新后核对");
@@ -400,6 +441,7 @@ export async function resolvePortalStageSuggestion(applicationId: string, accept
           data: {
             applicationId,
             stage: application.portalSuggestedStage!,
+            stageLabel: application.portalStatus,
             enteredAt: application.portalSuggestedAt ?? new Date(),
             note: `${PORTAL_SYNC_NOTE_PREFIX}（已核对）：官网显示「${application.portalStatus ?? ""}」`,
           },

@@ -13,6 +13,7 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { resolveCompanyId } from "@/lib/company-resolver";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
+import { latestStageEntry } from "@/lib/application-stage-history";
 
 export async function createApplication(
   input: z.infer<typeof applicationSchema>
@@ -23,17 +24,20 @@ export async function createApplication(
   const companyId = await resolveCompanyId(data.companyName, { aiUserId: user.id });
 
   await db.$transaction(async (tx) => {
+    const portals = await tx.applicationPortal.findMany({ where: { companyId }, select: { id: true }, take: 2 });
     const application = await tx.application.create({
       data: {
         userId: user.id,
         positionId: data.positionId ?? undefined,
         companyId,
+        portalId: portals.length === 1 ? portals[0].id : null,
         title: data.title,
         appliedDate: data.appliedDate,
         referrer: data.referrer,
         source: data.source,
         resumeVersionId: data.resumeVersionId ?? undefined,
         currentStage: "APPLIED",
+        currentStageDate: data.appliedDate,
       },
     });
 
@@ -44,6 +48,11 @@ export async function createApplication(
         enteredAt: data.appliedDate,
       },
     });
+    if (application.portalId) {
+      // The page can be text-identical to the last check while this new
+      // application has never been matched against it.
+      await tx.applicationPortal.update({ where: { id: application.portalId }, data: { contentHash: null } });
+    }
   });
 
   revalidatePath("/applications");
@@ -72,6 +81,7 @@ export async function addStageUpdate(
       data: {
         applicationId,
         stage: data.stage,
+        stageLabel: data.stageLabel || null,
         note: data.note,
         interviewFormat: data.interviewFormat,
         interviewer: data.interviewer,
@@ -81,15 +91,7 @@ export async function addStageUpdate(
       },
     });
 
-    await tx.application.update({
-      where: { id: applicationId },
-      data: {
-        currentStage: data.stage,
-        currentStageDate: enteredAt,
-        portalSuggestedStage: null,
-        portalSuggestedAt: null,
-      },
-    });
+    await resyncCurrentStage(tx, applicationId);
 
     return created.id;
   });
@@ -197,14 +199,29 @@ async function resyncCurrentStage(
   tx: Prisma.TransactionClient,
   applicationId: string
 ): Promise<void> {
-  const latest = await tx.stageHistory.findFirst({
-    where: { applicationId },
-    orderBy: { enteredAt: "desc" },
+  const application = await tx.application.findUnique({
+    where: { id: applicationId },
+    select: { appliedDate: true, currentStage: true, currentStageLabel: true, currentStageDate: true },
   });
+  if (!application) return;
+  const history = await tx.stageHistory.findMany({
+    where: { applicationId },
+  });
+  // The first APPLIED event contains a date-only value (UTC midnight), which
+  // can sort after a real event on that same local day. Treat it as the
+  // baseline, then choose the latest dated event among everything else.
+  const latest = latestStageEntry(history, application.appliedDate);
   if (!latest) return;
+  const stageChanged = application.currentStage !== latest.stage || application.currentStageLabel !== latest.stageLabel;
+  if (!stageChanged && application.currentStageDate.getTime() === latest.enteredAt.getTime()) return;
   await tx.application.update({
     where: { id: applicationId },
-    data: { currentStage: latest.stage, currentStageDate: latest.enteredAt, portalSuggestedStage: null, portalSuggestedAt: null },
+    data: {
+      currentStage: latest.stage,
+      currentStageLabel: latest.stageLabel,
+      currentStageDate: latest.enteredAt,
+      ...(stageChanged ? { portalSuggestedStage: null, portalSuggestedAt: null } : {}),
+    },
   });
 }
 
@@ -235,6 +252,7 @@ export async function updateStageHistory(
         where: { id },
         data: {
           stage: data.stage,
+          stageLabel: data.stageLabel || null,
           note: data.note || null,
           interviewFormat: data.interviewFormat || null,
           interviewer: data.interviewer || null,

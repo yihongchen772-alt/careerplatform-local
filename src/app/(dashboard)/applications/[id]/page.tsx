@@ -13,6 +13,7 @@ import { InterviewQaCard } from "@/components/applications/interview-qa-card";
 import { STAGE_LABELS } from "@/lib/stage-labels";
 import { applicationStageStyle } from "@/lib/application-stage-style";
 import { PortalReviewBanner } from "@/components/applications/portal-review-banner";
+import { PortalAssignmentCard } from "@/components/applications/portal-assignment-card";
 import { cn } from "@/lib/utils";
 import type { InterviewQa } from "@/lib/validation";
 import type { StagePostmortem } from "@/lib/actions/stage-postmortem";
@@ -46,6 +47,11 @@ export default async function ApplicationDetailPage({
   ]);
 
   if (!application) notFound();
+  const portals = await db.applicationPortal.findMany({
+    where: { companyId: application.companyId },
+    select: { id: true, label: true, url: true },
+    orderBy: { createdAt: "asc" },
+  });
 
   return (
     <div className="mx-auto max-w-[96rem] space-y-6">
@@ -63,6 +69,7 @@ export default async function ApplicationDetailPage({
             <span className={cn("mr-1 size-1.5 rounded-full", applicationStageStyle(application.currentStage).dot)} />
             {STAGE_LABELS[application.currentStage]}
           </Badge>
+          {application.currentStageLabel && <span className="text-sm font-medium text-muted-foreground">{application.currentStageLabel}</span>}
         </div>
         <div className="mt-6 grid grid-cols-2 gap-3 border-t border-border/55 pt-5 sm:grid-cols-4">
           {[
@@ -77,6 +84,7 @@ export default async function ApplicationDetailPage({
             </div>
           ))}
         </div>
+        {application.portalStatus && <p className="mt-4 rounded-xl border border-border/60 bg-background/50 px-3 py-2 text-xs text-muted-foreground">官网最近显示：<span className="font-medium text-foreground">{application.portalStatus}</span>{application.portalStatusAt && <span> · {application.portalStatusAt.toLocaleString("zh-CN")}</span>}</p>}
         </div>
       </div>
 
@@ -102,6 +110,7 @@ export default async function ApplicationDetailPage({
               entries={application.stageHistory.map((h) => ({
                 id: h.id,
                 stage: h.stage,
+                stageLabel: h.stageLabel,
                 enteredAt: h.enteredAt.toISOString(),
                 note: h.note,
                 interviewFormat: h.interviewFormat,
@@ -122,6 +131,7 @@ export default async function ApplicationDetailPage({
         </Card>
 
         <div className="space-y-6">
+          <PortalAssignmentCard applicationId={application.id} currentPortalId={application.portalId} portals={portals} />
           <ApplicationEditForm
             applicationId={application.id}
             initial={{

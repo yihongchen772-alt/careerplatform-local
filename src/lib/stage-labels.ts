@@ -25,7 +25,7 @@ export const STAGE_LABELS: Record<ApplicationStage, string> = {
   INTERVIEW_3: "三面",
   HR_INTERVIEW: "HR 面",
   OFFER: "Offer",
-  REJECTED: "已拒绝(公司)",
+  REJECTED: "未通过（公司）",
   ACCEPTED: "已接受",
   DECLINED: "已拒绝(本人)",
 };

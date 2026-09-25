@@ -324,10 +324,12 @@ model ApplicationPortal {
   url           String
   contentHash   String?
   lastCheckedAt DateTime?
+  lastSuccessfulAt DateTime?
   lastError     String?
   createdAt     DateTime @default(now())
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  applications Application[]
 
   @@unique([companyId, url])
   @@index([companyId])
@@ -494,12 +496,15 @@ model Application {
   userId           String
   positionId       String?
   companyId        String
+  portalId         String?
   resumeVersionId  String?
   title            String
   appliedDate      DateTime
   referrer         String?
   source           String?
   currentStage     ApplicationStage @default(APPLIED)
+  /// Company's own wording for the current step, separate from the broad stage.
+  currentStageLabel String?
   currentStageDate DateTime         @default(now())
   /// What the company's portal literally said last time 网申进度同步 read
   /// it ("简历评估中"), kept verbatim next to our mapped stage — the
@@ -531,6 +536,7 @@ model Application {
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   position      Position?      @relation(fields: [positionId], references: [id])
   company       Company        @relation(fields: [companyId], references: [id])
+  portal        ApplicationPortal? @relation(fields: [portalId], references: [id], onDelete: SetNull)
   resumeVersion ResumeVersion? @relation(fields: [resumeVersionId], references: [id])
   stageHistory  StageHistory[]
   attachments   Attachment[]
@@ -539,12 +545,14 @@ model Application {
   contacts      Contact[]
 
   @@index([userId])
+  @@index([portalId])
 }
 
 model StageHistory {
   id              String           @id @default(cuid())
   applicationId   String
   stage           ApplicationStage
+  stageLabel      String?
   enteredAt       DateTime         @default(now())
   note            String?
   interviewFormat String?

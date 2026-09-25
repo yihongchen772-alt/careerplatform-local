@@ -24,9 +24,9 @@ export function FunnelCard({
   return (
     <Card className="rounded-[1.5rem] border-border/65 bg-card/75 shadow-[0_16px_45px_-38px_rgba(0,0,0,0.55)] backdrop-blur-xl">
       <CardHeader>
-        <CardTitle>投递漏斗</CardTitle>
+        <CardTitle>阶段覆盖</CardTitle>
         <p className="text-sm text-muted-foreground">
-          按到达阶段统计，转化率相对上一阶段；跳过的阶段不会误记为卡关。
+          只统计实际记录过的阶段。企业顺序不同、跳过的环节不会被虚算进去。
         </p>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -47,11 +47,6 @@ export function FunnelCard({
                 </div>
                 <span className="w-6 shrink-0 text-right font-medium tabular-nums">
                   {level.count}
-                </span>
-                <span className="w-10 shrink-0 text-right text-xs text-muted-foreground tabular-nums">
-                  {level.stepRate === null
-                    ? ""
-                    : `${Math.round(level.stepRate * 100)}%`}
                 </span>
                 {level.smallSample && (
                   <Badge variant="outline" className="shrink-0 text-xs">

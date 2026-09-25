@@ -1,5 +1,5 @@
 import type { ApplicationStage } from "@prisma/client";
-import { FUNNEL_STAGES, reachedStage, SMALL_SAMPLE_THRESHOLD, type FunnelApplication } from "@/lib/funnel";
+import { SMALL_SAMPLE_THRESHOLD, type FunnelApplication } from "@/lib/funnel";
 
 // Re-exported so existing `from "@/lib/analytics"` imports elsewhere keep
 // working — the actual constant is owned by funnel.ts, see the comment
@@ -106,16 +106,14 @@ export type ResumeComparisonRow = {
   smallSample: boolean;
 };
 
-const ASSESSMENT_INDEX = FUNNEL_STAGES.indexOf("ASSESSMENT");
-const INTERVIEW_INDEX = FUNNEL_STAGES.indexOf("INTERVIEW_1");
+const ASSESSMENT_STAGES: ApplicationStage[] = ["ASSESSMENT", "OA"];
+const INTERVIEW_STAGES: ApplicationStage[] = ["INTERVIEW_1", "INTERVIEW_2", "INTERVIEW_3", "HR_INTERVIEW"];
 
 /**
  * Per-resume-version breakdown with a "笔试" (assessment) column the generic
  * ConversionRow above doesn't have — the whole point of comparing resume
- * versions is seeing where in the pipeline one out-performs another, not
- * just a single "进面" cutoff. Reuses lib/funnel.ts's stage ordering
- * (FUNNEL_STAGES/reachedStage) rather than re-ranking ApplicationStage a
- * third time in this file.
+ * versions is seeing which actual steps occurred. Do not assume that an
+ * interview implies a prior written test or assessment.
  */
 export function computeResumeComparison(
   apps: (FunnelApplication & { resumeVersion: { name: string } | null })[]
@@ -131,8 +129,8 @@ export function computeResumeComparison(
   return [...buckets.entries()]
     .map(([name, list]) => {
       const total = list.length;
-      const assessment = list.filter((a) => reachedStage(a, ASSESSMENT_INDEX)).length;
-      const interview = list.filter((a) => reachedStage(a, INTERVIEW_INDEX)).length;
+      const assessment = list.filter((a) => a.stageHistory.some((h) => ASSESSMENT_STAGES.includes(h.stage))).length;
+      const interview = list.filter((a) => a.stageHistory.some((h) => INTERVIEW_STAGES.includes(h.stage))).length;
       // Offers use the same OFFER_STAGES definition as the rest of this
       // file (folds in ACCEPTED), not reachedStage — an application logged
       // straight to ACCEPTED with no separate OFFER row shouldn't undercount.

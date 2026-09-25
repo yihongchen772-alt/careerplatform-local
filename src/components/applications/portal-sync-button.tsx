@@ -24,16 +24,20 @@ export function PortalSyncButton({ configuredCount }: { configuredCount: number 
     try {
       const res = await syncPortalsNow();
       if (!res.ok) return void toast.error(res.message);
-      const { changed, review, errors, checked } = res.data;
+      const { changed, review, errors, checked, unassigned } = res.data;
       if (changed.length > 0) {
         toast.success(
           `${changed.length} 条投递阶段已更新：` +
             changed.map((c) => `${c.companyName} ${c.title} ${STAGE_LABELS[c.from]}→${STAGE_LABELS[c.to]}`).join("；")
         );
-      } else if (errors.length === 0 && review.length === 0) {
+      } else if (errors.length === 0 && review.length === 0 && unassigned.length === 0) {
         toast.info(checked > 0 ? "读了一遍，官网状态和看板一致" : "没有需要检查的投递");
       }
-      if (review.length > 0) toast.warning(`${review.length} 条 Offer/拒绝进度需要你在看板确认`);
+      if (review.length > 0) {
+        const rejected = review.filter((item) => item.to === "REJECTED").length;
+        toast.warning(rejected > 0 ? `官网提示 ${rejected} 条投递未通过，请在看板核对` : `${review.length} 条官网结果或非标准阶段顺序需要你在看板核对`);
+      }
+      if (unassigned.length > 0) toast.warning(`${unassigned.length} 条投递尚未指定进度页，请到投递详情关联后再同步`);
       for (const e of errors) toast.error(`${e.companyName}：${e.message}`);
       router.refresh();
     } finally {

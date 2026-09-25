@@ -26,7 +26,7 @@ export default async function BrowserPage({
         id: true,
         name: true,
         applicationPortals: {
-          select: { id: true, label: true, url: true, lastCheckedAt: true, lastError: true },
+          select: { id: true, label: true, url: true, lastCheckedAt: true, lastSuccessfulAt: true, lastError: true },
           orderBy: { createdAt: "asc" },
         },
         _count: {
@@ -72,6 +72,7 @@ export default async function BrowserPage({
           portals: c.applicationPortals.map((p) => ({
             ...p,
             lastCheckedAt: p.lastCheckedAt?.toISOString() ?? null,
+            lastSuccessfulAt: p.lastSuccessfulAt?.toISOString() ?? null,
           })),
         }))}
         quickLinks={{

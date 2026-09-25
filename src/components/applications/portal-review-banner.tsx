@@ -42,13 +42,13 @@ export function PortalReviewBanner({ items }: { items: PortalReviewItem[] }) {
 
   return (
     <section className="rounded-[1.4rem] border border-amber-500/30 bg-amber-500/5 p-4 sm:p-5" aria-label="官网进度待核对">
-      <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-amber-700 dark:text-amber-300"><AlertCircle className="size-4" />官网进度待核对 · {visible.length}</div>
+      <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-amber-700 dark:text-amber-300"><AlertCircle className="size-4" />{visible.some((item) => item.suggestedStage === "REJECTED") ? "官网提示有投递未通过，待你核对" : "官网进度待核对"} · {visible.length}</div>
       <div className="space-y-2">
         {visible.map((item) => (
           <div key={item.id} className="flex flex-col gap-3 rounded-xl border border-border/60 bg-card/80 p-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <Link href={`/applications/${item.id}`} className="text-sm font-medium hover:text-primary">{item.companyName} · {item.title}</Link>
-              <p className="mt-0.5 text-xs leading-5 text-muted-foreground">官网显示「{item.portalStatus ?? STAGE_LABELS[item.suggestedStage]}」，建议从{STAGE_LABELS[item.currentStage]}改为{STAGE_LABELS[item.suggestedStage]}。确认前不会更改阶段。</p>
+              <p className="mt-0.5 text-xs leading-5 text-muted-foreground">官网显示「{item.portalStatus ?? STAGE_LABELS[item.suggestedStage]}」，建议从{STAGE_LABELS[item.currentStage]}改为{STAGE_LABELS[item.suggestedStage]}。企业流程可能不同，请核对后再确认；确认前不会更改阶段。</p>
             </div>
             <div className="flex shrink-0 gap-2">
               <Button type="button" size="sm" variant="outline" disabled={busy === item.id} onClick={() => resolve(item.id, false)}>忽略</Button>

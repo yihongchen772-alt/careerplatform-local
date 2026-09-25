@@ -36,6 +36,7 @@ export type ApplicationRow = {
   title: string;
   appliedDate: string;
   currentStage: ApplicationStage;
+  currentStageLabel?: string | null;
   currentStageDate: string;
   referrer: string | null;
   source: string | null;
@@ -78,7 +79,7 @@ export function ApplicationsTable({
       { header: "公司", value: (a) => a.company.name },
       { header: "岗位", value: (a) => a.title },
       { header: "投递日期", value: (a) => new Date(a.appliedDate).toLocaleDateString("zh-CN") },
-      { header: "当前状态", value: (a) => STAGE_LABELS[a.currentStage] },
+      { header: "当前状态", value: (a) => a.currentStageLabel ? `${STAGE_LABELS[a.currentStage]} · ${a.currentStageLabel}` : STAGE_LABELS[a.currentStage] },
       { header: "距上次更新(天)", value: (a) => daysSince(new Date(a.currentStageDate)) },
       { header: "渠道", value: (a) => a.source ?? "" },
       { header: "内推人", value: (a) => a.referrer ?? "" },
@@ -152,6 +153,7 @@ export function ApplicationsTable({
                     {STAGE_LABELS[app.currentStage]}
                   </Badge>
                 </div>
+                {app.currentStageLabel && <p className="text-xs font-medium">{app.currentStageLabel}</p>}
                 <div className="flex flex-wrap gap-x-3 gap-y-1 border-t border-border/55 pt-3 text-xs text-muted-foreground">
                   <span>{new Date(app.appliedDate).toLocaleDateString("zh-CN")} 投递</span>
                   <span
@@ -222,6 +224,7 @@ export function ApplicationsTable({
                   <Badge className={cn("h-6 border-0 px-2.5", applicationStageStyle(app.currentStage).pill)}>
                     {STAGE_LABELS[app.currentStage]}
                   </Badge>
+                  {app.currentStageLabel && <p className="mt-1 max-w-48 truncate text-xs text-muted-foreground" title={app.currentStageLabel}>{app.currentStageLabel}</p>}
                 </TableCell>
                 <TableCell>
                   <span

@@ -29,7 +29,7 @@ export type PortalCompany = {
   name: string;
   /** How many applications at this company are still in flight. */
   activeCount: number;
-  portals: { id: string; label: string | null; url: string; lastCheckedAt: string | null; lastError: string | null }[];
+  portals: { id: string; label: string | null; url: string; lastCheckedAt: string | null; lastSuccessfulAt: string | null; lastError: string | null }[];
 };
 
 /**
@@ -100,7 +100,7 @@ export function PortalSyncDialog({
         toast.error(res.message);
         return;
       }
-      const { changed, review, errors, checked, matched, unmatched, unchanged } = res.data;
+      const { changed, review, errors, checked, matched, unmatched, unchanged, unassigned } = res.data;
       setSyncSummary({ matched: matched.length, unmatched: unmatched.length, unchanged: unchanged.length });
       if (changed.length > 0) {
         toast.success(
@@ -109,12 +109,16 @@ export function PortalSyncDialog({
               .map((c) => `${c.companyName} ${c.title} ${STAGE_LABELS[c.from]}→${STAGE_LABELS[c.to]}`)
               .join("；")
         );
-      } else if (errors.length === 0 && checked === 0) {
+      } else if (errors.length === 0 && checked === 0 && unassigned.length === 0) {
         toast.info("没有需要检查的投递（都已结束，或没设进度页）");
       }
       if (matched.length > 0) toast.success(`成功匹配 ${matched.length} 条官网投递`);
-      if (review.length > 0) toast.warning(`${review.length} 条 Offer/拒绝进度已放入投递看板，等待你确认`);
+      if (review.length > 0) {
+        const rejected = review.filter((item) => item.to === "REJECTED").length;
+        toast.warning(rejected > 0 ? `官网提示 ${rejected} 条投递未通过，请在投递看板核对` : `${review.length} 条官网结果或非标准阶段顺序已放入投递看板，等待你核对`);
+      }
       if (unmatched.length > 0) toast.info(`有 ${unmatched.length} 条本地投递未匹配到官网记录`);
+      if (unassigned.length > 0) toast.warning(`${unassigned.length} 条投递尚未指定进度页，请到投递详情关联`);
       if (unchanged.length > 0) toast.info(`有 ${unchanged.length} 家公司状态未变化`);
       for (const e of errors) toast.error(`${e.companyName}：${e.message}`);
       router.refresh();
@@ -130,7 +134,7 @@ export function PortalSyncDialog({
           <DialogTitle>网申进度同步</DialogTitle>
           <DialogDescription>
             登录某家公司的招聘系统、打开「我的投递」页面后，把它设为这家公司的进度页。之后 App
-            会用同一个登录态悄悄重开这页，让 AI 读出每条投递到哪一步了，看板自动往前推（只前进不后退）。
+            会用同一个登录态重开这页，读取每条投递的官网状态。常见阶段自动更新；未通过、Offer 或不同于常规顺序的阶段会先请你核对。
           </DialogDescription>
         </DialogHeader>
 
@@ -219,14 +223,13 @@ export function PortalSyncDialog({
                     <p className="truncate text-xs text-muted-foreground" title={c.url}>
                       {c.url}
                     </p>
-                    {c.lastError ? (
-                      <p className="mt-0.5 text-xs text-destructive">{c.lastError}</p>
-                    ) : c.lastCheckedAt ? (
+                    {c.lastError && <p className="mt-0.5 text-xs text-destructive">上次失败：{c.lastError}</p>}
+                    {c.lastSuccessfulAt ? (
                       <p className="mt-0.5 text-xs text-muted-foreground">
-                        上次检查 {new Date(c.lastCheckedAt).toLocaleString("zh-CN")}
+                        上次成功 {new Date(c.lastSuccessfulAt).toLocaleString("zh-CN")}
                       </p>
                     ) : (
-                      <p className="mt-0.5 text-xs text-muted-foreground">还没检查过</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">尚无成功同步记录</p>
                     )}
                   </div>
                   <div className="flex shrink-0 items-center gap-1">

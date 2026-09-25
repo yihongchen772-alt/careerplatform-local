@@ -30,6 +30,7 @@ import type { ApplicationStage } from "@prisma/client";
 export type TimelineEntry = {
   id: string;
   stage: ApplicationStage;
+  stageLabel: string | null;
   enteredAt: string;
   note: string | null;
   interviewFormat: string | null;
@@ -72,6 +73,7 @@ function TimelineRow({
 }) {
   const [editing, setEditing] = useState(false);
   const [stage, setStage] = useState<ApplicationStage>(entry.stage);
+  const [stageLabel, setStageLabel] = useState(entry.stageLabel ?? "");
   const [enteredAt, setEnteredAt] = useState(toLocalInput(entry.enteredAt));
   const [note, setNote] = useState(entry.note ?? "");
   const [format, setFormat] = useState(entry.interviewFormat ?? "");
@@ -102,6 +104,7 @@ function TimelineRow({
     try {
       const res = await updateStageHistory(entry.id, {
         stage,
+        stageLabel,
         note: note || undefined,
         interviewFormat: format || undefined,
         interviewer: interviewer || undefined,
@@ -150,6 +153,10 @@ function TimelineRow({
           </div>
         </div>
         <div className="grid gap-2 sm:grid-cols-2">
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">企业阶段名称（可选）</Label>
+            <Input value={stageLabel} maxLength={100} onChange={(e) => setStageLabel(e.target.value)} placeholder="例如：群面 / 技术终面" />
+          </div>
           <div className="space-y-1">
             <Label className="text-xs text-muted-foreground">面试形式</Label>
             <Input value={format} onChange={(e) => setFormat(e.target.value)} />
@@ -223,6 +230,7 @@ function TimelineRow({
         <Badge className={cn("h-6 border-0 px-2.5", applicationStageStyle(entry.stage).pill)}>
           {STAGE_LABELS[entry.stage]}
         </Badge>
+        {entry.stageLabel && <span className="text-xs font-medium">{entry.stageLabel}</span>}
         <span className="text-xs text-muted-foreground">
           {new Date(entry.enteredAt).toLocaleString("zh-CN")}
         </span>

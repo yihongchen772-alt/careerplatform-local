@@ -5,6 +5,7 @@ const crypto = require("crypto");
 const { spawn } = require("child_process");
 const { setupBrowserViewIpc } = require("./browser-view");
 const { setupUpdater } = require("./updater");
+const { createApplicationSyncSchedule } = require("./application-sync-schedule");
 const { startRenderBridge } = require("./render-bridge");
 
 // Pinned regardless of the app's marketing name (package.json's
@@ -544,17 +545,20 @@ async function maybeCheckJobRadar() {
 // the 网申浏览器's session — see electron/render-bridge.js), and the result
 // is a stage change on the user's own applications. Server-side logic in
 // src/lib/actions/application-sync.ts; this is just the timer + notification.
-let lastApplicationSyncAt = 0;
+const applicationSyncSchedule = createApplicationSyncSchedule();
+let lastNotifiedApplicationSyncError = "";
 
 async function maybeSyncApplications() {
   const hours = Number(readAppSettings().applicationSyncIntervalHours) || 0;
-  if (hours <= 0) return;
-  if (Date.now() - lastApplicationSyncAt < hours * 3600 * 1000) return;
-  lastApplicationSyncAt = Date.now();
+  const intervalMs = hours * 3600 * 1000;
+  if (!applicationSyncSchedule.begin(intervalMs)) return;
+  let healthy = false;
   try {
     const res = await fetch(`http://localhost:${PORT}/api/application-sync/check`, { method: "POST" });
-    if (!res.ok) return;
+    if (!res.ok) throw new Error(`sync endpoint returned ${res.status}`);
     const { changed, review, errors } = await res.json();
+    const failures = Array.isArray(errors) ? errors : [];
+    healthy = failures.length === 0;
     const { Notification } = require("electron");
     if (!Notification.isSupported()) return;
 
@@ -571,15 +575,19 @@ async function maybeSyncApplications() {
         .show();
     }
     if (Array.isArray(review) && review.length > 0) {
+      const rejected = review.filter((item) => item.to === "REJECTED");
       new Notification({
-        title: "网申进度需要你核对",
-        body: `${review[0].companyName} 等 ${review.length} 条 Offer/拒绝状态已放进投递看板，确认前不会改动阶段`,
+        title: rejected.length > 0 ? `官网提示 ${rejected.length} 条投递未通过` : "网申进度需要你核对",
+        body: rejected.length > 0
+          ? `${rejected[0].companyName} · ${rejected[0].title}：请打开投递看板核对，确认前不会改动阶段`
+          : `${review[0].companyName} 等 ${review.length} 条官网结果或非标准阶段顺序待核对，确认前不会改动阶段`,
       }).on("click", showWindow).show();
     }
     // A login that expired is the one error worth interrupting for — the
     // sync silently does nothing until the user logs back in.
-    const expired = Array.isArray(errors) ? errors.filter((e) => /登录已过期/.test(e.message || "")) : [];
-    if (expired.length > 0) {
+    const expired = failures.filter((e) => /登录已过期/.test(e.message || ""));
+    const failureKey = failures.map((e) => `${e.companyName}:${/登录已过期/.test(e.message || "") ? "login" : "other"}`).sort().join("|");
+    if (expired.length > 0 && failureKey !== lastNotifiedApplicationSyncError) {
       new Notification({
         title: "网申进度同步：需要重新登录",
         body: `${expired.map((e) => e.companyName).join("、")} 的招聘系统登录已过期，去网申浏览器重新登录`,
@@ -587,8 +595,25 @@ async function maybeSyncApplications() {
         .on("click", showWindow)
         .show();
     }
+    const otherFailures = failures.filter((e) => !/登录已过期/.test(e.message || ""));
+    if (otherFailures.length > 0 && failureKey !== lastNotifiedApplicationSyncError) {
+      new Notification({
+        title: "网申进度同步失败",
+        body: `${otherFailures.map((e) => e.companyName).join("、")} 的进度页读取失败；请到投递记录查看原因，App 会稍后重试`,
+      }).on("click", showWindow).show();
+    }
+    lastNotifiedApplicationSyncError = failureKey;
   } catch {
-    // Server not up yet, or transient — the next tick will retry.
+    if (lastNotifiedApplicationSyncError !== "service") {
+      const { Notification } = require("electron");
+      if (Notification.isSupported()) new Notification({
+        title: "网申进度同步暂时不可用",
+        body: "本地同步服务没有响应，App 会在 15 分钟内重试；也可稍后到投递记录手动同步",
+      }).on("click", showWindow).show();
+    }
+    lastNotifiedApplicationSyncError = "service";
+  } finally {
+    applicationSyncSchedule.finish(intervalMs, healthy);
   }
 }
 

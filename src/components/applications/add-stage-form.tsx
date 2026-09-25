@@ -16,16 +16,8 @@ import {
 import { addStageUpdate } from "@/lib/actions/applications";
 import { addAttachment } from "@/lib/actions/attachments";
 import { FileUploadButton } from "@/components/ui/file-upload-button";
-import { STAGE_LABELS, STAGE_ORDER } from "@/lib/stage-labels";
+import { STAGE_LABELS } from "@/lib/stage-labels";
 import type { ApplicationStage } from "@prisma/client";
-
-/** The stage right after the current one, or the current stage itself if
- * it's already the last one in the pipeline (OFFER/terminal stages) — those
- * don't have an obvious "next", so falling back avoids guessing wrong. */
-function nextStageAfter(current: ApplicationStage): ApplicationStage {
-  const i = STAGE_ORDER.indexOf(current);
-  return i >= 0 && i + 1 < STAGE_ORDER.length ? STAGE_ORDER[i + 1] : current;
-}
 
 export function AddStageForm({
   applicationId,
@@ -34,9 +26,8 @@ export function AddStageForm({
   applicationId: string;
   currentStage: ApplicationStage;
 }) {
-  const [stage, setStage] = useState<ApplicationStage>(() =>
-    nextStageAfter(currentStage)
-  );
+  const [stage, setStage] = useState<ApplicationStage>(currentStage);
+  const [stageLabel, setStageLabel] = useState("");
   const [note, setNote] = useState("");
   const [interviewFormat, setInterviewFormat] = useState("");
   const [interviewer, setInterviewer] = useState("");
@@ -51,6 +42,7 @@ export function AddStageForm({
     try {
       const { stageHistoryId } = await addStageUpdate(applicationId, {
         stage,
+        stageLabel: stageLabel || undefined,
         note: note || undefined,
         interviewFormat: interviewFormat || undefined,
         interviewer: interviewer || undefined,
@@ -61,8 +53,9 @@ export function AddStageForm({
       await Promise.all(
         pendingFiles.map((f) => addAttachment({ stageHistoryId, ...f }))
       );
-      toast.success("已更新进展");
-      setStage((s) => nextStageAfter(s));
+      toast.success(stage === "REJECTED" ? "已记录未通过，这条投递会显示在看板的未通过区域" : "已更新进展");
+      setStage(stage);
+      setStageLabel("");
       setNote("");
       setInterviewFormat("");
       setInterviewer("");
@@ -78,7 +71,8 @@ export function AddStageForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3 rounded-md border p-4">
-      <p className="text-sm font-medium">添加进展更新</p>
+      <p className="text-sm font-medium">记录企业进展</p>
+      <p className="text-xs text-muted-foreground">企业流程不固定。先选宽泛类别，再写官网或邮件里的实际阶段；可跳步、重复或直接记录未通过。</p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">新状态</Label>
@@ -99,6 +93,10 @@ export function AddStageForm({
               ))}
             </SelectContent>
           </Select>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">企业阶段名称（可选）</Label>
+          <Input value={stageLabel} maxLength={100} onChange={(e) => setStageLabel(e.target.value)} placeholder="例如：群面 / 技术终面 / 测评未通过" />
         </div>
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">面试形式</Label>

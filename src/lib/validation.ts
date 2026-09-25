@@ -133,6 +133,7 @@ export const offerUpdateSchema = z.object({
 
 export const stageUpdateSchema = z.object({
   stage: z.enum(applicationStageValues),
+  stageLabel: z.string().trim().max(100, "企业阶段名称不能超过 100 字").optional(),
   note: z.string().optional(),
   interviewFormat: z.string().optional(),
   interviewer: z.string().optional(),

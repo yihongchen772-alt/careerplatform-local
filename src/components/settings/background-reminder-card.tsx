@@ -158,8 +158,8 @@ export function BackgroundReminderCard({ initial }: { initial: AppSettings }) {
           <p className="text-sm font-medium">网申进度同步频率</p>
           <p className="text-xs text-muted-foreground">
             在网申浏览器里登录某家公司的招聘系统、打开「我的投递」页面后点「设为进度页」，这里就会按频率用那个
-            登录态悄悄重新打开该页面，让 AI 读出每条投递现在到哪一步了，跟看板对不上就自动往前推进（只前进不后退，
-            已结束的不会动），并弹通知。登录过期会提醒你回去重新登录。默认关闭，理由同岗位雷达。
+            登录态重新打开该页面，让 AI 读取已关联投递的官网进度。明确的新阶段会更新看板；淘汰、Offer 和不常见的阶段顺序会先请你核对，已结束的投递不会改动。
+            登录过期或读取失败会提醒你，失败后会较快重试。默认关闭；修改频率后请重启 App，让后台定时器生效。
           </p>
           <Select
             value={String(settings.applicationSyncIntervalHours ?? 0)}
