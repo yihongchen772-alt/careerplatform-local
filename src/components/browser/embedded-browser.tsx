@@ -13,7 +13,6 @@ import {
   Copy,
   ExternalLink,
   Eraser,
-  GripHorizontal,
   Maximize2,
   Minimize2,
   MoreHorizontal,
@@ -131,7 +130,6 @@ export function EmbeddedBrowser({
   const [expanded, setExpanded] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(true);
   const [browserHeight, setBrowserHeight] = useState(650);
-  const resizeStart = useRef<{ y: number; height: number } | null>(null);
   const autoSavingRef = useRef(false);
   const autoSaveErrorRef = useRef(false);
   const [capturing, setCapturing] = useState(false);
@@ -800,34 +798,27 @@ export function EmbeddedBrowser({
         </div>
       )}
 
-      <div className={expanded ? "flex min-h-0 flex-1" : "flex shrink-0 gap-1"}>
-      {!expanded && <div
-        role="separator"
-        aria-label="拖动调整网页高度"
-        aria-orientation="vertical"
-        aria-valuenow={browserHeight}
-        aria-valuemin={384}
-        aria-valuemax={1600}
-        tabIndex={0}
-        title="上下拖动调整网页高度；方向键也可以微调"
-        className="flex w-5 shrink-0 cursor-ns-resize touch-none items-start justify-center rounded-md pt-4 text-muted-foreground hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-        onPointerDown={(event) => {
-          resizeStart.current = { y: event.clientY, height: browserHeight };
-          event.currentTarget.setPointerCapture(event.pointerId);
-        }}
-        onPointerMove={(event) => {
-          if (!resizeStart.current) return;
-          setBrowserHeight(Math.max(384, Math.min(1600, resizeStart.current.height + event.clientY - resizeStart.current.y)));
-        }}
-        onPointerUp={() => { resizeStart.current = null; }}
-        onPointerCancel={() => { resizeStart.current = null; }}
-        onKeyDown={(event) => {
-          if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-          event.preventDefault();
-          setBrowserHeight((height) => Math.max(384, Math.min(1600, height + (event.key === "ArrowDown" ? 40 : -40))));
-        }}
-      ><GripHorizontal className="size-4 shrink-0 rotate-90" /></div>}
-      <div ref={panelRef} role="region" aria-label="网页内容" style={expanded ? undefined : { height: browserHeight }} className={expanded ? "relative min-h-0 flex-1 rounded-lg border bg-muted/30" : "relative min-h-[24rem] min-w-0 flex-1 rounded-lg border bg-muted/30"}>
+      {!expanded && (
+        <div className="flex justify-end">
+          <div className="flex items-center gap-2.5 rounded-xl border border-border/60 bg-card/75 px-3 py-1.5 text-xs text-muted-foreground shadow-sm">
+            <label htmlFor="browser-height" className="shrink-0 font-medium text-foreground">网页高度</label>
+            <input
+              id="browser-height"
+              type="range"
+              min={420}
+              max={1400}
+              step={10}
+              value={browserHeight}
+              onChange={(event) => setBrowserHeight(Number(event.target.value))}
+              className="h-5 w-36 cursor-pointer accent-primary sm:w-56"
+              aria-valuetext={`${browserHeight} 像素`}
+            />
+            <span className="w-14 shrink-0 text-right tabular-nums">{browserHeight} px</span>
+            <Button type="button" variant="ghost" size="sm" className="h-7 shrink-0 px-2 text-xs" disabled={browserHeight === 650} onClick={() => setBrowserHeight(650)}>还原</Button>
+          </div>
+        </div>
+      )}
+      <div ref={panelRef} role="region" aria-label="网页内容" style={expanded ? undefined : { height: browserHeight }} className={expanded ? "relative min-h-0 flex-1 rounded-lg border bg-muted/30" : "relative min-h-[26rem] shrink-0 rounded-lg border bg-muted/30"}>
         {overlayOpen && (
           <p className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">
             页面暂时隐藏，关掉弹窗后恢复
@@ -842,7 +833,6 @@ export function EmbeddedBrowser({
             </Button>
           </div>
         )}
-      </div>
       </div>
 
       <QuickOpenDialog
