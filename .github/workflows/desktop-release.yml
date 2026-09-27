@@ -75,7 +75,9 @@ jobs:
       - run: npm ci
       - run: npm run test:agent
       - run: npm run test:desktop
+      - run: node --test tests/productivity.test.cjs
       - run: node --test tests/packaging.test.cjs
+      - run: npm run lint
       - name: Build with an empty database and prepare minimal runtime
         run: |
           node scripts/packaging-build.cjs
@@ -148,6 +150,8 @@ jobs:
         shell: bash
         run: |
           cat > release-notes.md <<'NOTES'
+          本版新增 Agent 失败重试和语音输入、按原因及阶段记录流程终止、桌面便签、日历与提醒，以及通过剪贴板快速捕获岗位。岗位保存前可编辑并检查重复；原有用户数据会在迁移前备份。
+
           Windows 电脑下载文件名含 win-x64 的 .exe；Apple Silicon Mac 下载含 mac-arm64 的 .dmg。
 
           Windows 安装后可以在软件内检查更新、下载并重启安装。首次切换到本版本需安装一次新的安装包。

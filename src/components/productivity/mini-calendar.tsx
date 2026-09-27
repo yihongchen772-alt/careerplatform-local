@@ -1,0 +1,48 @@
+"use client";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { listEvents, listNotes, saveEvent, deleteEvent } from "@/lib/actions/productivity";
+import { localDay, monthGrid } from "@/lib/calendar-grid";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+type Event = Awaited<ReturnType<typeof listEvents>>[number];
+type Draft = { id?: string; revision?: number; title: string; description: string; date: string; time: string; end: string; allDay: boolean; noteId: string; reminder: string };
+function timeInput(date: Date) { return `${localDay(date)}T${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`; }
+function eventDraft(event: Event): Draft { return { id: event.id, revision: event.revision, title: event.title, description: event.description, date: event.allDay ? event.dateKey : localDay(event.startsAt), time: timeInput(event.startsAt).slice(11), end: event.endsAt ? timeInput(event.endsAt) : "", allDay: event.allDay, noteId: event.noteId || "", reminder: event.reminders[0]?.offsetMinutes.toString() ?? "" }; }
+const subscribe = () => () => {};
+export function MiniCalendar() {
+  const ready = useSyncExternalStore(subscribe, () => true, () => false);
+  return ready ? <CalendarContent /> : <p className="p-4">正在加载日历…</p>;
+}
+function CalendarContent() {
+  const initialOpened = useRef(false);
+  const [today, setToday] = useState(() => localDay(new Date()));
+  const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1, 12));
+  const [day, setDay] = useState(today), [events, setEvents] = useState<Event[]>([]), [notes, setNotes] = useState<Awaited<ReturnType<typeof listNotes>>>([]);
+  const [draft, setDraft] = useState<Draft | null>(null), [busy, setBusy] = useState(false), [pinned, setPinned] = useState(false);
+  const refresh = useCallback(async () => { try { const [e, n] = await Promise.all([listEvents(), listNotes()]); setEvents(e); setNotes(n); if (!initialOpened.current) { initialOpened.current = true; const id = new URLSearchParams(location.search).get("id"); const selected = e.find((row) => row.id === id); if (selected) { setDraft(eventDraft(selected)); setDay(selected.allDay ? selected.dateKey : localDay(selected.startsAt)); setMonth(new Date(selected.startsAt.getFullYear(), selected.startsAt.getMonth(), 1, 12)); } } setToday(localDay(new Date())); } catch { toast.error("日历加载失败，请重试"); } }, []);
+  useEffect(() => { void Promise.resolve().then(refresh); void window.desktopProductivity?.state().then((s) => setPinned(s.pinned)); const timer = setInterval(refresh, 15000); window.addEventListener("focus", refresh); return () => { clearInterval(timer); window.removeEventListener("focus", refresh); }; }, [refresh]);
+  function edit(event?: Event) {
+    setDraft(event ? eventDraft(event) : { title: "", description: "", date: day, time: "09:00", end: "", allDay: false, noteId: "", reminder: "" });
+  }
+  function patch(change: Partial<Draft>) { setDraft((d) => d && { ...d, ...change }); }
+  const selected = events.filter((e) => (e.allDay ? e.dateKey : localDay(e.startsAt)) <= day && (e.endsAt ? localDay(e.endsAt) : e.allDay ? e.dateKey : localDay(e.startsAt)) >= day);
+  return <main className="mx-auto w-full max-w-2xl space-y-3 p-4">
+    <header className="flex items-center justify-between"><h1 className="font-semibold">日历与提醒</h1><button className="text-sm" onClick={async () => { if (window.desktopProductivity) setPinned(await window.desktopProductivity.pin(!pinned)); }}>{pinned ? "取消置顶" : "置顶"}</button></header>
+    <div className="flex items-center justify-between gap-2"><Button variant="outline" size="sm" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1, 12))}>上月</Button><input aria-label="年月" type="month" min="1900-01" max="2200-12" value={`${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}`} onChange={(e) => { if (!e.target.value) return; const [y, m] = e.target.value.split("-").map(Number); setMonth(new Date(y, m - 1, 1, 12)); }} /><Button variant="outline" size="sm" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1, 12))}>下月</Button></div>
+    <div className="grid grid-cols-7 gap-1 text-center text-sm">{["一", "二", "三", "四", "五", "六", "日"].map((w) => <span key={w} className="text-muted-foreground">{w}</span>)}{monthGrid(month.getFullYear(), month.getMonth()).map((date) => { const key = localDay(date); const marked = events.some((e) => (e.allDay ? e.dateKey : localDay(e.startsAt)) === key); return <button aria-label={key} aria-pressed={day === key} key={key} className={`relative rounded py-2 ${day === key ? "bg-primary text-primary-foreground" : key === today ? "ring-1 ring-primary" : "hover:bg-muted"} ${date.getMonth() !== month.getMonth() ? "opacity-40" : ""}`} onClick={() => setDay(key)}>{date.getDate()}{marked && <span className="absolute bottom-0 left-1/2">·</span>}</button>; })}</div>
+    <div className="flex justify-between"><button className="text-sm" onClick={() => { setDay(today); setMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1, 12)); }}>今天</button><span>{day}</span><Button size="sm" onClick={() => edit()}>添加事项</Button></div>
+    <div className="space-y-2">{selected.length === 0 && <p className="text-sm text-muted-foreground">当天暂无事项。普通便签不会自动加入日历。</p>}{selected.map((e) => <button key={e.id} className="block w-full rounded border p-3 text-left" onClick={() => edit(e)}><strong>{e.title}</strong><p className="text-xs text-muted-foreground">{e.allDay ? "全天" : e.startsAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}{e.reminders[0] && ` · 提醒 ${e.reminders[0].scheduledAt.toLocaleString()}${e.reminders[0].deliveredAt ? "（已通知）" : e.reminders[0].scheduledAt < new Date() ? "（待补发）" : ""}`}</p></button>)}</div>
+    <details className="text-sm"><summary>提醒记录（含错过提醒）</summary>{events.filter((e) => e.reminders[0]).map((e) => <button key={e.id} className="block w-full border-b py-2 text-left" onClick={() => edit(e)}>{e.title} · {e.reminders[0].scheduledAt.toLocaleString()} · {e.reminders[0].deliveredAt ? "已通知" : e.reminders[0].scheduledAt < new Date() ? "已过期，待补发" : "待提醒"}</button>)}</details>
+    {draft && <form className="space-y-3 rounded border p-3" onSubmit={async (e) => { e.preventDefault(); if (busy) return; setBusy(true); try { const startsAt = new Date(`${draft.date}T${draft.allDay ? "00:00" : draft.time}`); if (timeInput(startsAt) !== `${draft.date}T${draft.allDay ? "00:00" : draft.time}`) { toast.error("该本地时间不存在，请检查日期或夏令时切换"); return; } const result = await saveEvent({ id: draft.id, revision: draft.revision, title: draft.title, description: draft.description, startsAt, endsAt: !draft.allDay && draft.end ? new Date(draft.end) : null, allDay: draft.allDay, dateKey: draft.date, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, noteId: draft.noteId || null, offsetMinutes: draft.reminder === "" ? null : Number(draft.reminder) }); if (!result.ok) return toast.error(result.message); setDraft(null); await refresh(); } catch { toast.error("保存失败，请重试"); } finally { setBusy(false); } }}>
+      <label className="block text-sm">事项<input required maxLength={200} className="block w-full rounded border p-2" value={draft.title} onChange={(e) => patch({ title: e.target.value })} /></label>
+      <textarea aria-label="事项详情" placeholder="详情" className="w-full rounded border p-2" value={draft.description} onChange={(e) => patch({ description: e.target.value })} />
+      <div className="flex flex-wrap gap-2"><input aria-label="日期" type="date" required value={draft.date} onChange={(e) => patch({ date: e.target.value })} /><label><input type="checkbox" checked={draft.allDay} onChange={(e) => patch({ allDay: e.target.checked })} /> 全天</label>{!draft.allDay && <input aria-label="开始时间" type="time" required value={draft.time} onChange={(e) => patch({ time: e.target.value })} />}</div>
+      {!draft.allDay && <label className="block text-sm">结束时间（可选）<input aria-label="结束时间" className="block" type="datetime-local" value={draft.end} onChange={(e) => patch({ end: e.target.value })} /></label>}
+      <label className="block text-sm">提醒<select className="ml-2" value={draft.reminder} onChange={(e) => patch({ reminder: e.target.value })}><option value="">不提醒</option>{[0, 5, 15, 30, 60, 1440].map((n) => <option key={n} value={n}>{n ? `提前 ${n} 分钟` : "开始时"}</option>)}</select></label>
+      <label className="block text-sm">关联便签<select className="ml-2 max-w-full" value={draft.noteId} onChange={(e) => patch({ noteId: e.target.value })}><option value="">不关联</option>{notes.map((n) => <option key={n.id} value={n.id}>{n.content.split("\n")[0].slice(0, 30) || "空白便签"}</option>)}</select></label>
+      {draft.noteId && <Button type="button" variant="outline" onClick={() => { if (window.desktopProductivity) void window.desktopProductivity.open("notes", draft.noteId); else window.open(`/desktop/notes?id=${encodeURIComponent(draft.noteId)}`, "_blank"); }}>打开便签</Button>}
+      <div className="flex gap-2"><Button type="submit" disabled={busy}>保存</Button><Button type="button" variant="outline" disabled={busy} onClick={() => setDraft(null)}>取消</Button>{draft.id && <Button type="button" variant="destructive" disabled={busy} onClick={async () => { if (!confirm("删除事项及其提醒？")) return; setBusy(true); try { const r = await deleteEvent(draft.id!, draft.revision!); if (!r.ok) return toast.error(r.message); setDraft(null); await refresh(); } finally { setBusy(false); } }}>删除</Button>}</div>
+    </form>}
+    <p className="text-xs text-muted-foreground">提醒需要求职罗盘保持运行；关闭主窗口后提醒请开启设置中的后台提醒。完全退出或关机后，下一次运行会补发错过提醒。</p>
+  </main>;
+}

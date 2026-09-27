@@ -64,6 +64,7 @@ export const positionStatusValues = [
 ] as const;
 
 export const positionSchema = z.object({
+  recruitmentType: z.enum(["校招", "实习", "社招"]).optional().nullable(),
   companyName: z.string().min(1, "公司名称必填"),
   title: z.string().min(1, "岗位名称必填"),
   track: z.string().optional(),
@@ -88,6 +89,7 @@ export const positionSchema = z.object({
 });
 
 export const applicationStageValues = [
+  "WITHDRAWN", "CANCELLED",
   "APPLIED",
   "SCREENING",
   "ASSESSMENT",
@@ -132,6 +134,8 @@ export const offerUpdateSchema = z.object({
 });
 
 export const stageUpdateSchema = z.object({
+  terminatedAtStage: z.enum(applicationStageValues).optional().nullable(),
+  terminatedAtStageLabel: z.string().trim().max(100).optional().nullable(),
   stage: z.enum(applicationStageValues),
   stageLabel: z.string().trim().max(100, "企业阶段名称不能超过 100 字").optional(),
   note: z.string().optional(),

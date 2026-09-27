@@ -21,6 +21,8 @@ datasource db {
 // ---------- Auth (NextAuth / Auth.js) ----------
 
 model User {
+  desktopNotes DesktopNote[]
+  calendarEvents CalendarEvent[]
   id                    String    @id @default(cuid())
   email                 String    @unique
   passwordHash          String?
@@ -105,6 +107,51 @@ model User {
   weeklyReviews           WeeklyReview[]
   resumeComparisonSummary ResumeComparisonSummary?
   interviewIntelligence   InterviewIntelligence?
+}
+
+model DesktopNote {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content String @default("")
+  template String @default("blank")
+  revision Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  events CalendarEvent[]
+  @@index([userId])
+}
+
+model CalendarEvent {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title String
+  description String @default("")
+  startsAt DateTime
+  endsAt DateTime?
+  allDay Boolean @default(false)
+  dateKey String
+  timeZone String
+  noteId String?
+  note DesktopNote? @relation(fields: [noteId], references: [id], onDelete: SetNull)
+  revision Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  reminders EventReminder[]
+  @@index([userId, startsAt])
+}
+
+model EventReminder {
+  id String @id @default(cuid())
+  eventId String @unique
+  event CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  offsetMinutes Int
+  scheduledAt DateTime
+  deliveredAt DateTime?
+  claimUntil DateTime?
+  claimToken String?
+  @@index([deliveredAt, scheduledAt])
 }
 
 /// One AI-curated "today's top priorities" per day, cached so opening the
@@ -442,6 +489,8 @@ model JobLead {
 }
 
 model Position {
+  captureKey String? @unique
+  recruitmentType String?
   id             String         @id @default(cuid())
   userId         String
   companyId      String
@@ -477,6 +526,8 @@ model Position {
 }
 
 enum ApplicationStage {
+  WITHDRAWN
+  CANCELLED
   APPLIED
   SCREENING
   ASSESSMENT
@@ -549,6 +600,8 @@ model Application {
 }
 
 model StageHistory {
+  terminatedAtStage String?
+  terminatedAtStageLabel String?
   id              String           @id @default(cuid())
   applicationId   String
   stage           ApplicationStage

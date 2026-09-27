@@ -37,6 +37,8 @@ export type ApplicationRow = {
   appliedDate: string;
   currentStage: ApplicationStage;
   currentStageLabel?: string | null;
+  terminatedAtStage?: string | null;
+  terminatedAtStageLabel?: string | null;
   currentStageDate: string;
   referrer: string | null;
   source: string | null;

@@ -14,6 +14,8 @@ export type BoardApplication = {
   title: string;
   currentStage: ApplicationStage;
   currentStageLabel?: string | null;
+  terminatedAtStage?: string | null;
+  terminatedAtStageLabel?: string | null;
   appliedDate: string;
   currentStageDate: string;
   nextDeadline: string | null;
@@ -67,6 +69,7 @@ function ApplicationCard({ app, closed = false }: { app: BoardApplication; close
         <span>投递 {app.appliedDate.slice(5, 10).replace("-", "/")}</span>
         {!closed && <span className={cn("flex items-center gap-1", daysSince(app.currentStageDate) >= 14 && "text-amber-700 dark:text-amber-400")}><Clock3 className="size-3" />停留 {daysSince(app.currentStageDate)} 天</span>}
       </div>
+      {app.terminatedAtStage && <p className="mt-2 text-xs text-muted-foreground">结束于：{app.terminatedAtStageLabel || STAGE_LABELS[app.terminatedAtStage as ApplicationStage]}</p>}
       {!closed && app.nextDeadline && <p className="mt-2 flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400"><CalendarClock className="mt-0.5 size-3.5 shrink-0" />{windowStatus(new Date(app.nextDeadline), app.nextDeadlineEnd ? new Date(app.nextDeadlineEnd) : null).note}</p>}
     </Link>
   );
@@ -78,6 +81,8 @@ export function ApplicationsBoard({ applications }: { applications: BoardApplica
   }
 
   const outcomes = [
+    { title: "流程已终止 / 主动撤回", items: applications.filter((app) => app.currentStage === "WITHDRAWN"), className: "text-muted-foreground" },
+    { title: "流程已终止 / 岗位取消", items: applications.filter((app) => app.currentStage === "CANCELLED"), className: "text-muted-foreground" },
     { title: "未通过 / 公司拒绝", items: applications.filter((app) => app.currentStage === "REJECTED"), className: "text-rose-700 dark:text-rose-300" },
     { title: "已接受", items: applications.filter((app) => app.currentStage === "ACCEPTED"), className: "text-emerald-700 dark:text-emerald-300" },
     { title: "本人拒绝", items: applications.filter((app) => app.currentStage === "DECLINED"), className: "text-muted-foreground" },

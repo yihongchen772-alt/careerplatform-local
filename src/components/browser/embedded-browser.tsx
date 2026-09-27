@@ -422,7 +422,7 @@ export function EmbeddedBrowser({
         toast.error("这个页面上读不到岗位内容，等它加载完再试");
         return;
       }
-      const res = await parseJd({ text: page.text });
+      const res = await parseJd({ text: page.text, capture: true });
       const parsed = res.ok ? res.data : null;
       if (!res.ok) toast.warning(`AI 没能解析这页（${res.message}），先帮你把链接和正文带过去，手动填一下`);
       setCaptureInitial({
@@ -436,7 +436,8 @@ export function EmbeddedBrowser({
         jdUrl: page.url,
         jdText: page.text,
         source: sourceFromUrl(page.url),
-        deadline: null,
+        deadline: parsed?.deadline || null,
+        recruitmentType: parsed?.recruitmentType || null,
         scoreBreakdown: parsed
           ? {
               techFit: Math.round(parsed.techFit),
@@ -877,7 +878,7 @@ export function EmbeddedBrowser({
       )}
 
       {captureInitial && (
-        <PositionFormDialog
+        <PositionFormDialog captureMode
           key={captureKey}
           mode="create"
           initial={captureInitial}

@@ -14,6 +14,7 @@ import { Prisma } from "@prisma/client";
 import { resolveCompanyId } from "@/lib/company-resolver";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
 import { latestStageEntry } from "@/lib/application-stage-history";
+import { terminationFields } from "@/lib/termination";
 
 export async function createApplication(
   input: z.infer<typeof applicationSchema>
@@ -81,6 +82,7 @@ export async function addStageUpdate(
       data: {
         applicationId,
         stage: data.stage,
+        ...terminationFields(data.stage, data.terminatedAtStage === undefined ? application.currentStage : data.terminatedAtStage, data.terminatedAtStageLabel === undefined ? (data.terminatedAtStage === undefined || data.terminatedAtStage === application.currentStage ? application.currentStageLabel : null) : data.terminatedAtStageLabel),
         stageLabel: data.stageLabel || null,
         note: data.note,
         interviewFormat: data.interviewFormat,
@@ -252,6 +254,7 @@ export async function updateStageHistory(
         where: { id },
         data: {
           stage: data.stage,
+          ...terminationFields(data.stage, data.terminatedAtStage === undefined ? existing.terminatedAtStage : data.terminatedAtStage, data.terminatedAtStageLabel === undefined ? (data.terminatedAtStage === undefined || data.terminatedAtStage === existing.terminatedAtStage ? existing.terminatedAtStageLabel : null) : data.terminatedAtStageLabel),
           stageLabel: data.stageLabel || null,
           note: data.note || null,
           interviewFormat: data.interviewFormat || null,

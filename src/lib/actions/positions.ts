@@ -8,17 +8,23 @@ import { computeInterestScore } from "@/lib/scoring";
 import { resolveCompanyId } from "@/lib/company-resolver";
 import { z } from "zod";
 
-export async function createPosition(input: z.infer<typeof positionSchema>) {
+export async function createPosition(input: z.infer<typeof positionSchema>, captureKey?: string) {
   const user = await requireUser();
   const data = positionSchema.parse(input);
 
+  if (captureKey) {
+    z.string().uuid().parse(captureKey);
+    const saved = await db.position.findUnique({ where: { captureKey } });
+    if (saved?.userId === user.id) return saved.id;
+  }
   const companyId = await resolveCompanyId(data.companyName, { aiUserId: user.id });
 
-  await db.position.create({
-    data: {
+  const createData = {
       userId: user.id,
+      captureKey,
       companyId,
       title: data.title,
+      recruitmentType: data.recruitmentType,
       track: data.track,
       department: data.department,
       location: data.location,
@@ -28,14 +34,17 @@ export async function createPosition(input: z.infer<typeof positionSchema>) {
       jdUrl: data.jdUrl,
       source: data.source,
       deadline: data.deadline ?? undefined,
-      status: data.status ?? "EVALUATING",
+      status: data.status ?? "EVALUATING" as const,
       scoreBreakdown: data.scoreBreakdown ?? undefined,
       interestScore: computeInterestScore(data.scoreBreakdown),
-    },
-  });
+  };
+  const created = captureKey
+    ? await db.position.upsert({ where: { captureKey }, create: createData, update: {} })
+    : await db.position.create({ data: createData });
 
   revalidatePath("/pool");
   revalidatePath("/dashboard");
+  return created.id;
 }
 
 export async function updatePosition(
@@ -62,6 +71,7 @@ export async function updatePosition(
     data: {
       companyId,
       title: data.title,
+      recruitmentType: data.recruitmentType,
       track: data.track,
       department: data.department,
       location: data.location,

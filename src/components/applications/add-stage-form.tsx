@@ -28,6 +28,7 @@ export function AddStageForm({
 }) {
   const [stage, setStage] = useState<ApplicationStage>(currentStage);
   const [stageLabel, setStageLabel] = useState("");
+  const [endedStage, setEndedStage] = useState<string>(["REJECTED", "WITHDRAWN", "CANCELLED", "DECLINED", "ACCEPTED"].includes(currentStage) ? "" : currentStage);
   const [note, setNote] = useState("");
   const [interviewFormat, setInterviewFormat] = useState("");
   const [interviewer, setInterviewer] = useState("");
@@ -42,6 +43,7 @@ export function AddStageForm({
     try {
       const { stageHistoryId } = await addStageUpdate(applicationId, {
         stage,
+        terminatedAtStage: (endedStage || null) as ApplicationStage | null,
         stageLabel: stageLabel || undefined,
         note: note || undefined,
         interviewFormat: interviewFormat || undefined,
@@ -74,6 +76,7 @@ export function AddStageForm({
       <p className="text-sm font-medium">记录企业进展</p>
       <p className="text-xs text-muted-foreground">企业流程不固定。先选宽泛类别，再写官网或邮件里的实际阶段；可跳步、重复或直接记录未通过。</p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {["REJECTED", "WITHDRAWN", "CANCELLED"].includes(stage) && <label className="space-y-1 text-sm">在哪个阶段结束<select className="block w-full rounded border bg-background p-2" value={endedStage} onChange={(e) => setEndedStage(e.target.value)}><option value="">未记录</option>{Object.entries(STAGE_LABELS).filter(([key]) => !["REJECTED", "WITHDRAWN", "CANCELLED", "ACCEPTED", "DECLINED"].includes(key)).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>}
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">新状态</Label>
           <Select

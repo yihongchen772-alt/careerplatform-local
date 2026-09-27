@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { EmbeddedBrowser } from "@/components/browser/embedded-browser";
 
-const TERMINAL = ["REJECTED", "ACCEPTED", "DECLINED"] as const;
+const TERMINAL = ["REJECTED", "ACCEPTED", "DECLINED", "WITHDRAWN", "CANCELLED"] as const;
 
 export default async function BrowserPage({
   searchParams,

@@ -1,4 +1,5 @@
 "use server";
+import { terminationFields } from "@/lib/termination";
 
 import crypto from "crypto";
 import { z } from "zod";
@@ -21,11 +22,11 @@ import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action
 // change on the user's own records rather than a new lead, so it only ever
 // moves *forward* and never touches a stage the user has already closed.
 
-const TERMINAL_STAGES: ApplicationStage[] = ["REJECTED", "ACCEPTED", "DECLINED"];
+const TERMINAL_STAGES: ApplicationStage[] = ["REJECTED", "ACCEPTED", "DECLINED", "WITHDRAWN", "CANCELLED"];
 // Stages the portal is allowed to put an application into. ACCEPTED/DECLINED
 // are the user's own decisions, not something a company page can tell us.
 const SYNCABLE_STAGES: ApplicationStage[] = STAGE_ORDER.filter(
-  (s) => s !== "ACCEPTED" && s !== "DECLINED"
+  (s) => s !== "ACCEPTED" && s !== "DECLINED" && s !== "WITHDRAWN"
 );
 
 const PAGE_TEXT_CAP = 12000;
@@ -165,7 +166,7 @@ ${pageText}
 1. needsLogin：如果页面明显是登录页/要求重新登录/会话过期（比如只有"登录""验证码""扫码"而没有任何投递记录），填 true，entries 留空。
 2. entries：只列出页面上确实出现、且能对应到上面某条本地投递的记录。岗位名可能不完全一样（页面可能带部门、地点、编号），按语义对应；对应不上的不要硬凑。
 3. portalStatus：页面上原样的进度文字，比如"简历筛选中""笔试已安排""面试中（一面）""已发 offer""流程终止"。
-4. stage：把 portalStatus 映射到这些宽泛类别之一：${stageList}。企业流程不一定按固定顺序，有的会跳过笔试、有的先 HR 面、有的有群面或多轮业务面；只按官网当前文字判断，不根据本地阶段推测下一步。已投递/待处理 → APPLIED；简历筛选 → SCREENING；测评 → ASSESSMENT；笔试/机试 → OA；一面/初面/群面/业务面 → INTERVIEW_1；二面/复试 → INTERVIEW_2；三面/终面 → INTERVIEW_3；HR 面 → HR_INTERVIEW；已发 Offer/待签约 → OFFER；未录用/未通过/已淘汰/流程终止/感谢参与 → REJECTED。看不出类别填 null，不要猜；仅仅长时间无消息或岗位下架不等于淘汰。
+4. stage：把 portalStatus 映射到这些宽泛类别之一：${stageList}。企业流程不一定按固定顺序，有的会跳过笔试、有的先 HR 面、有的有群面或多轮业务面；只按官网当前文字判断，不根据本地阶段推测下一步。已投递/待处理 → APPLIED；简历筛选 → SCREENING；测评 → ASSESSMENT；笔试/机试 → OA；一面/初面/群面/业务面 → INTERVIEW_1；二面/复试 → INTERVIEW_2；三面/终面 → INTERVIEW_3；HR 面 → HR_INTERVIEW；已发 Offer/待签约 → OFFER；明确未录用/未通过/已淘汰 → REJECTED；明确写明招聘岗位取消/招聘终止 → CANCELLED。仅写“流程终止”但不说明原因时填 null；仅仅长时间无消息或岗位下架不等于淘汰或岗位取消。WITHDRAWN 是用户本人决定，不能根据招聘网页推断。
 5. confident：只表示"这条官网记录确实对应哪个 applicationId"有把握；即使不能映射到标准阶段，也要保留原始 portalStatus、stage 填 null，不能让官网状态消失。
 
 全部用 JSON 返回。`;
@@ -414,7 +415,7 @@ export async function resolvePortalStageSuggestion(applicationId: string, accept
     const user = await requireUser();
     const application = await db.application.findFirst({
       where: { id: applicationId, userId: user.id },
-      select: { id: true, currentStage: true, portalSuggestedStage: true, portalSuggestedAt: true, portalStatus: true },
+      select: { id: true, currentStage: true, currentStageLabel: true, portalSuggestedStage: true, portalSuggestedAt: true, portalStatus: true },
     });
     if (!application?.portalSuggestedStage) throw new UserFacingError("这条官网建议已处理或不存在");
     if (accept && (TERMINAL_STAGES.includes(application.currentStage) ||
@@ -441,6 +442,7 @@ export async function resolvePortalStageSuggestion(applicationId: string, accept
           data: {
             applicationId,
             stage: application.portalSuggestedStage!,
+              ...terminationFields(application.portalSuggestedStage!, application.currentStage, application.currentStageLabel),
             stageLabel: application.portalStatus,
             enteredAt: application.portalSuggestedAt ?? new Date(),
             note: `${PORTAL_SYNC_NOTE_PREFIX}（已核对）：官网显示「${application.portalStatus ?? ""}」`,

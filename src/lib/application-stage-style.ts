@@ -16,6 +16,13 @@ export function applicationStageStyle(stage: ApplicationStage) {
       border: "border-rose-500/20",
     };
   }
+  if (stage === "WITHDRAWN" || stage === "CANCELLED") {
+    return {
+      dot: "bg-slate-400",
+      pill: "bg-slate-500/10 text-slate-700 dark:text-slate-300",
+      border: "border-slate-500/20",
+    };
+  }
   if (stage.startsWith("INTERVIEW") || stage === "HR_INTERVIEW") {
     return {
       dot: "bg-cyan-500",

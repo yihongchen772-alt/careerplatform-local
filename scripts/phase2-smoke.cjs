@@ -1,0 +1,135 @@
+// Local-only UI regression. Never reads the installed application's database.
+const fs = require("node:fs");
+const path = require("node:path");
+const net = require("node:net");
+const assert = require("node:assert/strict");
+const { spawn } = require("node:child_process");
+const { DatabaseSync } = require("node:sqlite");
+const { PrismaClient } = require("@prisma/client");
+const { chromium, _electron } = require("playwright");
+
+async function main() {
+  const base = path.resolve(__dirname, "../.local-run/phase2-ui"); fs.mkdirSync(base, { recursive: true });
+  const root = fs.mkdtempSync(path.join(base, "case-"));
+  const databaseFile = path.join(root, "test.db");
+  const sql = new DatabaseSync(databaseFile);
+  for (const migration of fs.readdirSync(path.resolve(__dirname, "../prisma/migrations")).filter((s) => /^\d/.test(s)).sort()) sql.exec(fs.readFileSync(path.resolve(__dirname, "../prisma/migrations", migration, "migration.sql"), "utf8"));
+  sql.close();
+  const db = new PrismaClient({ datasources: { db: { url: `file:${databaseFile.replaceAll("\\", "/")}` } } });
+  const listener = net.createServer(); await new Promise((r) => listener.listen(0, "127.0.0.1", r)); const port = listener.address().port; await new Promise((r) => listener.close(r));
+  const origin = `http://127.0.0.1:${port}`;
+  const runtime = path.resolve(__dirname, "../.local-run/packaging/runtime");
+  if (!fs.existsSync(path.join(runtime, "server.js"))) throw new Error("Run packaging-prepare.cjs before UI smoke");
+  const server = spawn(process.execPath, [path.join(runtime, "server.js")], { cwd: runtime, windowsHide: true, env: { ...process.env, NODE_ENV: "production", DATABASE_URL: `file:${databaseFile.replaceAll("\\", "/")}`, LOCAL_UPLOADS_DIR: path.join(root, "uploads"), NEXTAUTH_SECRET: "isolated-ui-test-secret", NEXTAUTH_URL: origin, PORT: String(port), HOSTNAME: "127.0.0.1", NEXT_TELEMETRY_DISABLED: "1" }, stdio: ["ignore", "pipe", "pipe"] });
+  let log = "", browser, lastPage, electron;
+  server.stdout.on("data", (b) => { log += b; }); server.stderr.on("data", (b) => { log += b; });
+  try {
+    for (let attempt = 0; attempt < 100; attempt++) { try { if ((await fetch(`${origin}/desktop/notes`)).ok) break; } catch {} await new Promise((r) => setTimeout(r, 200)); }
+    browser = await chromium.launch({ headless: true, args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"] });
+    const context = await browser.newContext();
+    const page = await context.newPage(); lastPage = page; page.setDefaultTimeout(15000);
+    const errors = []; page.on("pageerror", (error) => errors.push(error.message));
+    await page.goto(`${origin}/desktop/notes`);
+    await page.getByRole("button", { name: "新建", exact: true }).click();
+    await page.getByLabel("便签正文").fill("秋招\n跨月长期保留的测试便签");
+    await page.getByLabel("便签模板").selectOption("lined");
+    await page.getByRole("status").filter({ hasText: "已保存" }).waitFor();
+    await page.reload(); await page.getByLabel("便签正文").filter({ visible: true }).waitFor();
+    assert.equal(await page.getByLabel("便签正文").inputValue(), "秋招\n跨月长期保留的测试便签");
+    assert.equal(await page.getByLabel("便签模板").inputValue(), "lined");
+    await page.getByRole("button", { name: "新建", exact: true }).click();
+    await page.getByLabel("便签正文").fill("生活便签"); await page.getByRole("status").filter({ hasText: "已保存" }).waitFor();
+    assert.equal(await db.desktopNote.count(), 2);
+    await page.screenshot({ path: path.join(root, "notes.png") });
+    console.log("PASS note editing, template, autosave, reload and multiple notes");
+
+    await page.goto(`${origin}/desktop/calendar`);
+    await page.getByRole("button", { name: "添加事项" }).click();
+    await page.getByLabel("事项", { exact: true }).fill("UI 测试笔试");
+    await page.getByLabel("日期", { exact: true }).fill("2026-10-03");
+    await page.getByLabel("开始时间").fill("14:00");
+    await page.locator("label").filter({ hasText: /^提醒/ }).locator("select").selectOption("30");
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await page.getByLabel("事项", { exact: true }).waitFor({ state: "hidden" });
+    let event = await db.calendarEvent.findFirst({ include: { reminders: true } }); assert.equal(event.title, "UI 测试笔试"); assert.equal(event.reminders.length, 1);
+    await page.goto(`${origin}/desktop/calendar?id=${event.id}`);
+    await page.getByLabel("日期", { exact: true }).fill("2026-10-04"); await page.getByRole("button", { name: "保存", exact: true }).click();
+    await page.getByLabel("事项", { exact: true }).waitFor({ state: "hidden" });
+    event = await db.calendarEvent.findUnique({ where: { id: event.id }, include: { reminders: true } }); assert.equal(event.dateKey, "2026-10-04"); assert.equal(event.startsAt - event.reminders[0].scheduledAt, 1800000);
+    await page.screenshot({ path: path.join(root, "calendar.png") });
+    console.log("PASS calendar event editing and synchronized reminder date");
+
+    await page.goto(`${origin}/desktop/capture`);
+    await page.getByLabel("JD 正文").fill("这是用户主动粘贴的岗位正文，缺少的信息应保持为空。");
+    await page.getByRole("button", { name: "手动填写", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.locator("label").filter({ hasText: /^公司名称/ }).locator("..").locator("input").fill("测试公司");
+    await dialog.locator("label").filter({ hasText: /^岗位名称/ }).locator("..").locator("input").fill("测试岗位");
+    assert.equal(await db.position.count(), 0);
+    await dialog.getByRole("button", { name: "保存", exact: true }).click(); await dialog.waitFor({ state: "hidden" });
+    assert.equal(await db.position.count(), 1); assert.match((await db.position.findFirst()).jdText, /用户主动/);
+    await page.getByRole("button", { name: "手动填写", exact: true }).click();
+    await dialog.locator("label").filter({ hasText: /^公司名称/ }).locator("..").locator("input").fill("测试公司");
+    await dialog.locator("label").filter({ hasText: /^岗位名称/ }).locator("..").locator("input").fill("测试岗位");
+    await dialog.getByRole("button", { name: "保存", exact: true }).click();
+    await dialog.getByText("该岗位可能已经存在：").waitFor(); assert.equal(await db.position.count(), 1);
+    await page.screenshot({ path: path.join(root, "capture.png") });
+    await dialog.getByLabel("我已核对，仍然新增").check(); await dialog.getByRole("button", { name: "保存", exact: true }).click(); await dialog.waitFor({ state: "hidden" }); assert.equal(await db.position.count(), 2);
+    console.log("PASS capture requires confirmation, preserves JD and offers duplicate override");
+
+    await page.goto(`${origin}/dashboard`); await page.getByRole("button", { name: "打开 AI 助手", exact: true }).click();
+    await page.getByLabel("给求职 Agent 发送消息").fill("测试失败重试"); await page.getByRole("button", { name: "发送", exact: true }).click();
+    await page.getByRole("button", { name: "重新发送", exact: true }).waitFor();
+    await page.waitForFunction(() => { try { return JSON.parse(localStorage.getItem("careerplatform-agent-history-v1") || "[]").length === 2; } catch { return false; } });
+    const before = JSON.parse(await page.evaluate(() => localStorage.getItem("careerplatform-agent-history-v1")));
+    await page.reload(); await page.getByRole("button", { name: "打开 AI 助手", exact: true }).click();
+    await page.getByRole("button", { name: "重新发送", exact: true }).waitFor();
+    await page.getByRole("button", { name: "重新发送", exact: true }).click();
+    await page.waitForFunction(() => !document.querySelector('button[aria-label="发送"]')?.closest("div")?.parentElement?.textContent.includes("正在整理"));
+    await page.getByRole("button", { name: "重新发送", exact: true }).waitFor();
+    assert.equal(await page.locator("p").filter({ hasText: /^测试失败重试$/ }).count(), 1);
+    assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem("careerplatform-agent-history-v1"))).length, before.length);
+    console.log("PASS agent failure retry does not duplicate the original user message");
+    await page.route("**/api/interview/transcribe", async (route) => { assert.match(route.request().postData(), /dictation/); await route.fulfill({ json: { transcript: "这是语音草稿", delivery: null } }); });
+    await page.getByRole("button", { name: "语音输入", exact: true }).click();
+    await page.waitForTimeout(1200); await page.getByRole("button", { name: "语音输入", exact: true }).click();
+    await page.waitForFunction(() => document.querySelector('input[aria-label="给求职 Agent 发送消息"]')?.value === "这是语音草稿");
+    assert.equal(await page.locator("p").filter({ hasText: /^这是语音草稿$/ }).count(), 0);
+    console.log("PASS shared recording pipeline sends transcript into editable draft, never auto-sends (mock transcription)");
+    assert.deepEqual(errors, []);
+    await browser.close(); browser = null; lastPage = null;
+    const harness = path.join(root, "electron-test.cjs");
+    fs.writeFileSync(harness, `const { app, BrowserWindow, Notification } = require('electron');
+app.setName('jobcompass-phase2-test'); app.setPath('userData', ${JSON.stringify(path.join(root, "electron-data"))});
+Notification.isSupported = () => false;
+let manager, main;
+app.whenReady().then(() => {
+ main = new BrowserWindow({ show:false, webPreferences:{ contextIsolation:true, nodeIntegration:false, preload:${JSON.stringify(path.resolve(__dirname, "../electron/productivity-preload.js"))} } });
+ manager = require(${JSON.stringify(path.resolve(__dirname, "../electron/productivity.js"))}).setupProductivity({port:${port}, token:'test-only', getMainWindow:()=>main, showMainWindow:()=>main.show()});
+ main.loadURL('http://localhost:${port}/desktop/capture');
+});
+app.on('before-quit',()=>manager?.shutdown());`);
+    const electronEnv = { ...process.env, CAREERPLATFORM_TEST_MODE: "1" }; delete electronEnv.ELECTRON_RUN_AS_NODE;
+    const launch = () => _electron.launch({ executablePath: path.resolve(__dirname, "../node_modules/electron/dist/electron.exe"), args: ["--no-sandbox", "--disable-gpu", harness], env: electronEnv, timeout: 45000 });
+    electron = await launch();
+    const mainWindow = await electron.firstWindow(); await mainWindow.waitForLoadState("domcontentloaded");
+    await mainWindow.waitForFunction(() => !!window.desktopProductivity);
+    const opened = electron.waitForEvent("window"); await mainWindow.evaluate(() => window.desktopProductivity.open("notes")); const noteWindow = await opened;
+    await noteWindow.getByLabel("便签正文").waitFor();
+    await noteWindow.evaluate(() => window.desktopProductivity.pin(true));
+    const native = await electron.browserWindow(noteWindow); await native.evaluate((win) => win.setBounds({ x: 80, y: 80, width: 450, height: 550 }));
+    assert.equal(await native.evaluate((win) => win.isAlwaysOnTop()), true);
+    await noteWindow.getByLabel("便签正文").fill("Windows Electron 重启保留"); await noteWindow.getByRole("status").filter({ hasText: "已保存" }).waitFor();
+    const calendarOpened = electron.waitForEvent("window"); await mainWindow.evaluate(() => window.desktopProductivity.open("calendar")); const calendarWindow = await calendarOpened;
+    await calendarWindow.getByText("日历与提醒").waitFor();
+    await electron.close(); electron = await launch();
+    for (let retry = 0; retry < 60 && !electron.windows().some((w) => w.url().includes("/desktop/notes")); retry++) await new Promise((resolve) => setTimeout(resolve, 250));
+    const restoredNote = electron.windows().find((w) => w.url().includes("/desktop/notes")); assert.ok(restoredNote);
+    await restoredNote.getByLabel("便签正文").waitFor(); assert.equal(await restoredNote.getByLabel("便签正文").inputValue(), "Windows Electron 重启保留");
+    const restoredNative = await electron.browserWindow(restoredNote); assert.equal(await restoredNative.evaluate((win) => win.isAlwaysOnTop()), true); assert.ok(Math.abs((await restoredNative.evaluate((win) => win.getBounds())).width - 450) <= 10);
+    console.log("PASS Windows Electron preload/IPC, note window, bounds/topmost persistence and process restart (isolated test app)");
+    console.log(`UI regression passed. Screenshots: ${root}`);
+  } catch (error) { console.error(log.slice(-3000)); if (lastPage) { console.error((await lastPage.locator("body").innerText()).slice(-2500)); await lastPage.screenshot({ path: path.join(root, "failure.png") }); console.error(root); } throw error; }
+  finally { await electron?.close(); await browser?.close(); server.kill(); await db.$disconnect(); }
+}
+main().catch((error) => { console.error(error); process.exitCode = 1; });

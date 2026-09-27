@@ -31,6 +31,8 @@ export type TimelineEntry = {
   id: string;
   stage: ApplicationStage;
   stageLabel: string | null;
+  terminatedAtStage?: string | null;
+  terminatedAtStageLabel?: string | null;
   enteredAt: string;
   note: string | null;
   interviewFormat: string | null;
@@ -74,6 +76,7 @@ function TimelineRow({
   const [editing, setEditing] = useState(false);
   const [stage, setStage] = useState<ApplicationStage>(entry.stage);
   const [stageLabel, setStageLabel] = useState(entry.stageLabel ?? "");
+  const [endedStage, setEndedStage] = useState(entry.terminatedAtStage ?? "");
   const [enteredAt, setEnteredAt] = useState(toLocalInput(entry.enteredAt));
   const [note, setNote] = useState(entry.note ?? "");
   const [format, setFormat] = useState(entry.interviewFormat ?? "");
@@ -105,6 +108,7 @@ function TimelineRow({
       const res = await updateStageHistory(entry.id, {
         stage,
         stageLabel,
+        terminatedAtStage: (endedStage || null) as ApplicationStage | null,
         note: note || undefined,
         interviewFormat: format || undefined,
         interviewer: interviewer || undefined,
@@ -156,6 +160,7 @@ function TimelineRow({
           <div className="space-y-1">
             <Label className="text-xs text-muted-foreground">企业阶段名称（可选）</Label>
             <Input value={stageLabel} maxLength={100} onChange={(e) => setStageLabel(e.target.value)} placeholder="例如：群面 / 技术终面" />
+            {["REJECTED", "WITHDRAWN", "CANCELLED"].includes(stage) && <select aria-label="终止阶段" value={endedStage} onChange={(e) => setEndedStage(e.target.value)} className="w-full border bg-background p-2"><option value="">未记录</option>{Object.entries(STAGE_LABELS).filter(([key]) => !["REJECTED", "WITHDRAWN", "CANCELLED", "ACCEPTED", "DECLINED"].includes(key)).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>}
           </div>
           <div className="space-y-1">
             <Label className="text-xs text-muted-foreground">面试形式</Label>
@@ -231,6 +236,7 @@ function TimelineRow({
           {STAGE_LABELS[entry.stage]}
         </Badge>
         {entry.stageLabel && <span className="text-xs font-medium">{entry.stageLabel}</span>}
+        {["REJECTED", "WITHDRAWN", "CANCELLED"].includes(entry.stage) && <span className="text-xs text-muted-foreground">结束于：{entry.terminatedAtStageLabel || STAGE_LABELS[entry.terminatedAtStage as ApplicationStage] || "未记录"}</span>}
         <span className="text-xs text-muted-foreground">
           {new Date(entry.enteredAt).toLocaleString("zh-CN")}
         </span>

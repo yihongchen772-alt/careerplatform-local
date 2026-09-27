@@ -57,8 +57,8 @@ export default async function DashboardPage() {
 
   const total = applications.length;
   const offers = applications.filter((a) => a.currentStage === "OFFER" || a.currentStage === "ACCEPTED").length;
-  const rejected = applications.filter((a) => a.currentStage === "REJECTED" || a.currentStage === "DECLINED").length;
-  const inProgress = total - offers - rejected;
+  const closed = applications.filter((a) => ["REJECTED", "DECLINED", "WITHDRAWN", "CANCELLED"].includes(a.currentStage)).length;
+  const inProgress = total - offers - closed;
 
   const { levels } = computeFunnel(funnelApps);
   const outcomes = computeOutcomes(funnelApps);
@@ -136,7 +136,7 @@ export default async function DashboardPage() {
         <StatCard label="总投递数" value={total} icon={Send} tone="brand" />
         <StatCard label="进行中" value={inProgress} icon={Clock} tone="amber" />
         <StatCard label="Offer" value={offers} icon={Trophy} tone="emerald" />
-        <StatCard label="已结束" value={rejected} icon={XCircle} tone="slate" />
+        <StatCard label="已结束" value={closed} icon={XCircle} tone="slate" />
       </div>
 
       <div className="flex items-end justify-between gap-3">

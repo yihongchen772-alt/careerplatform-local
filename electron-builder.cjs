@@ -41,7 +41,7 @@ module.exports = {
     entitlements: "build/entitlements.mac.plist",
     entitlementsInherit: "build/entitlements.mac.plist",
     extendInfo: {
-      NSMicrophoneUsageDescription: "模拟面试的口头作答需要使用麦克风录音。录音只发送到你自己配置的 AI 服务商做转写，不会上传到别处。",
+      NSMicrophoneUsageDescription: "模拟面试和 Agent 语音输入需要使用麦克风录音。录音只发送到你自己配置的 AI 服务商做转写，不会上传到别处。",
     },
   },
   win: {

@@ -19,7 +19,7 @@ function isPrivatePath(relative) {
     /(?:^|[._-])backups?(?:[._-].*)?\.(?:zip|tar|gz|7z)$/i.test(part) ||
     /^(?:uploads|backups?|userData|\.git|\.local-run|\.local-data)$/i.test(part) ||
     /^.+[-_]backups?$/i.test(part) ||
-    /^(?:app-settings|\.local-desktop)\.json$/i.test(part)
+    /^(?:app-settings|desktop-windows|\.local-desktop)\.json$/i.test(part)
   );
 }
 
@@ -195,6 +195,7 @@ function prepareRuntime() {
   const updaterVersion = metadata.dependencies?.["electron-updater"];
   if (!updaterVersion) throw new Error("electron-updater must be installed as a production dependency.");
   fs.mkdirSync(path.join(shellRoot, "electron"));
+  copySafe(path.join(projectRoot, "electron", "assets"), path.join(shellRoot, "electron", "assets"));
   for (const entry of fs.readdirSync(path.join(projectRoot, "electron"), { withFileTypes: true })) {
     if (entry.isFile() && /\.(?:js|cjs|json)$/.test(entry.name) && !isPrivatePath(entry.name)) {
       copySafe(path.join(projectRoot, "electron", entry.name), path.join(shellRoot, "electron", entry.name));

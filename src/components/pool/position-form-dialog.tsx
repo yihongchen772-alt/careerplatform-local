@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,9 +16,11 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { AiProgress } from "@/components/ui/ai-progress";
 import { createPosition, updatePosition } from "@/lib/actions/positions";
+import { findDuplicatePositions } from "@/lib/actions/job-capture";
 import { parseJd } from "@/lib/actions/jd-parse";
 
 type FormState = {
+  recruitmentType: string;
   companyName: string;
   title: string;
   track: string;
@@ -36,6 +38,7 @@ type FormState = {
 };
 
 const emptyForm: FormState = {
+  recruitmentType: "",
   companyName: "",
   title: "",
   track: "",
@@ -53,6 +56,7 @@ const emptyForm: FormState = {
 };
 
 export type PositionFormInitial = {
+  recruitmentType?: string | null;
   companyName: string;
   title: string;
   track: string | null;
@@ -75,6 +79,7 @@ export type PositionFormInitial = {
 function toForm(initial: PositionFormInitial): FormState {
   const b = initial.scoreBreakdown ?? {};
   return {
+    recruitmentType: initial.recruitmentType || "",
     companyName: initial.companyName,
     title: initial.title,
     track: initial.track ?? "",
@@ -94,6 +99,7 @@ function toForm(initial: PositionFormInitial): FormState {
 
 export function PositionFormDialog({
   mode,
+  captureMode = false,
   positionId,
   initial,
   trigger,
@@ -101,6 +107,7 @@ export function PositionFormDialog({
   onOpenChange,
 }: {
   mode: "create" | "edit";
+  captureMode?: boolean;
   positionId?: string;
   initial?: PositionFormInitial;
   /** Omit when driving `open` from outside (the 网申浏览器's 收藏岗位 flow
@@ -117,6 +124,13 @@ export function PositionFormDialog({
     setUncontrolledOpen(next);
     onOpenChange?.(next);
   };
+  const captureKey = useRef<string | null>(null);
+  const attemptedPayload = useRef<string | null>(null);
+  const duplicateRef = useRef<HTMLDivElement>(null);
+  const saving = useRef(false);
+  const [duplicates, setDuplicates] = useState<Awaited<ReturnType<typeof findDuplicatePositions>>>([]);
+  const [duplicateFingerprint, setDuplicateFingerprint] = useState("");
+  const [allowDuplicate, setAllowDuplicate] = useState(false);
   const [loading, setLoading] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [jdText, setJdText] = useState(initial?.jdText ?? "");
@@ -131,6 +145,7 @@ export function PositionFormDialog({
 
   function handleOpenChange(next: boolean) {
     if (next) {
+      captureKey.current = null; attemptedPayload.current = null; setDuplicates([]); setAllowDuplicate(false);
       setForm(initial ? toForm(initial) : emptyForm);
       setJdText(initial?.jdText ?? "");
       setScoreReason("");
@@ -145,18 +160,21 @@ export function PositionFormDialog({
     }
     setParsing(true);
     try {
-      const res = await parseJd({ text: jdText, url: form.jdUrl });
+      const res = await parseJd({ text: jdText, url: form.jdUrl, capture: captureMode });
       if (!res.ok) {
         toast.error(res.message);
         return;
       }
       const parsed = res.data;
+      if (parsed.jdText && !jdText.trim()) setJdText(parsed.jdText);
       // Replace rather than merge: this button means "fill from THIS jd", so a
       // field the model couldn't find must clear, not silently keep a value
       // left over from a previous parse in the same dialog.
       setForm((f) => ({
         ...f,
         companyName: parsed.companyName ?? "",
+        recruitmentType: parsed.recruitmentType || "",
+        deadline: parsed.deadline || "",
         title: parsed.title ?? "",
         location: parsed.location ?? "",
         track: parsed.track ?? "",
@@ -177,13 +195,16 @@ export function PositionFormDialog({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (saving.current) return;
     if (!form.companyName || !form.title) {
       toast.error("公司名称和岗位名称必填");
       return;
     }
+    saving.current = true;
     setLoading(true);
     try {
       const payload = {
+        recruitmentType: (form.recruitmentType || null) as "校招" | "实习" | "社招" | null,
         companyName: form.companyName,
         title: form.title,
         track: form.track || undefined,
@@ -207,7 +228,19 @@ export function PositionFormDialog({
         await updatePosition(positionId, payload);
         toast.success("已保存修改");
       } else {
-        await createPosition(payload);
+        const fingerprint = JSON.stringify([payload.companyName, payload.title, payload.jdUrl]);
+        if (!allowDuplicate || fingerprint !== duplicateFingerprint) {
+          const matches = await findDuplicatePositions(payload);
+          if (matches.length) { setDuplicates(matches); setDuplicateFingerprint(fingerprint); setAllowDuplicate(false); requestAnimationFrame(() => duplicateRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" })); return; }
+        }
+        const payloadText = JSON.stringify(payload);
+        if (attemptedPayload.current && attemptedPayload.current !== payloadText) {
+          toast.error("上次保存结果尚未确认。请先检查候选池，再修改并重新捕获。");
+          return;
+        }
+        captureKey.current ??= crypto.randomUUID();
+        attemptedPayload.current = payloadText;
+        await createPosition(payload, captureKey.current);
         toast.success("已添加到候选池");
         setForm(emptyForm);
         setJdText("");
@@ -218,6 +251,7 @@ export function PositionFormDialog({
       toast.error(mode === "edit" ? "保存失败，请重试" : "添加失败，请重试");
     } finally {
       setLoading(false);
+      saving.current = false;
     }
   }
 
@@ -229,6 +263,7 @@ export function PositionFormDialog({
           <DialogTitle>{mode === "edit" ? "编辑候选岗位" : "添加候选岗位"}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {!!duplicates.length && <div ref={duplicateRef} role="alert" className="space-y-2 rounded border border-amber-500 p-3 text-sm"><p>该岗位可能已经存在：</p>{duplicates.map((p) => <button key={p.id} type="button" className="block text-primary underline" onClick={() => { if (window.desktopProductivity) void window.desktopProductivity.openPosition(p.id); else window.open(`/pool?position=${encodeURIComponent(p.id)}`, "_blank", "noopener"); }}>打开已有岗位：{p.companyName} · {p.title}</button>)}<label className="block"><input type="checkbox" checked={allowDuplicate} onChange={(e) => setAllowDuplicate(e.target.checked)} /> 我已核对，仍然新增</label><Button type="button" variant="outline" onClick={() => setOpen(false)}>取消</Button></div>}
           <div className="space-y-2 rounded-md border bg-muted/30 p-3">
             <Field label="粘贴 JD 文字（推荐）">
               <Textarea
@@ -310,6 +345,7 @@ export function PositionFormDialog({
                 onChange={(e) => set("salaryMax", e.target.value)}
               />
             </Field>
+            <Field label="招聘类型"><select aria-label="招聘类型" className="w-full rounded border p-2" value={form.recruitmentType} onChange={(e) => set("recruitmentType", e.target.value)}><option value="">未提供</option><option>校招</option><option>实习</option><option>社招</option></select></Field>
             <Field label="渠道">
               <Input
                 value={form.source}

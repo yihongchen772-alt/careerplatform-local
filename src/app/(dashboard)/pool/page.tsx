@@ -6,12 +6,13 @@ import { PoolTable } from "@/components/pool/pool-table";
 import { computeConversion, type ConversionRow } from "@/lib/analytics";
 import type { InterviewPrep, GroupInterviewPrep } from "@/lib/validation";
 
-export default async function PoolPage() {
+export default async function PoolPage({ searchParams }: { searchParams: Promise<{ position?: string }> }) {
+  const selected = (await searchParams).position;
   const user = await requireUser();
 
   const [positions, resumeVersions, applications] = await Promise.all([
     db.position.findMany({
-      where: { userId: user.id },
+      where: { userId: user.id, ...(selected ? { id: selected } : {}) },
       include: {
         company: true,
         interviewPrep: true,
@@ -53,6 +54,7 @@ export default async function PoolPage() {
         <AddPositionDialog />
       </div>
 
+      {selected && <a href="/pool" className="text-sm text-primary underline">返回全部候选岗位</a>}
       <Card>
         <CardContent className="pt-6">
           <PoolTable

@@ -1,3 +1,4 @@
+import { DesktopLinks } from "@/components/productivity/desktop-links";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { DeadlineCalendar, type CalendarEvent } from "@/components/calendar/deadline-calendar";
@@ -47,7 +48,9 @@ export default async function CalendarPage() {
     label: `投递：${a.company.name} · ${a.title}`,
   }));
 
+  const personalEvents = await db.calendarEvent.findMany({ where: { userId: user.id } });
   const events: CalendarEvent[] = [
+    ...personalEvents.map((e) => ({ id: `event-${e.id}`, date: e.allDay ? `${e.dateKey}T00:00:00` : e.startsAt.toISOString(), dateEnd: e.endsAt?.toISOString() ?? null, label: e.title, href: `/desktop/calendar?id=${e.id}` })),
     ...positions.map((p) => ({
       id: `position-${p.id}`,
       date: p.deadline!.toISOString(),
@@ -86,6 +89,7 @@ export default async function CalendarPage() {
           候选岗位投递截止日期 + 投递记录里填写的下一步截止日期 + 你自己写的日程 + 联系人跟进提醒，一次看清楚有没有撞期
         </p>
       </div>
+      <DesktopLinks />
       <DeadlineCalendar
         events={events}
         positions={positionOptions}

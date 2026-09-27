@@ -19,7 +19,7 @@ import { PortalReviewBanner } from "@/components/applications/portal-review-bann
  */
 export function ApplicationsView({ applications }: { applications: ApplicationRow[] }) {
   const [view, setView] = useState<"board" | "table">("board");
-  const active = applications.filter((a) => !["REJECTED", "ACCEPTED", "DECLINED"].includes(a.currentStage)).length;
+  const active = applications.filter((a) => !["REJECTED", "ACCEPTED", "DECLINED", "WITHDRAWN", "CANCELLED"].includes(a.currentStage)).length;
   const interviews = applications.filter((a) => a.currentStage.startsWith("INTERVIEW") || a.currentStage === "HR_INTERVIEW").length;
   const offers = applications.filter((a) => a.currentStage === "OFFER" || a.currentStage === "ACCEPTED").length;
   const rejected = applications.filter((a) => a.currentStage === "REJECTED").length;
@@ -94,6 +94,8 @@ export function ApplicationsView({ applications }: { applications: ApplicationRo
             title: a.title,
             currentStage: a.currentStage,
             currentStageLabel: a.currentStageLabel,
+            terminatedAtStage: a.terminatedAtStage,
+            terminatedAtStageLabel: a.terminatedAtStageLabel,
             appliedDate: a.appliedDate,
             currentStageDate: a.currentStageDate,
             nextDeadline: a.nextDeadline,

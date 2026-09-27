@@ -24,16 +24,17 @@ test("unusual company ordering is surfaced for review, not silently discarded", 
 test("company rejection always needs confirmation and terminal decisions stay closed", () => {
   assert.equal(classifyPortalTransition("APPLIED", "REJECTED"), "review");
   assert.equal(classifyPortalTransition("INTERVIEW_2", "REJECTED"), "review");
+  assert.equal(classifyPortalTransition("OA", "CANCELLED"), "review");
   assert.equal(classifyPortalTransition("REJECTED", "OFFER"), "none");
   assert.equal(classifyPortalTransition("APPLIED", "DECLINED"), "none");
   assert.equal(classifyPortalTransition("OA", "OA"), "none");
 });
 
 test("explicit rejection wording is noticed, but silence is not treated as rejection", () => {
-  for (const status of ["初筛未通过", "很遗憾，未录用", "流程终止", "Application unsuccessful"]) {
+  for (const status of ["初筛未通过", "很遗憾，未录用", "Application unsuccessful"]) {
     assert.equal(isExplicitRejectionStatus(status), true, status);
   }
-  for (const status of ["已投递", "暂未更新", "岗位下架", "两周未回复", "笔试已安排"]) {
+  for (const status of ["已投递", "暂未更新", "岗位下架", "流程终止", "两周未回复", "笔试已安排"]) {
     assert.equal(isExplicitRejectionStatus(status), false, status);
   }
 });

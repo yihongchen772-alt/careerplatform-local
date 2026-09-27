@@ -75,6 +75,9 @@ const TABLES = [
   "careerFitAnalysis",
   "questionBank",
   "examSession",
+  "desktopNote",
+  "calendarEvent",
+  "eventReminder",
 ] as const;
 
 type TableName = (typeof TABLES)[number];
@@ -89,6 +92,9 @@ type TableName = (typeof TABLES)[number];
  * null check in isRowValid, not listed separately.
  */
 const FOREIGN_KEYS: Partial<Record<TableName, [field: string, parent: TableName][]>> = {
+  desktopNote: [["userId", "user"]],
+  calendarEvent: [["userId", "user"], ["noteId", "desktopNote"]],
+  eventReminder: [["eventId", "calendarEvent"]],
   dailyDigest: [["userId", "user"]],
   weeklyReview: [["userId", "user"]],
   resumeComparisonSummary: [["userId", "user"]],
@@ -165,6 +171,7 @@ function remapToLocalUser(
   row: Record<string, unknown>
 ): Record<string, unknown> {
   const copy = { ...row };
+  if (table === "eventReminder") { copy.claimToken = null; copy.claimUntil = null; }
   if (table === "user") {
     copy.id = LOCAL_USER_ID;
   } else if ("userId" in copy) {
@@ -257,6 +264,9 @@ export type ImportPreview = {
 };
 
 const COUNT_LABELS: Partial<Record<TableName, string>> = {
+  desktopNote: "便利贴",
+  calendarEvent: "日历事项",
+  eventReminder: "事项提醒",
   dailyDigest: "每日摘要",
   weeklyReview: "每周复盘",
   resumeComparisonSummary: "简历对比总结",

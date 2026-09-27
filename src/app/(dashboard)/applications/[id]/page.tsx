@@ -111,6 +111,8 @@ export default async function ApplicationDetailPage({
                 id: h.id,
                 stage: h.stage,
                 stageLabel: h.stageLabel,
+                terminatedAtStage: h.terminatedAtStage,
+                terminatedAtStageLabel: h.terminatedAtStageLabel,
                 enteredAt: h.enteredAt.toISOString(),
                 note: h.note,
                 interviewFormat: h.interviewFormat,

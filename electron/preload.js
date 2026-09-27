@@ -90,3 +90,11 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     return () => ipcRenderer.removeListener("browser:find-result", listener);
   },
 });
+
+contextBridge.exposeInMainWorld("desktopProductivity", {
+  open: (kind, id, newWindow) => ipcRenderer.invoke("productivity:open", kind, id, newWindow),
+  openPosition: (id) => ipcRenderer.invoke("productivity:position", id),
+  pin: (value) => ipcRenderer.invoke("productivity:pin", value),
+  state: () => ipcRenderer.invoke("productivity:state"),
+  selectNote: (id) => ipcRenderer.invoke("productivity:note", id),
+});

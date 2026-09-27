@@ -5,6 +5,16 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { DatabaseSync } = require("node:sqlite");
 const { backupDesktopData, inspectDatabase, validateEncryption } = require("../electron/data-backup.cjs");
+const { hasPendingMigrations } = require("../electron/migration-guard.cjs");
+
+test("same-version schema updates still require a data backup before migration", (t) => {
+  const { root, db } = fixture(t);
+  const migrations = path.join(root, "migrations"); fs.mkdirSync(path.join(migrations, "20260927000000_additive"), { recursive: true });
+  db.exec("CREATE TABLE _prisma_migrations(migration_name TEXT, finished_at DATETIME, rolled_back_at DATETIME)");
+  assert.equal(hasPendingMigrations(path.join(root, "source", "local.db"), migrations), true);
+  db.exec("INSERT INTO _prisma_migrations VALUES ('20260927000000_additive', CURRENT_TIMESTAMP, NULL)");
+  assert.equal(hasPendingMigrations(path.join(root, "source", "local.db"), migrations), false);
+});
 
 function fixture(t) {
   const base = path.resolve(__dirname, "../.local-run/data-tests");
@@ -16,6 +26,7 @@ function fixture(t) {
   db.exec("PRAGMA journal_mode=WAL; CREATE TABLE Position(id TEXT); CREATE TABLE AiKey(apiKeyEncrypted TEXT); INSERT INTO Position VALUES ('keep-my-data');");
   fs.writeFileSync(path.join(source, "uploads", "resume.pdf"), "local attachment");
   fs.writeFileSync(path.join(source, ".secret"), "test-only-encryption-secret");
+  fs.writeFileSync(path.join(source, "desktop-windows.json"), JSON.stringify([{ kind: "notes", visible: true, bounds: { x: 10, y: 20, width: 400, height: 500 } }]));
   t.after(() => {
     db.close();
     if (path.dirname(fs.realpathSync(root)) !== fs.realpathSync(base)) throw new Error("Invalid cleanup target");
@@ -32,6 +43,7 @@ test("online backup includes committed WAL data, attachments and the original se
   assert.equal(result.database.integrity, "ok");
   assert.equal(result.attachmentCount, 1);
   assert.equal(fs.readFileSync(path.join(result.backupPath, ".secret"), "utf8"), "test-only-encryption-secret");
+  assert.equal(fs.readFileSync(path.join(result.backupPath, "desktop-windows.json"), "utf8"), fs.readFileSync(path.join(source, "desktop-windows.json"), "utf8"));
   assert.equal(fs.readFileSync(path.join(result.backupPath, "uploads", "resume.pdf"), "utf8"), "local attachment");
   assert.equal(inspectDatabase(path.join(source, "local.db")).counts.Position, 2);
 });

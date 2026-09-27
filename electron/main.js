@@ -7,6 +7,7 @@ const { setupBrowserViewIpc } = require("./browser-view");
 const { setupUpdater } = require("./updater");
 const { createApplicationSyncSchedule } = require("./application-sync-schedule");
 const { startRenderBridge } = require("./render-bridge");
+const { hasPendingMigrations } = require("./migration-guard.cjs");
 
 // Pinned regardless of the app's marketing name (package.json's
 // "productName", shown in the dock/menu bar/window title): app.getPath
@@ -16,12 +17,15 @@ const { startRenderBridge } = require("./render-bridge");
 // keys would still exist on disk, just orphaned under the old folder name.
 // Call this before anything touches app.getPath.
 app.setName("careerplatform");
+if (process.platform === "win32") app.setAppUserModelId("com.careerplatform.local");
 if (process.env.CAREERPLATFORM_DATA_DIR) app.setPath("userData", path.resolve(process.env.CAREERPLATFORM_DATA_DIR));
 const ownsInstance = app.requestSingleInstanceLock();
 if (!ownsInstance) app.quit();
 app.on("second-instance", () => { if (mainWindow) { mainWindow.restore(); showWindow(); } });
 
 const isDev = !app.isPackaged;
+const eventReminderToken = crypto.randomBytes(32).toString("hex");
+let productivity = null;
 const PORT = process.env.CAREERPLATFORM_TEST_MODE === "1" ? Number(process.env.CAREERPLATFORM_TEST_PORT || 3210) : 3210;
 
 // Dev: this file is at <project>/electron/main.js, so the project root is one
@@ -174,6 +178,7 @@ async function startNextServer() {
     DATABASE_URL: `file:${dbPath}`,
     LOCAL_UPLOADS_DIR: uploadsDir,
     NEXTAUTH_SECRET: ensureSecret(userDataDir),
+    DESKTOP_REMINDER_TOKEN: eventReminderToken,
     NEXTAUTH_URL: `http://localhost:${PORT}`,
     PORT: String(PORT),
     HOSTNAME: "127.0.0.1",
@@ -184,10 +189,11 @@ async function startNextServer() {
 
   const appRoot = getAppRoot();
   if (!fs.existsSync(dbPath)) await runDataWorker(true);
-  // Back up once per app version before any new migrations touch user data.
+  // Back up before new migrations, including local builds that keep the same
+  // package version while adding schema changes.
   const marker = path.join(userDataDir, ".last-migrated-version");
   const previousVersion = fs.existsSync(marker) ? fs.readFileSync(marker, "utf8").trim() : "";
-  if (previousVersion !== app.getVersion()) await backupUserData();
+  if (previousVersion !== app.getVersion() || hasPendingMigrations(dbPath, path.join(appRoot, "prisma", "migrations"))) await backupUserData();
   await runPrismaMigrate(appRoot, env);
   fs.writeFileSync(marker, app.getVersion());
 
@@ -320,6 +326,7 @@ function createWindow({ show = true } = {}) {
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
+  productivity?.setMainWindow(mainWindow);
   return mainWindow;
 }
 
@@ -407,6 +414,9 @@ function buildTray() {
   tray.setToolTip("求职罗盘");
   tray.setContextMenu(
     Menu.buildFromTemplate([
+      { label: "显示便利贴", click: () => productivity?.open("notes") },
+      { label: "显示日历 / 提醒", click: () => productivity?.open("calendar") },
+      { label: "快速捕获岗位 (Ctrl/Cmd+Shift+J)", click: () => productivity?.open("capture") },
       { label: "打开求职罗盘", click: showWindow },
       { label: "立即检查提醒", click: () => checkReminders(true) },
       {
@@ -682,7 +692,14 @@ app.whenReady().then(async () => {
     // popping a window in the user's face on every boot.
     const openedAtLogin =
       !isDev && app.getLoginItemSettings().wasOpenedAtLogin && settings.backgroundReminders;
-    createWindow({ show: !openedAtLogin });
+    let restoreMainVisible = true;
+    try {
+      const saved = JSON.parse(fs.readFileSync(path.join(app.getPath("userData"), "desktop-windows.json"), "utf8"));
+      if (saved.mainVisible === false && saved.windows?.some((window) => window.visible)) restoreMainVisible = false;
+    } catch { /* First launch or older window state. */ }
+    createWindow({ show: !openedAtLogin && restoreMainVisible });
+    productivity = require("./productivity").setupProductivity({ port: PORT, token: eventReminderToken, getMainWindow: () => mainWindow, showMainWindow: showWindow });
+    if (process.env.CAREERPLATFORM_TEST_MODE !== "1") buildTray();
     setupUpdater({
       app,
       ipcMain: require("electron").ipcMain,
@@ -710,6 +727,7 @@ app.whenReady().then(async () => {
 });
 
 function shutdown() {
+  productivity?.shutdown();
   if (reminderTimer) {
     clearInterval(reminderTimer);
     reminderTimer = null;
@@ -731,7 +749,6 @@ function shutdown() {
 app.on("window-all-closed", () => {
   // With the tray running the app deliberately outlives its windows.
   if (readAppSettings().backgroundReminders && !isQuitting) return;
-  shutdown();
   if (process.platform !== "darwin") app.quit();
 });
 

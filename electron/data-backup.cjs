@@ -38,7 +38,7 @@ async function backupDesktopData(dataDir, backupRoot) {
   fs.mkdirSync(target, { recursive: true });
   const db = new DatabaseSync(sourceDb, { readOnly: true, timeout: 5000 });
   try { await backup(db, path.join(target, "local.db")); } finally { db.close(); }
-  const assets = [".secret", "app-settings.json"].map(n => path.join(source, n)).filter(f => fs.existsSync(f));
+  const assets = [".secret", "app-settings.json", "desktop-windows.json"].map(n => path.join(source, n)).filter(f => fs.existsSync(f));
   assets.push(...filesUnder(path.join(source, "uploads")));
   const hashes = {};
   for (const sourceFile of assets) {

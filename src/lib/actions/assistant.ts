@@ -1,4 +1,5 @@
 "use server";
+import { terminationFields } from "@/lib/termination";
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
@@ -83,7 +84,7 @@ async function buildSnapshot(userId: string): Promise<string> {
       db.position.count({ where: { userId } }),
       db.application.findMany({
         where: { userId },
-        include: { company: true },
+        include: { company: true, stageHistory: { orderBy: { enteredAt: "desc" }, take: 8, select: { stage: true, terminatedAtStage: true, terminatedAtStageLabel: true } } },
         orderBy: { appliedDate: "desc" },
         take: MAX_ITEMS,
       }),
@@ -222,6 +223,7 @@ async function buildSnapshot(userId: string): Promise<string> {
               const nextDeadline = nextDeadlineByApplicationId.get(a.id);
               const parts = [
                 `阶段：${STAGE_LABELS[a.currentStage]}`,
+                ["REJECTED", "WITHDRAWN", "CANCELLED"].includes(a.currentStage) ? `结束阶段：${a.stageHistory.find(h => h.stage === a.currentStage)?.terminatedAtStageLabel || a.stageHistory.find(h => h.stage === a.currentStage)?.terminatedAtStage || "历史未记录"}` : null,
                 `投递日期：${ymd(a.appliedDate)}`,
                 nextDeadline ? `下一步：${ymd(nextDeadline)}` : null,
               ].filter(Boolean);
@@ -375,7 +377,7 @@ ${historyText ? `之前的对话：\n${historyText}\n` : ""}
 - mark_position_applied：把候选岗位池里的一个岗位标记为已投递。targetId 填上面"候选岗位池"里对上的 [岗位ID]，date 填投递日期（没说就用今天），note 填渠道（官网/内推/猎头...），contactName 填内推人（没有就不填）。**用户提到的公司+岗位如果能在候选岗位池里对上号，一定用这个而不是 log_application**——这样投递记录和候选池会正确关联、候选池状态也会同步更新；对不上号（候选池里没有这个岗位）才用 log_application 单独记一条
 - update_application：修改一条已有投递记录的日期/渠道/内推人。targetId 填上面"投递记录"里对上的 [投递ID]，date/note（渠道）/contactName（内推人）里用户提到哪个改哪个，没提到的字段留空——**留空的字段调用时会自动保留原值，不会被清空**
 - delete_position：把候选岗位池里一个不打算投的岗位删掉。targetId 填 [岗位ID]，仅当用户明确说"不投了""删了"这类才提
-- withdraw_application：删掉一条投递记录，比如记错了或者要撤回。targetId 填 [投递ID]，仅当用户明确说要删/记错了才提，不要因为用户说"这家跪了""被拒了"就提删除——被拒也是投递记录的一部分，应该用 update_stage 改成 REJECTED，不是删掉
+- withdraw_application：删掉一条投递记录，仅用于记错了且明确要求删除。主动撤回必须使用 update_stage 的 WITHDRAWN；岗位取消使用 CANCELLED；企业淘汰使用 REJECTED。targetId 填 [投递ID]，仅当用户明确说要删/记错了才提，不要因为用户说"这家跪了""被拒了"就提删除——被拒也是投递记录的一部分，应该用 update_stage 改成 REJECTED，不是删掉
 - complete_task：把一条自建待办标记完成。targetId 填上面"自建待办"里对上的 [待办ID]
 - mark_contacted：记一下刚联系过某个联系人（会自动清掉这个人的跟进提醒）。targetId 填上面"联系人"里对上的 [联系人ID]
 每个 action 的 label 写成用户一眼能看懂的按钮文案，比如"记一条投递：字节跳动 后端开发"或"更新为一面，面试时间 3月5日"。label 只是按钮上的字，不能代替上面那些字段——该填 title/companyName/targetId 的一个都不能少，别只写 label 就交差。
@@ -542,6 +544,7 @@ export async function applyAssistantAction(
             data: {
               applicationId: application.id,
               stage,
+              ...terminationFields(stage, application.currentStage, application.currentStageLabel),
               note: a.note || undefined,
               nextDeadline: parseDate(a.date) ?? undefined,
               nextDeadlineEnd: parseDate(a.dateEnd) ?? undefined,

@@ -64,7 +64,7 @@ async function computeStats(userId: string, weekStart: string): Promise<WeeklyRe
   ]);
 
   const offerStages = new Set(["OFFER", "ACCEPTED"]);
-  const rejectionStages = new Set(["REJECTED", "DECLINED"]);
+  const rejectionStages = new Set(["REJECTED"]);
   // A single application commonly has multiple history rows for one terminal
   // outcome (OFFER -> ACCEPTED, or REJECTED -> DECLINED). Count each outcome
   // once per投递, while keeping ordinary stage movement separate.

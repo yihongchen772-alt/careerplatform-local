@@ -1,6 +1,6 @@
 import type { ApplicationStage } from "@prisma/client";
 
-const TERMINAL_STAGES: ApplicationStage[] = ["REJECTED", "ACCEPTED", "DECLINED"];
+const TERMINAL_STAGES: ApplicationStage[] = ["REJECTED", "ACCEPTED", "DECLINED", "WITHDRAWN", "CANCELLED"];
 
 const STALE_THRESHOLD_DAYS = 14;
 const UPCOMING_DEADLINE_DAYS = 5;

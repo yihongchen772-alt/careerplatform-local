@@ -14,6 +14,7 @@ import {
 } from "@/lib/actions/assistant";
 import type { AssistantAction } from "@/lib/assistant-shared";
 import type { AgentStep } from "@/lib/agent-loop";
+import { VoiceInput } from "./voice-input";
 
 type DisplayMessage = AssistantChatMessage & {
   id: number;
@@ -21,6 +22,7 @@ type DisplayMessage = AssistantChatMessage & {
   /** Indices of this message's actions already applied, so they don't run twice. */
   applied?: number[];
   steps?: AgentStep[];
+  failedRequest?: { message: string; history: AssistantChatMessage[] };
 };
 
 const HISTORY_KEY = "careerplatform-agent-history-v1";
@@ -63,7 +65,7 @@ export function AssistantWidget() {
       if (Array.isArray(raw)) {
         const restored: DisplayMessage[] = raw.slice(-60)
           .filter((m) => m && ["user", "assistant"].includes(m.role) && typeof m.content === "string")
-          .map((m, id) => ({ id, role: m.role, content: m.content.slice(0, 16000) }));
+          .map((m, id) => ({ id, role: m.role, content: m.content.slice(0, 16000), failedRequest: m.failedRequest && typeof m.failedRequest.message === "string" && Array.isArray(m.failedRequest.history) ? { message: m.failedRequest.message.slice(0, 6000), history: m.failedRequest.history.filter((h: AssistantChatMessage) => h && ["user", "assistant"].includes(h.role) && typeof h.content === "string").slice(-60) } : undefined }));
         // Restore only text. Old operation cards must not be replayed after a reload.
         // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate browser-only persisted history after SSR
         setMessages(restored);
@@ -76,7 +78,7 @@ export function AssistantWidget() {
   useEffect(() => {
     if (!loaded) return;
     try {
-      localStorage.setItem(HISTORY_KEY, JSON.stringify(messages.slice(-60).map(({ role, content }) => ({ role, content }))));
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(messages.slice(-60).map(({ role, content, failedRequest }) => ({ role, content, failedRequest }))));
     } catch { /* Keep the current conversation usable when storage is full. */ }
   }, [messages, loaded]);
 
@@ -94,12 +96,33 @@ export function AssistantWidget() {
     setMessages((prev) => [...prev.slice(-59), { id, role, content, actions, steps, applied: [] }]);
   }
 
+  async function retryMessage(message: DisplayMessage) {
+    if (!message.failedRequest || busyRef.current) return;
+    busyRef.current = true;
+    setSending(true);
+    try {
+      const res = await askAssistant(message.failedRequest.message, message.failedRequest.history);
+      setMessages((prev) => prev.map((m) => m.id !== message.id ? m : res.ok
+        ? { id: m.id, role: "assistant", content: res.data.reply, actions: res.data.actions, steps: res.data.steps, applied: [] }
+        : { ...m, content: res.message }));
+    } catch {
+      setMessages((prev) => prev.map((m) => m.id === message.id ? { ...m, content: "连接中断，本次请求未完成。请稍后重试。" } : m));
+    } finally {
+      busyRef.current = false;
+      setSending(false);
+    }
+  }
+
   async function handleSend(text?: string) {
     const content = (text ?? input).trim();
     if (!content || busyRef.current || !loaded) return;
     if (content.length > 6000) { toast.error("单条消息请控制在 6000 字以内"); return; }
     busyRef.current = true;
-    const history = messages.map(({ role, content }) => ({ role, content }));
+    const history = messages.filter((m) => !m.failedRequest).map(({ role, content }) => ({ role, content }));
+    const failure = (error: string) => {
+      const id = nextId.current++;
+      setMessages((prev) => [...prev.slice(-59), { id, role: "assistant", content: error, failedRequest: { message: content, history } }]);
+    };
     addMessage("user", content);
     setInput("");
     setSending(true);
@@ -108,10 +131,10 @@ export function AssistantWidget() {
       if (res.ok) {
         addMessage("assistant", res.data.reply, res.data.actions, res.data.steps);
       } else {
-        addMessage("assistant", res.message);
+        failure(res.message);
       }
     } catch {
-      addMessage("assistant", "连接中断，本次请求未完成。请稍后重试。");
+      failure("连接中断，本次请求未完成。请稍后重试。");
     } finally {
       setSending(false);
       busyRef.current = false;
@@ -192,6 +215,7 @@ export function AssistantWidget() {
                     }
                   >
                     <p className="whitespace-pre-wrap">{m.content}</p>
+                    {m.failedRequest && <Button size="sm" variant="outline" disabled={sending || !!applying} onClick={() => retryMessage(m)}>重新发送</Button>}
                   </div>
 
                   {!!m.steps?.length && (
@@ -252,6 +276,7 @@ export function AssistantWidget() {
           </div>
 
           <div className="flex items-center gap-2 border-t p-2">
+            <VoiceInput disabled={sending || !loaded} onText={(text) => setInput((previous) => (previous ? previous + "\n" + text : text).slice(0, 6000))} />
             <Input
               value={input}
               onChange={(e) => setInput(e.target.value)}

@@ -55,6 +55,7 @@ export type PoolPosition = {
   title: string;
   track: string | null;
   department: string | null;
+  recruitmentType?: string | null;
   location: string | null;
   salaryMin: number | null;
   salaryMax: number | null;
@@ -186,6 +187,7 @@ function toEditInitial(p: PoolPosition) {
     title: p.title,
     track: p.track,
     department: p.department,
+    recruitmentType: p.recruitmentType,
     location: p.location,
     salaryMin: p.salaryMin,
     salaryMax: p.salaryMax,

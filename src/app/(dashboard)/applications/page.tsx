@@ -24,7 +24,7 @@ export default async function ApplicationsPage() {
         // timestamp, so "latest by enteredAt" can silently pick the wrong
         // row. Matching on stage directly sidesteps the comparison.
         stageHistory: {
-          select: { stage: true, enteredAt: true, nextDeadline: true, nextDeadlineEnd: true },
+          select: { stage: true, enteredAt: true, nextDeadline: true, nextDeadlineEnd: true, terminatedAtStage: true, terminatedAtStageLabel: true },
         },
       },
       orderBy: { appliedDate: "desc" },
@@ -42,7 +42,7 @@ export default async function ApplicationsPage() {
   ]);
 
   const portalCompanies = new Set(portals.map((portal) => portal.companyId));
-  const unassigned = applications.filter((app) => !app.portalId && !["REJECTED", "ACCEPTED", "DECLINED"].includes(app.currentStage) && portalCompanies.has(app.companyId));
+  const unassigned = applications.filter((app) => !app.portalId && !["REJECTED", "ACCEPTED", "DECLINED", "WITHDRAWN", "CANCELLED"].includes(app.currentStage) && portalCompanies.has(app.companyId));
   const autoSyncEnabled = settings.backgroundReminders && (settings.applicationSyncIntervalHours ?? 0) > 0;
 
   const defaultResumeVersionId =

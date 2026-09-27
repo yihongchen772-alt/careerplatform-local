@@ -1,6 +1,7 @@
 import type { ApplicationStage, PositionStatus } from "@prisma/client";
 
 export const STAGE_ORDER: ApplicationStage[] = [
+  "WITHDRAWN", "CANCELLED",
   "APPLIED",
   "SCREENING",
   "ASSESSMENT",
@@ -13,9 +14,12 @@ export const STAGE_ORDER: ApplicationStage[] = [
   "REJECTED",
   "ACCEPTED",
   "DECLINED",
+  "WITHDRAWN", "CANCELLED",
 ];
 
 export const STAGE_LABELS: Record<ApplicationStage, string> = {
+  WITHDRAWN: "流程已终止（主动撤回）",
+  CANCELLED: "流程已终止（岗位取消）",
   APPLIED: "已投递",
   SCREENING: "简历筛选中",
   ASSESSMENT: "测评",
@@ -25,7 +29,7 @@ export const STAGE_LABELS: Record<ApplicationStage, string> = {
   INTERVIEW_3: "三面",
   HR_INTERVIEW: "HR 面",
   OFFER: "Offer",
-  REJECTED: "未通过（公司）",
+  REJECTED: "流程已终止（企业未通过）",
   ACCEPTED: "已接受",
   DECLINED: "已拒绝(本人)",
 };
@@ -34,6 +38,8 @@ export const STAGE_BADGE_VARIANT: Record<
   ApplicationStage,
   "default" | "secondary" | "destructive" | "outline"
 > = {
+  WITHDRAWN: "secondary",
+  CANCELLED: "secondary",
   APPLIED: "secondary",
   SCREENING: "secondary",
   ASSESSMENT: "outline",
