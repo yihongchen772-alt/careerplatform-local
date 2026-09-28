@@ -11,6 +11,8 @@
 export type AppSettings = {
   /** Start the app automatically when the computer starts. */
   autoLaunch: boolean;
+  /** Open the standalone desktop note when macOS or Windows signs in. */
+  notesAtLogin: boolean;
   /** Keep running in the tray after the window is closed, so reminders can fire. */
   backgroundReminders: boolean;
   /**
@@ -57,6 +59,7 @@ export type AppSettings = {
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   autoLaunch: false,
+  notesAtLogin: false,
   backgroundReminders: false,
   inboxScanIntervalHours: 0,
   jobRadarIntervalHours: 0,

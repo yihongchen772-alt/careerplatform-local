@@ -86,9 +86,9 @@ export function MockInterviewChat({
       setRecorder(null);
       setTranscribing(true);
       try {
-        const wav = await active.stop();
+        const recording = await active.stop();
         const form = new FormData();
-        form.append("audio", new File([wav], "answer.wav", { type: "audio/wav" }));
+        form.append("audio", recording, recording.type === "audio/webm" ? "answer.webm" : "answer.wav");
         const res = await fetch("/api/interview/transcribe", { method: "POST", body: form });
         const json = await res.json();
         if (!res.ok) {
@@ -110,7 +110,7 @@ export function MockInterviewChat({
     }
 
     try {
-      const started = await startRecording();
+      const started = await startRecording({ preferCompressed: true });
       setSeconds(0);
       setRecorder(started);
     } catch (err) {

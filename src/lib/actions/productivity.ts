@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { toActionResult, UserFacingError } from "@/lib/action-result";
 import { revalidatePath } from "next/cache";
+import { NOTE_COLORS } from "@/lib/note-colors";
 
 export async function listNotes() {
   const user = await requireUser();
@@ -16,11 +17,11 @@ export async function createNote() {
     return db.desktopNote.create({ data: { userId: user.id } });
   });
 }
-export async function saveNote(input: { id: string; revision: number; content: string; template: string }) {
+export async function saveNote(input: { id: string; revision: number; content: string; template: string; color: string }) {
   return toActionResult(async () => {
     const user = await requireUser();
-    const data = z.object({ id: z.string(), revision: z.number().int().nonnegative(), content: z.string().max(100000), template: z.enum(["blank", "lined"]) }).parse(input);
-    const result = await db.desktopNote.updateMany({ where: { id: data.id, userId: user.id, revision: data.revision }, data: { content: data.content, template: data.template, revision: { increment: 1 } } });
+    const data = z.object({ id: z.string(), revision: z.number().int().nonnegative(), content: z.string().max(100000), template: z.enum(["blank", "lined"]), color: z.enum(NOTE_COLORS) }).parse(input);
+    const result = await db.desktopNote.updateMany({ where: { id: data.id, userId: user.id, revision: data.revision }, data: { content: data.content, template: data.template, color: data.color, revision: { increment: 1 } } });
     if (!result.count) throw new UserFacingError("这张便签在另一窗口已修改或删除。当前草稿已保留，请复制内容后重新打开便签。");
     return { revision: data.revision + 1 };
   });

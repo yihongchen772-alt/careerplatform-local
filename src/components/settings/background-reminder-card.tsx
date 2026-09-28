@@ -47,7 +47,7 @@ export function BackgroundReminderCard({ initial }: { initial: AppSettings }) {
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-sm text-muted-foreground">
-          默认情况下，提醒只在你打开 App 时检查一次——App 没开就不会提醒。打开下面两项后，
+          默认情况下，提醒只在你打开 App 时检查一次——App 没开就不会提醒。打开后台提醒后，
           App 会常驻在菜单栏/任务栏托盘里定时检查（每 30 分钟），有当天到期或已过期的事项时弹
           系统通知。
         </p>
@@ -64,6 +64,21 @@ export function BackgroundReminderCard({ initial }: { initial: AppSettings }) {
             <span className="mt-0.5 block text-xs text-muted-foreground">
               开启后关闭窗口不会退出 App，而是缩到托盘继续跑。要真正退出请用托盘菜单里的
               「退出」。同一件事只提醒一次，不会反复打扰。
+            </span>
+          </span>
+        </label>
+
+        <label className="flex items-start gap-2 rounded-md border p-3">
+          <Checkbox
+            className="mt-0.5"
+            checked={settings.notesAtLogin}
+            disabled={saving}
+            onCheckedChange={(c) => set({ notesAtLogin: c === true })}
+          />
+          <span className="text-sm">
+            <span className="font-medium">开机显示便利贴</span>
+            <span className="mt-0.5 block text-xs text-muted-foreground">
+              登录电脑后只显示桌面便利贴，求职罗盘主窗口留在后台；可以从便利贴打开主窗口。此项不需要开启后台提醒。
             </span>
           </span>
         </label>

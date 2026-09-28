@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, systemPreferences, shell, ipcMain } = require("electron");
+const { app, BrowserWindow, dialog, systemPreferences, shell, ipcMain, Menu } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
@@ -348,6 +348,7 @@ function readAppSettings() {
   try {
     return {
       autoLaunch: false,
+      notesAtLogin: false,
       backgroundReminders: false,
       inboxScanIntervalHours: 0,
       jobRadarIntervalHours: 0,
@@ -357,6 +358,7 @@ function readAppSettings() {
   } catch {
     return {
       autoLaunch: false,
+      notesAtLogin: false,
       backgroundReminders: false,
       inboxScanIntervalHours: 0,
       jobRadarIntervalHours: 0,
@@ -394,6 +396,43 @@ function applyAutoLaunch(enabled) {
     console.error("[autolaunch] failed", err);
     writeAutoLaunchStatus(enabled);
   }
+}
+
+function setNotesAtLogin(enabled) {
+  const settings = { ...readAppSettings(), notesAtLogin: enabled };
+  fs.writeFileSync(settingsFile(), JSON.stringify(settings, null, 2));
+  if (process.env.CAREERPLATFORM_TEST_MODE !== "1") applyAutoLaunch(settings.autoLaunch || enabled);
+  return readAppSettings().notesAtLogin;
+}
+
+function buildApplicationMenu() {
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    { label: "求职罗盘", submenu: [
+      { label: "关于求职罗盘", role: "about" },
+      { type: "separator" },
+      { label: "打开求职罗盘", click: showWindow },
+      { label: "显示便利贴", click: () => productivity?.open("notes") },
+      { label: "显示日历", click: () => productivity?.open("calendar") },
+      { type: "separator" },
+      { label: "隐藏求职罗盘", role: "hide" },
+      { label: "隐藏其他应用", role: "hideOthers" },
+      { label: "显示全部", role: "unhide" },
+      { type: "separator" },
+      { label: "退出求职罗盘", role: "quit" },
+    ] },
+    { label: "编辑", submenu: [
+      { label: "撤销", role: "undo" }, { label: "重做", role: "redo" }, { type: "separator" },
+      { label: "剪切", role: "cut" }, { label: "复制", role: "copy" }, { label: "粘贴", role: "paste" }, { label: "全选", role: "selectAll" },
+    ] },
+    { label: "显示", submenu: [
+      { label: "重新加载", role: "reload" }, { label: "放大", role: "zoomIn" },
+      { label: "缩小", role: "zoomOut" }, { label: "恢复默认大小", role: "resetZoom" },
+    ] },
+    { label: "窗口", submenu: [
+      { label: "最小化", role: "minimize" }, { label: "关闭窗口", role: "close" },
+      { type: "separator" }, { label: "前置所有窗口", role: "front" },
+    ] },
+  ]));
 }
 
 // ---------- tray ----------
@@ -666,7 +705,7 @@ app.whenReady().then(async () => {
     // Electron's own docs recommend confirming first via the dialog API
     // rather than silently relocating and relaunching a data-holding app
     // out from under the user.
-    if (!isDev && process.platform === "darwin" && !app.isInApplicationsFolder()) {
+    if (!isDev && process.platform === "darwin" && process.env.CAREERPLATFORM_TEST_MODE !== "1" && !app.isInApplicationsFolder()) {
       const response = dialog.showMessageBoxSync({
         type: "question",
         buttons: ["移动并重启", "暂不"],
@@ -686,19 +725,20 @@ app.whenReady().then(async () => {
     await startNextServer();
 
     const settings = readAppSettings();
-    if (process.env.CAREERPLATFORM_TEST_MODE !== "1") applyAutoLaunch(settings.autoLaunch);
+    if (process.env.CAREERPLATFORM_TEST_MODE !== "1") applyAutoLaunch(settings.autoLaunch || settings.notesAtLogin);
 
     // Launched by the OS at login: start parked in the tray rather than
     // popping a window in the user's face on every boot.
     const openedAtLogin =
-      !isDev && app.getLoginItemSettings().wasOpenedAtLogin && settings.backgroundReminders;
+      !isDev && app.getLoginItemSettings().wasOpenedAtLogin && (settings.backgroundReminders || settings.notesAtLogin);
     let restoreMainVisible = true;
     try {
       const saved = JSON.parse(fs.readFileSync(path.join(app.getPath("userData"), "desktop-windows.json"), "utf8"));
       if (saved.mainVisible === false && saved.windows?.some((window) => window.visible)) restoreMainVisible = false;
     } catch { /* First launch or older window state. */ }
     createWindow({ show: !openedAtLogin && restoreMainVisible });
-    productivity = require("./productivity").setupProductivity({ port: PORT, token: eventReminderToken, getMainWindow: () => mainWindow, showMainWindow: showWindow });
+    productivity = require("./productivity").setupProductivity({ port: PORT, token: eventReminderToken, getMainWindow: () => mainWindow, showMainWindow: showWindow, getNotesAtLogin: () => readAppSettings().notesAtLogin, setNotesAtLogin, openNotesAtLogin: openedAtLogin && settings.notesAtLogin });
+    buildApplicationMenu();
     if (process.env.CAREERPLATFORM_TEST_MODE !== "1") buildTray();
     setupUpdater({
       app,

@@ -10,7 +10,7 @@ function fitBounds(bounds, displays) {
   return { width, height, x: Math.max(candidate.x, Math.min(Number.isFinite(bounds?.x) ? bounds.x : candidate.x, candidate.x + candidate.width - width)), y: Math.max(candidate.y, Math.min(Number.isFinite(bounds?.y) ? bounds.y : candidate.y, candidate.y + candidate.height - height)) };
 }
 
-function setupProductivity({ port, token, getMainWindow, showMainWindow }) {
+function setupProductivity({ port, token, getMainWindow, showMainWindow, getNotesAtLogin = () => false, setNotesAtLogin = () => false, openNotesAtLogin = false }) {
   const origin = `http://localhost:${port}`;
   const file = path.join(app.getPath("userData"), "desktop-windows.json");
   let states = [], mainVisible = true;
@@ -34,7 +34,10 @@ function setupProductivity({ port, token, getMainWindow, showMainWindow }) {
     const previous = !newWindow && states.find((s) => !s.visible && s.kind === kind && (!id || s.noteId === id));
     const state = restore || previous || { key: require("crypto").randomUUID(), kind, noteId: id || null, visible: true, pinned: false };
     if (!restore && !previous && kind !== "capture") { states = states.filter((s) => s.visible).concat(states.filter((s) => !s.visible).slice(-20)); states.push(state); }
-    const win = new BrowserWindow({ show: process.env.CAREERPLATFORM_TEST_MODE !== "1", ...fitBounds(state.bounds, screen.getAllDisplays()), minWidth: 320, minHeight: 300, title: kind === "notes" ? "求职罗盘 · 便利贴" : kind === "calendar" ? "求职罗盘 · 日历" : "求职罗盘 · 岗位捕获", alwaysOnTop: !!state.pinned, webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, "productivity-preload.js") } });
+    // Older note windows may have saved screen-sized bounds while fullscreen.
+    const bounds = kind === "notes" && state.bounds ? { ...state.bounds, width: Math.min(state.bounds.width, 720), height: Math.min(state.bounds.height, 820) } : state.bounds;
+    const win = new BrowserWindow({ show: process.env.CAREERPLATFORM_TEST_MODE !== "1", ...fitBounds(bounds, screen.getAllDisplays()), minWidth: 320, minHeight: 300, title: kind === "notes" ? "求职罗盘 · 便利贴" : kind === "calendar" ? "求职罗盘 · 日历" : "求职罗盘 · 岗位捕获", alwaysOnTop: !!state.pinned, ...(kind === "notes" ? { backgroundColor: "#f5f0e7", fullscreenable: false, maximizable: false, ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" } : {}) } : {}), webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, "productivity-preload.js") } });
+    if (kind === "notes") win.on("enter-full-screen", () => win.setFullScreen(false));
     const entry = { ...state, win, state, clipboard: capture ? clipboard.readText().slice(0, 50000) : "" }; windows.set(win.webContents.id, entry);
     const allowed = (url) => { try { const u = new URL(url); return u.origin === origin && u.pathname.startsWith("/desktop/"); } catch { return false; } };
     win.webContents.on("will-navigate", (e, url) => { if (!allowed(url)) e.preventDefault(); });
@@ -60,9 +63,13 @@ function setupProductivity({ port, token, getMainWindow, showMainWindow }) {
   ipcMain.handle("productivity:open", (e, kind, id, newWindow) => { source(e); if (id != null && (typeof id !== "string" || id.length > 100)) return; open(kind, id, kind === "capture", undefined, newWindow === true); });
   ipcMain.handle("productivity:position", (e, id) => { source(e); if (typeof id !== "string" || id.length > 100) return; showMainWindow(); getMainWindow()?.loadURL(`${origin}/pool?position=${encodeURIComponent(id)}`); });
   ipcMain.handle("productivity:pin", (e, value) => { const s = source(e); if (!s) return false; s.win.setAlwaysOnTop(value === true); s.state.pinned = value === true; persist(); return s.win.isAlwaysOnTop(); });
-  ipcMain.handle("productivity:state", (e) => { const s = source(e); const value = { pinned: !!s?.win.isAlwaysOnTop(), clipboard: s?.clipboard || "" }; if (s) s.clipboard = ""; return value; });
+  ipcMain.handle("productivity:state", (e) => { const s = source(e); const value = { pinned: !!s?.win.isAlwaysOnTop(), clipboard: s?.clipboard || "", notesAtLogin: !!getNotesAtLogin(), platform: process.platform }; if (s) s.clipboard = ""; return value; });
   ipcMain.handle("productivity:note", (e, id) => { const s = source(e); if (s?.kind === "notes" && typeof id === "string" && id.length < 100) { s.noteId = id; s.state.noteId = id; persist(); } });
+  ipcMain.handle("productivity:color", (e, value) => { const s = source(e); if (s?.kind === "notes" && typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value)) s.win.setBackgroundColor(value); });
+  ipcMain.handle("productivity:main", (e) => { source(e); showMainWindow(); });
+  ipcMain.handle("productivity:notes-at-login", (e, value) => { const s = source(e); if (s?.kind !== "notes" || typeof value !== "boolean") return !!getNotesAtLogin(); return !!setNotesAtLogin(value); });
   for (const state of [...states]) if (state.visible) open(state.kind, state.noteId, false, state);
+  if (openNotesAtLogin && ![...windows.values()].some((s) => s.kind === "notes")) open("notes");
   const shortcut = "CommandOrControl+Shift+J";
   if (!globalShortcut.register(shortcut, () => open("capture", null, true))) console.warn("Job Capture shortcut unavailable; use tray menu instead");
 

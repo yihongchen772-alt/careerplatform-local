@@ -470,6 +470,7 @@ export async function generateStructuredWithFile({
   file,
   schema,
   thinkingBudget = 1024,
+  thinkingLevel,
   timeoutMs = 90000,
 }: {
   config: UserAiConfig;
@@ -477,6 +478,7 @@ export async function generateStructuredWithFile({
   file?: GeminiFilePart;
   schema: GeminiSchema;
   thinkingBudget?: number;
+  thinkingLevel?: "minimal" | "low";
   timeoutMs?: number;
 }): Promise<unknown> {
   switch (config.provider) {
@@ -486,6 +488,7 @@ export async function generateStructuredWithFile({
         file,
         schema,
         thinkingBudget,
+        thinkingLevel,
         timeoutMs,
         apiKey: config.apiKey,
         model: config.model,

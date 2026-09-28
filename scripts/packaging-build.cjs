@@ -42,7 +42,7 @@ try {
   emptyDb.exec("PRAGMA user_version = 0;");
   emptyDb.close();
   run(require.resolve("prisma/build/index.js"), ["migrate", "deploy", "--schema", "prisma/schema.prisma"]);
-  run(require.resolve("next/dist/bin/next"), ["build"]);
+  run(require.resolve("next/dist/bin/next"), ["build", "--webpack"]);
   const buildId = fs.readFileSync(path.join(projectRoot, ".next", "BUILD_ID"), "utf8").trim();
   fs.writeFileSync(buildStamp, JSON.stringify({ buildId, isolatedData: true, platform: process.platform, arch: process.arch }));
   console.log("Desktop build completed using an empty temporary database.");

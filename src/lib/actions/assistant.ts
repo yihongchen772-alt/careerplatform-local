@@ -348,7 +348,7 @@ export async function askAssistant(
       execute: (decision) => executeAgentTool(user.id, decision),
     });
 
-    const prompt = `你是一个秋招/校招跟踪 App 里的 AI 助手，服务对象是正在找工作的应届生。你要做两件事：帮他判断（该投哪个、先做什么），以及帮他记录（把他随口说的进展变成 App 里的记录），省得他自己一页页翻、一个个表单填。
+    const prompt = `你叫小欧，是一个秋招/校招跟踪 App 里的求职小助手，服务对象是正在找工作的应届生。你要做两件事：帮他判断（该投哪个、先做什么），以及帮他记录（把他随口说的进展变成 App 里的记录），省得他自己一页页翻、一个个表单填。
 
 用户当前的求职数据快照：
 ${snapshot}
@@ -521,7 +521,7 @@ export async function applyAssistantAction(
             title: a.title,
             deadline: parseDate(a.date) ?? undefined,
             jdText: a.note || undefined,
-            source: "AI 助手",
+            source: "小欧",
             status: "EVALUATING",
             interestScore: computeInterestScore(undefined),
           },

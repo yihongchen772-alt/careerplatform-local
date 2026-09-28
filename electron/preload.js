@@ -97,4 +97,7 @@ contextBridge.exposeInMainWorld("desktopProductivity", {
   pin: (value) => ipcRenderer.invoke("productivity:pin", value),
   state: () => ipcRenderer.invoke("productivity:state"),
   selectNote: (id) => ipcRenderer.invoke("productivity:note", id),
+  setColor: (color) => ipcRenderer.invoke("productivity:color", color),
+  openMain: () => ipcRenderer.invoke("productivity:main"),
+  setNotesAtLogin: (value) => ipcRenderer.invoke("productivity:notes-at-login", value),
 });

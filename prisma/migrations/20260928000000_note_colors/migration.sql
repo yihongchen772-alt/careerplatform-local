@@ -1,0 +1,1 @@
+ALTER TABLE "DesktopNote" ADD COLUMN "color" TEXT NOT NULL DEFAULT 'cream';

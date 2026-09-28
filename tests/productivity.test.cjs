@@ -39,12 +39,14 @@ test("additive migrations preserve old data; notes conflict safely; event moves 
   assert.equal(sql.prepare("PRAGMA integrity_check").get().integrity_check, "ok"); sql.close();
   const db = new PrismaClient({ datasources: { db: { url: `file:${file.replaceAll("\\", "/")}` } } });
   t.after(async () => { await db.$disconnect(); if (path.dirname(fs.realpathSync(root)) !== fs.realpathSync(base)) throw new Error("unsafe cleanup"); fs.rmSync(root, { recursive: true }); });
-  const mocks = { "@/lib/db": { db }, "@/lib/session": { LOCAL_USER_ID: "local-user", requireUser: async () => ({ id: "local-user" }) }, "next/cache": { revalidatePath() {} }, "@/lib/action-result": load("src/lib/action-result.ts") };
+  const mocks = { "@/lib/db": { db }, "@/lib/session": { LOCAL_USER_ID: "local-user", requireUser: async () => ({ id: "local-user" }) }, "next/cache": { revalidatePath() {} }, "@/lib/action-result": load("src/lib/action-result.ts"), "@/lib/note-colors": load("src/lib/note-colors.ts") };
   const actions = load("src/lib/actions/productivity.ts", mocks);
   const note = (await actions.createNote()).data;
-  assert.equal((await actions.saveNote({ ...note, content: "跨月仍在" })).ok, true);
+  assert.equal(note.color, "cream");
+  assert.equal((await actions.saveNote({ ...note, content: "跨月仍在", color: "sage" })).ok, true);
   assert.equal((await actions.saveNote({ ...note, content: "stale overwrites" })).ok, false);
   assert.equal((await actions.listNotes())[0].content, "跨月仍在");
+  assert.equal((await actions.listNotes())[0].color, "sage");
   const start = new Date(Date.now() - 3600000);
   const input = { title: "笔试", description: "test", startsAt: start, endsAt: null, allDay: false, dateKey: "2026-09-27", timeZone: "Asia/Shanghai", noteId: note.id, offsetMinutes: 30 };
   const created = await actions.saveEvent(input); assert.equal(created.ok, true);
@@ -63,6 +65,7 @@ test("additive migrations preserve old data; notes conflict safely; event moves 
   await db.desktopNote.update({ where: { id: note.id }, data: { content: "Changed after export" } });
   const restored = await backup.importBackup(backupJson); assert.equal(restored.ok, true);
   assert.equal((await actions.listNotes())[0].content, "跨月仍在");
+  assert.equal((await actions.listNotes())[0].color, "sage");
   assert.equal(await db.eventReminder.count(), 1);
 
   const validation = load("src/lib/validation.ts");
@@ -108,12 +111,13 @@ test("desktop windows restore off-screen bounds safely; clipboard is read only b
   const base = path.resolve(__dirname, "../.local-run/window-tests"); fs.mkdirSync(base, { recursive: true });
   const root = fs.mkdtempSync(path.join(base, "case-"));
   t.after(() => { if (path.dirname(fs.realpathSync(root)) !== fs.realpathSync(base)) throw new Error("unsafe cleanup"); fs.rmSync(root, { recursive: true }); });
-  const handlers = new Map(), windows = []; let reads = 0;
+  const handlers = new Map(), windows = []; let reads = 0, notesAtLogin = false, mainOpens = 0;
   class Window extends EventEmitter {
     constructor(options) { super(); this.options = options; this.bounds = options; this.pinned = !!options.alwaysOnTop; this.webContents = new EventEmitter(); this.webContents.id = windows.length + 10; this.webContents.mainFrame = { url: "" }; this.webContents.setWindowOpenHandler = () => {}; windows.push(this); }
     loadURL(url) { this.webContents.mainFrame.url = url; }
     getBounds() { return this.bounds; }
     setAlwaysOnTop(pinned) { this.pinned = pinned; }
+    setBackgroundColor(color) { this.color = color; }
     isAlwaysOnTop() { return this.pinned; }
     isDestroyed() { return false; }
     show() {} focus() {} reload() {}
@@ -123,11 +127,16 @@ test("desktop windows restore off-screen bounds safely; clipboard is read only b
   const module = load("electron/productivity.js", { electron }, { __dirname: path.resolve(__dirname, "../electron"), setInterval: () => 1, clearInterval() {} });
   const bounds = module.fitBounds({ x: 10000, y: -1000, width: 7000, height: 4000 }, displays);
   assert.equal(bounds.x, 0); assert.equal(bounds.y, 0); assert.equal(bounds.width, 1440); assert.equal(bounds.height, 900);
-  const manager = module.setupProductivity({ port: 3210, token: "fixture", getMainWindow: () => null, showMainWindow() {} });
+  const manager = module.setupProductivity({ port: 3210, token: "fixture", getMainWindow: () => null, showMainWindow() { mainOpens++; }, getNotesAtLogin: () => notesAtLogin, setNotesAtLogin: (value) => (notesAtLogin = value) });
   manager.open("notes"); assert.equal(reads, 0);
   const win = windows[0], event = { sender: win.webContents, senderFrame: win.webContents.mainFrame };
+  assert.equal(win.options.fullscreenable, false); assert.equal(win.options.maximizable, false);
   handlers.get("productivity:note")(event, "saved-note"); handlers.get("productivity:pin")(event, true);
+  handlers.get("productivity:color")(event, "#e6ece4"); assert.equal(win.color, "#e6ece4");
+  handlers.get("productivity:main")(event); assert.equal(mainOpens, 1);
+  assert.equal(handlers.get("productivity:notes-at-login")(event, true), true);
   assert.equal(handlers.get("productivity:state")(event).pinned, true);
+  assert.equal(handlers.get("productivity:state")(event).notesAtLogin, true);
   assert.throws(() => handlers.get("productivity:open")({ sender: { id: 999 }, senderFrame: {} }, "capture"));
   manager.open("capture"); assert.equal(reads, 1);
   const capture = windows[1], captureEvent = { sender: capture.webContents, senderFrame: capture.webContents.mainFrame };
@@ -137,4 +146,11 @@ test("desktop windows restore off-screen bounds safely; clipboard is read only b
   const saved = JSON.parse(fs.readFileSync(path.join(root, "desktop-windows.json"), "utf8")); assert.equal(saved.windows[0].noteId, "saved-note"); assert.equal(saved.windows[0].pinned, true); assert.equal(saved.windows[0].visible, true);
   const restarted = module.setupProductivity({ port: 3210, token: "fixture", getMainWindow: () => null, showMainWindow() {} });
   assert.equal(windows[2].isAlwaysOnTop(), true); assert.match(windows[2].webContents.mainFrame.url, /id=saved-note/); assert.equal(reads, 1); restarted.shutdown();
+  const closed = JSON.parse(fs.readFileSync(path.join(root, "desktop-windows.json"), "utf8"));
+  closed.windows.forEach((state) => { state.visible = false; state.bounds = { x: 0, y: 0, width: 1440, height: 900 }; });
+  fs.writeFileSync(path.join(root, "desktop-windows.json"), JSON.stringify(closed));
+  const count = windows.length;
+  const login = module.setupProductivity({ port: 3210, token: "fixture", getMainWindow: () => null, showMainWindow() {}, openNotesAtLogin: true });
+  assert.equal(windows.length, count + 1); assert.match(windows.at(-1).webContents.mainFrame.url, /\/desktop\/notes/);
+  assert.equal(windows.at(-1).options.width, 720); assert.equal(windows.at(-1).options.height, 820); login.shutdown();
 });

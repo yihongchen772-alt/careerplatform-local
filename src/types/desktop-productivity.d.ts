@@ -5,8 +5,11 @@ declare global {
       open: (kind: "notes" | "calendar" | "capture", id?: string, newWindow?: boolean) => Promise<void>;
       openPosition: (id: string) => Promise<void>;
       pin: (value: boolean) => Promise<boolean>;
-      state: () => Promise<{ pinned: boolean; clipboard: string }>;
+      state: () => Promise<{ pinned: boolean; clipboard: string; notesAtLogin: boolean; platform: string }>;
       selectNote: (id: string) => Promise<void>;
+      setColor: (color: string) => Promise<void>;
+      openMain: () => Promise<void>;
+      setNotesAtLogin: (value: boolean) => Promise<boolean>;
     };
   }
 }

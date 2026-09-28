@@ -170,14 +170,14 @@ export function AssistantWidget() {
       {open && (
         <div className="flex h-[38rem] max-h-[calc(100vh-6rem)] w-[calc(100vw-2rem)] max-w-lg flex-col overflow-hidden rounded-2xl border bg-card shadow-xl">
           <div className="flex items-center justify-between border-b px-3 py-2">
-            <div className="flex-1"><p className="text-sm font-medium">求职 Agent</p><p className="text-[11px] text-muted-foreground">求职管家 · 岗位研究 · 投递助手</p></div>
+            <div className="flex-1"><p className="text-sm font-medium">小欧</p><p className="text-[11px] text-muted-foreground">你的求职小助手 · 岗位研究 · 投递记录</p></div>
             <Button type="button" variant="ghost" size="sm" disabled={sending || !!applying || !loaded} onClick={() => { setMessages([]); nextId.current = 0; }}>新对话</Button>
             <Button
               type="button"
               variant="ghost"
               size="icon"
               className="size-7"
-              aria-label="关闭 AI 助手"
+              aria-label="关闭小欧"
               onClick={() => setOpen(false)}
             >
               <X className="size-4" />
@@ -284,7 +284,7 @@ export function AssistantWidget() {
                 if (e.key === "Enter" && !e.nativeEvent.isComposing) handleSend();
               }}
               placeholder="问点什么，或说说你今天投了啥..."
-              aria-label="给求职 Agent 发送消息"
+              aria-label="给小欧发送消息"
               maxLength={6000}
               disabled={sending || !loaded}
               className="h-9"
@@ -307,7 +307,7 @@ export function AssistantWidget() {
         type="button"
         size="icon"
         className="size-12 rounded-full shadow-lg"
-        aria-label={open ? "关闭 AI 助手" : "打开 AI 助手"}
+        aria-label={open ? "关闭小欧" : "打开小欧"}
         onClick={() => setOpen((v) => !v)}
       >
         {open ? <X className="size-5" /> : <Sparkles className="size-5" />}

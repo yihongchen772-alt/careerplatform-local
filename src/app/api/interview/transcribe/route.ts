@@ -6,8 +6,8 @@ import { getUserAiKey } from "@/lib/ai-providers";
 import { generateStructuredWithFile } from "@/lib/ai-file-search";
 
 /**
- * A spoken answer arrives as a WAV built in the browser (see
- * src/lib/audio-recorder.ts). It goes through a route handler rather than a
+ * A spoken answer arrives as WebM/Opus when supported, or WAV otherwise
+ * (see src/lib/audio-recorder.ts). It goes through a route handler rather than a
  * Server Action for the same reason the spreadsheet import does: an Action
  * would carry it as a base64 argument, paying a ~33% size tax and running
  * into React's payload guards. Multipart has neither problem.
@@ -50,6 +50,8 @@ export async function POST(request: Request): Promise<NextResponse> {
       );
     }
 
+    const mimeType = file.type === "audio/webm" ? "audio/webm" : "audio/wav";
+    if (file.type !== mimeType) return NextResponse.json({ error: "不支持这段录音的格式" }, { status: 400 });
     const base64 = Buffer.from(await file.arrayBuffer()).toString("base64");
 
     const raw = await generateStructuredWithFile({
@@ -59,8 +61,8 @@ export async function POST(request: Request): Promise<NextResponse> {
 请做两件事：
 1. transcript：逐字转写成中文文本。只写他说的内容，不要加标题、不要总结、不要补全他没说的话。听不清的地方写「（听不清）」。
 2. delivery：只针对"怎么说的"给一句话观察——语速偏快还是偏慢、是否流利、有没有明显的口头禅（"呃""就是""然后"）或长时间停顿。只说音频里真实听到的，没什么可说的就填 null。不要评价回答内容本身的好坏，那是后面单独评的。`,
-      file: { mimeType: "audio/wav", data: base64 },
-      schema: {
+      file: { mimeType, data: base64 },
+      schema: dictation ? { type: "OBJECT", properties: { transcript: { type: "STRING" } }, required: ["transcript"] } : {
         type: "OBJECT",
         properties: {
           transcript: { type: "STRING" },
@@ -68,6 +70,8 @@ export async function POST(request: Request): Promise<NextResponse> {
         },
         required: ["transcript"],
       },
+      thinkingBudget: dictation ? 0 : 256,
+      thinkingLevel: dictation ? "minimal" : "low",
       timeoutMs: 90000,
     });
 

@@ -69,6 +69,7 @@ export async function generateStructured({
   file,
   schema,
   thinkingBudget,
+  thinkingLevel,
   timeoutMs = 60000,
   apiKey: apiKeyOverride,
   model: modelOverride,
@@ -77,6 +78,7 @@ export async function generateStructured({
   file?: GeminiFilePart;
   schema: GeminiSchema;
   thinkingBudget: number;
+  thinkingLevel?: "minimal" | "low";
   timeoutMs?: number;
   /** BYOK: caller's own Gemini key/model, in preference to the shared one. */
   apiKey?: string;
@@ -111,7 +113,7 @@ export async function generateStructured({
             contents: [{ parts }],
             generationConfig: {
               responseMimeType: "application/json",
-              thinkingConfig: { thinkingBudget },
+              thinkingConfig: thinkingLevel && /^gemini-3(?:\.|-)/.test(model) ? { thinkingLevel } : { thinkingBudget },
               responseSchema: schema,
               // Explicit, generous cap — a multi-question interview Q&A
               // generation (6-8 items with full reference answers) can

@@ -1,13 +1,8 @@
 /**
  * Microphone capture that hands back a 16 kHz mono WAV.
  *
- * MediaRecorder in Chromium produces WebM/Opus, which is *not* on Gemini's
- * list of accepted audio containers — and rather than gamble on whether it
- * would be tolerated, the recording is decoded and re-encoded to WAV here.
- * WAV is verified working (a real Chinese speech sample transcribed
- * correctly in ~3s). Downmixing to 16 kHz mono along the way also cuts the
- * upload to roughly a tenth of the raw 48 kHz stereo size, which matters
- * because a spoken answer runs a couple of minutes.
+ * Mock interviews retain the verified 16 kHz mono WAV path. Short dictation
+ * can send Chromium's WebM/Opus directly, avoiding decode and resample work.
  */
 
 const TARGET_SAMPLE_RATE = 16000;
@@ -38,7 +33,7 @@ declare global {
  */
 export class MicAccessDeniedError extends Error {}
 
-export async function startRecording(): Promise<Recorder> {
+export async function startRecording({ preferCompressed = false }: { preferCompressed?: boolean } = {}): Promise<Recorder> {
   if (window.desktopMic) {
     const status = await window.desktopMic.status();
     if (status !== "granted") throw new MicAccessDeniedError(status);
@@ -54,7 +49,8 @@ export async function startRecording(): Promise<Recorder> {
     },
   });
 
-  const recorder = new MediaRecorder(stream);
+  const webm = preferCompressed && MediaRecorder.isTypeSupported("audio/webm;codecs=opus");
+  const recorder = new MediaRecorder(stream, webm ? { mimeType: "audio/webm;codecs=opus" } : undefined);
   const chunks: Blob[] = [];
   recorder.ondataavailable = (e) => {
     if (e.data.size > 0) chunks.push(e.data);
@@ -74,7 +70,7 @@ export async function startRecording(): Promise<Recorder> {
           release();
           try {
             const raw = new Blob(chunks, { type: recorder.mimeType });
-            resolve(await toWav(await raw.arrayBuffer()));
+            resolve(webm ? new Blob(chunks, { type: "audio/webm" }) : await toWav(await raw.arrayBuffer()));
           } catch (err) {
             reject(err);
           }
