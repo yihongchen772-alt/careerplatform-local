@@ -58,7 +58,9 @@ test("additive migrations preserve old data; notes conflict safely; event moves 
   assert.equal((await scheduler.claimEventReminders("local-user")).reminders.length, 0);
   const moved = await actions.saveEvent({ ...input, id: event.id, revision: 0, startsAt: new Date(start.getTime() + 86400000) }); assert.equal(moved.ok, true);
   const reminders = await db.eventReminder.findMany(); assert.equal(reminders.length, 1); assert.equal(reminders[0].deliveredAt, null); assert.equal(reminders[0].scheduledAt.getTime(), start.getTime() + 86400000 - 1800000);
-  const backup = load("src/lib/actions/backup.ts", { ...mocks, os: { homedir: () => root }, "@/lib/local-storage": {} }, { process: { ...process, env: { ...process.env, LOCAL_UPLOADS_DIR: path.join(root, "uploads") } } });
+  const backupEnv = { process: { ...process, env: { ...process.env, LOCAL_UPLOADS_DIR: path.join(root, "uploads") } } };
+  const backupCore = load("src/lib/backup-core.ts", mocks, backupEnv);
+  const backup = load("src/lib/actions/backup.ts", { ...mocks, os: { homedir: () => root }, "@/lib/local-storage": {}, "@/lib/backup-core": backupCore }, backupEnv);
   const exported = await backup.exportBackup(); assert.equal(exported.ok, true);
   const backupJson = fs.readFileSync(exported.data.path, "utf8");
   assert.equal(JSON.parse(backupJson).data.calendarEvent.length, 1);
