@@ -426,7 +426,7 @@ async function fillCustomSelects(pairs) {
     const inner = n.querySelector(".ant-select-item-option-content");
     return ((inner || n).textContent || "").trim();
   }
-  function pick(options, value) {
+  function pickOne(options, value) {
     const v = String(value).trim();
     return (
       options.find((o) => optionText(o) === v) ||
@@ -434,6 +434,14 @@ async function fillCustomSelects(pairs) {
       options.find((o) => v.includes(optionText(o)) && optionText(o).length >= 2) ||
       null
     );
+  }
+  // `alternatives` carries synonyms such as 学士 → 本科 for degree dropdowns.
+  function pick(options, p) {
+    for (const value of [p.value, ...(p.alternatives || [])]) {
+      const found = pickOne(options, value);
+      if (found) return found;
+    }
+    return null;
   }
   function mark(el, source) {
     el.setAttribute("data-cp-filled", source);
@@ -450,7 +458,7 @@ async function fillCustomSelects(pairs) {
     trigger.click();
     await sleep(350);
     let options = visibleOptions();
-    let target = pick(options, p.value);
+    let target = pick(options, p);
     // Searchable selects (and virtual lists that only render a screenful):
     // type the value to narrow the list, then look again.
     const searchInput = container.querySelector("input:not([readonly]):not([type='hidden'])");
@@ -460,19 +468,22 @@ async function fillCustomSelects(pairs) {
       searchInput.dispatchEvent(new Event("input", { bubbles: true }));
       await sleep(450);
       options = visibleOptions();
-      target = pick(options, p.value);
+      target = pick(options, p);
       if (!target) {
         setter.call(searchInput, "");
         searchInput.dispatchEvent(new Event("input", { bubbles: true }));
       }
     }
     if (target) {
+      // Verify against the option actually chosen: "北京" picked for 北京市 or
+      // "本科" picked for 学士 is a correct fill, not a failed one.
+      const wanted = optionText(target);
       target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
       target.click();
       await sleep(150);
       const shown = container.querySelector(".ant-select-selection-item, .el-select__selected-item, .el-select__tags");
       const visibleValue = (shown?.textContent || container.querySelector("input[readonly]")?.value || "").trim();
-      if (visibleValue && (visibleValue === String(p.value).trim() || visibleValue.includes(String(p.value).trim()))) {
+      if (visibleValue && (visibleValue === wanted || visibleValue.includes(wanted) || visibleValue.includes(String(p.value).trim()))) {
         mark(container, p.source || "profile");
         filled.push(p.id);
       } else {
@@ -836,6 +847,20 @@ function educationRows(profile) {
 
 function highestEducation(profile) {
   return educationRows(profile)[0] || null;
+}
+
+const DEGREE_SYNONYMS = {
+  4: ["博士", "博士研究生", "博士学位", "PhD", "Doctor"],
+  3: ["硕士", "硕士研究生", "研究生", "硕士学位", "Master"],
+  2: ["本科", "学士", "大学本科", "本科/学士", "Bachelor"],
+  1: ["大专", "专科", "高职", "Associate"],
+};
+
+// Custom dropdowns only reveal their options once opened in the page, so the
+// synonyms travel with the value and fillCustomSelects tries each in turn.
+function degreeAlternatives(field, value) {
+  if (field.tag !== "custom-select" || !/学历|学位|degree|education/i.test(fieldHaystack(field))) return undefined;
+  return DEGREE_SYNONYMS[degreeLevel(value)]?.filter((item) => item !== value);
 }
 
 function matchDegreeOption(field, value) {
@@ -1567,7 +1592,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
         // remembered "学校" is one value and would otherwise fill every row.
         const structured = repeat ? repeatFieldValue(field, repeat, profile) : null;
         if (structured) {
-          pairs.push({ id: field.id, value: structured, source: "profile", label: field.label, tag: field.tag });
+          pairs.push({ id: field.id, value: structured, source: "profile", label: field.label, tag: field.tag, alternatives: degreeAlternatives(field, structured) });
           continue;
         }
         const rememberedValue = repeat && (repeat.row > 0 || repeat.degreeHint) ? null : matchRememberedField(field, profile.fieldMemories, pageContext);
@@ -1582,7 +1607,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
         if (repeat && !repeatFieldGoesToAi(repeat, profile)) continue;
         const value = repeat ? null : matchFlatField(field, profile);
         if (value) {
-          pairs.push({ id: field.id, value, source: "profile", label: field.label, tag: field.tag });
+          pairs.push({ id: field.id, value, source: "profile", label: field.label, tag: field.tag, alternatives: degreeAlternatives(field, value) });
           continue;
         }
         const label = field.label || field.placeholder || field.name;

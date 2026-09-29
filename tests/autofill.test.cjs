@@ -13,8 +13,8 @@ const context = {
   module: { exports: {} },
   URL,
 };
-vm.runInNewContext(`${source}\nmodule.exports.__test = { matchBasicField, resolveRepeatField, repeatFieldValue, missingRepeatBlocks, repeatFieldGoesToAi, matchRememberedField, fieldMemoryKey, isForbiddenMemoryField, isNeverGuessField, isOpenEndedQuestionField, isSensitiveMemoryField, portalContext, memoryCandidate, trackUserEdits, assertTrustedBrowserEvent, safeDownloadFilename, openSafeExternalUrl };`, context);
-const { matchBasicField, resolveRepeatField, repeatFieldValue, missingRepeatBlocks, repeatFieldGoesToAi, matchRememberedField, fieldMemoryKey, isForbiddenMemoryField, isNeverGuessField, isOpenEndedQuestionField, isSensitiveMemoryField, portalContext, memoryCandidate, trackUserEdits, assertTrustedBrowserEvent, safeDownloadFilename, openSafeExternalUrl } = context.module.exports.__test;
+vm.runInNewContext(`${source}\nmodule.exports.__test = { degreeAlternatives, matchBasicField, resolveRepeatField, repeatFieldValue, missingRepeatBlocks, repeatFieldGoesToAi, matchRememberedField, fieldMemoryKey, isForbiddenMemoryField, isNeverGuessField, isOpenEndedQuestionField, isSensitiveMemoryField, portalContext, memoryCandidate, trackUserEdits, assertTrustedBrowserEvent, safeDownloadFilename, openSafeExternalUrl };`, context);
+const { degreeAlternatives, matchBasicField, resolveRepeatField, repeatFieldValue, missingRepeatBlocks, repeatFieldGoesToAi, matchRememberedField, fieldMemoryKey, isForbiddenMemoryField, isNeverGuessField, isOpenEndedQuestionField, isSensitiveMemoryField, portalContext, memoryCandidate, trackUserEdits, assertTrustedBrowserEvent, safeDownloadFilename, openSafeExternalUrl } = context.module.exports.__test;
 
 const profile = { name: "陈奕宏", email: "me@example.invalid" };
 
@@ -95,6 +95,14 @@ test("degree words in labels or block headings pick the matching education row",
   assert.equal(matchBasicField(field("最高学历", "", ["本科", "硕士", "博士"]), savedProfile, new Map()), "硕士");
   assert.equal(matchBasicField(field("学校", "教育经历 2"), savedProfile, new Map()), "华东师范大学");
   assert.equal(matchBasicField(field("学校", "第二段教育经历"), savedProfile, new Map()), "华东师范大学");
+});
+
+test("custom degree dropdowns get synonyms, other dropdowns do not", () => {
+  const dropdown = (label) => ({ label, placeholder: "", name: "", tag: "custom-select", type: "" });
+  assert.deepEqual([...degreeAlternatives(dropdown("学历"), "学士")], ["本科", "大学本科", "本科/学士", "Bachelor"]);
+  assert.ok(degreeAlternatives(dropdown("学位"), "研究生").includes("硕士研究生"));
+  assert.equal(degreeAlternatives(dropdown("意向城市"), "学士"), undefined);
+  assert.equal(degreeAlternatives({ ...dropdown("学历"), tag: "select" }, "学士"), undefined);
 });
 
 test("prefilled blocks, loose fields and unrelated labels keep rows aligned", () => {
