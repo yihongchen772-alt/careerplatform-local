@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { Plus, Sparkles, Trash2 } from "lucide-react";
+import { Copy, Plus, Sparkles, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -24,6 +24,7 @@ import {
   type EducationRow,
   type ExperienceRow,
   type ProjectRow,
+  type ProfileVariant,
 } from "@/lib/application-profile";
 
 type ResumeOption = { id: string; name: string };
@@ -51,12 +52,44 @@ export function ApplicationProfileCard({
   const [saving, setSaving] = useState(false);
   const [extracting, setExtracting] = useState(false);
 
+  // "default" = the base profile; otherwise the id of the 资料方案 being edited.
+  // Education is shared; experiences/projects/extras belong to the active one.
+  const [active, setActive] = useState("default");
+  const activeVariant = profile.variants.find((v) => v.id === active) ?? null;
+  type Directional = Pick<ApplicationProfile, "experiences" | "projects" | "extras">;
+  const view: Directional = activeVariant ?? profile;
+  const setView = (update: (current: Directional) => Directional) =>
+    setProfile((p) => {
+      const variant = p.variants.find((v) => v.id === active);
+      if (!variant) return { ...p, ...update(p) };
+      return { ...p, variants: p.variants.map((v) => (v.id === active ? { ...v, ...update(v) } : v)) };
+    });
+
   const setEdu = (i: number, patch: Partial<EducationRow>) =>
     setProfile((p) => ({ ...p, education: p.education.map((e, j) => (j === i ? { ...e, ...patch } : e)) }));
   const setExp = (i: number, patch: Partial<ExperienceRow>) =>
-    setProfile((p) => ({ ...p, experiences: p.experiences.map((e, j) => (j === i ? { ...e, ...patch } : e)) }));
+    setView((v) => ({ ...v, experiences: v.experiences.map((e, j) => (j === i ? { ...e, ...patch } : e)) }));
   const setProject = (i: number, patch: Partial<ProjectRow>) =>
-    setProfile((p) => ({ ...p, projects: p.projects.map((project, j) => (j === i ? { ...project, ...patch } : project)) }));
+    setView((v) => ({ ...v, projects: v.projects.map((project, j) => (j === i ? { ...project, ...patch } : project)) }));
+
+  function addVariant() {
+    if (profile.variants.length >= 8) return void toast.error("最多 8 套方案");
+    const source = activeVariant ?? profile;
+    const variant: ProfileVariant = {
+      id: `v${Date.now().toString(36)}`,
+      name: `方案 ${profile.variants.length + 1}`,
+      resumeVersionId: null,
+      experiences: source.experiences.map((x) => ({ ...x })),
+      projects: source.projects.map((x) => ({ ...x })),
+      extras: { ...source.extras },
+    };
+    setProfile((p) => ({ ...p, variants: [...p.variants, variant] }));
+    setActive(variant.id);
+    toast.info("已复制当前资料为新方案，改名并调整后记得保存");
+  }
+
+  const setVariant = (patch: Partial<ProfileVariant>) =>
+    setProfile((p) => ({ ...p, variants: p.variants.map((v) => (v.id === active ? { ...v, ...patch } : v)) }));
 
   async function handleSave() {
     setSaving(true);
@@ -77,11 +110,11 @@ export function ApplicationProfileCard({
       const res = await extractApplicationProfile(resumeId);
       if (!res.ok) return void toast.error(res.message);
       // Keep hand-typed rows when the resume does not contain that section.
-      setProfile((p) => ({
-        education: res.data.education.length ? res.data.education : p.education,
-        experiences: res.data.experiences.length ? res.data.experiences : p.experiences,
-        projects: mergeProjectRows(p.projects, res.data.projects),
-        extras: { ...res.data.extras, ...Object.fromEntries(Object.entries(p.extras).filter(([, v]) => v)) },
+      setProfile((p) => ({ ...p, education: res.data.education.length ? res.data.education : p.education }));
+      setView((v) => ({
+        experiences: res.data.experiences.length ? res.data.experiences : v.experiences,
+        projects: mergeProjectRows(v.projects, res.data.projects),
+        extras: { ...res.data.extras, ...Object.fromEntries(Object.entries(v.extras).filter(([, value]) => value)) },
       }));
       toast.success("已从简历里提取，检查一下再保存");
     } finally {
@@ -98,6 +131,54 @@ export function ApplicationProfileCard({
         </p>
       </CardHeader>
       <CardContent className="space-y-6">
+        <div className="space-y-2 rounded-md border p-3">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="mr-1 text-sm">资料方案：</span>
+            {[{ id: "default", name: "默认资料" }, ...profile.variants].map((v) => (
+              <Button key={v.id} type="button" size="sm" variant={active === v.id ? "secondary" : "ghost"} className="h-7" onClick={() => setActive(v.id)}>
+                {v.name}
+              </Button>
+            ))}
+            <Button type="button" size="sm" variant="ghost" className="h-7" onClick={addVariant} title="按不同求职方向保存不同的实习/项目顺序和常问字段">
+              <Copy className="size-3.5" />
+              复制为新方案
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            投不同方向（比如数据 / 产品）时，可以各存一套实习、项目顺序和常问字段；教育经历所有方案共用。网申浏览器里选方案，或给方案绑定一份简历、选简历时自动切换。
+          </p>
+          {activeVariant && (
+            <div className="flex flex-wrap items-end gap-2">
+              <Field label="方案名称"><Input className="h-8 w-40" value={activeVariant.name} onChange={(ev) => setVariant({ name: ev.target.value })} /></Field>
+              <Field label="绑定简历（可选）">
+                <Select value={activeVariant.resumeVersionId || "none"} onValueChange={(v) => setVariant({ resumeVersionId: v && v !== "none" ? v : null })}>
+                  <SelectTrigger className="h-8 w-48">
+                    <SelectValue>{(value: string) => resumeVersions.find((r) => r.id === value)?.name ?? "不绑定"}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">不绑定</SelectItem>
+                    {resumeVersions.map((r) => (
+                      <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-8 text-destructive"
+                onClick={() => {
+                  setProfile((p) => ({ ...p, variants: p.variants.filter((v) => v.id !== active) }));
+                  setActive("default");
+                }}
+              >
+                <Trash2 className="size-4" />
+                删除此方案
+              </Button>
+            </div>
+          )}
+        </div>
         {resumeVersions.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 p-3">
             <span className="text-sm">从简历自动提取：</span>
@@ -123,7 +204,7 @@ export function ApplicationProfileCard({
 
         <section className="space-y-3">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-medium">教育经历</p>
+            <p className="text-sm font-medium">教育经历{activeVariant ? "（所有方案共用）" : ""}</p>
             <Button type="button" size="sm" variant="ghost" onClick={() => setProfile((p) => ({ ...p, education: [...p.education, { ...emptyEducation }] }))}>
               <Plus className="size-4" />
               加一段
@@ -150,14 +231,14 @@ export function ApplicationProfileCard({
 
         <section className="space-y-3">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-medium">项目经历</p>
-            <Button type="button" size="sm" variant="ghost" onClick={() => setProfile((p) => ({ ...p, projects: [...p.projects, { ...emptyProject }] }))}>
+            <p className="text-sm font-medium">项目经历{activeVariant ? `（${activeVariant.name}）` : ""}</p>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setView((v) => ({ ...v, projects: [...v.projects, { ...emptyProject }] }))}>
               <Plus className="size-4" />
               加一个项目
             </Button>
           </div>
-          {profile.projects.length === 0 && <p className="text-xs text-muted-foreground">还没有——可以手动添加，也可以从简历提取。</p>}
-          {profile.projects.map((project, i) => (
+          {view.projects.length === 0 && <p className="text-xs text-muted-foreground">还没有——可以手动添加，也可以从简历提取。</p>}
+          {view.projects.map((project, i) => (
             <div key={i} className="grid gap-2 rounded-md border p-3 sm:grid-cols-4">
               <Field label="项目名称" className="sm:col-span-2"><Input value={project.name} onChange={(ev) => setProject(i, { name: ev.target.value })} /></Field>
               <Field label="我的角色" className="sm:col-span-2"><Input value={project.role} onChange={(ev) => setProject(i, { role: ev.target.value })} placeholder="项目负责人 / 核心成员" /></Field>
@@ -166,7 +247,7 @@ export function ApplicationProfileCard({
               <Field label="项目描述" className="sm:col-span-4"><Textarea rows={2} value={project.description} onChange={(ev) => setProject(i, { description: ev.target.value })} placeholder="项目背景、目标、做了什么" /></Field>
               <Field label="个人职责与成果" className="sm:col-span-4"><Textarea rows={3} value={project.responsibilities} onChange={(ev) => setProject(i, { responsibilities: ev.target.value })} placeholder="你具体负责什么，取得了什么结果" /></Field>
               <div className="flex justify-end sm:col-span-4">
-                <Button type="button" size="sm" variant="ghost" onClick={() => setProfile((p) => ({ ...p, projects: p.projects.filter((_, j) => j !== i) }))}>
+                <Button type="button" size="sm" variant="ghost" onClick={() => setView((v) => ({ ...v, projects: v.projects.filter((_, j) => j !== i) }))}>
                   <Trash2 className="size-4" />
                   删除
                 </Button>
@@ -177,14 +258,14 @@ export function ApplicationProfileCard({
 
         <section className="space-y-3">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-medium">实习 / 工作经历</p>
-            <Button type="button" size="sm" variant="ghost" onClick={() => setProfile((p) => ({ ...p, experiences: [...p.experiences, { ...emptyExperience }] }))}>
+            <p className="text-sm font-medium">实习 / 工作经历{activeVariant ? `（${activeVariant.name}）` : ""}</p>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setView((v) => ({ ...v, experiences: [...v.experiences, { ...emptyExperience }] }))}>
               <Plus className="size-4" />
               加一段
             </Button>
           </div>
-          {profile.experiences.length === 0 && <p className="text-xs text-muted-foreground">还没有。</p>}
-          {profile.experiences.map((x, i) => (
+          {view.experiences.length === 0 && <p className="text-xs text-muted-foreground">还没有。</p>}
+          {view.experiences.map((x, i) => (
             <div key={i} className="grid gap-2 rounded-md border p-3 sm:grid-cols-4">
               <Field label="单位" className="sm:col-span-2"><Input value={x.company} onChange={(ev) => setExp(i, { company: ev.target.value })} /></Field>
               <Field label="职位" className="sm:col-span-2"><Input value={x.role} onChange={(ev) => setExp(i, { role: ev.target.value })} /></Field>
@@ -192,7 +273,7 @@ export function ApplicationProfileCard({
               <Field label="结束"><Input value={x.end} onChange={(ev) => setExp(i, { end: ev.target.value })} placeholder="2025-09" /></Field>
               <Field label="做了什么" className="sm:col-span-4"><Textarea rows={2} value={x.description} onChange={(ev) => setExp(i, { description: ev.target.value })} /></Field>
               <div className="flex justify-end sm:col-span-4">
-                <Button type="button" size="sm" variant="ghost" onClick={() => setProfile((p) => ({ ...p, experiences: p.experiences.filter((_, j) => j !== i) }))}>
+                <Button type="button" size="sm" variant="ghost" onClick={() => setView((v) => ({ ...v, experiences: v.experiences.filter((_, j) => j !== i) }))}>
                   <Trash2 className="size-4" />
                   删除
                 </Button>
@@ -202,13 +283,13 @@ export function ApplicationProfileCard({
         </section>
 
         <section className="space-y-3">
-          <p className="text-sm font-medium">其他常问字段</p>
+          <p className="text-sm font-medium">其他常问字段{activeVariant ? `（${activeVariant.name}）` : ""}</p>
           <div className="grid gap-2 sm:grid-cols-3">
             {EXTRA_FIELDS.map((f) => (
               <Field key={f.key} label={f.label}>
                 <Input
-                  value={profile.extras[f.key] ?? ""}
-                  onChange={(ev) => setProfile((p) => ({ ...p, extras: { ...p.extras, [f.key]: ev.target.value } }))}
+                  value={view.extras[f.key] ?? ""}
+                  onChange={(ev) => setView((v) => ({ ...v, extras: { ...v.extras, [f.key]: ev.target.value } }))}
                   placeholder={f.hint}
                 />
               </Field>

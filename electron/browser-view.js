@@ -1,4 +1,4 @@
-const { ipcMain, WebContentsView, Menu, session, shell, app, clipboard } = require("electron");
+const { ipcMain, WebContentsView, BrowserWindow, Menu, session, shell, app, clipboard, dialog } = require("electron");
 const fs = require("fs");
 const path = require("path");
 
@@ -230,6 +230,65 @@ function scanPageFields(prefix) {
 // innerText (not textContent) so hidden nav menus, <script> bodies and
 // collapsed panels don't drown the actual posting. Capped because job
 // boards render huge sidebars of "recommended jobs" below the real JD.
+// Injected: a copy of this frame's DOM with every personal value removed, for
+// turning "this site fills wrong" into a regression fixture. Field values and
+// checked/selected state are dropped, links and media are blanked, and any
+// text or attribute containing one of `secrets` (the user's own profile
+// values) or an email/phone/ID-shaped number is replaced.
+function snapshotFormStructure(secrets) {
+  const needles = (secrets || []).filter(Boolean).sort((a, b) => b.length - a.length);
+  const redact = (value) => {
+    let out = String(value);
+    for (const needle of needles) out = out.split(needle).join("[已隐藏]");
+    return out
+      .replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, "[邮箱]")
+      .replace(/\d{17}[\dXx]/g, "[证件号]")
+      .replace(/(?<!\d)1[3-9]\d{9}(?!\d)/g, "[手机号]");
+  };
+  const clone = document.body.cloneNode(true);
+  clone.querySelectorAll("script, style, noscript, svg, img, video, audio, canvas, link, iframe, object, embed").forEach((node) => {
+    node.replaceWith(document.createComment(" removed " + node.tagName.toLowerCase() + " "));
+  });
+  clone.querySelectorAll("input, textarea, option").forEach((el) => {
+    el.removeAttribute("value");
+    el.removeAttribute("checked");
+    el.removeAttribute("selected");
+    if (el.tagName === "TEXTAREA") el.textContent = "";
+  });
+  // Component-library dropdowns show the chosen value as plain text.
+  clone.querySelectorAll(".ant-select-selection-item, .el-select__selected-item, .ant-select-selection-item-content, .el-tag, .ant-upload-list").forEach((el) => { el.textContent = "[已选内容]"; });
+  clone.querySelectorAll("*").forEach((el) => {
+    for (const attr of Array.from(el.attributes)) {
+      if (/^on/i.test(attr.name) || (attr.name.startsWith("data-cp-") && attr.name !== "data-cp-fill-id")) el.removeAttribute(attr.name);
+      else if (/^(?:href|src|srcset|action|poster)$/i.test(attr.name)) el.setAttribute(attr.name, "#");
+      else if (attr.name === "style") el.setAttribute("style", attr.value.replace(/url\([^)]*\)/gi, "none"));
+      else el.setAttribute(attr.name, redact(attr.value));
+    }
+  });
+  const walker = document.createTreeWalker(clone, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) node.nodeValue = redact(node.nodeValue);
+  return { url: location.origin + location.pathname, title: redact(document.title), html: clone.innerHTML.slice(0, 3000000) };
+}
+
+// Every profile value worth hiding in a shared snapshot. Short generic words
+// (本科, 男, 汉族) stay: they're option lists the fixture needs, not identity.
+function profileSecrets(profile) {
+  const values = new Set();
+  const add = (value, force) => {
+    const text = String(value || "").trim();
+    if (text && (force || text.length >= 4) && text.length <= 300) values.add(text);
+  };
+  add(profile.name, true);
+  add(profile.phone, true);
+  add(profile.email, true);
+  for (const key of ["birthDate", "school", "hometown", "currentCity", "major", "english", "latestCompany", "latestRole"]) add(profile[key]);
+  for (const row of [...(profile.education || []), ...(profile.experiences || []), ...(profile.projects || [])]) {
+    for (const value of Object.values(row || {})) add(value);
+  }
+  for (const memory of profile.fieldMemories || []) add(memory.answer);
+  return [...values];
+}
+
 function capturePageText() {
   const text = (document.body && document.body.innerText) || "";
   return text.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim().slice(0, 12000);
@@ -1033,9 +1092,27 @@ function repeatFieldValue(field, info, profile) {
   return info.kind === "degree" ? matchDegreeOption(field, row.degree) : matchFieldOption(field, rowDateValue(field, info.kind, row));
 }
 
+// One line per scanned field for the 逐字段结果 list: where the value came
+// from, so checking a filled form means reading the AI and 需手填 rows, not
+// every field. `source` drives the colour dot and grouping in the UI.
+function fillDetail(field, pair, filledSet, failedSet) {
+  const own = field.label || field.placeholder || field.name || "未命名字段";
+  const label = field.section && !own.includes(field.section) && sectionGroup(field.section) ? `${field.section} · ${own}` : own;
+  if (field.hasValue) return { label, state: "页面已有内容，未改动", source: "prefilled" };
+  if (pair && filledSet.has(field.id)) {
+    if (pair.source === "profile") return { label, state: "来自网申资料", source: "profile" };
+    if (pair.source === "remembered-field") return { label, state: "来自记忆库", source: "memory" };
+    if (pair.remembered) return { label, state: "复用你确认过的回答", source: "memory" };
+    return { label, state: pair.reused ? "AI 草稿（复用），请核对" : "AI 生成，请核对", source: "ai" };
+  }
+  if (isNeverGuessField(field)) return { label, state: "敏感或需核对，请手填", source: "manual" };
+  if (pair && failedSet.has(pair.label || pair.id)) return { label, state: "写入没成功，请手填", source: "manual" };
+  return { label, state: "没有对应资料，请手填", source: "manual" };
+}
+
 // "有 2 段教育经历，页面只有 1 组" — most portals render one empty block and
 // hide the rest behind an 添加 button, which autofill deliberately never clicks.
-function missingRepeatBlocks(profile, rowIndexes) {
+function missingRepeatCounts(profile, rowIndexes) {
   const seen = (group, kind) => Math.max(rowIndexes.get(`${group}:${kind}:in`) || 0, rowIndexes.get(`${group}:${kind}:out`) || 0);
   const checks = [
     ["education", "school", educationRows(profile).length, "教育经历"],
@@ -1043,8 +1120,56 @@ function missingRepeatBlocks(profile, rowIndexes) {
     ["project", "name", (profile.projects || []).length, "项目经历"],
   ];
   return checks
-    .filter(([group, kind, saved]) => { const shown = seen(group, kind); return shown > 0 && saved > shown; })
-    .map(([group, kind, saved, label]) => `有 ${saved} 段${label}、页面只有 ${seen(group, kind)} 组`);
+    .map(([group, kind, saved, label]) => ({ group, label, saved, shown: seen(group, kind) }))
+    .filter(({ saved, shown }) => shown > 0 && saved > shown);
+}
+
+function missingRepeatBlocks(profile, rowIndexes) {
+  return missingRepeatCounts(profile, rowIndexes).map(({ saved, shown, label }) => `有 ${saved} 段${label}、页面只有 ${shown} 组`);
+}
+
+// Injected: clicks the page's own "添加教育经历 / + 新增" button for one list.
+// Only short button-like labels starting with 添加/新增/增加 count, and the
+// button (or the block heading it sits under) must name the list, so an
+// "添加附件" or another section's "+ 添加" is never pressed. Reports whether a
+// modal opened, because a modal block has to be saved by the applicant before
+// the next one can be added.
+async function clickAddBlock(group) {
+  const GROUP_WORDS = {
+    education: /教育|学历|学习经历|education/i,
+    experience: /实习|工作经历|工作经验|实践|internship|work experience|employment/i,
+    project: /项目|project/i,
+  };
+  const words = GROUP_WORDS[group];
+  const ADD = /^[+＋]?\s*(?:添加|新增|增加|继续添加|再添加|add)/i;
+  const visible = (el) => { const r = el.getBoundingClientRect(); const st = getComputedStyle(el); return r.width > 0 && r.height > 0 && st.visibility !== "hidden" && st.display !== "none"; };
+  const context = (el) => {
+    let node = el;
+    for (let depth = 0; node && node !== document.body && depth < 8; depth++, node = node.parentElement) {
+      let sibling = node.previousElementSibling;
+      for (let hops = 0; sibling && hops < 6; hops++, sibling = sibling.previousElementSibling) {
+        const text = (sibling.textContent || "").replace(/\s+/g, " ").trim();
+        if (text && text.length <= 30 && !sibling.querySelector("input, select, textarea")) return text;
+      }
+    }
+    return "";
+  };
+  const candidates = Array.from(document.querySelectorAll("button, a, [role='button'], .ant-btn, .el-button, span, div"))
+    .filter((el) => {
+      const text = (el.textContent || "").replace(/\s+/g, " ").trim();
+      if (!text || text.length > 16 || !ADD.test(text) || !visible(el)) return false;
+      // Innermost element carrying the text; its clickable ancestor is used below.
+      if (Array.from(el.children).some((child) => ADD.test((child.textContent || "").trim()))) return false;
+      return words.test(text) || words.test(context(el));
+    })
+    .map((el) => el.closest("button, a, [role='button'], .ant-btn, .el-button") || el);
+  const target = candidates.find((el) => !el.disabled && el.getAttribute("aria-disabled") !== "true");
+  if (!target) return { clicked: false };
+  target.scrollIntoView({ block: "center" });
+  target.click();
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  const modal = Array.from(document.querySelectorAll(".ant-modal-wrap, .el-dialog__wrapper, .el-overlay-dialog, [role='dialog'][aria-modal='true']")).some(visible);
+  return { clicked: true, text: (target.textContent || "").trim().slice(0, 20), modal };
 }
 
 // Long-text kinds may still go to the AI when the saved row lacks them. Short
@@ -1674,6 +1799,75 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
   // Full-page-visible screenshot of the current tab as a PNG data URL —
   // the renderer posts it to the Next server to file as an attachment
   // (投递成功页 proof, 测评 instructions).
+  // 导出表单结构: one self-contained HTML file in Downloads with each frame's
+  // redacted DOM plus how the matcher classified every field — enough to
+  // rebuild the page as a fixture without anyone's personal details.
+  handle("browser:export-form-structure", async () => {
+    const tab = activeTab();
+    if (!tab) throw new Error("没有打开的页面");
+    const wc = tab.view.webContents;
+    const pageUrl = wc.getURL();
+    const profileRes = await fetch(`http://localhost:${port}/api/desktop-browser/profile?contextKey=${encodeURIComponent(portalContext(pageUrl))}`);
+    const profile = profileRes.ok ? await profileRes.json() : {};
+    const secrets = profileSecrets(profile);
+    const { fields } = await scanAllFrames(wc);
+    const rowIndexes = new Map();
+    const scan = fields.map((field) => {
+      const repeat = resolveRepeatField(field, rowIndexes);
+      return { id: field.id, tag: field.tag, type: field.type, label: field.label, placeholder: field.placeholder, name: field.name, section: field.section, options: field.options, hasValue: field.hasValue, matched: repeat ? `${repeat.group}:${repeat.kind}#${repeat.row}${repeat.degreeHint ? ` 学历层级${repeat.degreeHint}` : ""}` : null };
+    });
+    const frames = [];
+    for (const frame of allFrames(wc)) {
+      const snapshot = await frame.executeJavaScript(`(${snapshotFormStructure.toString()})(${JSON.stringify(secrets)})`).catch(() => null);
+      if (snapshot && snapshot.html.trim()) frames.push(snapshot);
+    }
+    const scrub = (text) => secrets.reduce((out, needle) => out.split(needle).join("[已隐藏]"), String(text || ""));
+    const safeJson = scrub(JSON.stringify({ exportedAt: new Date().toISOString(), page: new URL(pageUrl).origin + new URL(pageUrl).pathname, fields: scan }, null, 2)).replace(/</g, "\\u003c");
+    const html = `<!doctype html>\n<html lang="zh-CN"><head><meta charset="utf-8"><title>表单结构 · ${scrub(wc.getTitle()).replace(/</g, "&lt;")}</title></head><body>\n` +
+      `<!-- 求职罗盘导出的网申表单结构：已去掉填写内容、个人资料、链接和图片，可放心发给开发者排查填写问题。 -->\n` +
+      `<script type="application/json" id="cp-scan">${safeJson}</script>\n` +
+      frames.map((frame, index) => `<section data-frame="${index}" data-url="${frame.url.replace(/"/g, "&quot;")}">\n${frame.html}\n</section>`).join("\n") +
+      "\n</body></html>\n";
+    const host = new URL(pageUrl).hostname.replace(/[^\w.-]/g, "_");
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+    const file = path.join(app.getPath("downloads"), `网申表单结构-${host}-${stamp}.html`);
+    fs.writeFileSync(file, html, "utf8");
+    shell.showItemInFolder(file);
+    return { path: file, fields: scan.length, frames: frames.length };
+  });
+
+  // 定制简历 export. The page is our own escaped template, but it is still
+  // rendered with JavaScript off in a throwaway hidden window, then printed
+  // to A4 PDF (or written as a Word-readable .doc) into Downloads.
+  handle("browser:export-document", async (_e, { format, html, fileName }) => {
+    if (!["pdf", "doc"].includes(format)) throw new Error("不支持的导出格式");
+    if (typeof html !== "string" || html.length > 2000000) throw new Error("导出内容过大");
+    const base = safeDownloadFilename(String(fileName || "定制简历").replace(/[\\/:*?"<>|]+/g, " ").trim().slice(0, 80) || "定制简历");
+    const file = path.join(app.getPath("downloads"), `${base}.${format}`);
+    if (format === "doc") {
+      fs.writeFileSync(file, html, "utf8");
+    } else {
+      const win = new BrowserWindow({ show: false, width: 900, height: 1200, webPreferences: { javascript: false, sandbox: true, partition: "cp-document-export" } });
+      try {
+        await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+        const pdf = await win.webContents.printToPDF({ pageSize: "A4", printBackground: true, preferCSSPageSize: true });
+        fs.writeFileSync(file, pdf);
+      } finally {
+        win.destroy();
+      }
+    }
+    shell.showItemInFolder(file);
+    return { path: file };
+  });
+
+  // Settings → 自动备份's folder picker. Lives on this trusted bridge because
+  // it is the one already restricted to the app's own main frame.
+  handle("browser:choose-directory", async () => {
+    const options = { title: "选择自动备份文件夹", properties: ["openDirectory", "createDirectory"] };
+    const result = currentWindow && !currentWindow.isDestroyed() ? await dialog.showOpenDialog(currentWindow, options) : await dialog.showOpenDialog(options);
+    return result.canceled ? null : result.filePaths[0] || null;
+  });
+
   handle("browser:screenshot", async () => {
     const tab = activeTab();
     if (!tab) throw new Error("没有打开的页面");
@@ -1695,7 +1889,13 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     }
   });
 
-  handle("browser:autofill", async (_e, resumeVersionId) => {
+  handle("browser:autofill", (_e, resumeVersionId, options) => runAutofill(resumeVersionId, options || {}));
+
+  // `options.expandBlocks`: when the profile has more 教育/实习/项目 rows than
+  // the page shows, press the page's own 添加 button once per short list and
+  // fill again (at most 4 rounds, and never past a modal). `options.added`
+  // carries what earlier rounds added, for the final message.
+  async function runAutofill(resumeVersionId, options) {
     const tab = activeTab();
     if (!tab) return;
     const wc = tab.view.webContents;
@@ -1703,7 +1903,10 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     try {
       send("browser:autofill-status", { phase: "scanning", message: "正在读取页面…" });
 
-      const profileRes = await fetch(`http://localhost:${port}/api/desktop-browser/profile?contextKey=${encodeURIComponent(portalContext(initialUrl))}`);
+      const profileQuery = new URLSearchParams({ contextKey: portalContext(initialUrl) });
+      if (options.variantId) profileQuery.set("variantId", options.variantId);
+      if (resumeVersionId) profileQuery.set("resumeVersionId", resumeVersionId);
+      const profileRes = await fetch(`http://localhost:${port}/api/desktop-browser/profile?${profileQuery}`);
       if (!profileRes.ok) throw new Error("拿不到你的资料，先去账号设置填一下");
       const profile = await profileRes.json();
 
@@ -1811,11 +2014,8 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       const rememberedFilled = pairs.filter((p) => p.tag === "textarea" && p.source !== "remembered-field" && p.remembered && filledSet.has(p.id)).length;
       const essayReused = pairs.filter((p) => p.tag === "textarea" && p.reused && filledSet.has(p.id)).length;
       const aiReused = essayReused - rememberedFilled;
-      const details = fields.map((field) => ({
-        label: field.label || field.placeholder || field.name || "未命名字段",
-        state: field.hasValue ? "已有内容" : isNeverGuessField(field) ? "需要手填" : filledSet.has(field.id)
-          ? pairs.find((p) => p.id === field.id)?.remembered ? "复用你的回答" : "已填入" : "未填入",
-      }));
+      const failedSet = new Set(failed);
+      const details = fields.map((field) => fillDetail(field, pairs.find((p) => p.id === field.id), filledSet, failedSet));
       let uploadedResumeCount = 0;
       let uploadError = null;
       if (resumeVersionId) {
@@ -1841,7 +2041,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       }
       formWatch.lastSignature.delete(tab.id);
 
-      const parts = [`已验证填入 ${basicFilled} 个基础字段`];
+      const parts = [`已验证填入 ${basicFilled} 个基础字段${profile.variantName ? `（资料方案「${profile.variantName}」）` : ""}`];
       if (essayFilled > 0) {
         const fresh = essayFilled - essayReused;
         const bits = [];
@@ -1855,7 +2055,8 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       }
       if (uploadedResumeCount > 0) parts.push(`已上传简历附件到 ${uploadedResumeCount} 个位置`);
       if (uploadError) parts.push(uploadError);
-      if (alreadyFilled > 0) parts.push(`${alreadyFilled} 个已有内容的字段没动`);
+      // After an 添加 round the earlier rounds' own fills count as "已有内容".
+      if (alreadyFilled > 0 && !options.round) parts.push(`${alreadyFilled} 个已有内容的字段没动`);
       if (failed.length > 0) {
         parts.push(`${failed.length} 个字段未通过写入验证（${failed.slice(0, 3).join("、")}${failed.length > 3 ? "…" : ""}），需要手填`);
       }
@@ -1871,9 +2072,38 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
             : `${stillManual} 个字段简历里没有对应信息，需要自己填`
         );
       }
+      const added = options.added || [];
+      const missing = missingRepeatCounts(profile, rowIndexes);
+      const round = options.round || 0;
+      if (options.expandBlocks && missing.length && round < 4 && !options.modal && !wc.isDestroyed() && wc.getURL() === initialUrl) {
+        const clicked = [];
+        let modal = false;
+        for (const { group, label } of missing) {
+          for (const frame of allFrames(wc)) {
+            const result = await frame.executeJavaScript(`(${clickAddBlock.toString()})(${JSON.stringify(group)})`).catch(() => null);
+            if (result && result.clicked) {
+              clicked.push(label);
+              modal = modal || result.modal;
+              break;
+            }
+          }
+          if (modal) break;
+        }
+        if (clicked.length) {
+          send("browser:autofill-status", { phase: "scanning", message: `已点页面上的「添加」补出 ${clicked.join("、")}，继续填写…` });
+          return runAutofill(resumeVersionId, { ...options, round: round + 1, modal, added: [...added, ...clicked] });
+        }
+      }
+      if (added.length) {
+        const counts = added.reduce((map, label) => map.set(label, (map.get(label) || 0) + 1), new Map());
+        parts.unshift(`已自动添加 ${[...counts].map(([label, n]) => `${n} 组${label}`).join("、")}`);
+        if (options.modal) parts.push("新栏目在弹窗里：核对后点弹窗的保存，再点一次一键填写继续下一段");
+      }
       const missingBlocks = missingRepeatBlocks(profile, rowIndexes);
       if (missingBlocks.length) {
-        parts.push(`网申资料里${missingBlocks.join("、")}，但这页的对应栏目不够——先点页面上的「添加」再点一次一键填写`);
+        parts.push(options.expandBlocks
+          ? `网申资料里${missingBlocks.join("、")}，没找到能自动点的「添加」按钮——请手动添加后再点一次一键填写`
+          : `网申资料里${missingBlocks.join("、")}，但这页的对应栏目不够——先点页面上的「添加」再点一次一键填写，或勾选「自动补齐栏目」`);
       }
       parts.push("手写或修改的基础资料和开放题会自动记住；可在账号设置查看和修改；提交前请核对所有填入内容");
 
@@ -1884,7 +2114,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
         message: err && err.message ? err.message : "自动填充失败",
       });
     }
-  });
+  }
 
   // Remember manually entered facts and essays; never save untouched drafts.
   handle("browser:save-corrections", async (_e, resumeVersionId, onlyUserEdited = false) => {

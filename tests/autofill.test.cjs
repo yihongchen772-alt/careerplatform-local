@@ -13,8 +13,8 @@ const context = {
   module: { exports: {} },
   URL,
 };
-vm.runInNewContext(`${source}\nmodule.exports.__test = { formatDateForField, dateRangeValue, degreeAlternatives, matchBasicField, resolveRepeatField, repeatFieldValue, missingRepeatBlocks, repeatFieldGoesToAi, matchRememberedField, fieldMemoryKey, isForbiddenMemoryField, isNeverGuessField, isOpenEndedQuestionField, isSensitiveMemoryField, portalContext, memoryCandidate, trackUserEdits, assertTrustedBrowserEvent, safeDownloadFilename, openSafeExternalUrl };`, context);
-const { formatDateForField, dateRangeValue, degreeAlternatives, matchBasicField, resolveRepeatField, repeatFieldValue, missingRepeatBlocks, repeatFieldGoesToAi, matchRememberedField, fieldMemoryKey, isForbiddenMemoryField, isNeverGuessField, isOpenEndedQuestionField, isSensitiveMemoryField, portalContext, memoryCandidate, trackUserEdits, assertTrustedBrowserEvent, safeDownloadFilename, openSafeExternalUrl } = context.module.exports.__test;
+vm.runInNewContext(`${source}\nmodule.exports.__test = { fillDetail, formatDateForField, dateRangeValue, degreeAlternatives, matchBasicField, resolveRepeatField, repeatFieldValue, missingRepeatBlocks, repeatFieldGoesToAi, matchRememberedField, fieldMemoryKey, isForbiddenMemoryField, isNeverGuessField, isOpenEndedQuestionField, isSensitiveMemoryField, portalContext, memoryCandidate, trackUserEdits, assertTrustedBrowserEvent, safeDownloadFilename, openSafeExternalUrl };`, context);
+const { fillDetail, formatDateForField, dateRangeValue, degreeAlternatives, matchBasicField, resolveRepeatField, repeatFieldValue, missingRepeatBlocks, repeatFieldGoesToAi, matchRememberedField, fieldMemoryKey, isForbiddenMemoryField, isNeverGuessField, isOpenEndedQuestionField, isSensitiveMemoryField, portalContext, memoryCandidate, trackUserEdits, assertTrustedBrowserEvent, safeDownloadFilename, openSafeExternalUrl } = context.module.exports.__test;
 
 const profile = { name: "陈奕宏", email: "me@example.invalid" };
 
@@ -129,6 +129,21 @@ test("one-box date spans follow the page's own example", () => {
   assert.equal(matchBasicField(inBlock("时间", "教育经历"), savedProfile, new Map()), "2021-09 至 2025-06");
   assert.equal(resolveRepeatField(inBlock("每周实习时间", "实习经历"), new Map()), null);
   assert.equal(resolveRepeatField(inBlock("时间", ""), new Map()), null);
+});
+
+test("every field reports where its value came from", () => {
+  const field = (id, label, extra = {}) => ({ id, label, placeholder: "", name: "", tag: "input", type: "text", ...extra });
+  const filled = new Set(["a", "b", "c", "d"]);
+  const detail = (f, pair, failed = new Set()) => fillDetail(f, pair, filled, failed);
+  assert.equal(detail(field("a", "学校", { section: "教育经历 2" }), { id: "a", source: "profile" }).label, "教育经历 2 · 学校");
+  assert.equal(detail(field("a", "学校"), { id: "a", source: "profile" }).source, "profile");
+  assert.equal(detail(field("b", "英文名"), { id: "b", source: "remembered-field" }).source, "memory");
+  assert.equal(detail(field("c", "为什么选择我们"), { id: "c", source: "remembered", remembered: true }).source, "memory");
+  assert.equal(detail(field("d", "职业规划"), { id: "d", source: "ai" }).state, "AI 生成，请核对");
+  assert.equal(detail(field("e", "身份证号"), undefined).source, "manual");
+  assert.equal(detail(field("f", "学历", { label: "学历" }), { id: "f", label: "学历", source: "profile" }, new Set(["学历"])).state, "写入没成功，请手填");
+  assert.equal(detail(field("g", "期望薪资", { hasValue: true }), undefined).source, "prefilled");
+  assert.equal(detail(field("h", "紧急情况说明"), undefined).state, "没有对应资料，请手填");
 });
 
 test("custom degree dropdowns get synonyms, other dropdowns do not", () => {

@@ -3,23 +3,13 @@
 import os from "os";
 import path from "path";
 import { statSync } from "fs";
-import { mkdir, writeFile, readdir, readFile } from "fs/promises";
+import { mkdir, writeFile } from "fs/promises";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireUser, LOCAL_USER_ID } from "@/lib/session";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
 import { saveLocalFile, mimeTypeForExtension, ALLOWED_LIBRARY_MIME } from "@/lib/local-storage";
-
-/**
- * Bumped whenever the export shape changes incompatibly. Import refuses a
- * file whose major version it doesn't understand rather than half-restoring
- * something and leaving the database in a mixed state.
- */
-const BACKUP_VERSION = 1;
-
-function uploadsDir(): string {
-  return process.env.LOCAL_UPLOADS_DIR ?? path.join(process.cwd(), "uploads");
-}
+import { BACKUP_VERSION, TABLES, buildBackupPayload, uploadsDir, type Delegate, type TableName } from "@/lib/backup-core";
 
 /** Where a backup lands. Downloads exists on both macOS and Windows; fall back to userData. */
 async function backupTargetDir(): Promise<string> {
@@ -34,53 +24,6 @@ async function backupTargetDir(): Promise<string> {
   }
 }
 
-// Order matters on import: parents before children, so foreign keys always
-// resolve. Session/VerificationToken/Account are deliberately absent — this
-// build has no login, so they're empty and restoring them means nothing.
-const TABLES = [
-  "user",
-  "dailyDigest",
-  "weeklyReview",
-  "resumeComparisonSummary",
-  "interviewIntelligence",
-  "aiKey",
-  "mailAccount",
-  "company",
-  "companyAlias",
-  "applicationPortal",
-  "radarJobPosting",
-  "radarJobEvent",
-  "jobLead",
-  "resumeVersion",
-  "position",
-  "application",
-  "stageHistory",
-  "interviewNoteExtract",
-  "stagePostmortem",
-  "attachment",
-  "positionMatch",
-  "resumeTailoring",
-  "resumeDrill",
-  "skillGapAnalysis",
-  "autofillAnswer",
-  "interviewPrep",
-  "groupInterviewPrep",
-  "coverLetter",
-  "interviewQA",
-  "personalTask",
-  "contact",
-  "interviewSession",
-  "interviewMessage",
-  "personalityTestResult",
-  "careerFitAnalysis",
-  "questionBank",
-  "examSession",
-  "desktopNote",
-  "calendarEvent",
-  "eventReminder",
-] as const;
-
-type TableName = (typeof TABLES)[number];
 
 /**
  * Foreign keys, as [field, parentTable]. Used to drop rows whose parent is
@@ -199,48 +142,12 @@ function isRowValid(
 // Prisma's per-model delegates all expose findMany/createMany/deleteMany, but
 // their argument types differ per model; this app only ever passes plain rows
 // through, so a loose shape here avoids 15 near-identical generic signatures.
-type Delegate = {
-  findMany: (args?: unknown) => Promise<unknown[]>;
-  create: (args: { data: unknown }) => Promise<unknown>;
-  deleteMany: (args?: unknown) => Promise<unknown>;
-};
-
-function delegate(table: TableName): Delegate {
-  return (db as unknown as Record<TableName, Delegate>)[table];
-}
-
 export type BackupResult = { path: string; sizeMb: string; files: number };
 
 export async function exportBackup(): Promise<ActionResult<BackupResult>> {
   return toActionResult(async () => {
     const user = await requireUser();
-
-    const data: Record<string, unknown[]> = {};
-    for (const table of TABLES) {
-      data[table] = await delegate(table).findMany();
-    }
-
-    // Resume/attachment files live on disk, so a data-only dump would restore
-    // rows pointing at files that no longer exist. Base64 inflates by ~33%,
-    // which is fine at this scale (a handful of PDFs) and keeps a backup to
-    // exactly one self-contained file with no zip dependency.
-    const files: Record<string, string> = {};
-    try {
-      for (const name of await readdir(uploadsDir())) {
-        if (name.startsWith(".")) continue;
-        const buf = await readFile(path.join(uploadsDir(), name));
-        files[name] = buf.toString("base64");
-      }
-    } catch {
-      // No uploads directory yet — a backup with zero files is still valid.
-    }
-
-    const payload = JSON.stringify({
-      backupVersion: BACKUP_VERSION,
-      exportedAt: new Date().toISOString(),
-      data,
-      files,
-    });
+    const { payload, files } = await buildBackupPayload();
 
     const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
     const target = path.join(await backupTargetDir(), `求职罗盘备份-${stamp}.json`);
@@ -252,7 +159,7 @@ export async function exportBackup(): Promise<ActionResult<BackupResult>> {
     return {
       path: target,
       sizeMb: (Buffer.byteLength(payload) / 1024 / 1024).toFixed(1),
-      files: Object.keys(files).length,
+      files,
     };
   });
 }

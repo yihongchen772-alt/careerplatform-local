@@ -112,6 +112,8 @@ export const applicationSchema = z.object({
   referrer: z.string().optional(),
   source: z.string().optional(),
   resumeVersionId: z.string().optional().nullable(),
+  /** Page the 网申 was submitted from, when recorded from the embedded browser. */
+  applyUrl: z.string().trim().max(2000).regex(/^https?:\/\//i).optional().nullable(),
 });
 
 export const applicationCoreUpdateSchema = z.object({

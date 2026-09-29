@@ -73,6 +73,18 @@ model User {
   // settings page can nudge "it's been N days" instead of the user finding
   // out their data diverged only after it already has.
   lastBackupAt          DateTime?
+  /// Scheduled backup (settings → 数据备份): the same self-contained JSON as
+  /// the manual export, written into a folder the user picks — typically one
+  /// that iCloud/OneDrive/坚果云 already syncs — and/or uploaded over WebDAV.
+  autoBackupEnabled       Boolean   @default(false)
+  autoBackupIntervalHours Int       @default(24)
+  autoBackupKeep          Int       @default(7)
+  autoBackupDir           String?
+  webdavUrl               String?
+  webdavUser              String?
+  webdavPasswordEncrypted String?
+  autoBackupLastAt        DateTime?
+  autoBackupLastError     String?
   createdAt             DateTime  @default(now())
 
   accounts                Account[]
@@ -565,6 +577,9 @@ model Application {
   portalStatusAt   DateTime?
   /// Offer/rejection detected by AI is held for the user to verify.
   portalSuggestedStage ApplicationStage?
+  /// Page the application was submitted from (网申浏览器 → 记为已投递). Lets the
+  /// browser recognise "you already applied here" on a later visit.
+  applyUrl         String?
   portalSuggestedAt DateTime?
   salaryMin        Int?
   salaryMax        Int?

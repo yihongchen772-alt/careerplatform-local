@@ -83,14 +83,16 @@ export function MarkAppliedFromBrowserDialog({
           appliedDate: new Date(appliedDate),
           source: source || undefined,
           resumeVersionId: resumeVersionId || undefined,
+          applyUrl: pageUrl || undefined,
         });
       } else {
         await markPositionApplied(positionId, {
           appliedDate: new Date(appliedDate),
           resumeVersionId: resumeVersionId || undefined,
+          applyUrl: pageUrl || undefined,
         });
       }
-      toast.success("已记为投递，看板里能看到了");
+      toast.success("已记为投递。之后打开这家公司的「我的投递」页，可以一键设为进度页自动同步阶段");
       onOpenChange(false);
       router.refresh();
     } catch (err) {

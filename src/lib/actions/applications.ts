@@ -37,6 +37,7 @@ export async function createApplication(
         referrer: data.referrer,
         source: data.source,
         resumeVersionId: data.resumeVersionId ?? undefined,
+        applyUrl: data.applyUrl ?? null,
         currentStage: "APPLIED",
         currentStageDate: data.appliedDate,
       },

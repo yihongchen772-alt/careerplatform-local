@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/session";
-import { describeApplicationProfile, parseApplicationProfile } from "@/lib/application-profile";
+import { describeApplicationProfile, parseApplicationProfile, resolveProfileVariant } from "@/lib/application-profile";
 import { db } from "@/lib/db";
 
 // Consumed by electron/browser-view.js's autofill handler (plain HTTP —
@@ -11,17 +11,25 @@ import { db } from "@/lib/db";
 // answer-questions route instead of round-tripping through the main process.
 export async function GET(request: Request) {
   const user = await requireUser();
-  const contextKey = new URL(request.url).searchParams.get("contextKey")?.slice(0, 300) || null;
+  const params = new URL(request.url).searchParams;
+  const contextKey = params.get("contextKey")?.slice(0, 300) || null;
   const fieldMemories = await db.autofillAnswer.findMany({
     where: { userId: user.id, kind: "field", confirmed: true, OR: [{ contextKey: null }, { contextKey }] },
     select: { questionLabel: true, answer: true, contextKey: true },
     orderBy: { updatedAt: "desc" },
   });
-  const structured = parseApplicationProfile(user.applicationProfile);
+  // 资料方案: explicit choice from the browser, else the one linked to the
+  // selected resume, else the default profile.
+  const { profile: structured, variant } = resolveProfileVariant(
+    parseApplicationProfile(user.applicationProfile),
+    params.get("variantId"),
+    params.get("resumeVersionId")
+  );
   const edu = structured.education[0];
   const exp = structured.experiences[0];
   return NextResponse.json({
     fieldMemories,
+    variantName: variant?.name ?? null,
     name: user.name,
     phone: user.phone,
     // `user.email` is the local single-user account's internal identifier

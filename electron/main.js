@@ -666,6 +666,35 @@ async function maybeSyncApplications() {
   }
 }
 
+// 自动备份 (settings → 数据备份): the server decides whether a backup is due
+// from the user's own interval; this only knocks every 30 minutes while the
+// app runs, and notifies once per distinct failure.
+let autoBackupTimer;
+let lastAutoBackupError = "";
+async function maybeAutoBackup() {
+  try {
+    const res = await fetch(`http://localhost:${PORT}/api/auto-backup/run`, { method: "POST" });
+    if (!res.ok) return;
+    const outcome = await res.json();
+    const error = outcome && outcome.ran && outcome.error ? String(outcome.error) : "";
+    if (error && error !== lastAutoBackupError) {
+      const { Notification } = require("electron");
+      if (Notification.isSupported()) {
+        new Notification({ title: "自动备份失败", body: `${error.slice(0, 120)}。到账号设置 → 数据备份查看。` }).on("click", showWindow).show();
+      }
+    }
+    if (outcome && outcome.ran) lastAutoBackupError = error;
+  } catch {
+    // Server not up yet — the next tick retries.
+  }
+}
+
+function startAutoBackupLoop() {
+  if (autoBackupTimer) return;
+  setTimeout(maybeAutoBackup, 2 * 60 * 1000);
+  autoBackupTimer = setInterval(maybeAutoBackup, 30 * 60 * 1000);
+}
+
 function startScanLoop() {
   if (scanTimer) return;
   // Checked every 5 minutes; maybeScanInbox/maybeCheckJobRadar each decide
@@ -753,6 +782,9 @@ app.whenReady().then(async () => {
       },
     });
 
+    // Never in test mode: an isolated copy of real data still carries the
+    // user's real backup folder and WebDAV settings.
+    if (process.env.CAREERPLATFORM_TEST_MODE !== "1") startAutoBackupLoop();
     if (settings.backgroundReminders && process.env.CAREERPLATFORM_TEST_MODE !== "1") {
       buildTray();
       startReminderLoop();

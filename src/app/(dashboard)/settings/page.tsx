@@ -6,6 +6,8 @@ import { AppearanceForm } from "@/components/settings/appearance-form";
 import { EmailSettingsForm } from "@/components/settings/email-settings-form";
 import { MailAccountsCard } from "@/components/settings/mail-accounts-card";
 import { BackupCard } from "@/components/settings/backup-card";
+import { AutoBackupCard } from "@/components/settings/auto-backup-card";
+import { getAutoBackupSettings } from "@/lib/actions/auto-backup";
 import { BackgroundReminderCard } from "@/components/settings/background-reminder-card";
 import { getAiKeysOverview } from "@/lib/actions/ai-keys";
 import { getAppSettings } from "@/lib/actions/app-settings";
@@ -20,7 +22,7 @@ import { version } from "../../../../package.json";
 
 export default async function SettingsPage() {
   const user = await requireUser();
-  const [aiKeys, appSettings, mailAccounts, freshnessResult, resumeVersions, rememberedAnswers] = await Promise.all([
+  const [aiKeys, appSettings, mailAccounts, freshnessResult, resumeVersions, rememberedAnswers, autoBackup] = await Promise.all([
     getAiKeysOverview(user.id),
     getAppSettings(),
     listMailAccounts(user.id),
@@ -35,6 +37,7 @@ export default async function SettingsPage() {
       select: { id: true, questionLabel: true, answer: true, kind: true, contextKey: true, updatedAt: true },
       orderBy: { updatedAt: "desc" },
     }),
+    getAutoBackupSettings(),
   ]);
   const freshness = freshnessResult.ok ? freshnessResult.data : null;
 
@@ -66,6 +69,7 @@ export default async function SettingsPage() {
         <MailAccountsCard accounts={mailAccounts} />
         <BackgroundReminderCard initial={appSettings} />
         <BackupCard initialFreshness={freshness} />
+        <AutoBackupCard initial={autoBackup} />
         <UpdateCard currentVersion={version} />
       </div>
     </div>

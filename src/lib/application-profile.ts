@@ -39,19 +39,58 @@ export const EXTRA_FIELDS = [
   { key: "currentCity", label: "现居城市", hint: "" },
 ] as const;
 
-export const applicationProfileSchema = z.object({
-  education: z.array(educationSchema).max(10).default([]),
+/**
+ * 资料方案: a named alternative for a different direction (数据 vs 产品 …).
+ * Education is the same person whatever the direction, so it stays shared;
+ * which internships/projects to lead with and the extra fields (期望城市,
+ * 英语 …) are what change, and each variant keeps its own full copy of them.
+ */
+export const profileVariantSchema = z.object({
+  id: z.string().trim().min(1).max(40),
+  name: z.string().trim().min(1, "方案名称必填").max(30),
+  /** Picking this resume in the 网申浏览器 switches to this variant. */
+  resumeVersionId: z.string().trim().max(40).nullish(),
   experiences: z.array(experienceSchema).max(20).default([]),
   projects: z.array(projectSchema).max(20).default([]),
   extras: z.record(z.string(), z.string().trim().max(200)).default({}),
 });
 
+export const applicationProfileSchema = z.object({
+  education: z.array(educationSchema).max(10).default([]),
+  experiences: z.array(experienceSchema).max(20).default([]),
+  projects: z.array(projectSchema).max(20).default([]),
+  extras: z.record(z.string(), z.string().trim().max(200)).default({}),
+  variants: z.array(profileVariantSchema).max(8).default([]),
+});
+
 export type ApplicationProfile = z.infer<typeof applicationProfileSchema>;
+export type ProfileVariant = z.infer<typeof profileVariantSchema>;
+
+/**
+ * The profile a 网申 is filled from: the default one, or with a variant's
+ * experiences/projects/extras swapped in. An unknown id falls back to the
+ * variant linked to `resumeVersionId`, then to the default.
+ */
+export function resolveProfileVariant(
+  profile: ApplicationProfile,
+  variantId?: string | null,
+  resumeVersionId?: string | null
+): { profile: ApplicationProfile; variant: ProfileVariant | null } {
+  const variant =
+    (variantId && profile.variants.find((v) => v.id === variantId)) ||
+    (!variantId && resumeVersionId && profile.variants.find((v) => v.resumeVersionId === resumeVersionId)) ||
+    null;
+  if (!variant) return { profile, variant: null };
+  return {
+    profile: { ...profile, experiences: variant.experiences, projects: variant.projects, extras: { ...profile.extras, ...variant.extras } },
+    variant,
+  };
+}
 export type EducationRow = z.infer<typeof educationSchema>;
 export type ExperienceRow = z.infer<typeof experienceSchema>;
 export type ProjectRow = z.infer<typeof projectSchema>;
 
-export const EMPTY_APPLICATION_PROFILE: ApplicationProfile = { education: [], experiences: [], projects: [], extras: {} };
+export const EMPTY_APPLICATION_PROFILE: ApplicationProfile = { education: [], experiences: [], projects: [], extras: {}, variants: [] };
 
 export function parseApplicationProfile(raw: unknown): ApplicationProfile {
   const parsed = applicationProfileSchema.safeParse(raw);

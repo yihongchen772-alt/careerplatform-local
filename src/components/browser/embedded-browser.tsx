@@ -12,6 +12,7 @@ import {
   Compass,
   Copy,
   ExternalLink,
+  FileCode,
   Eraser,
   Maximize2,
   Minimize2,
@@ -51,8 +52,10 @@ import { PortalSyncDialog, type PortalCompany } from "@/components/browser/porta
 import { QuickOpenDialog, type QuickLinks } from "@/components/browser/quick-open-dialog";
 import { MarkAppliedFromBrowserDialog, type PoolPosition } from "@/components/browser/mark-applied-from-browser";
 import { ScreenshotDialog, type ApplicationOption } from "@/components/browser/screenshot-dialog";
+import { SiteBanner, type KnownSite } from "@/components/browser/site-banner";
 import type {
   DesktopBridgeAutofillStatus,
+  DesktopBridgeFillSource,
   DesktopBridgeTab,
   DesktopBridgeTabsState,
 } from "@/types/desktop-bridge";
@@ -101,8 +104,61 @@ function shortTitle(tab: DesktopBridgeTab) {
   }
 }
 
+// Same colours as the outlines fillFields draws on the page, so a dot here
+// and a border there mean the same thing.
+const FILL_SOURCES: { source: DesktopBridgeFillSource; label: string; dot: string }[] = [
+  { source: "manual", label: "需要你手填", dot: "bg-red-500" },
+  { source: "ai", label: "AI 生成（紫红框）", dot: "bg-fuchsia-500" },
+  { source: "memory", label: "记忆库 / 你的回答（绿框）", dot: "bg-green-600" },
+  { source: "profile", label: "网申资料（紫框）", dot: "bg-violet-500" },
+  { source: "prefilled", label: "页面原有内容", dot: "bg-muted-foreground/40" },
+];
+
+function FillDetails({ details }: { details: NonNullable<DesktopBridgeAutofillStatus["details"]> }) {
+  const manual = details.filter((item) => item.source === "manual");
+  return (
+    <div className="mt-1 space-y-1">
+      {manual.length > 0 && (
+        <p className="text-foreground">
+          需要手填：{manual.slice(0, 8).map((item) => item.label).join("、")}
+          {manual.length > 8 ? ` 等 ${manual.length} 项` : ""}
+        </p>
+      )}
+      <details>
+        <summary className="cursor-pointer">
+          逐字段来源（{FILL_SOURCES.map(({ source, label }) => {
+            const count = details.filter((item) => (item.source ?? "profile") === source).length;
+            return count ? `${label.replace(/（.*）/, "")} ${count}` : null;
+          }).filter(Boolean).join(" · ")}）
+        </summary>
+        <div className="mt-1 max-h-48 space-y-2 overflow-auto">
+          {FILL_SOURCES.map(({ source, label, dot }) => {
+            const rows = details.filter((item) => (item.source ?? "profile") === source);
+            if (!rows.length) return null;
+            return (
+              <div key={source}>
+                <p className="flex items-center gap-1.5 font-medium text-foreground">
+                  <span className={`inline-block size-2 rounded-full ${dot}`} />
+                  {label}（{rows.length}）
+                </p>
+                <ul className="ml-3.5 space-y-0.5">
+                  {rows.map((item, index) => (
+                    <li key={`${item.label}-${index}`}>{item.label} · {item.state}</li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
+      </details>
+    </div>
+  );
+}
+
 export function EmbeddedBrowser({
   initialUrl,
+  knownSites,
+  profileVariants,
   resumeVersions,
   portalCompanies,
   quickLinks,
@@ -110,6 +166,8 @@ export function EmbeddedBrowser({
   applications,
 }: {
   initialUrl?: string;
+  knownSites: KnownSite[];
+  profileVariants: { id: string; name: string; resumeVersionId: string | null }[];
   resumeVersions: ResumeOption[];
   portalCompanies: PortalCompany[];
   quickLinks: QuickLinks;
@@ -151,6 +209,10 @@ export function EmbeddedBrowser({
   const [findOpen, setFindOpen] = useState(false);
   const [findText, setFindText] = useState("");
   const [findResult, setFindResult] = useState<{ active: number; total: number } | null>(null);
+  // 资料方案: "" = 跟随简历 (the variant bound to the chosen resume, else the
+  // default profile), "default" = always the default, otherwise a variant id.
+  const [variantChoice, setVariantChoice] = useState("");
+  const [variantMenuOpen, setVariantMenuOpen] = useState(false);
   const [resumeVersionId, setResumeVersionId] = useState(
     resumeVersions.find((r) => r.isDefault)?.id ?? resumeVersions[0]?.id ?? ""
   );
@@ -185,20 +247,31 @@ export function EmbeddedBrowser({
     },
     () => true
   );
+  const expandPreference = useSyncExternalStore(
+    noop,
+    () => {
+      try { return localStorage.getItem("careerplatform.browser.expandBlocks") === "1"; }
+      catch { return false; }
+    },
+    () => false
+  );
+  const [expandOverride, setExpandOverride] = useState<boolean | null>(null);
+  const expandBlocks = expandOverride ?? expandPreference;
   const [rememberOverride, setRememberOverride] = useState<boolean | null>(null);
   const autoRemember = rememberOverride ?? rememberedPreference;
   // Latest values for the long-lived IPC listener below, updated in an
   // effect (the lint rule forbids touching refs during render).
-  const liveRef = useRef({ resumeVersionId, autoFill, autofilling });
+  const liveRef = useRef({ resumeVersionId, autoFill, autofilling, expandBlocks, variantChoice });
   useEffect(() => {
-    liveRef.current = { resumeVersionId, autoFill, autofilling };
-  }, [resumeVersionId, autoFill, autofilling]);
+    liveRef.current = { resumeVersionId, autoFill, autofilling, expandBlocks, variantChoice };
+  }, [resumeVersionId, autoFill, autofilling, expandBlocks, variantChoice]);
 
   const bridge = useDesktopBridge();
   const activeTab = tabsState.tabs.find((t) => t.id === tabsState.activeId) ?? null;
   const currentUrl = activeTab?.url && activeTab.url !== "about:blank" ? activeTab.url : null;
   const overlayOpen =
-    captureOpen || portalOpen || quickOpen || markOpen || shotOpen || resumeMenuOpen || moreOpen;
+    captureOpen || portalOpen || quickOpen || markOpen || shotOpen || resumeMenuOpen || moreOpen || variantMenuOpen;
+  const linkedVariant = profileVariants.find((v) => v.resumeVersionId && v.resumeVersionId === resumeVersionId);
 
   useEffect(() => {
     if (!bridge) return;
@@ -235,7 +308,7 @@ export function EmbeddedBrowser({
         setDetected(null);
         setAutofilling(true);
         setStatus({ phase: "scanning", message: `检测到新一页表单（${payload.count} 个字段），自动填充中…` });
-        void bridge.autofill(live.resumeVersionId);
+        void bridge.autofill(live.resumeVersionId, { expandBlocks: live.expandBlocks, variantId: live.variantChoice || undefined });
       } else {
         setDetected(payload);
       }
@@ -382,6 +455,12 @@ export function EmbeddedBrowser({
     }
   }
 
+  function setExpandBlocks(next: boolean) {
+    setExpandOverride(next);
+    try { localStorage.setItem("careerplatform.browser.expandBlocks", next ? "1" : "0"); }
+    catch { /* per-device preference only */ }
+  }
+
   function setAutoRememberAnswers(next: boolean) {
     setRememberOverride(next);
     try { localStorage.setItem("careerplatform.browser.autoRememberAnswers", next ? "1" : "0"); }
@@ -393,7 +472,7 @@ export function EmbeddedBrowser({
     setDetected(null);
     setAutofilling(true);
     setStatus({ phase: "scanning", message: "正在读取页面…" });
-    bridge.autofill(resumeVersionId || undefined);
+    bridge.autofill(resumeVersionId || undefined, { expandBlocks, variantId: variantChoice || undefined });
   }
 
   async function handleSaveCorrections() {
@@ -599,6 +678,20 @@ export function EmbeddedBrowser({
               <Camera className="size-4" />
               截图存到投递附件
             </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={!currentUrl}
+              onClick={async () => {
+                try {
+                  const result = await bridge.exportFormStructure();
+                  toast.success(`已导出表单结构（${result.fields} 个字段），文件在「下载」文件夹；已去掉填写内容和个人资料，可发给开发者排查`);
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : "导出失败");
+                }
+              }}
+            >
+              <FileCode className="size-4" />
+              导出表单结构（反馈填错用）
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => bridge.clearMarks()}>
               <Eraser className="size-4" />
@@ -683,6 +776,25 @@ export function EmbeddedBrowser({
             </SelectContent>
           </Select>
         )}
+        {profileVariants.length > 0 && (
+          <Select value={variantChoice || "auto"} onValueChange={(v) => setVariantChoice(!v || v === "auto" ? "" : v)} onOpenChange={setVariantMenuOpen}>
+            <SelectTrigger className="h-9 w-44 shrink-0" title="网申资料方案：不同求职方向的实习/项目顺序和常问字段">
+              <SelectValue>
+                {(value: string) =>
+                  value === "auto"
+                    ? `方案：${linkedVariant ? linkedVariant.name : "默认资料"}（跟随简历）`
+                    : `方案：${value === "default" ? "默认资料" : profileVariants.find((v) => v.id === value)?.name ?? "默认资料"}`}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto">跟随简历</SelectItem>
+              <SelectItem value="default">默认资料</SelectItem>
+              {profileVariants.map((v) => (
+                <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <Button type="button" size="sm" disabled={autofilling || !currentUrl} onClick={handleAutofill} title="按账号资料 + 简历自动填表单，含 iframe 里的表单和单选按钮">
           <Sparkles className="size-4" />
           {autofilling ? "填充中..." : "AI 一键填充"}
@@ -690,6 +802,10 @@ export function EmbeddedBrowser({
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground" title="网申分好几页时（基本信息→教育→实习→开放题），每翻到一页有空表单就自动填，不用每页点一次">
           <input type="checkbox" checked={autoFill} onChange={(e) => setAutoFillEveryPage(e.target.checked)} />
           每页自动填
+        </label>
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground" title="网申资料里的教育/实习/项目经历比页面上的栏目多时，自动点页面上的「添加教育经历」等按钮再接着填；只点文字明确的添加按钮，不会点提交">
+          <input type="checkbox" checked={expandBlocks} onChange={(e) => setExpandBlocks(e.target.checked)} />
+          自动补齐栏目
         </label>
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground" title="记住你手填或修改的基础资料与开放题；密码、证件、银行卡、验证码不保存">
           <input type="checkbox" checked={autoRemember} onChange={(e) => setAutoRememberAnswers(e.target.checked)} />
@@ -771,6 +887,14 @@ export function EmbeddedBrowser({
           </button>
         </div>
       )}
+      <SiteBanner
+        bridge={bridge}
+        url={currentUrl}
+        title={activeTab?.title ?? ""}
+        loading={!!activeTab?.loading}
+        sites={knownSites}
+        onPickPortalCompany={() => setPortalOpen(true)}
+      />
       <AiProgress
         active={autofilling && status?.phase === "ai"}
         expectedSeconds={30}
@@ -786,16 +910,7 @@ export function EmbeddedBrowser({
           }
         >
           <p>{status.message}</p>
-          {status.details && status.details.length > 0 && (
-            <details className="mt-1">
-              <summary className="cursor-pointer">查看逐字段结果（{status.details.length}）</summary>
-              <ul className="mt-1 max-h-40 space-y-0.5 overflow-auto">
-                {status.details.map((item, index) => (
-                  <li key={`${item.label}-${index}`}>{item.state} · {item.label}</li>
-                ))}
-              </ul>
-            </details>
-          )}
+          {status.details && status.details.length > 0 && <FillDetails details={status.details} />}
         </div>
       )}
 

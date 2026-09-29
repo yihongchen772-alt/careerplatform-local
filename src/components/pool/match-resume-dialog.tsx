@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { FileSearch } from "lucide-react";
+import Link from "next/link";
+import { FileSearch, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -142,6 +143,13 @@ export function MatchResumeDialog({
                 )}
 
                 <p className="text-sm">{m.suggestion}</p>
+                <Link
+                  href={`/resumes/tailored?positionId=${encodeURIComponent(positionId)}&resumeVersionId=${encodeURIComponent(m.resumeVersionId)}`}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                >
+                  <FileText className="size-3.5" />
+                  生成整份定制简历（可编辑，导出 PDF / Word）
+                </Link>
 
                 {!tailoring[m.resumeVersionId] ? (
                   <Button

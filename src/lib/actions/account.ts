@@ -47,6 +47,13 @@ export async function updateApplicationProfile(input: unknown): Promise<ActionRe
       experiences: data.experiences.filter((x) => Object.values(x).some(Boolean)),
       projects: data.projects.filter((project) => Object.values(project).some(Boolean)),
       extras: Object.fromEntries(Object.entries(data.extras).filter(([, v]) => v)),
+      variants: data.variants.map((variant) => ({
+        ...variant,
+        resumeVersionId: variant.resumeVersionId || null,
+        experiences: variant.experiences.filter((x) => Object.values(x).some(Boolean)),
+        projects: variant.projects.filter((project) => Object.values(project).some(Boolean)),
+        extras: Object.fromEntries(Object.entries(variant.extras).filter(([, v]) => v)),
+      })),
     };
     await db.user.update({
       where: { id: user.id },

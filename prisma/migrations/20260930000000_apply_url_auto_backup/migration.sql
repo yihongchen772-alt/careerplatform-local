@@ -1,0 +1,10 @@
+ALTER TABLE "Application" ADD COLUMN "applyUrl" TEXT;
+ALTER TABLE "User" ADD COLUMN "autoBackupEnabled" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "User" ADD COLUMN "autoBackupIntervalHours" INTEGER NOT NULL DEFAULT 24;
+ALTER TABLE "User" ADD COLUMN "autoBackupKeep" INTEGER NOT NULL DEFAULT 7;
+ALTER TABLE "User" ADD COLUMN "autoBackupDir" TEXT;
+ALTER TABLE "User" ADD COLUMN "webdavUrl" TEXT;
+ALTER TABLE "User" ADD COLUMN "webdavUser" TEXT;
+ALTER TABLE "User" ADD COLUMN "webdavPasswordEncrypted" TEXT;
+ALTER TABLE "User" ADD COLUMN "autoBackupLastAt" DATETIME;
+ALTER TABLE "User" ADD COLUMN "autoBackupLastError" TEXT;

@@ -1,6 +1,9 @@
 "use server";
 
 import { z } from "zod";
+import type { Prisma } from "@prisma/client";
+import { parseApplicationProfile } from "@/lib/application-profile";
+import { sanitizeResumeBody, tailoredResumeSchema, type TailoredResume } from "@/lib/tailored-resume";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
@@ -126,12 +129,130 @@ ${resumeText}
   const parsed = tailoringSchema.safeParse(raw);
   if (!parsed.success) throw new UserFacingError("AI 返回格式异常，请重试");
 
+  // Merge: the same row also holds the generated 定制简历 (below).
+  const existing = await db.resumeTailoring.findUnique({
+    where: { positionId_resumeVersionId: { positionId, resumeVersionId } },
+    select: { result: true },
+  });
+  const merged = { ...((existing?.result as Record<string, unknown> | null) ?? {}), ...parsed.data };
   await db.resumeTailoring.upsert({
     where: { positionId_resumeVersionId: { positionId, resumeVersionId } },
-    create: { userId: user.id, positionId, resumeVersionId, result: parsed.data },
-    update: { result: parsed.data },
+    create: { userId: user.id, positionId, resumeVersionId, result: merged as Prisma.InputJsonValue },
+    update: { result: merged as Prisma.InputJsonValue },
   });
 
   revalidatePath("/pool");
   return parsed.data;
+}
+
+/**
+ * 定制简历: a complete one-page resume for this JD, assembled only from facts
+ * already on the resume and in 网申资料 — reordered, trimmed and reworded
+ * toward the JD, never invented. Education comes verbatim from 网申资料 at
+ * render time, so the AI never touches school names, degrees or dates.
+ */
+export async function generateTailoredResume(
+  positionId: string,
+  resumeVersionId: string
+): Promise<ActionResult<TailoredResume>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const position = await db.position.findFirst({ where: { id: positionId, userId: user.id }, include: { company: true } });
+    if (!position) throw new UserFacingError("未找到该岗位");
+    const { resumeText } = await getResumeContext(resumeVersionId, user.id);
+    const profile = parseApplicationProfile(user.applicationProfile);
+    const existing = await db.resumeTailoring.findUnique({
+      where: { positionId_resumeVersionId: { positionId, resumeVersionId } },
+      select: { result: true },
+    });
+    const previous = (existing?.result as { rewrites?: { original: string; suggested: string }[] } | null) ?? null;
+    const rewrites = previous?.rewrites?.length
+      ? `\n之前针对这个岗位给过的改写建议（可以直接采用）：\n${previous.rewrites.map((r) => `- ${r.original} → ${r.suggested}`).join("\n")}`
+      : "";
+    const facts = [
+      ...profile.experiences.map((x, i) => `实习/工作${i + 1}：${[x.company, x.role, [x.start, x.end].filter(Boolean).join("~")].filter(Boolean).join(" / ")}${x.description ? `——${x.description}` : ""}`),
+      ...profile.projects.map((p, i) => `项目${i + 1}：${[p.name, p.role, [p.start, p.end].filter(Boolean).join("~")].filter(Boolean).join(" / ")}${p.description ? `；描述：${p.description}` : ""}${p.responsibilities ? `；职责与成果：${p.responsibilities}` : ""}`),
+    ].join("\n");
+
+    const prompt = `你在帮一个中国应届生针对下面这个岗位，整理出一份完整的一页中文简历。只能使用候选人简历原文和网申资料里已有的事实：可以挑选、排序、精简、换成 JD 里的关键词、把已有成果写得更具体，但绝不能编造经历、项目、技能、数字、奖项或时间。
+
+目标岗位：
+公司：${position.company.name}
+岗位：${position.title}${position.track ? `\n方向：${position.track}` : ""}
+${position.jdText ? `JD 正文：\n${position.jdText.slice(0, 6000)}` : "（没有 JD 正文，只能依据岗位名称判断）"}
+${rewrites}
+
+候选人简历原文：
+${resumeText.slice(0, 12000)}
+
+网申资料里的经历（和简历原文互相补充，以这里的公司名、时间为准）：
+${facts || "（无）"}
+
+输出要求：
+- headline：求职意向，写这个岗位的名称或方向，不超过 20 字
+- summary：个人优势，2-3 句，紧扣 JD 最看重的 2-3 点，只写有事实支撑的内容
+- experiences：实习/工作经历，按与 JD 相关度排序，最多 4 段；title=公司，subtitle=职位，start/end 用 yyyy.MM（没有就留空，不要猜），bullets 每段 2-4 条，以动词开头，保留原有数字，不新增数字
+- projects：项目经历，按相关度排序，最多 3 个；title=项目名，subtitle=角色，其余同上
+- skills：专业技能，3-6 条，每条一类（如“数据分析：SQL、Python（pandas）”），只写简历里出现过的
+- awards：荣誉与证书，只写简历里出现过的，没有就给空数组
+- 不要输出教育经历（会直接用网申资料里的）
+- 全部用中文，除非是专有名词`;
+
+    const config = await getUserAiConfig(user.id);
+    const entry = {
+      type: "OBJECT",
+      properties: {
+        title: { type: "STRING" },
+        subtitle: { type: "STRING" },
+        start: { type: "STRING" },
+        end: { type: "STRING" },
+        bullets: { type: "ARRAY", items: { type: "STRING" } },
+      },
+      required: ["title", "subtitle", "start", "end", "bullets"],
+    } as const;
+    const raw = await callTextAi({
+      config,
+      prompt,
+      thinkingBudget: 2048,
+      timeoutMs: 120000,
+      schema: {
+        type: "OBJECT",
+        properties: {
+          headline: { type: "STRING" },
+          summary: { type: "STRING" },
+          experiences: { type: "ARRAY", items: entry },
+          projects: { type: "ARRAY", items: entry },
+          skills: { type: "ARRAY", items: { type: "STRING" } },
+          awards: { type: "ARRAY", items: { type: "STRING" } },
+        },
+        required: ["headline", "summary", "experiences", "projects", "skills", "awards"],
+      },
+    });
+    const parsed = tailoredResumeSchema.safeParse(raw);
+    if (!parsed.success) throw new UserFacingError("AI 返回格式异常，请重试");
+
+    // A fresh generation replaces any hand-edited version of the old one.
+    const merged = { ...((existing?.result as Record<string, unknown> | null) ?? {}), document: parsed.data, documentBody: null };
+    await db.resumeTailoring.upsert({
+      where: { positionId_resumeVersionId: { positionId, resumeVersionId } },
+      create: { userId: user.id, positionId, resumeVersionId, result: merged as Prisma.InputJsonValue },
+      update: { result: merged as Prisma.InputJsonValue },
+    });
+    return parsed.data;
+  });
+}
+
+/** Keeps the applicant's in-preview edits (sanitised body HTML). */
+export async function saveTailoredResumeBody(positionId: string, resumeVersionId: string, body: string): Promise<ActionResult<null>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const existing = await db.resumeTailoring.findFirst({
+      where: { positionId, resumeVersionId, userId: user.id },
+      select: { id: true, result: true },
+    });
+    if (!existing) throw new UserFacingError("先生成定制简历");
+    const result = { ...((existing.result as Record<string, unknown> | null) ?? {}), documentBody: sanitizeResumeBody(body) };
+    await db.resumeTailoring.update({ where: { id: existing.id }, data: { result: result as Prisma.InputJsonValue } });
+    return null;
+  });
 }

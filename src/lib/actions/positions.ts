@@ -101,7 +101,7 @@ export async function deletePosition(id: string) {
 
 export async function markPositionApplied(
   id: string,
-  input: { appliedDate: Date; referrer?: string; resumeVersionId?: string }
+  input: { appliedDate: Date; referrer?: string; resumeVersionId?: string; applyUrl?: string | null }
 ) {
   const user = await requireUser();
   const position = await db.position.findFirst({
@@ -109,13 +109,19 @@ export async function markPositionApplied(
     include: { company: true },
   });
   if (!position) throw new Error("未找到该岗位");
+  const applyUrl = input.applyUrl && /^https?:\/\//i.test(input.applyUrl) ? input.applyUrl.slice(0, 2000) : null;
 
   await db.$transaction(async (tx) => {
+    // Same rule as createApplication: a company with exactly one 进度页 gets
+    // the new application linked to it, or 进度同步 would never match it.
+    const portals = await tx.applicationPortal.findMany({ where: { companyId: position.companyId }, select: { id: true }, take: 2 });
     const application = await tx.application.create({
       data: {
         userId: user.id,
         positionId: position.id,
         companyId: position.companyId,
+        portalId: portals.length === 1 ? portals[0].id : null,
+        applyUrl,
         title: position.title,
         appliedDate: input.appliedDate,
         referrer: input.referrer,
@@ -133,6 +139,9 @@ export async function markPositionApplied(
         stage: "APPLIED",
       },
     });
+    if (application.portalId) {
+      await tx.applicationPortal.update({ where: { id: application.portalId }, data: { contentHash: null } });
+    }
 
     await tx.position.update({
       where: { id: position.id },
