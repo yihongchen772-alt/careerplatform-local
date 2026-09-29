@@ -13,8 +13,8 @@ const context = {
   module: { exports: {} },
   URL,
 };
-vm.runInNewContext(`${source}\nmodule.exports.__test = { degreeAlternatives, matchBasicField, resolveRepeatField, repeatFieldValue, missingRepeatBlocks, repeatFieldGoesToAi, matchRememberedField, fieldMemoryKey, isForbiddenMemoryField, isNeverGuessField, isOpenEndedQuestionField, isSensitiveMemoryField, portalContext, memoryCandidate, trackUserEdits, assertTrustedBrowserEvent, safeDownloadFilename, openSafeExternalUrl };`, context);
-const { degreeAlternatives, matchBasicField, resolveRepeatField, repeatFieldValue, missingRepeatBlocks, repeatFieldGoesToAi, matchRememberedField, fieldMemoryKey, isForbiddenMemoryField, isNeverGuessField, isOpenEndedQuestionField, isSensitiveMemoryField, portalContext, memoryCandidate, trackUserEdits, assertTrustedBrowserEvent, safeDownloadFilename, openSafeExternalUrl } = context.module.exports.__test;
+vm.runInNewContext(`${source}\nmodule.exports.__test = { formatDateForField, dateRangeValue, degreeAlternatives, matchBasicField, resolveRepeatField, repeatFieldValue, missingRepeatBlocks, repeatFieldGoesToAi, matchRememberedField, fieldMemoryKey, isForbiddenMemoryField, isNeverGuessField, isOpenEndedQuestionField, isSensitiveMemoryField, portalContext, memoryCandidate, trackUserEdits, assertTrustedBrowserEvent, safeDownloadFilename, openSafeExternalUrl };`, context);
+const { formatDateForField, dateRangeValue, degreeAlternatives, matchBasicField, resolveRepeatField, repeatFieldValue, missingRepeatBlocks, repeatFieldGoesToAi, matchRememberedField, fieldMemoryKey, isForbiddenMemoryField, isNeverGuessField, isOpenEndedQuestionField, isSensitiveMemoryField, portalContext, memoryCandidate, trackUserEdits, assertTrustedBrowserEvent, safeDownloadFilename, openSafeExternalUrl } = context.module.exports.__test;
 
 const profile = { name: "陈奕宏", email: "me@example.invalid" };
 
@@ -95,6 +95,40 @@ test("degree words in labels or block headings pick the matching education row",
   assert.equal(matchBasicField(field("最高学历", "", ["本科", "硕士", "博士"]), savedProfile, new Map()), "硕士");
   assert.equal(matchBasicField(field("学校", "教育经历 2"), savedProfile, new Map()), "华东师范大学");
   assert.equal(matchBasicField(field("学校", "第二段教育经历"), savedProfile, new Map()), "华东师范大学");
+});
+
+test("dates follow each field's precision; a full date defaults to the 1st", () => {
+  const field = (label, placeholder = "", type = "text") => ({ label, placeholder, name: "", tag: "input", type });
+  assert.equal(formatDateForField(field("开始时间", "请选择日期"), "2025-08"), "2025-08-01");
+  assert.equal(formatDateForField(field("开始时间", "Select date"), "2025.8"), "2025-08-01");
+  assert.equal(formatDateForField(field("开始时间", "", "date"), "2025-08"), "2025-08-01");
+  assert.equal(formatDateForField(field("开始时间", "YYYY/MM/DD"), "2025-08"), "2025/08/01");
+  assert.equal(formatDateForField(field("开始时间", "2020年09月01日"), "2025-08"), "2025年08月01日");
+  assert.equal(formatDateForField(field("开始时间", "请选择月份"), "2025-08-15"), "2025-08");
+  assert.equal(formatDateForField(field("开始时间", "如 2020.09"), "2025-08"), "2025.08");
+  assert.equal(formatDateForField(field("开始时间", "", "month"), "2025/8"), "2025-08");
+  assert.equal(formatDateForField(field("开始时间"), "2025年8月"), "2025-08");
+  assert.equal(formatDateForField(field("毕业年份"), "2026-12"), "2026");
+  assert.equal(formatDateForField(field("毕业时间", "", "date"), "2026"), "");
+  assert.equal(formatDateForField(field("结束时间", "请选择日期"), "至今"), "至今");
+  assert.equal(formatDateForField(field("结束时间"), "Present"), "至今");
+});
+
+test("one-box date spans follow the page's own example", () => {
+  const field = (placeholder, type = "text") => ({ label: "起止时间", placeholder, name: "", tag: "input", type });
+  assert.equal(dateRangeValue(field("如 2020.09-2024.06"), "2021-09", "2025-06"), "2021.09 - 2025.06");
+  assert.equal(dateRangeValue(field("2020-09-01 ~ 2024-06-30"), "2021-09", "2025-06"), "2021-09-01 ~ 2025-06-01");
+  assert.equal(dateRangeValue(field(""), "2021-09", "2025-06"), "2021-09 至 2025-06");
+  assert.equal(dateRangeValue(field("如 2020.09-至今"), "2025-06", "至今"), "2025.06 - 至今");
+  assert.equal(dateRangeValue(field(""), "2021-09", ""), "");
+  assert.equal(dateRangeValue(field("", "date"), "2021-09", "2025-06"), "");
+  const savedProfile = { ...profile, experiences: [{ company: "美团", start: "2026-01", end: "至今" }], education: [{ school: "东南大学", degree: "本科", start: "2021-09", end: "2025-06" }] };
+  const inBlock = (label, section, placeholder = "") => ({ label, placeholder, name: "", tag: "input", type: "text", section });
+  assert.equal(matchBasicField(inBlock("起止时间", "实习经历", "如 2020.09-2024.06"), savedProfile, new Map()), "2026.01 - 至今");
+  assert.equal(matchBasicField(inBlock("在校时间", ""), savedProfile, new Map()), "2021-09 至 2025-06");
+  assert.equal(matchBasicField(inBlock("时间", "教育经历"), savedProfile, new Map()), "2021-09 至 2025-06");
+  assert.equal(resolveRepeatField(inBlock("每周实习时间", "实习经历"), new Map()), null);
+  assert.equal(resolveRepeatField(inBlock("时间", ""), new Map()), null);
 });
 
 test("custom degree dropdowns get synonyms, other dropdowns do not", () => {

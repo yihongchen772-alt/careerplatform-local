@@ -47,6 +47,8 @@ export default function BrowserDemoPage() {
                 <label className="block space-y-1"><span>学校名称</span><input name={`edu${n}_school`} className="w-full rounded-md border p-2" /></label>
                 <label className="block space-y-1"><span>专业</span><input name={`edu${n}_major`} className="w-full rounded-md border p-2" /></label>
                 <label className="block space-y-1"><span>学历</span><select name={`edu${n}_degree`} className="w-full rounded-md border p-2"><option value="">请选择</option><option>本科</option><option>硕士研究生</option><option>博士研究生</option></select></label>
+                <label className="block space-y-1"><span>入学日期</span><input type="date" name={`edu${n}_start`} className="w-full rounded-md border p-2" /></label>
+                <label className="block space-y-1"><span>在校时间</span><input name={`edu${n}_span`} placeholder="如 2020.09-2024.06" className="w-full rounded-md border p-2" /></label>
               </div>
             ))}
           </div>

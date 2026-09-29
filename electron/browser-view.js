@@ -36,19 +36,25 @@ function scanPageFields(prefix) {
   function labelFromFormItem(el) {
     let container = el.parentElement;
     let depth = 0;
-    while (container && depth < 6) {
+    // 8, not fewer: an AntD date picker with a "至今" checkbox beside it sits
+    // seven wrappers below its .ant-form-item-label.
+    while (container && depth < 8) {
       const cls = (container.className || "").toString().toLowerCase();
       if (/form-item|form-group|field|form-row|input-group|form-cell|form-control-wrap|el-form/.test(cls)) {
-        const explicit = container.querySelector("label, .ant-form-item-label, .el-form-item__label, [class*='label']");
-        if (explicit && !explicit.contains(el)) {
+        // A label wrapping its own checkbox ("至今") belongs to that checkbox.
+        const explicit = Array.from(container.querySelectorAll("label, .ant-form-item-label, .el-form-item__label, [class*='label']"))
+          .find((node) => !node.contains(el) && !node.querySelector("input, select, textarea"));
+        if (explicit) {
           const text = (explicit.textContent || "").trim();
           if (text && text.length < 40) return text;
         }
         const candidates = container.querySelectorAll("label, span, div, p");
         for (const node of candidates) {
           if (node === el || node.contains(el) || el.contains(node)) continue;
+          // Skip other controls' own text: a "至今" checkbox, a range "-".
+          if (node.querySelector("input, select, textarea") || node.closest("label")?.querySelector("input, select, textarea")) continue;
           const text = (node.textContent || "").trim();
-          if (text && text.length < 40) return text;
+          if (text && text.length < 40 && /[\p{L}\p{N}]/u.test(text)) return text;
         }
       }
       container = container.parentElement;
@@ -317,8 +323,33 @@ async function fillFields(pairs) {
     el.style.setProperty("outline-offset", "1px", "important");
   }
 
+  // Component-library date pickers keep the typed text only once they
+  // commit it: Enter plus a real blur (React listens for focusout, which a
+  // synthetic "blur" event never produces).
+  const PICKER = ".ant-picker, .el-date-editor, .el-range-editor, .arco-picker, .ivu-date-picker, .t-date-picker, [class*='date-picker'], [class*='datepicker']";
+  const UNTIL_NOW_TEXT = /至今|目前|在读|在职|present|current|till now|to date/i;
+  const pickerDone = new Set();
+
+  // "至今" on an end date is almost always a checkbox/switch beside it, not
+  // text the picker would accept. Nearest wrapper first, so a second block's
+  // end date never ticks the first block's box.
+  function tickUntilNow(el, source) {
+    let scope = el.parentElement;
+    for (let depth = 0; scope && depth < 5; depth++, scope = scope.parentElement) {
+      const toggles = Array.from(scope.querySelectorAll('input[type="checkbox"], [role="checkbox"], [role="switch"]'));
+      const toggle = toggles.find((node) => UNTIL_NOW_TEXT.test(((node.closest("label") || node.parentElement || node).textContent || "") + " " + (node.getAttribute("aria-label") || "")));
+      if (!toggle) continue;
+      const isOn = () => toggle.checked === true || toggle.getAttribute("aria-checked") === "true";
+      if (!isOn()) (toggle.closest("label") || toggle).click();
+      if (!isOn()) return false;
+      mark(toggle.closest("label") || toggle, source);
+      return true;
+    }
+    return false;
+  }
+
   for (const p of pairs) {
-    if (!p.value) continue;
+    if (!p.value || pickerDone.has(p.id)) continue;
     if (/-r\d+$/.test(p.id)) {
       // radio group (ids are "<frame>-r<n>", fields are "<frame>-f<n>"):
       // click the option whose label matches
@@ -341,6 +372,47 @@ async function fillFields(pairs) {
       continue;
     }
     const tag = el.tagName.toLowerCase();
+    const picker = tag === "input" ? el.closest(PICKER) : null;
+    if (p.value === "至今" && (picker || el.type === "date" || el.type === "month")) {
+      if (tickUntilNow(el, p.source || "profile")) filled.push(p.id);
+      else failed.push(p.label || p.id);
+      continue;
+    }
+    if (picker) {
+      // A range picker (开始 + 结束 in one widget) throws away a half-typed
+      // range on blur, so both of its inputs are typed before it loses focus.
+      const group = Array.from(picker.querySelectorAll("input")).map((input) => {
+        const id = input.getAttribute("data-cp-fill-id");
+        const pair = input === el ? p : pairs.find((other) => other.id === id && other.value && other.value !== "至今");
+        return pair && !(input.value && String(input.value).trim()) ? { input, pair } : null;
+      }).filter(Boolean);
+      for (const { input, pair } of group) {
+        pickerDone.add(pair.id);
+        // A background tab may not take real focus; the synthetic focusin /
+        // focusout pair reaches React's and Vue's listeners either way.
+        input.focus();
+        input.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+        nativeInputSetter.call(input, pair.value);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+        input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, bubbles: true }));
+        input.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", code: "Enter", keyCode: 13, bubbles: true }));
+        await new Promise((resolve) => setTimeout(resolve, 80));
+      }
+      const last = group[group.length - 1].input;
+      last.blur();
+      last.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+      document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      for (const { input, pair } of group) {
+        if (input.value !== pair.value) { failed.push(pair.label || pair.id); continue; }
+        mark(picker, pair.source || "profile", pair.answerId);
+        // Memory reads the input itself, not the outlined wrapper.
+        if ((pair.source || "profile") === "profile") input.setAttribute("data-cp-profile-filled", "1");
+        filled.push(pair.id);
+      }
+      continue;
+    }
     if (tag === "select") {
       const match = Array.from(el.options).find((o) => o.textContent.trim() === p.value);
       if (!match) { failed.push(p.label || p.id); continue; }
@@ -745,10 +817,14 @@ function bareLabel(field) {
   return String(field.label || field.placeholder || "").replace(/^请(?:输入|选择|填写)/, "").replace(/[＊*：:\s]+/g, "").toLowerCase();
 }
 
+// One box holding the whole span ("起止时间: 2021.09 - 2025.06"). Only trusted
+// as the entire label inside a block, or for 在校时间-style education labels.
+const RANGE_LABEL = /^(?:起止(?:时间|日期|年月)?|起讫(?:时间|日期)?|时间段|时间范围|在校时间|就读时间|在读时间|实习时间|工作时间|任职时间|项目时间|时间|period|duration|dates?)$/i;
+
 const START_LABEL = /开始|起始|入学|入职|start|(?:^|\W)from(?:\W|$)/i;
 const END_LABEL = /结束|截止|毕业(?:时间|年份|年月|日期)|离职|graduation|(?:^|\W)end(?:\W|$)|end.?date|(?:^|\W)to(?:\W|$)/i;
 
-function educationFieldKind(haystack, inSection) {
+function educationFieldKind(haystack, inSection, bare = "") {
   if (/英语|外语|cet|toefl|ielts|托福|雅思|语言/i.test(haystack)) return null;
   if (/最高学历|highest/i.test(haystack)) return null;
   if (/学校|院校|school|university|college/i.test(haystack)) return /城市|所在地|地区|省份|类型|性质|层次|排名|city|type|rank/i.test(haystack) ? null : "school";
@@ -757,16 +833,18 @@ function educationFieldKind(haystack, inSection) {
   if (/gpa|绩点|平均分|平均成绩|学习成绩|加权/i.test(haystack)) return "gpa";
   if (/入学/.test(haystack) || (inSection && START_LABEL.test(haystack))) return "start";
   if (/毕业(?:时间|年份|年月|日期)|graduation/i.test(haystack) || (inSection && END_LABEL.test(haystack))) return "end";
+  if (/^(?:在校时间|就读时间|在读时间)$/.test(bare) || (inSection && RANGE_LABEL.test(bare))) return "range";
   return null;
 }
 
-function experienceFieldKind(haystack, inSection) {
+function experienceFieldKind(haystack, inSection, bare = "") {
   if (/实习(?:单位|公司|企业|机构)|工作单位|任职(?:单位|公司)/.test(haystack)) return "company";
   if (!inSection) return null;
   if (/公司|单位|企业|机构|company|employer|organi[sz]ation/i.test(haystack)) return "company";
   if (/职位|岗位|职务|角色|title|position|role/i.test(haystack)) return "role";
   if (START_LABEL.test(haystack)) return "start";
   if (END_LABEL.test(haystack)) return "end";
+  if (RANGE_LABEL.test(bare)) return "range";
   if (/描述|内容|职责|业绩|成果|description|responsibilit|achievement/i.test(haystack)) return "description";
   return null;
 }
@@ -784,6 +862,7 @@ function projectFieldKind(haystack, bare = "", inSection = false) {
   if (/^(?:角色|担任角色|职务|role)$/.test(bare)) return "role";
   if (/^(?:开始(?:时间|日期)?|起始(?:时间|日期)?|start(?:date)?)$/.test(bare)) return "start";
   if (/^(?:结束(?:时间|日期)?|截止(?:时间|日期)?|end(?:date)?)$/.test(bare)) return "end";
+  if (RANGE_LABEL.test(bare)) return "range";
   if (/职责|负责|贡献|成果|responsibilit|achievement/.test(bare)) return "responsibilities";
   if (/描述|简介|介绍|内容|description/.test(bare)) return "description";
   return null;
@@ -802,11 +881,11 @@ function resolveRepeatField(field, rowIndexes) {
   const projectKind = projectFieldKind(haystack, bare, group === "project");
   if (projectKind) info = { group: "project", kind: projectKind };
   if (!info && group === "experience") {
-    const kind = experienceFieldKind(haystack, true);
+    const kind = experienceFieldKind(haystack, true, bare);
     if (kind) info = { group: "experience", kind };
   }
   if (!info) {
-    const kind = educationFieldKind(haystack, group === "education");
+    const kind = educationFieldKind(haystack, group === "education", bare);
     if (kind) info = { group: "education", kind };
   }
   if (!info) {
@@ -873,11 +952,70 @@ function matchDegreeOption(field, value) {
   return matchFieldOption(field, value);
 }
 
+const UNTIL_NOW = /^(?:至今|今|现在|目前|在读|在职|present|now|current|ongoing)$/i;
+
+function dateParts(raw) {
+  const m = /(\d{4})(?:\s*[-./年]\s*(\d{1,2}))?(?:\s*[-./月]\s*(\d{1,2}))?/.exec(String(raw || ""));
+  return m ? { y: m[1], m: m[2] ? m[2].padStart(2, "0") : "", d: m[3] ? m[3].padStart(2, "0") : "" } : null;
+}
+
+// What a date field expects: its own example ("2020.09"), a format string
+// ("YYYY-MM-DD"), its input type, or its wording (选择日期 → day, 月份 → month,
+// 毕业年份 → year). Unknown fields keep yyyy-MM, the profile's own format.
+function dateFormatFor(field) {
+  const hint = `${field.placeholder || ""} ${field.label || ""}`;
+  // (?!\d): in "2020.09-2024.06" the "-20" is the next year, not a day.
+  const sample = /\d{4}\s*([-./年])\s*\d{1,2}(?:\s*([-./月])\s*\d{1,2}(?!\d))?/.exec(hint);
+  if (sample) return { precision: sample[2] ? "day" : "month", sep: sample[1] };
+  const pattern = /y{4}\s*([-./年])\s*m{2}(?:\s*[-./月]\s*d{2})?/i.exec(hint);
+  if (pattern) return { precision: /d{2}/i.test(pattern[0]) ? "day" : "month", sep: pattern[1] };
+  if (field.type === "date") return { precision: "day", sep: "-" };
+  if (field.type === "month") return { precision: "month", sep: "-" };
+  if (/年份|(?:^|\W)year(?:\W|$)/i.test(hint)) return { precision: "year", sep: "-" };
+  if (/月份|年月|month/i.test(hint)) return { precision: "month", sep: "-" };
+  if (/日期|date/i.test(hint)) return { precision: "day", sep: "-" };
+  return { precision: "month", sep: "-" };
+}
+
+function formatDateForField(field, raw) {
+  const value = String(raw || "").trim();
+  if (!value) return "";
+  if (UNTIL_NOW.test(value)) return "至今";
+  const parts = dateParts(value);
+  if (!parts) return value;
+  const format = dateFormatFor(field);
+  if (format.precision === "year") return parts.y;
+  // A bare year can't become a month without inventing one.
+  if (!parts.m) return field.type === "date" || field.type === "month" ? "" : parts.y;
+  // The profile keeps yyyy-MM; a field that wants a full date gets the 1st.
+  const day = parts.d || "01";
+  if (format.sep === "年") return `${parts.y}年${parts.m}月${format.precision === "day" ? `${day}日` : ""}`;
+  return [parts.y, parts.m, ...(format.precision === "day" ? [day] : [])].join(format.sep);
+}
+
+// "2021.09 - 2025.06" in one box, following the field's own example joiner.
+function dateRangeValue(field, start, end) {
+  if (field.type === "date" || field.type === "month") return "";
+  const text = { ...field, type: "text" };
+  const from = formatDateForField(text, start);
+  const to = formatDateForField(text, end);
+  if (!from || !to) return "";
+  const joiner = /\d\s*(~|～|至|—|–|-)\s*(?:\d{4}|至今)/.exec(field.placeholder || "")?.[1];
+  const separator = joiner ? (joiner === "至" ? " 至 " : ` ${joiner} `) : dateFormatFor(text).sep === "-" ? " 至 " : " - ";
+  return `${from}${separator}${to}`;
+}
+
+function rowDateValue(field, kind, row) {
+  if (kind === "range") return dateRangeValue(field, row.start, row.end);
+  if (kind === "start" || kind === "end") return formatDateForField(field, row[kind]);
+  return row[kind];
+}
+
 function repeatFieldValue(field, info, profile) {
   if (info.group === "project") {
     const project = profile.projects?.[info.row];
     if (!project) return null;
-    const value = info.kind === "summary"
+    const value = ["start", "end", "range"].includes(info.kind) ? rowDateValue(field, info.kind, project) : info.kind === "summary"
       ? [project.name, project.role, project.description, project.responsibilities].filter(Boolean).join("；")
       : info.kind === "description" ? project.description || project.responsibilities
       : info.kind === "responsibilities" ? project.responsibilities || project.description
@@ -886,13 +1024,13 @@ function repeatFieldValue(field, info, profile) {
   }
   if (info.group === "experience") {
     const experience = (profile.experiences || [])[info.row];
-    return experience ? matchFieldOption(field, experience[info.kind]) : null;
+    return experience ? matchFieldOption(field, rowDateValue(field, info.kind, experience)) : null;
   }
   const rows = educationRows(profile);
   // "本科院校" must never receive the 硕士 row just because it came first.
   const row = info.degreeHint ? rows.find((item) => degreeLevel(item.degree) === info.degreeHint) : rows[info.row];
   if (!row) return null;
-  return info.kind === "degree" ? matchDegreeOption(field, row.degree) : matchFieldOption(field, row[info.kind]);
+  return info.kind === "degree" ? matchDegreeOption(field, row.degree) : matchFieldOption(field, rowDateValue(field, info.kind, row));
 }
 
 // "有 2 段教育经历，页面只有 1 组" — most portals render one empty block and
