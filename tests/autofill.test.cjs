@@ -13,8 +13,8 @@ const context = {
   module: { exports: {} },
   URL,
 };
-vm.runInNewContext(`${source}\nmodule.exports.__test = { matchBasicField, matchRememberedField, fieldMemoryKey, isForbiddenMemoryField, isNeverGuessField, isOpenEndedQuestionField, isSensitiveMemoryField, portalContext, memoryCandidate, trackUserEdits, assertTrustedBrowserEvent, safeDownloadFilename, openSafeExternalUrl };`, context);
-const { matchBasicField, matchRememberedField, fieldMemoryKey, isForbiddenMemoryField, isNeverGuessField, isOpenEndedQuestionField, isSensitiveMemoryField, portalContext, memoryCandidate, trackUserEdits, assertTrustedBrowserEvent, safeDownloadFilename, openSafeExternalUrl } = context.module.exports.__test;
+vm.runInNewContext(`${source}\nmodule.exports.__test = { matchBasicField, resolveRepeatField, repeatFieldValue, missingRepeatBlocks, repeatFieldGoesToAi, matchRememberedField, fieldMemoryKey, isForbiddenMemoryField, isNeverGuessField, isOpenEndedQuestionField, isSensitiveMemoryField, portalContext, memoryCandidate, trackUserEdits, assertTrustedBrowserEvent, safeDownloadFilename, openSafeExternalUrl };`, context);
+const { matchBasicField, resolveRepeatField, repeatFieldValue, missingRepeatBlocks, repeatFieldGoesToAi, matchRememberedField, fieldMemoryKey, isForbiddenMemoryField, isNeverGuessField, isOpenEndedQuestionField, isSensitiveMemoryField, portalContext, memoryCandidate, trackUserEdits, assertTrustedBrowserEvent, safeDownloadFilename, openSafeExternalUrl } = context.module.exports.__test;
 
 const profile = { name: "陈奕宏", email: "me@example.invalid" };
 
@@ -54,8 +54,99 @@ test("saved projects fill matching portal fields in order without using the appl
   assert.equal(matchBasicField(field("项目名称"), savedProfile, indexes), "课程推荐系统");
   assert.equal(matchBasicField(field("项目职责"), savedProfile, indexes), "负责数据建模");
   assert.equal(matchBasicField(field("项目经历"), savedProfile, indexes), "招聘数据看板；负责人；搭建可视化看板；负责数据建模");
-  assert.equal(matchBasicField(field("项目名称"), savedProfile, new Map([["name", 1]])), "课程推荐系统");
+  assert.equal(matchBasicField(field("项目名称"), savedProfile, new Map([["project:name:out", 1]])), "课程推荐系统");
   assert.equal(matchBasicField(field("Project Name"), profile, new Map()), null);
+});
+
+test("two education blocks get 硕士 then 本科, not the first row twice", () => {
+  const education = [
+    { school: "新加坡国立大学", major: "商业分析", degree: "硕士", gpa: "4.2/5", start: "2025-08", end: "2026-12" },
+    { school: "华东师范大学", major: "统计学", degree: "本科", gpa: "3.7/4", start: "2021-09", end: "2025-06" },
+  ];
+  const savedProfile = { ...profile, school: "新加坡国立大学", education };
+  const field = (label, section = "教育经历", extra = {}) => ({ label, placeholder: "", name: "", tag: "input", type: "text", section, ...extra });
+  const rows = new Map();
+  const values = ["学校", "专业", "学历", "GPA", "入学时间", "毕业时间", "学校", "专业", "学历", "GPA", "入学时间", "毕业时间"]
+    .map((label) => matchBasicField(field(label), savedProfile, rows));
+  assert.deepEqual(values, ["新加坡国立大学", "商业分析", "硕士", "4.2/5", "2025-08", "2026-12", "华东师范大学", "统计学", "本科", "3.7/4", "2021-09", "2025-06"]);
+  // Saved 本科 first: the form still gets the highest degree first.
+  const reversed = { ...profile, education: [...education].reverse() };
+  const order = new Map();
+  assert.equal(matchBasicField(field("毕业院校"), reversed, order), "新加坡国立大学");
+  assert.equal(matchBasicField(field("毕业院校"), reversed, order), "华东师范大学");
+  assert.deepEqual([...missingRepeatBlocks(savedProfile, new Map([["education:school:in", 1]]))], ["有 2 段教育经历、页面只有 1 组"]);
+  assert.equal(missingRepeatBlocks(savedProfile, rows).length, 0);
+});
+
+test("degree words in labels or block headings pick the matching education row", () => {
+  const savedProfile = { ...profile, education: [
+    { school: "新加坡国立大学", major: "商业分析", degree: "研究生", start: "2025-08", end: "2026-12" },
+    { school: "华东师范大学", major: "统计学", degree: "本科", start: "2021-09", end: "2025-06" },
+  ] };
+  const field = (label, section = "", options) => ({ label, placeholder: "", name: "", tag: options ? "select" : "input", type: "", section, options });
+  const rows = new Map();
+  assert.equal(matchBasicField(field("本科院校"), savedProfile, rows), "华东师范大学");
+  assert.equal(matchBasicField(field("本科专业"), savedProfile, rows), "统计学");
+  assert.equal(matchBasicField(field("硕士院校"), savedProfile, rows), "新加坡国立大学");
+  assert.equal(matchBasicField(field("博士院校"), savedProfile, rows), null);
+  assert.equal(matchBasicField(field("开始时间", "本科阶段"), savedProfile, new Map()), "2021-09");
+  assert.equal(matchBasicField(field("学历", "本科阶段", ["学士", "硕士", "博士"]), savedProfile, new Map()), "学士");
+  assert.equal(matchBasicField(field("学历", "教育经历", ["大专", "本科", "硕士研究生", "博士研究生"]), savedProfile, new Map()), "硕士研究生");
+  assert.equal(matchBasicField(field("最高学历", "", ["本科", "硕士", "博士"]), savedProfile, new Map()), "硕士");
+  assert.equal(matchBasicField(field("学校", "教育经历 2"), savedProfile, new Map()), "华东师范大学");
+  assert.equal(matchBasicField(field("学校", "第二段教育经历"), savedProfile, new Map()), "华东师范大学");
+});
+
+test("prefilled blocks, loose fields and unrelated labels keep rows aligned", () => {
+  const savedProfile = { ...profile, graduationYear: 2026, education: [
+    { school: "新加坡国立大学", degree: "硕士", end: "2026-12" },
+    { school: "华东师范大学", degree: "本科", end: "2025-06" },
+  ] };
+  const field = (label, section = "") => ({ label, placeholder: "", name: "", tag: "input", type: "text", section });
+  const rows = new Map();
+  // 基本信息's own 毕业时间 is the highest degree and doesn't shift the blocks.
+  assert.equal(matchBasicField(field("预计毕业时间", "基本信息"), savedProfile, rows), "2026-12");
+  resolveRepeatField(field("学校", "教育经历"), rows); // row one already filled by the site
+  assert.equal(matchBasicField(field("学校", "教育经历"), savedProfile, rows), "华东师范大学");
+  assert.equal(matchBasicField(field("毕业时间", "教育经历"), savedProfile, rows), "2026-12");
+  for (const label of ["专业排名", "学校所在城市", "英语成绩", "专业技能", "期望工作城市"]) {
+    assert.equal(resolveRepeatField(field(label), new Map()), null, label);
+  }
+  assert.equal(matchBasicField(field("英语成绩"), { ...savedProfile, english: "CET-6 580" }, new Map()), "CET-6 580");
+});
+
+test("internship blocks fill each saved experience; unknown rows are not invented", () => {
+  const savedProfile = { ...profile, experiences: [
+    { company: "字节跳动", role: "数据分析实习生", start: "2025-06", end: "2025-09", description: "搭建增长看板" },
+    { company: "美团", role: "产品实习生", start: "2024-07", end: "2024-09", description: "" },
+  ] };
+  const field = (label, tag = "input") => ({ label, placeholder: "", name: "", tag, type: "text", section: "实习经历" });
+  const rows = new Map();
+  const values = ["公司名称", "职位", "开始时间", "结束时间", "工作内容", "公司名称", "职位"].map((label) => matchBasicField(field(label), savedProfile, rows));
+  assert.deepEqual(values, ["字节跳动", "数据分析实习生", "2025-06", "2025-09", "搭建增长看板", "美团", "产品实习生"]);
+  // Outside an internship block "公司名称" is not guessed from experiences.
+  assert.equal(matchBasicField({ ...field("公司名称"), section: "" }, savedProfile, new Map()), null);
+  assert.equal(matchBasicField({ ...field("实习单位"), section: "" }, savedProfile, new Map()), "字节跳动");
+  const thirdRow = resolveRepeatField(field("公司名称"), new Map([["experience:company:in", 2]]));
+  assert.equal(repeatFieldValue(field("公司名称"), thirdRow, savedProfile), null);
+  assert.equal(repeatFieldGoesToAi(thirdRow, savedProfile), false);
+  const emptyDescription = resolveRepeatField(field("工作内容", "textarea"), new Map([["experience:description:in", 1]]));
+  assert.equal(repeatFieldValue(field("工作内容", "textarea"), emptyDescription, savedProfile), null);
+  assert.equal(repeatFieldGoesToAi(emptyDescription, savedProfile), true);
+  assert.equal(repeatFieldGoesToAi(resolveRepeatField(field("学校"), new Map()), profile), true);
+  assert.equal(repeatFieldGoesToAi(resolveRepeatField(field("学校"), new Map([["education:school:out", 1]])), profile), false);
+});
+
+test("project blocks with generic labels use their section heading", () => {
+  const savedProfile = { ...profile, projects: [
+    { name: "招聘数据看板", role: "负责人", start: "2025-01", end: "2025-03", description: "搭建可视化看板", responsibilities: "" },
+  ] };
+  const field = (label, section) => ({ label, placeholder: "", name: "", tag: "input", type: "text", section });
+  const rows = new Map();
+  assert.equal(matchBasicField(field("名称", "项目经历"), savedProfile, rows), "招聘数据看板");
+  assert.equal(matchBasicField(field("担任角色", "项目经历"), savedProfile, rows), "负责人");
+  assert.equal(matchBasicField(field("开始时间", "项目经历"), savedProfile, rows), "2025-01");
+  assert.equal(matchBasicField(field("名称", "奖项"), savedProfile, new Map()), null);
 });
 
 test("old application profiles remain readable and project details reach the AI digest", () => {

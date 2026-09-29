@@ -36,7 +36,7 @@ export async function GET(request: Request) {
     graduationYear: user.graduationYear,
     preferredCities: user.preferredCities,
     // Structured 网申资料 (settings → 网申资料): the keyword matcher in
-    // electron/browser-view.js reads the flat fields and project rows; the AI gets the
+    // electron/browser-view.js reads the flat fields and the row lists; the AI gets the
     // readable digest as a known fact.
     major: edu?.major || null,
     degree: edu?.degree || null,
@@ -45,6 +45,10 @@ export async function GET(request: Request) {
     educationEnd: edu?.end || null,
     latestCompany: exp?.company || null,
     latestRole: exp?.role || null,
+    // Every row, in the user's order: forms with 本科 + 硕士 blocks fill each
+    // block from its own row (electron/browser-view.js resolveRepeatField).
+    education: structured.education,
+    experiences: structured.experiences,
     projects: structured.projects,
     politics: structured.extras.politics || null,
     hometown: structured.extras.hometown || null,

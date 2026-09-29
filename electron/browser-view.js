@@ -100,6 +100,35 @@ function scanPageFields(prefix) {
     return "";
   }
 
+  // Repeated blocks (教育经历 ×2, 实习经历 ×3…) reuse the same "学校"/"开始时间"
+  // labels; the nearest block heading tells the matcher which list and, for
+  // "本科阶段"/"硕士阶段" style headings, which row. Sibling blocks that contain
+  // their own inputs are skipped so row two never inherits row one's heading.
+  const SECTION_HEADING = /教育|学习经历|本科|硕士|研究生|博士|大专|专科|实习|工作经历|工作经验|实践经历|社会实践|项目|第\s*[一二三四五六七八九十\d]+\s*段|education|academic|internship|employment|work experience|project/i;
+  function sectionFor(el) {
+    let node = el;
+    let depth = 0;
+    while (node && node !== document.body && depth < 12) {
+      let sibling = node.previousElementSibling;
+      let textHops = 0;
+      let scanned = 0;
+      // Sibling field rows don't count toward the hop budget: a heading can
+      // sit above eight form items in the same block.
+      while (sibling && textHops < 4 && scanned < 40) {
+        if (!sibling.matches("input, select, textarea, button, label") && !sibling.querySelector("input, select, textarea")) {
+          const text = (sibling.textContent || "").replace(/\s+/g, " ").trim();
+          if (text && text.length <= 30 && SECTION_HEADING.test(text)) return text;
+          if (text) textHops++;
+        }
+        sibling = sibling.previousElementSibling;
+        scanned++;
+      }
+      node = node.parentElement;
+      depth++;
+    }
+    return "";
+  }
+
   // 性别/政治面貌/是否服从调剂 are radio groups far more often than <select>s
   // on Chinese 网申 forms. One entry per group (by name), options = each
   // radio's own label, filled later by clicking the matching one.
@@ -149,6 +178,7 @@ function scanPageFields(prefix) {
       label: labelFor(innerInput || container) || labelFor(container),
       placeholder: (innerInput && innerInput.getAttribute("placeholder")) || (container.querySelector(".ant-select-selection-placeholder, .el-select__placeholder") || {}).textContent || "",
       name: (innerInput && innerInput.getAttribute("name")) || container.id || "",
+      section: sectionFor(container),
       hasValue,
     });
   });
@@ -162,7 +192,7 @@ function scanPageFields(prefix) {
       if (!group) return;
       const id = prefix + "r" + counter++;
       group.radios.forEach((r, i) => r.setAttribute("data-cp-fill-id", id + ":" + i));
-      results.push({ id, tag: "radio", type: "radio", label: group.label, placeholder: "", name: el.getAttribute("name") || "", options: group.options, hasValue: group.hasValue });
+      results.push({ id, tag: "radio", type: "radio", label: group.label, placeholder: "", name: el.getAttribute("name") || "", section: sectionFor(group.radios[0]), options: group.options, hasValue: group.hasValue });
       return;
     }
     const id = prefix + "f" + counter++;
@@ -174,6 +204,7 @@ function scanPageFields(prefix) {
       label: labelFor(el),
       placeholder: el.getAttribute("placeholder") || "",
       name: el.getAttribute("name") || "",
+      section: sectionFor(el),
       // Already has something in it — the user (or the site) filled it; the
       // autofill leaves those alone rather than overwriting.
       hasValue: !!(el.value && String(el.value).trim()),
@@ -582,17 +613,10 @@ const BASIC_FIELD_RULES = [
   { keys: ["邮箱", "email", "mail"], get: (p) => p.email },
   { keys: ["性别", "gender"], get: (p) => p.gender },
   { keys: ["出生日期", "出生年月", "生日", "birth"], get: (p) => p.birthDate },
-  { keys: ["学校", "毕业院校", "院校", "school", "university"], get: (p) => p.school },
-  {
-    keys: ["毕业年份", "毕业时间", "graduate"],
-    get: (p) => p.educationEnd || (p.graduationYear ? String(p.graduationYear) : ""),
-  },
-  { keys: ["入学时间", "入学年份", "入学年月"], get: (p) => p.educationStart },
-  { keys: ["专业", "major"], get: (p) => p.major },
-  { keys: ["学历", "最高学历", "degree", "education level"], get: (p) => p.degree },
-  // Before GPA: "英语成绩" must land here, not in the GPA rule below.
+  // School/major/degree/GPA/dates are per education row — see
+  // resolveRepeatField below. Only the page-wide "最高学历" stays flat.
+  { keys: ["最高学历", "highest degree", "highest education"], get: (p) => highestEducation(p)?.degree, degree: true },
   { keys: ["英语", "外语", "cet", "english", "语言能力"], get: (p) => p.english },
-  { keys: ["gpa", "绩点", "平均分", "平均成绩", "学习成绩", "加权"], get: (p) => p.gpa },
   { keys: ["政治面貌", "politic"], get: (p) => p.politics },
   { keys: ["籍贯", "户籍", "户口所在地", "hometown"], get: (p) => p.hometown },
   { keys: ["民族", "ethnic"], get: (p) => p.ethnicity },
@@ -671,7 +695,72 @@ function matchRememberedField(field, memories, contextKey) {
   return selected ? matchFieldOption(field, selected.answer) : null;
 }
 
-function projectFieldKind(haystack) {
+// Education, internship and project blocks repeat on most 网申 forms with
+// identical labels. Every such field is classified as {group, kind} and takes
+// the next row of that list, so the second "学校" gets the second education
+// row instead of the first one again.
+const DEGREE_LEVELS = [
+  [4, /博士|doctor|ph\.?d/i],
+  [3, /硕士|研究生|master|postgrad|mba/i],
+  [2, /本科|学士|bachelor|undergrad/i],
+  [1, /大专|专科|高职|associate/i],
+];
+
+function degreeLevel(text) {
+  const value = String(text || "");
+  for (const [level, pattern] of DEGREE_LEVELS) if (pattern.test(value)) return level;
+  return 0;
+}
+
+const CHINESE_ORDINALS = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
+
+function sectionOrdinal(section) {
+  const match = /第\s*([一二三四五六七八九十]|\d+)\s*段|(?:经历|背景|信息|education|experience|project)\s*[（(#]?\s*(\d+)\s*[)）]?$/i.exec(section);
+  const raw = match && (match[1] || match[2]);
+  const n = raw ? CHINESE_ORDINALS[raw] || Number(raw) : 0;
+  return n > 0 && n <= 20 ? n - 1 : null;
+}
+
+function sectionGroup(section) {
+  if (/项目|project/i.test(section)) return "project";
+  if (/实习|工作经历|工作经验|实践经历|社会实践|internship|employment|work experience/i.test(section)) return "experience";
+  if (/教育|学习经历|本科|硕士|研究生|博士|大专|专科|education|academic/i.test(section)) return "education";
+  return null;
+}
+
+// Label alone, without "*"/"：" decoration — generic block labels such as
+// "名称"/"开始时间" are only trusted when they are the whole label.
+function bareLabel(field) {
+  return String(field.label || field.placeholder || "").replace(/^请(?:输入|选择|填写)/, "").replace(/[＊*：:\s]+/g, "").toLowerCase();
+}
+
+const START_LABEL = /开始|起始|入学|入职|start|(?:^|\W)from(?:\W|$)/i;
+const END_LABEL = /结束|截止|毕业(?:时间|年份|年月|日期)|离职|graduation|(?:^|\W)end(?:\W|$)|end.?date|(?:^|\W)to(?:\W|$)/i;
+
+function educationFieldKind(haystack, inSection) {
+  if (/英语|外语|cet|toefl|ielts|托福|雅思|语言/i.test(haystack)) return null;
+  if (/最高学历|highest/i.test(haystack)) return null;
+  if (/学校|院校|school|university|college/i.test(haystack)) return /城市|所在地|地区|省份|类型|性质|层次|排名|city|type|rank/i.test(haystack) ? null : "school";
+  if (/专业|major|field of study/i.test(haystack)) return /技能|证书|资格|排名|方向/.test(haystack) ? null : "major";
+  if (/学历|学位|degree|education.?level/i.test(haystack)) return "degree";
+  if (/gpa|绩点|平均分|平均成绩|学习成绩|加权/i.test(haystack)) return "gpa";
+  if (/入学/.test(haystack) || (inSection && START_LABEL.test(haystack))) return "start";
+  if (/毕业(?:时间|年份|年月|日期)|graduation/i.test(haystack) || (inSection && END_LABEL.test(haystack))) return "end";
+  return null;
+}
+
+function experienceFieldKind(haystack, inSection) {
+  if (/实习(?:单位|公司|企业|机构)|工作单位|任职(?:单位|公司)/.test(haystack)) return "company";
+  if (!inSection) return null;
+  if (/公司|单位|企业|机构|company|employer|organi[sz]ation/i.test(haystack)) return "company";
+  if (/职位|岗位|职务|角色|title|position|role/i.test(haystack)) return "role";
+  if (START_LABEL.test(haystack)) return "start";
+  if (END_LABEL.test(haystack)) return "end";
+  if (/描述|内容|职责|业绩|成果|description|responsibilit|achievement/i.test(haystack)) return "description";
+  return null;
+}
+
+function projectFieldKind(haystack, bare = "", inSection = false) {
   if (/项目(?:名称|名)(?!称)|project[\s_-]*(?:name|title)/i.test(haystack)) return "name";
   if (/项目(?:角色|职位)|project[\s_-]*role/i.test(haystack)) return "role";
   if (/项目(?:开始|起始)|project[\s_-]*start/i.test(haystack)) return "start";
@@ -679,7 +768,130 @@ function projectFieldKind(haystack) {
   if (/项目(?:职责|负责|贡献|成果)|project[\s_-]*(?:responsibilit|contribution|achievement)/i.test(haystack)) return "responsibilities";
   if (/项目(?:描述|简介|介绍|内容)|project[\s_-]*(?:description|summary|overview)/i.test(haystack)) return "description";
   if (/项目经历|project[\s_-]*experience/i.test(haystack)) return "summary";
+  if (!inSection) return null;
+  if (/^(?:名称|name|title)$/.test(bare)) return "name";
+  if (/^(?:角色|担任角色|职务|role)$/.test(bare)) return "role";
+  if (/^(?:开始(?:时间|日期)?|起始(?:时间|日期)?|start(?:date)?)$/.test(bare)) return "start";
+  if (/^(?:结束(?:时间|日期)?|截止(?:时间|日期)?|end(?:date)?)$/.test(bare)) return "end";
+  if (/职责|负责|贡献|成果|responsibilit|achievement/.test(bare)) return "responsibilities";
+  if (/描述|简介|介绍|内容|description/.test(bare)) return "description";
   return null;
+}
+
+// Classifies a field and consumes its row. `rowIndexes` counts rows per
+// "group:kind" across the whole scan (prefilled fields included), so it must
+// be called once for every scanned field, in page order.
+function resolveRepeatField(field, rowIndexes) {
+  if (isSplitNameField(field)) return null;
+  const haystack = fieldHaystack(field);
+  const section = String(field.section || "");
+  const group = sectionGroup(section);
+  const bare = bareLabel(field);
+  let info = null;
+  const projectKind = projectFieldKind(haystack, bare, group === "project");
+  if (projectKind) info = { group: "project", kind: projectKind };
+  if (!info && group === "experience") {
+    const kind = experienceFieldKind(haystack, true);
+    if (kind) info = { group: "experience", kind };
+  }
+  if (!info) {
+    const kind = educationFieldKind(haystack, group === "education");
+    if (kind) info = { group: "education", kind };
+  }
+  if (!info) {
+    const kind = experienceFieldKind(haystack, false);
+    if (kind) info = { group: "experience", kind };
+  }
+  if (!info) return null;
+  // A stray "预计毕业时间" in 基本信息 must not push the education blocks
+  // below it down a row, so in-block and loose fields count separately.
+  const key = `${info.group}:${info.kind}:${group === info.group ? "in" : "out"}`;
+  const counted = rowIndexes?.get(key) || 0;
+  rowIndexes?.set(key, counted + 1);
+  const ordinal = sectionOrdinal(section);
+  // The degree field's own label ("学历（本科及以上）") is a requirement, not a row.
+  const hint = info.group === "education" ? degreeLevel(`${info.kind === "degree" ? "" : field.label || ""} ${group === "education" ? section : ""}`) : 0;
+  return { ...info, row: ordinal ?? counted, degreeHint: hint };
+}
+
+// Highest degree first (the order most forms and resume extraction use),
+// unless a row's degree is unreadable — then the user's own order stands.
+function educationRows(profile) {
+  const saved = (profile.education || []).filter((row) => row && Object.values(row).some(Boolean));
+  const rows = saved.length ? saved.map((row) => ({ ...row })) : [{
+    school: profile.school || "",
+    major: profile.major || "",
+    degree: profile.degree || "",
+    gpa: profile.gpa || "",
+    start: profile.educationStart || "",
+    end: profile.educationEnd || "",
+  }];
+  if (rows.length > 1 && rows.every((row) => degreeLevel(row.degree))) {
+    rows.sort((a, b) => degreeLevel(b.degree) - degreeLevel(a.degree));
+  }
+  rows[0].school = rows[0].school || profile.school || "";
+  rows[0].end = rows[0].end || (profile.graduationYear ? String(profile.graduationYear) : "");
+  return rows.filter((row) => Object.values(row).some(Boolean));
+}
+
+function highestEducation(profile) {
+  return educationRows(profile)[0] || null;
+}
+
+function matchDegreeOption(field, value) {
+  if (!value) return null;
+  const level = degreeLevel(value);
+  if (field.options && level) {
+    const sameLevel = field.options.filter((option) => degreeLevel(option) === level);
+    return sameLevel.find((option) => option === value) || sameLevel.find((option) => option.includes(value)) || sameLevel[0] || null;
+  }
+  return matchFieldOption(field, value);
+}
+
+function repeatFieldValue(field, info, profile) {
+  if (info.group === "project") {
+    const project = profile.projects?.[info.row];
+    if (!project) return null;
+    const value = info.kind === "summary"
+      ? [project.name, project.role, project.description, project.responsibilities].filter(Boolean).join("；")
+      : info.kind === "description" ? project.description || project.responsibilities
+      : info.kind === "responsibilities" ? project.responsibilities || project.description
+      : project[info.kind];
+    return matchFieldOption(field, value);
+  }
+  if (info.group === "experience") {
+    const experience = (profile.experiences || [])[info.row];
+    return experience ? matchFieldOption(field, experience[info.kind]) : null;
+  }
+  const rows = educationRows(profile);
+  // "本科院校" must never receive the 硕士 row just because it came first.
+  const row = info.degreeHint ? rows.find((item) => degreeLevel(item.degree) === info.degreeHint) : rows[info.row];
+  if (!row) return null;
+  return info.kind === "degree" ? matchDegreeOption(field, row.degree) : matchFieldOption(field, row[info.kind]);
+}
+
+// "有 2 段教育经历，页面只有 1 组" — most portals render one empty block and
+// hide the rest behind an 添加 button, which autofill deliberately never clicks.
+function missingRepeatBlocks(profile, rowIndexes) {
+  const seen = (group, kind) => Math.max(rowIndexes.get(`${group}:${kind}:in`) || 0, rowIndexes.get(`${group}:${kind}:out`) || 0);
+  const checks = [
+    ["education", "school", educationRows(profile).length, "教育经历"],
+    ["experience", "company", (profile.experiences || []).length, "实习/工作经历"],
+    ["project", "name", (profile.projects || []).length, "项目经历"],
+  ];
+  return checks
+    .filter(([group, kind, saved]) => { const shown = seen(group, kind); return shown > 0 && saved > shown; })
+    .map(([group, kind, saved, label]) => `有 ${saved} 段${label}、页面只有 ${seen(group, kind)} 组`);
+}
+
+// Long-text kinds may still go to the AI when the saved row lacks them. Short
+// facts (school, dates, company) only do when nothing is saved for that list
+// and it's the first block — the AI can't tell which row a second "学校" means
+// and would repeat the first one.
+function repeatFieldGoesToAi(info, profile) {
+  if (info.kind === "description" || info.kind === "responsibilities" || info.kind === "summary") return true;
+  const saved = info.group === "education" ? educationRows(profile) : info.group === "experience" ? profile.experiences || [] : profile.projects || [];
+  return saved.length === 0 && info.row === 0 && !info.degreeHint;
 }
 
 function matchFieldOption(field, value) {
@@ -689,24 +901,8 @@ function matchFieldOption(field, value) {
     field.options.find((option) => option.includes(value) || value.includes(option)) || null;
 }
 
-function matchBasicField(field, profile, projectIndexes) {
+function matchFlatField(field, profile) {
   const haystack = fieldHaystack(field);
-  // A saved full name cannot safely be split into first/last/given/family
-  // names (especially for bilingual forms). Leave these for the applicant.
-  if (isSplitNameField(field)) return null;
-  const projectKind = projectFieldKind(haystack);
-  if (projectKind) {
-    const index = projectIndexes?.get(projectKind) || 0;
-    projectIndexes?.set(projectKind, index + 1);
-    const project = profile.projects?.[index];
-    if (!project) return null;
-    const value = projectKind === "summary"
-      ? [project.name, project.role, project.description, project.responsibilities].filter(Boolean).join("；")
-      : projectKind === "description" ? project.description || project.responsibilities
-      : projectKind === "responsibilities" ? project.responsibilities || project.description
-      : project[projectKind];
-    return matchFieldOption(field, value);
-  }
   // Broad English tokens often occur inside a different question's label.
   if (/company.?name|employer.?name|school.?name|岗位名称|公司名称|企业名称/.test(haystack)) return null;
   for (const rule of BASIC_FIELD_RULES) {
@@ -717,11 +913,20 @@ function matchBasicField(field, profile, projectIndexes) {
       const value = rule.get(profile);
       if (!value) continue;
       // A choice field still has to hit one of its own options.
-      const matched = matchFieldOption(field, value);
+      const matched = rule.degree ? matchDegreeOption(field, value) : matchFieldOption(field, value);
       if (matched) return matched;
     }
   }
   return null;
+}
+
+function matchBasicField(field, profile, rowIndexes) {
+  // A saved full name cannot safely be split into first/last/given/family
+  // names (especially for bilingual forms). Leave these for the applicant.
+  if (isSplitNameField(field)) return null;
+  const repeat = resolveRepeatField(field, rowIndexes);
+  if (repeat) return repeatFieldValue(field, repeat, profile);
+  return matchFlatField(field, profile);
 }
 
 function isNeverGuessField(field) {
@@ -1346,20 +1551,26 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
 
       const pairs = [];
       const candidates = []; // fields going to AI: {id, label, kind, options?}
-      const projectIndexes = new Map();
+      const rowIndexes = new Map();
       const pageContext = portalContext(initialUrl);
       let neverGuessCount = 0;
       let alreadyFilled = 0;
       for (const field of fields) {
+        // Classify before skipping prefilled fields: a filled first education
+        // block still occupies row one, so the next empty "学校" gets row two.
+        const repeat = resolveRepeatField(field, rowIndexes);
         if (field.hasValue) {
-          // A prefilled first project still occupies row one. Otherwise the
-          // next empty "项目名称" would incorrectly receive project one again.
-          const projectKind = projectFieldKind(fieldHaystack(field));
-          if (projectKind) projectIndexes.set(projectKind, (projectIndexes.get(projectKind) || 0) + 1);
           alreadyFilled++;
           continue;
         }
-        const rememberedValue = matchRememberedField(field, profile.fieldMemories, pageContext);
+        // Saved 网申资料 rows are the source of truth for repeated blocks. A
+        // remembered "学校" is one value and would otherwise fill every row.
+        const structured = repeat ? repeatFieldValue(field, repeat, profile) : null;
+        if (structured) {
+          pairs.push({ id: field.id, value: structured, source: "profile", label: field.label, tag: field.tag });
+          continue;
+        }
+        const rememberedValue = repeat && (repeat.row > 0 || repeat.degreeHint) ? null : matchRememberedField(field, profile.fieldMemories, pageContext);
         if (rememberedValue) {
           pairs.push({ id: field.id, value: rememberedValue, source: "remembered-field", label: field.label, tag: field.tag, remembered: true });
           continue;
@@ -1368,7 +1579,8 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
           neverGuessCount++;
           continue;
         }
-        const value = matchBasicField(field, profile, projectIndexes);
+        if (repeat && !repeatFieldGoesToAi(repeat, profile)) continue;
+        const value = repeat ? null : matchFlatField(field, profile);
         if (value) {
           pairs.push({ id: field.id, value, source: "profile", label: field.label, tag: field.tag });
           continue;
@@ -1496,6 +1708,10 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
             : `${stillManual} 个字段简历里没有对应信息，需要自己填`
         );
       }
+      const missingBlocks = missingRepeatBlocks(profile, rowIndexes);
+      if (missingBlocks.length) {
+        parts.push(`网申资料里${missingBlocks.join("、")}，但这页的对应栏目不够——先点页面上的「添加」再点一次一键填写`);
+      }
       parts.push("手写或修改的基础资料和开放题会自动记住；可在账号设置查看和修改；提交前请核对所有填入内容");
 
       send("browser:autofill-status", { phase: "done", message: parts.join("；"), details });
@@ -1531,7 +1747,9 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       // A fresh scan also includes answers the user wrote entirely by hand.
       // Read the original AI ids first; scanning replaces the temporary DOM ids.
       const { fields, frameById } = await scanAllFrames(tab.view.webContents);
+      const rowIndexes = new Map();
       for (const field of fields) {
+        const repeat = resolveRepeatField(field, rowIndexes);
         const label = field.label || field.placeholder || field.name;
         if (!label || isForbiddenMemoryField(field)) continue;
         if (field.tag === "custom-select") continue;
@@ -1545,6 +1763,9 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
         if (!candidate || label.length < 2 || label.length > 500 || candidate.value.length > 10000) continue;
         const openEnded = isOpenEndedQuestionField(field) && !isSensitiveMemoryField(field);
         if (!openEnded && !snapshot.userEdited) continue;
+        // Only the first block may become a reusable "学校"/"项目名称" memory;
+        // a second row's school saved under the same key would replace it.
+        if (!openEnded && repeat && (repeat.row > 0 || repeat.degreeHint)) continue;
         const key = openEnded ? label : fieldMemoryKey(field);
         if (!key) continue;
         answers.push({ questionLabel: key, answer: candidate.value, answerId: openEnded ? candidate.answerId : undefined, kind: openEnded ? field.tag === "textarea" ? "essay" : "short" : "field" });

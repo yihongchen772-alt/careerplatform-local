@@ -39,6 +39,17 @@ export default function BrowserDemoPage() {
         <section className="space-y-4">
           <label className="block space-y-1"><span>为什么申请这个岗位？</span><textarea name="motivation" className="min-h-32 w-full rounded-md border p-2" /></label>
           <label className="block space-y-1"><span>最高学历</span><select name="degree" className="w-full rounded-md border p-2"><option value="">请选择</option><option>本科</option><option>硕士</option><option>博士</option></select></label>
+          <div className="space-y-4">
+            <h2 className="font-medium">教育经历</h2>
+            {[1, 2].map((n) => (
+              <div key={n} className="space-y-3 rounded-md border p-3">
+                <h3 className="text-sm text-muted-foreground">教育经历 {n}</h3>
+                <label className="block space-y-1"><span>学校名称</span><input name={`edu${n}_school`} className="w-full rounded-md border p-2" /></label>
+                <label className="block space-y-1"><span>专业</span><input name={`edu${n}_major`} className="w-full rounded-md border p-2" /></label>
+                <label className="block space-y-1"><span>学历</span><select name={`edu${n}_degree`} className="w-full rounded-md border p-2"><option value="">请选择</option><option>本科</option><option>硕士研究生</option><option>博士研究生</option></select></label>
+              </div>
+            ))}
+          </div>
           <button className="rounded-md bg-primary px-4 py-2 text-primary-foreground" onClick={() => setStep(3)}>模拟提交成功</button>
         </section>
       )}
