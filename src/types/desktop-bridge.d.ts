@@ -53,6 +53,7 @@ export type DesktopBridge = {
   exportFormStructure(): Promise<{ path: string; fields: number; frames: number }>;
   chooseDirectory(): Promise<string | null>;
   exportDocument(payload: { format: "pdf" | "doc"; html: string; fileName: string }): Promise<{ path: string }>;
+  openExtensionFolder(): Promise<{ path: string }>;
   screenshot(): Promise<{ dataUrl: string; url: string; title: string }>;
   zoomIn(): Promise<void>;
   zoomOut(): Promise<void>;

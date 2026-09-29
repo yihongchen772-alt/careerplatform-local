@@ -63,6 +63,8 @@ export async function GET(request: Request) {
     ethnicity: structured.extras.ethnicity || null,
     english: structured.extras.english || null,
     currentCity: structured.extras.currentCity || null,
+    targetRole: structured.extras.targetRole || null,
+    selfIntro: structured.extras.selfIntro || null,
     extra: describeApplicationProfile(structured) || null,
   });
 }

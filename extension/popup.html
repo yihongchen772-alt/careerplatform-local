@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>求职罗盘 · 网申助手</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <img src="icons/icon-32.png" alt="" width="20" height="20">
+    <strong>求职罗盘 · 网申助手</strong>
+    <span id="conn" class="pill">连接中…</span>
+  </header>
+
+  <section id="pair" hidden>
+    <p class="hint">第一次使用：打开求职罗盘 App → 账号设置 → 浏览器插件，点「生成配对码」，复制后粘贴到这里。</p>
+    <input id="pair-token" placeholder="粘贴配对码" autocomplete="off">
+    <button id="pair-btn" class="primary">连接</button>
+    <p id="pair-error" class="error" hidden></p>
+  </section>
+
+  <section id="offline" hidden>
+    <p class="error" id="offline-text">连不上求职罗盘 App：请先打开 App。</p>
+    <button id="retry">重试</button>
+  </section>
+
+  <section id="main" hidden>
+    <div id="site"></div>
+    <label>简历（上传附件、AI 作答依据）
+      <select id="resume"></select>
+    </label>
+    <label id="variant-row" hidden>网申资料方案
+      <select id="variant"></select>
+    </label>
+    <label class="check"><input type="checkbox" id="expand"> 自动补齐栏目（资料段数多于页面时点「添加」）</label>
+    <button id="fill" class="primary">一键填写这一页</button>
+    <div class="row">
+      <button id="save" title="把这页你手填或改过的内容存进记忆库">记住本页</button>
+      <button id="capture" title="用 AI 解析这页岗位信息，加进候选岗位池">收藏岗位</button>
+      <button id="record-toggle">记为已投递</button>
+    </div>
+    <form id="record" hidden>
+      <input id="record-company" placeholder="公司" required>
+      <input id="record-title" placeholder="岗位" required>
+      <button class="primary" type="submit">保存到投递记录</button>
+    </form>
+    <p id="message" class="message" hidden></p>
+    <p class="hint">快捷键 Alt+Shift+Y 也能填写当前页。提交前请核对所有内容，插件不会替你点提交。</p>
+  </section>
+  <script src="popup.js"></script>
+</body>
+</html>

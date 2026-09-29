@@ -364,3 +364,12 @@ npm run electron:build
   招聘页快照，没搜到爆料/面经，于是如实返回"几乎没查到"（没有拿刻板印象
   凑数，这是预期行为）。也就是说这个功能能不能给出有用信息，很依赖目标公司
   在公开网页上的讨论量，冷门岗位大概率查不到。
+
+## 浏览器插件（Chrome / Edge）
+
+`extension/` 是配套的浏览器插件，让平时用的 Chrome / Edge 也能一键填写网申、上传简历、记为已投递、收藏岗位、把「我的投递」页设为进度页。填写逻辑和 App 内置网申浏览器是同一份代码：`electron/autofill-core.js` 同时被 `electron/browser-view.js` 和插件使用，`scripts/build-extension.cjs` 把它打进插件的 `lib/autofill-core.js`，改填写规则只需改一处。
+
+- **数据不离开本机**：插件只调用本机 App 的 `/api/extension/*`（`http://localhost:3210`），使用时 App 需要开着。`src/proxy.ts` 只允许 `chrome-extension://` 来源访问这组接口，每个接口再校验配对码（账号设置 → 浏览器插件生成，只存 SHA-256）。
+- **安装**：账号设置 → 浏览器插件 →「打开插件文件夹」，在 `chrome://extensions` 打开开发者模式，「加载已解压的扩展程序」选这个文件夹，再粘贴配对码。安装包把插件放在 `Resources/chrome-extension`，App 启动时会把已安装的副本更新到新版本（浏览器里点一下刷新即可生效）。
+- **权限**：只默认申请本机 App 的地址；第一次点「一键填写」时再请求网站访问权限，用于填写嵌在 iframe 里的北森 / Moka 表单，拒绝也能填主页面。插件不会替你点提交。
+- **本地调试**：`node scripts/build-extension.cjs` 生成到 `.local-run/chrome-extension`。

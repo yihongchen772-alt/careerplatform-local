@@ -1,8 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { isTrustedLocalRequest } from "@/lib/local-request-guard";
+import { isExtensionApiRequest, isTrustedLocalRequest } from "@/lib/local-request-guard";
 
 export function proxy(request: NextRequest) {
-  if (!isTrustedLocalRequest(request.headers)) {
+  if (!isTrustedLocalRequest(request.headers) && !isExtensionApiRequest(request.nextUrl.pathname, request.headers)) {
     return new NextResponse("Forbidden", { status: 403 });
   }
   return NextResponse.next();

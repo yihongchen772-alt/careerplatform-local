@@ -7,29 +7,10 @@ import { History, Radar, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { setCompanyPortalUrl } from "@/lib/actions/application-sync";
-import { looksLikeCandidateCenter, siteKey } from "@/lib/site-key";
+import { looksLikeCandidateCenter, matchKnownSite, siteKey, type KnownSite } from "@/lib/site-key";
+
+export type { KnownSite };
 import type { DesktopBridge } from "@/types/desktop-bridge";
-
-export type KnownSite = {
-  companyId: string;
-  companyName: string;
-  /** siteKey() of every URL known for this company. */
-  keys: string[];
-  /** siteKey() of its saved 进度页 — a candidate center there is already watched. */
-  portalKeys: string[];
-  applications: { id: string; title: string; stage: string; terminal: boolean }[];
-};
-
-export function matchKnownSite(sites: KnownSite[], url: string | null, title: string): KnownSite | null {
-  const key = siteKey(url);
-  if (key) {
-    const byKey = sites.find((site) => site.keys.includes(key));
-    if (byKey) return byKey;
-  }
-  // A first visit to a new ATS page (no URL recorded yet) still names the
-  // employer in its title often enough to be worth a check.
-  return sites.find((site) => site.companyName.length >= 2 && title.includes(site.companyName)) ?? null;
-}
 
 /**
  * Two hints above the page: "你已投过这家" (so the same role isn't applied to

@@ -1,10 +1,8 @@
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { EmbeddedBrowser } from "@/components/browser/embedded-browser";
-import type { KnownSite } from "@/components/browser/site-banner";
-import { siteKey } from "@/lib/site-key";
 import { parseApplicationProfile } from "@/lib/application-profile";
-import { STAGE_LABELS } from "@/lib/stage-labels";
+import { loadKnownSites } from "@/lib/known-sites";
 
 const TERMINAL = ["REJECTED", "ACCEPTED", "DECLINED", "WITHDRAWN", "CANCELLED"] as const;
 
@@ -16,7 +14,7 @@ export default async function BrowserPage({
   const user = await requireUser();
   const { url } = await searchParams;
 
-  const [resumeVersions, companies, careerCompanies, positions, applications, appliedCompanies] = await Promise.all([
+  const [resumeVersions, companies, careerCompanies, positions, applications, knownSites] = await Promise.all([
     db.resumeVersion.findMany({
       where: { userId: user.id, fileUrl: { not: null } },
       select: { id: true, name: true, isDefault: true },
@@ -56,47 +54,9 @@ export default async function BrowserPage({
       include: { company: true },
       orderBy: { currentStageDate: "desc" },
     }),
-    // Every company applied to (finished ones too) with every URL we know for
-    // it — the browser uses these to say "已投过" and to offer 设为进度页.
-    db.company.findMany({
-      where: { applications: { some: { userId: user.id } } },
-      select: {
-        id: true,
-        name: true,
-        careerUrl: true,
-        portalUrl: true,
-        applicationPortals: { select: { url: true } },
-        positions: { where: { userId: user.id, jdUrl: { not: null } }, select: { jdUrl: true } },
-        applications: {
-          where: { userId: user.id },
-          select: { id: true, title: true, currentStage: true, currentStageLabel: true, applyUrl: true, appliedDate: true },
-          orderBy: { appliedDate: "desc" },
-        },
-      },
-    }),
+    loadKnownSites(user.id),
   ]);
 
-  const knownSites: KnownSite[] = appliedCompanies.map((company) => {
-    const urls = [
-      company.careerUrl,
-      company.portalUrl,
-      ...company.applicationPortals.map((portal) => portal.url),
-      ...company.positions.map((position) => position.jdUrl),
-      ...company.applications.map((application) => application.applyUrl),
-    ];
-    return {
-      companyId: company.id,
-      companyName: company.name,
-      keys: [...new Set(urls.map(siteKey).filter((key): key is string => !!key))],
-      portalKeys: [...new Set(company.applicationPortals.map((portal) => siteKey(portal.url)).filter((key): key is string => !!key))],
-      applications: company.applications.map((application) => ({
-        id: application.id,
-        title: application.title,
-        stage: application.currentStageLabel || STAGE_LABELS[application.currentStage],
-        terminal: (TERMINAL as readonly string[]).includes(application.currentStage),
-      })),
-    };
-  });
 
   return (
     <div className="flex min-h-[calc(100vh-8rem)] flex-col gap-3 md:min-h-[calc(100vh-5rem)]">

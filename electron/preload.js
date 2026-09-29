@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   exportFormStructure: () => ipcRenderer.invoke("browser:export-form-structure"),
   chooseDirectory: () => ipcRenderer.invoke("browser:choose-directory"),
   exportDocument: (payload) => ipcRenderer.invoke("browser:export-document", payload),
+  openExtensionFolder: () => ipcRenderer.invoke("browser:open-extension-folder"),
   zoomIn: () => ipcRenderer.invoke("browser:zoom-in"),
   zoomOut: () => ipcRenderer.invoke("browser:zoom-out"),
   zoomReset: () => ipcRenderer.invoke("browser:zoom-reset"),

@@ -36,6 +36,8 @@ const profileSchema = z
     ethnicity: z.string().nullish(),
     english: z.string().nullish(),
     currentCity: z.string().nullish(),
+    targetRole: z.string().nullish(),
+    selfIntro: z.string().nullish(),
     /** Readable digest of the structured 网申资料 (education/experience/project rows). */
     extra: z.string().nullish(),
   })

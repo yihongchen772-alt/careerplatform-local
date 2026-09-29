@@ -85,6 +85,10 @@ model User {
   webdavPasswordEncrypted String?
   autoBackupLastAt        DateTime?
   autoBackupLastError     String?
+  /// SHA-256 of the Chrome extension's pairing code (settings → 浏览器插件).
+  /// Only /api/extension/* accepts it; the plaintext is shown once and never stored.
+  extensionTokenHash      String?
+  extensionPairedAt       DateTime?
   createdAt             DateTime  @default(now())
 
   accounts                Account[]

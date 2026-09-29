@@ -7,6 +7,7 @@ const projectRoot = path.resolve(__dirname, "..");
 const stageRoot = path.join(projectRoot, ".local-run", "packaging");
 const runtimeRoot = path.join(stageRoot, "runtime");
 const shellRoot = path.join(stageRoot, "shell");
+const extensionRoot = path.join(stageRoot, "chrome-extension");
 
 // A positive allowlist selects roots below; this second layer also applies to
 // traced files, nested dependencies and the finished Electron resources.
@@ -210,6 +211,9 @@ function prepareRuntime() {
     dependencies: { "electron-updater": updaterVersion },
   }, null, 2));
   copyProductionPackage("electron-updater", shellRoot);
+  // The Chrome/Edge extension ships beside the app (Resources/chrome-extension,
+  // see afterPack) so settings → 浏览器插件 can hand Chrome an unpacked copy.
+  require("./build-extension.cjs").buildExtension(extensionRoot);
   const summary = { runtime: verifyDirectory(runtimeRoot), electron: verifyDirectory(shellRoot) };
   fs.writeFileSync(path.join(stageRoot, "summary.json"), JSON.stringify(summary, null, 2));
   console.log(`Prepared runtime: ${(summary.runtime.bytes / 1024 / 1024).toFixed(1)} MiB; Electron application: ${(summary.electron.bytes / 1024 / 1024).toFixed(1)} MiB. Private-file and secret checks passed.`);
@@ -232,6 +236,9 @@ async function afterPack(context) {
   const enginesDir = path.join(packagedRuntime, "node_modules", "@prisma", "engines");
   const foreignEngine = path.join(enginesDir, context.electronPlatformName === "darwin" ? "schema-engine-windows.exe" : "schema-engine-darwin-arm64");
   fs.rmSync(foreignEngine, { force: true });
+  const packagedExtension = path.join(resources, "chrome-extension");
+  fs.rmSync(packagedExtension, { recursive: true, force: true });
+  fs.cpSync(extensionRoot, packagedExtension, { recursive: true });
   verifyDirectory(resources);
   const archive = path.join(resources, "app.asar");
   const asar = require("@electron/asar");
@@ -247,6 +254,9 @@ async function afterPack(context) {
   if (context.electronPlatformName !== "darwin") requiredEntries.push("node_modules/@prisma/engines/schema-engine-windows.exe");
   for (const required of requiredEntries) {
     if (!fs.existsSync(path.join(resources, "app-runtime", required))) throw new Error(`Packaged runtime entry missing: ${required}`);
+  }
+  for (const required of ["manifest.json", "background.js", "popup.html", "lib/autofill-core.js"]) {
+    if (!fs.existsSync(path.join(packagedExtension, required))) throw new Error(`Packaged Chrome extension entry missing: ${required}`);
   }
   for (const required of ["backup-worker.cjs", "data-backup.cjs"]) {
     if (!fs.existsSync(path.join(resources, "app.asar.unpacked", "electron", required))) {

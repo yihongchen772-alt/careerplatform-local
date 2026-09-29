@@ -37,6 +37,9 @@ export const EXTRA_FIELDS = [
   { key: "ethnicity", label: "民族", hint: "汉族" },
   { key: "english", label: "英语水平", hint: "CET-6 580 / 雅思 7.0" },
   { key: "currentCity", label: "现居城市", hint: "" },
+  { key: "targetRole", label: "期望岗位", hint: "数据分析 / 产品经理" },
+  // Long text: most forms ask for it, and each direction wants its own version.
+  { key: "selfIntro", label: "自我评价", hint: "3-5 句，突出与目标岗位相关的能力", multiline: true },
 ] as const;
 
 /**
@@ -52,14 +55,14 @@ export const profileVariantSchema = z.object({
   resumeVersionId: z.string().trim().max(40).nullish(),
   experiences: z.array(experienceSchema).max(20).default([]),
   projects: z.array(projectSchema).max(20).default([]),
-  extras: z.record(z.string(), z.string().trim().max(200)).default({}),
+  extras: z.record(z.string(), z.string().trim().max(1000)).default({}),
 });
 
 export const applicationProfileSchema = z.object({
   education: z.array(educationSchema).max(10).default([]),
   experiences: z.array(experienceSchema).max(20).default([]),
   projects: z.array(projectSchema).max(20).default([]),
-  extras: z.record(z.string(), z.string().trim().max(200)).default({}),
+  extras: z.record(z.string(), z.string().trim().max(1000)).default({}),
   variants: z.array(profileVariantSchema).max(8).default([]),
 });
 

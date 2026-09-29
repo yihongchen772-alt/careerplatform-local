@@ -785,6 +785,13 @@ app.whenReady().then(async () => {
     // Never in test mode: an isolated copy of real data still carries the
     // user's real backup folder and WebDAV settings.
     if (process.env.CAREERPLATFORM_TEST_MODE !== "1") startAutoBackupLoop();
+    // After an app update, bring an already-installed unpacked extension copy
+    // up to the new version (Chrome picks it up on its next reload/restart).
+    try {
+      require("./browser-view").syncChromeExtension();
+    } catch {
+      // Never block startup on the optional extension copy.
+    }
     if (settings.backgroundReminders && process.env.CAREERPLATFORM_TEST_MODE !== "1") {
       buildTray();
       startReminderLoop();

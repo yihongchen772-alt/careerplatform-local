@@ -8,6 +8,8 @@ import { MailAccountsCard } from "@/components/settings/mail-accounts-card";
 import { BackupCard } from "@/components/settings/backup-card";
 import { AutoBackupCard } from "@/components/settings/auto-backup-card";
 import { getAutoBackupSettings } from "@/lib/actions/auto-backup";
+import { ExtensionCard } from "@/components/settings/extension-card";
+import { getExtensionPairing } from "@/lib/actions/extension";
 import { BackgroundReminderCard } from "@/components/settings/background-reminder-card";
 import { getAiKeysOverview } from "@/lib/actions/ai-keys";
 import { getAppSettings } from "@/lib/actions/app-settings";
@@ -22,7 +24,7 @@ import { version } from "../../../../package.json";
 
 export default async function SettingsPage() {
   const user = await requireUser();
-  const [aiKeys, appSettings, mailAccounts, freshnessResult, resumeVersions, rememberedAnswers, autoBackup] = await Promise.all([
+  const [aiKeys, appSettings, mailAccounts, freshnessResult, resumeVersions, rememberedAnswers, autoBackup, extensionPairing] = await Promise.all([
     getAiKeysOverview(user.id),
     getAppSettings(),
     listMailAccounts(user.id),
@@ -38,6 +40,7 @@ export default async function SettingsPage() {
       orderBy: { updatedAt: "desc" },
     }),
     getAutoBackupSettings(),
+    getExtensionPairing(),
   ]);
   const freshness = freshnessResult.ok ? freshnessResult.data : null;
 
@@ -61,6 +64,7 @@ export default async function SettingsPage() {
           }}
         />
         <ApplicationProfileCard initial={parseApplicationProfile(user.applicationProfile)} resumeVersions={resumeVersions} />
+        <ExtensionCard initial={extensionPairing} />
         <AutofillMemoryCard initial={rememberedAnswers.map((answer) => ({ ...answer, updatedAt: answer.updatedAt.toISOString() }))} />
         <AppearanceForm />
         <AiSettingsForm keys={aiKeys} />

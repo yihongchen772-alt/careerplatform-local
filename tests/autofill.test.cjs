@@ -8,12 +8,14 @@ const ts = require("typescript");
 // The browser helpers live in Electron's main-process module. Evaluate its
 // pure functions with Electron stubbed, without opening a window or website.
 const source = fs.readFileSync(path.join(__dirname, "../electron/browser-view.js"), "utf8");
-const context = {
-  require: (name) => name === "electron" ? {} : require(name),
-  module: { exports: {} },
-  URL,
-};
-vm.runInNewContext(`${source}\nmodule.exports.__test = { fillDetail, formatDateForField, dateRangeValue, degreeAlternatives, matchBasicField, resolveRepeatField, repeatFieldValue, missingRepeatBlocks, repeatFieldGoesToAi, matchRememberedField, fieldMemoryKey, isForbiddenMemoryField, isNeverGuessField, isOpenEndedQuestionField, isSensitiveMemoryField, portalContext, memoryCandidate, trackUserEdits, assertTrustedBrowserEvent, safeDownloadFilename, openSafeExternalUrl };`, context);
+// autofill-core.js is evaluated inside the same sandbox (wrapped, so its
+// declarations don't collide with browser-view's destructuring), letting a
+// test swap in a fake `document` that the injected helpers then see.
+const context = vm.createContext({ module: { exports: {} }, URL });
+const coreModule = { exports: {} };
+vm.runInContext(`(function (module, exports) {\n${fs.readFileSync(path.join(__dirname, "../electron/autofill-core.js"), "utf8")}\n})`, context)(coreModule, coreModule.exports);
+context.require = (name) => name === "electron" ? {} : name === "./autofill-core.js" ? coreModule.exports : require(name);
+vm.runInContext(`${source}\nmodule.exports.__test = { fillDetail, formatDateForField, dateRangeValue, degreeAlternatives, matchBasicField, resolveRepeatField, repeatFieldValue, missingRepeatBlocks, repeatFieldGoesToAi, matchRememberedField, fieldMemoryKey, isForbiddenMemoryField, isNeverGuessField, isOpenEndedQuestionField, isSensitiveMemoryField, portalContext, memoryCandidate, trackUserEdits, assertTrustedBrowserEvent, safeDownloadFilename, openSafeExternalUrl };`, context);
 const { fillDetail, formatDateForField, dateRangeValue, degreeAlternatives, matchBasicField, resolveRepeatField, repeatFieldValue, missingRepeatBlocks, repeatFieldGoesToAi, matchRememberedField, fieldMemoryKey, isForbiddenMemoryField, isNeverGuessField, isOpenEndedQuestionField, isSensitiveMemoryField, portalContext, memoryCandidate, trackUserEdits, assertTrustedBrowserEvent, safeDownloadFilename, openSafeExternalUrl } = context.module.exports.__test;
 
 const profile = { name: "陈奕宏", email: "me@example.invalid" };
