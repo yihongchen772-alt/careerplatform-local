@@ -45,6 +45,10 @@ export function TailoredResumeEditor({
   const [generating, setGenerating] = useState(false);
   const [busy, setBusy] = useState<"save" | "pdf" | "doc" | null>(null);
   const [dirty, setDirty] = useState(false);
+  // Hand edits since the last generation (saved or not): regenerating would
+  // replace them, so that is what the confirmation has to be about.
+  const [edited, setEdited] = useState(!!initialBody);
+  const autosaveTimer = useRef<number | null>(null);
 
   function currentBody(): string {
     const doc = frameRef.current?.contentDocument;
@@ -55,7 +59,14 @@ export function TailoredResumeEditor({
     const doc = frameRef.current?.contentDocument;
     if (!doc) return;
     doc.designMode = "on";
-    doc.addEventListener("input", () => setDirty(true));
+    // Edits save themselves a moment after typing stops — leaving the page
+    // must never throw away a resume the applicant spent time polishing.
+    doc.addEventListener("input", () => {
+      setDirty(true);
+      setEdited(true);
+      if (autosaveTimer.current) window.clearTimeout(autosaveTimer.current);
+      autosaveTimer.current = window.setTimeout(() => void save(true), 1500);
+    });
     doc.addEventListener("paste", (event) => {
       event.preventDefault();
       const text = event.clipboardData?.getData("text/plain") ?? "";
@@ -64,33 +75,37 @@ export function TailoredResumeEditor({
   }
 
   async function generate() {
-    if (dirty && !window.confirm("重新生成会覆盖你在预览里改过的内容，继续？")) return;
+    if (edited && !window.confirm("重新生成会覆盖你在预览里改过的内容，继续？")) return;
     setGenerating(true);
     try {
       const res = await generateTailoredResume(positionId, resumeVersionId);
       if (!res.ok) return void toast.error(res.message);
       setBody(renderTailoredResumeBody(res.data, contact, education));
       setDirty(false);
+      setEdited(false);
       toast.success("已生成。逐条核对内容是否属实，可以直接在预览里修改");
     } finally {
       setGenerating(false);
     }
   }
 
-  async function save() {
-    setBusy("save");
+  async function save(quiet = false) {
+    if (autosaveTimer.current) window.clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = null;
+    if (!quiet) setBusy("save");
     try {
       const next = currentBody();
       const res = await saveTailoredResumeBody(positionId, resumeVersionId, next);
-      if (!res.ok) return void toast.error(res.message);
+      if (!res.ok) return void toast.error(`自动保存失败：${res.message}`);
       setDirty(false);
-      toast.success("修改已保存");
+      if (!quiet) toast.success("修改已保存");
     } finally {
-      setBusy(null);
+      if (!quiet) setBusy(null);
     }
   }
 
   async function exportAs(format: "pdf" | "doc") {
+    if (dirty) await save(true);
     const content = currentBody();
     const html = format === "pdf" ? wrapTailoredResumeHtml(content, fileBase) : wrapTailoredResumeWord(content, fileBase);
     setBusy(format);
@@ -122,9 +137,9 @@ export function TailoredResumeEditor({
         </Button>
         {body && (
           <>
-            <Button type="button" variant="outline" disabled={busy !== null || !dirty} onClick={save}>
+            <Button type="button" variant="outline" disabled={busy !== null || !dirty} onClick={() => save()}>
               <Save className="size-4" />
-              {busy === "save" ? "保存中…" : dirty ? "保存修改" : "已保存"}
+              {busy === "save" ? "保存中…" : dirty ? "保存修改" : "改动已自动保存"}
             </Button>
             <Button type="button" variant="outline" disabled={busy !== null} onClick={() => exportAs("pdf")}>
               <Download className="size-4" />

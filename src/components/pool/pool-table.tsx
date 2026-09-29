@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Crosshair, Globe, ListChecks } from "lucide-react";
+import { Crosshair, FileText, Globe, ListChecks } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -445,6 +445,14 @@ export function PoolTable({
                     <Crosshair className="size-3.5" />
                     简历深挖
                   </Link>
+                  <Link
+                    href={`/resumes/tailored?positionId=${p.id}`}
+                    className={buttonVariants({ size: "sm", variant: "outline" })}
+                    title="用 AI 为这个岗位整理一份定制简历，可编辑后导出 PDF / Word"
+                  >
+                    <FileText className="size-3.5" />
+                    定制简历
+                  </Link>
                   <PositionFormDialog
                     mode="edit"
                     positionId={p.id}
@@ -610,6 +618,14 @@ export function PoolTable({
                   >
                     <Crosshair className="size-3.5" />
                     简历深挖
+                  </Link>
+                  <Link
+                    href={`/resumes/tailored?positionId=${p.id}`}
+                    className={buttonVariants({ size: "sm", variant: "outline" })}
+                    title="用 AI 为这个岗位整理一份定制简历，可编辑后导出 PDF / Word"
+                  >
+                    <FileText className="size-3.5" />
+                    定制简历
                   </Link>
                   <PositionFormDialog
                     mode="edit"

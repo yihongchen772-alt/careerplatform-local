@@ -130,6 +130,9 @@ test("one-box date spans follow the page's own example", () => {
   assert.equal(matchBasicField(inBlock("在校时间", ""), savedProfile, new Map()), "2021-09 至 2025-06");
   assert.equal(matchBasicField(inBlock("时间", "教育经历"), savedProfile, new Map()), "2021-09 至 2025-06");
   assert.equal(resolveRepeatField(inBlock("每周实习时间", "实习经历"), new Map()), null);
+  assert.equal(resolveRepeatField(inBlock("离职原因", "实习经历"), new Map()), null);
+  assert.equal(resolveRepeatField(inBlock("入职时间", "实习经历"), new Map()).kind, "start");
+  assert.equal(resolveRepeatField(inBlock("离职时间", "实习经历"), new Map()).kind, "end");
   assert.equal(resolveRepeatField(inBlock("时间", ""), new Map()), null);
 });
 
@@ -168,7 +171,7 @@ test("prefilled blocks, loose fields and unrelated labels keep rows aligned", ()
   resolveRepeatField(field("学校", "教育经历"), rows); // row one already filled by the site
   assert.equal(matchBasicField(field("学校", "教育经历"), savedProfile, rows), "华东师范大学");
   assert.equal(matchBasicField(field("毕业时间", "教育经历"), savedProfile, rows), "2026-12");
-  for (const label of ["专业排名", "学校所在城市", "英语成绩", "专业技能", "期望工作城市"]) {
+  for (const label of ["专业排名", "学校所在城市", "英语成绩", "专业技能", "期望工作城市", "专业课程", "GPA排名", "离职原因", "入职部门"]) {
     assert.equal(resolveRepeatField(field(label), new Map()), null, label);
   }
   assert.equal(matchBasicField(field("英语成绩"), { ...savedProfile, english: "CET-6 580" }, new Map()), "CET-6 580");

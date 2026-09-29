@@ -105,3 +105,32 @@ test("runAutofillCore drives any adapter the same way", async () => {
   assert.equal(statuses.at(-1).phase, "done");
   assert.match(result.message, /已验证填入 2 个基础字段/);
 });
+
+test("an untouched AI draft is never remembered, even with the draft list lost", async () => {
+  const core = require("../electron/autofill-core.js");
+  const posted = [];
+  const essay = (id, label) => ({ id, tag: "textarea", type: "", label, placeholder: "", name: "", section: "", hasValue: true });
+  const values = {
+    "c0-f0": { value: "AI 写的草稿", answerId: "draft-1", userEdited: false },
+    "c0-f1": { value: "我自己改过的回答", answerId: "draft-2", userEdited: true, editedAt: 1 },
+    "c0-f2": { value: "我手写的回答", answerId: null, userEdited: true, editedAt: 1 },
+  };
+  const adapter = {
+    url: () => "https://careers.example.com/apply",
+    frames: async () => ["top"],
+    run: async (_frame, fn, args) => {
+      if (fn === core.scanPageFields) return [essay("c0-f0", "为什么选择我们？"), essay("c0-f1", "你的职业规划？"), essay("c0-f2", "请介绍一个项目经历？")];
+      if (fn === core.readFieldValues) return { [args[0][0]]: values[args[0][0]] };
+      return undefined;
+    },
+    api: async (_name, init) => {
+      posted.push(...JSON.parse(init.body).answers);
+      return { ok: true, json: async () => ({ saved: posted.length }) };
+    },
+    getDrafts: () => [], // e.g. the extension worker was suspended
+    setDrafts: () => {},
+  };
+  const result = await core.saveCorrectionsCore(adapter, undefined, false);
+  assert.equal(result.saved, 2);
+  assert.deepEqual(posted.map((a) => a.answer).sort(), ["我手写的回答", "我自己改过的回答"]);
+});

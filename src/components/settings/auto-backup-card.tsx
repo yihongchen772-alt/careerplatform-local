@@ -46,6 +46,13 @@ export function AutoBackupCard({ initial }: { initial: AutoBackupSettings }) {
   const [webdavUser, setWebdavUser] = useState(initial.webdavUser ?? "");
   const [webdavPassword, setWebdavPassword] = useState("");
   const [busy, setBusy] = useState<"save" | "run" | "test" | null>(null);
+  const dirty =
+    intervalHours !== settings.intervalHours ||
+    keep !== String(settings.keep) ||
+    folder.trim() !== (settings.folder ?? "") ||
+    webdavUrl.trim() !== (settings.webdavUrl ?? "") ||
+    webdavUser.trim() !== (settings.webdavUser ?? "") ||
+    !!webdavPassword;
   const canPick = useSyncExternalStore(noop, () => !!window.desktopBridge?.chooseDirectory, () => false);
 
   async function save(next?: { enabled?: boolean; clearWebdav?: boolean }) {
@@ -67,12 +74,14 @@ export function AutoBackupCard({ initial }: { initial: AutoBackupSettings }) {
       }
       setSettings(res.data);
       setEnabled(res.data.enabled);
+      setKeep(String(res.data.keep));
+      setFolder(res.data.folder ?? "");
       setWebdavPassword("");
       if (next?.clearWebdav) {
         setWebdavUrl("");
         setWebdavUser("");
       }
-      toast.success(res.data.enabled ? "自动备份已开启" : "设置已保存");
+      toast.success(next?.enabled === false ? "自动备份已关闭" : res.data.enabled ? "自动备份已开启，设置已保存" : "设置已保存");
       return true;
     } finally {
       setBusy(null);
@@ -117,7 +126,22 @@ export function AutoBackupCard({ initial }: { initial: AutoBackupSettings }) {
       </CardHeader>
       <CardContent className="space-y-4">
         <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={enabled}
+            disabled={busy !== null}
+            onChange={async (e) => {
+              const next = e.target.checked;
+              // Turning it on/off takes effect right away once a destination
+              // exists; a checkbox that silently waits for 保存 looks broken.
+              if (next && !folder.trim() && !webdavUrl.trim()) {
+                toast.info("先选一个备份文件夹（或填写 WebDAV），再开启");
+                return;
+              }
+              setEnabled(next);
+              if (!(await save({ enabled: next }))) setEnabled(!next);
+            }}
+          />
           开启自动备份（App 运行时按频率执行）
         </label>
         <div className="grid grid-cols-2 gap-3">
@@ -204,6 +228,7 @@ export function AutoBackupCard({ initial }: { initial: AutoBackupSettings }) {
           <Button type="button" disabled={busy !== null} onClick={() => save()}>
             {busy === "save" ? "保存中…" : "保存设置"}
           </Button>
+          {dirty && <span className="text-xs text-amber-600">有未保存的修改</span>}
           <Button type="button" variant="outline" disabled={busy !== null || (!folder && !webdavUrl)} onClick={runNow}>
             <CloudUpload className="size-4" />
             {busy === "run" ? "备份中…" : "立即备份一次"}

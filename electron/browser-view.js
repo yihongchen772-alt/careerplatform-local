@@ -518,10 +518,14 @@ function markFormSettled(tabId, signature) {
  * job-application sites persist across restarts — but never shares any
  * bridge/preload with the arbitrary third-party pages it loads.
  */
-// Where the extension is copied for Chrome to load. Packaged builds carry a
+// Where the extension is copied for Chrome to load: the home folder, because
+// Chrome's "加载已解压的扩展程序" picker hides ~/Library (and Windows hides
+// AppData), and Documents may be iCloud-evicted. Packaged builds carry a
 // ready copy in Resources; a dev run builds one from extension/ on demand.
 function chromeExtensionDir() {
-  return path.join(app.getPath("userData"), "chrome-extension");
+  // Test runs use an isolated data folder and must not touch the real home.
+  if (process.env.CAREERPLATFORM_TEST_MODE === "1") return path.join(app.getPath("userData"), "chrome-extension");
+  return path.join(app.getPath("home"), "求职罗盘浏览器插件");
 }
 
 function syncChromeExtension({ force = false } = {}) {
@@ -728,11 +732,13 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     return { path: file };
   });
 
-  // Settings → 浏览器插件: put an unpacked copy of the extension next to the
-  // app's data (a stable path Chrome can keep loading across app updates)
-  // and show it, for chrome://extensions → 加载已解压的扩展程序.
+  // Settings → 浏览器插件: put an unpacked copy of the extension in a stable,
+  // visible folder Chrome can keep loading across app updates, and show it,
+  // for chrome://extensions → 加载已解压的扩展程序.
   handle("browser:open-extension-folder", () => {
     const dir = syncChromeExtension({ force: true });
+    // The picker's "go to folder" (⌘⇧G / address bar) takes a pasted path.
+    clipboard.writeText(dir);
     shell.openPath(dir);
     return { path: dir };
   });

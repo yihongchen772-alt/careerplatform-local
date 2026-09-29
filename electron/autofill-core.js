@@ -846,16 +846,19 @@ function bareLabel(field) {
 // as the entire label inside a block, or for 在校时间-style education labels.
 const RANGE_LABEL = /^(?:起止(?:时间|日期|年月)?|起讫(?:时间|日期)?|时间段|时间范围|在校时间|就读时间|在读时间|实习时间|工作时间|任职时间|项目时间|时间|period|duration|dates?)$/i;
 
-const START_LABEL = /开始|起始|入学|入职|start|(?:^|\W)from(?:\W|$)/i;
-const END_LABEL = /结束|截止|毕业(?:时间|年份|年月|日期)|离职|graduation|(?:^|\W)end(?:\W|$)|end.?date|(?:^|\W)to(?:\W|$)/i;
+const START_LABEL = /开始|起始|入学|入职(?:时间|日期|年月)|start|(?:^|\W)from(?:\W|$)/i;
+const END_LABEL = /结束|截止|毕业(?:时间|年份|年月|日期)|离职(?:时间|日期|年月)|graduation|(?:^|\W)end(?:\W|$)|end.?date|(?:^|\W)to(?:\W|$)/i;
+// "离职原因" / "开始工作的契机" are questions about a date, not the date.
+const NOT_A_DATE = /原因|理由|说明|契机|部门|证明|方式/;
 
 function educationFieldKind(haystack, inSection, bare = "") {
   if (/英语|外语|cet|toefl|ielts|托福|雅思|语言/i.test(haystack)) return null;
   if (/最高学历|highest/i.test(haystack)) return null;
   if (/学校|院校|school|university|college/i.test(haystack)) return /城市|所在地|地区|省份|类型|性质|层次|排名|city|type|rank/i.test(haystack) ? null : "school";
-  if (/专业|major|field of study/i.test(haystack)) return /技能|证书|资格|排名|方向/.test(haystack) ? null : "major";
+  if (/专业|major|field of study/i.test(haystack)) return /技能|证书|资格|排名|方向|课程|实践|能力/.test(haystack) ? null : "major";
   if (/学历|学位|degree|education.?level/i.test(haystack)) return "degree";
-  if (/gpa|绩点|平均分|平均成绩|学习成绩|加权/i.test(haystack)) return "gpa";
+  if (/gpa|绩点|平均分|平均成绩|学习成绩|加权/i.test(haystack)) return /排名|rank/i.test(haystack) ? null : "gpa";
+  if (NOT_A_DATE.test(haystack)) return null;
   if (/入学/.test(haystack) || (inSection && START_LABEL.test(haystack))) return "start";
   if (/毕业(?:时间|年份|年月|日期)|graduation/i.test(haystack) || (inSection && END_LABEL.test(haystack))) return "end";
   if (/^(?:在校时间|就读时间|在读时间)$/.test(bare) || (inSection && RANGE_LABEL.test(bare))) return "range";
@@ -867,8 +870,8 @@ function experienceFieldKind(haystack, inSection, bare = "") {
   if (!inSection) return null;
   if (/公司|单位|企业|机构|company|employer|organi[sz]ation/i.test(haystack)) return "company";
   if (/职位|岗位|职务|角色|title|position|role/i.test(haystack)) return "role";
-  if (START_LABEL.test(haystack)) return "start";
-  if (END_LABEL.test(haystack)) return "end";
+  if (START_LABEL.test(haystack) && !NOT_A_DATE.test(haystack)) return "start";
+  if (END_LABEL.test(haystack) && !NOT_A_DATE.test(haystack)) return "end";
   if (RANGE_LABEL.test(bare)) return "range";
   if (/描述|内容|职责|业绩|成果|description|responsibilit|achievement/i.test(haystack)) return "description";
   return null;
@@ -1107,7 +1110,7 @@ async function clickAddBlock(group) {
     project: /项目|project/i,
   };
   const words = GROUP_WORDS[group];
-  const ADD = /^[+＋]?\s*(?:添加|新增|增加|继续添加|再添加|add)/i;
+  const ADD = /^[+＋]?\s*(?:添加|新增|增加|继续添加|再添加|add\b)/i;
   const visible = (el) => { const r = el.getBoundingClientRect(); const st = getComputedStyle(el); return r.width > 0 && r.height > 0 && st.visibility !== "hidden" && st.display !== "none"; };
   const context = (el) => {
     let node = el;
@@ -1564,6 +1567,10 @@ async function saveCorrectionsCore(adapter, resumeVersionId, onlyUserEdited = fa
     // an unchanged AI draft stays unconfirmed even after another autofill.
     const candidate = memoryCandidate(snapshot, filledList, onlyUserEdited);
     if (!candidate || label.length < 2 || label.length > 500 || candidate.value.length > 10000) continue;
+    // An AI-filled field the applicant never typed in is still a draft, even
+    // when the draft list is gone (the extension's worker can be suspended,
+    // the app restarted) and memoryCandidate can't recognise it.
+    if (snapshot.answerId && !snapshot.userEdited) continue;
     const openEnded = isOpenEndedQuestionField(field) && !isSensitiveMemoryField(field);
     if (!openEnded && !snapshot.userEdited) continue;
     // Only the first block may become a reusable "学校"/"项目名称" memory;

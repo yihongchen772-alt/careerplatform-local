@@ -77,10 +77,15 @@ export function ExtensionCard({ initial }: { initial: ExtensionPairing }) {
                 打开插件文件夹
               </Button>
             )}
-            {folder && <span className="mt-1 block break-all text-xs">{folder}</span>}
+            {folder && (
+              <span className="mt-1 block break-all text-xs">
+                {folder}
+                <span className="block text-muted-foreground">路径已复制。选择文件夹时找不到的话，在对话框里按 ⌘⇧G（Windows 点地址栏）粘贴。</span>
+              </span>
+            )}
           </li>
           <li>在 Chrome 地址栏打开 chrome://extensions（Edge 是 edge://extensions），打开右上角「开发者模式」。</li>
-          <li>点「加载已解压的扩展程序」，选择刚才打开的 chrome-extension 文件夹。</li>
+          <li>点「加载已解压的扩展程序」，选择刚才打开的「求职罗盘浏览器插件」文件夹（在你的个人文件夹里）。</li>
           <li>生成配对码，点浏览器右上角的求职罗盘图标，粘贴配对码并连接。</li>
         </ol>
         <p className="text-xs text-muted-foreground">

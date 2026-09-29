@@ -75,7 +75,22 @@ function keepAlive() {
   return () => clearInterval(timer);
 }
 
+// Drafts also go to session storage: Chrome suspends an idle worker, and the
+// in-memory map would be empty by the time 记住本页 is pressed.
+async function loadDrafts(tabId) {
+  if (!drafts.has(tabId)) {
+    const key = `drafts:${tabId}`;
+    drafts.set(tabId, (await chrome.storage.session.get(key))[key] || []);
+  }
+}
+
+function storeDrafts(tabId, list) {
+  drafts.set(tabId, list);
+  chrome.storage.session.set({ [`drafts:${tabId}`]: list }).catch(() => {});
+}
+
 async function adapterFor(tabId) {
+  await loadDrafts(tabId);
   const tab = await chrome.tabs.get(tabId);
   let liveUrl = tab.url;
   const onUpdated = (id, info) => {
@@ -107,7 +122,7 @@ async function adapterFor(tabId) {
         return attached;
       },
       getDrafts: () => drafts.get(tabId) || [],
-      setDrafts: (list) => drafts.set(tabId, list),
+      setDrafts: (list) => storeDrafts(tabId, list),
     },
   };
 }
@@ -209,5 +224,5 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   drafts.delete(tabId);
-  chrome.storage.session.remove(`status:${tabId}`).catch(() => {});
+  chrome.storage.session.remove([`status:${tabId}`, `drafts:${tabId}`]).catch(() => {});
 });
