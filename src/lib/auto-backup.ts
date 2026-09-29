@@ -8,7 +8,7 @@ import { decryptSecret } from "@/lib/crypto";
 import { buildBackupPayload } from "@/lib/backup-core";
 
 // Plain module (not "use server"): the scheduled 自动备份 behind
-// /api/auto-backup/run and the settings card's 立即备份. The backup is the same
+// /api/backup-schedule/run and the settings card's 立即备份. The backup is the same
 // self-contained JSON as the manual export, so restoring one uses the existing
 // 数据备份 → 导入 flow. AI keys and mailbox passwords inside it stay encrypted
 // with this computer's own secret, which is never written to the backup.

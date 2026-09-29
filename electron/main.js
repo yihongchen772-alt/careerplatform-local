@@ -673,7 +673,7 @@ let autoBackupTimer;
 let lastAutoBackupError = "";
 async function maybeAutoBackup() {
   try {
-    const res = await fetch(`http://localhost:${PORT}/api/auto-backup/run`, { method: "POST" });
+    const res = await fetch(`http://localhost:${PORT}/api/backup-schedule/run`, { method: "POST" });
     if (!res.ok) return;
     const outcome = await res.json();
     const error = outcome && outcome.ran && outcome.error ? String(outcome.error) : "";
