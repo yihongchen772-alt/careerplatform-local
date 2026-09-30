@@ -25,8 +25,10 @@ export type DesktopBridgeAutofillOptions = {
 };
 
 export type DesktopBridgeAutofillStatus = {
+  tabId?: number;
   phase: "scanning" | "ai" | "done" | "error";
   message: string;
+  summary?: { filled: number; manual: number; preserved: number; excluded: number; uploaded: number };
   details?: { label: string; state: string; source?: DesktopBridgeFillSource }[];
 };
 

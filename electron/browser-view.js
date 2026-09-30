@@ -143,6 +143,7 @@ let attachedView = null;
 // [{id, answerId, filledValue, frame}]. Reset on every autofill call.
 const lastAiFilled = new Map();
 const savingAnswersForTabs = new Set();
+const fillingTabs = new Set();
 const submittedSignatures = new Map();
 
 function assertTrustedBrowserEvent(event, window, expectedOrigin) {
@@ -420,9 +421,10 @@ async function scanAllFrames(wc) {
   return { fields, frameById };
 }
 
-async function uploadResumeFiles(wc, filePath) {
+async function uploadResumeFiles(wc, filePath, stillOnPage = () => true) {
   let candidates = 0;
   for (const frame of allFrames(wc)) {
+    if (!stillOnPage()) throw new Error("页面已切换，已停止上传简历");
     try {
       candidates += await frame.executeJavaScript(`(${markResumeFileInputs.toString()})()`);
     } catch {
@@ -445,10 +447,17 @@ async function uploadResumeFiles(wc, filePath) {
       }
       return false;
     });
+    let uploaded = 0;
     for (const node of targets) {
+      if (!stillOnPage()) throw new Error("页面已切换，已停止上传简历");
+      const { object } = await dbg.sendCommand("DOM.resolveNode", { backendNodeId: node.backendNodeId });
+      const state = await dbg.sendCommand("Runtime.callFunctionOn", { objectId: object.objectId, functionDeclaration: "function () { return this.disabled || !!(this.files && this.files.length); }", returnByValue: true });
+      if (state.result?.value !== false) continue;
+      if (!stillOnPage()) throw new Error("页面已切换，已停止上传简历");
       await dbg.sendCommand("DOM.setFileInputFiles", { files: [filePath], backendNodeId: node.backendNodeId });
+      uploaded++;
     }
-    return targets.length;
+    return uploaded;
   } finally {
     if (ownedAttachment && dbg.isAttached()) dbg.detach();
   }
@@ -782,12 +791,15 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       frames: async () => allFrames(wc),
       run: (frame, fn, args = []) => frame.executeJavaScript(`(${fn.toString()})(${args.map((arg) => JSON.stringify(arg)).join(",")})`),
       api: (name, init) => fetch(`http://localhost:${port}/api/desktop-browser/${name}`, init),
-      status: (payload) => send("browser:autofill-status", payload),
+      status: (payload) => send("browser:autofill-status", { ...payload, tabId: tab.id }),
       uploadResume: async (resumeVersionId) => {
+        const initialUrl = wc.getURL();
+        const stillOnPage = () => !wc.isDestroyed() && wc.getURL() === initialUrl && activeId === tab.id;
         const fileRes = await fetch(`http://localhost:${port}/api/desktop-browser/resume-file?resumeVersionId=${encodeURIComponent(resumeVersionId)}`);
         if (!fileRes.ok) throw new Error((await fileRes.json().catch(() => ({}))).error || "简历附件上传失败");
         const file = await fileRes.json();
-        return uploadResumeFiles(wc, file.path);
+        if (!stillOnPage()) throw new Error("页面已切换，已停止上传简历");
+        return uploadResumeFiles(wc, file.path, stillOnPage);
       },
       getDrafts: () => lastAiFilled.get(tab.id) || [],
       setDrafts: (list) => lastAiFilled.set(tab.id, list),
@@ -808,7 +820,10 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
   handle("browser:autofill", async (_e, resumeVersionId, options) => {
     const tab = activeTab();
     if (!tab) return;
-    await runAutofillCore(electronAdapter(tab), resumeVersionId, options || {});
+    if (fillingTabs.has(tab.id)) return;
+    fillingTabs.add(tab.id);
+    try { await runAutofillCore(electronAdapter(tab), resumeVersionId, options || {}); }
+    finally { fillingTabs.delete(tab.id); }
   });
 
   // Remember manually entered facts and essays; never save untouched drafts.

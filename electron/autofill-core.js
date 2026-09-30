@@ -13,7 +13,7 @@
 function scanPageFields(prefix) {
   const results = [];
   let counter = 0;
-  const seenRadioGroups = new Set();
+  const seenRadioGroups = new Map();
   // Wizard pages keep earlier steps in the DOM, hidden. Their ids from the
   // last scan would collide with this scan's and querySelector would hand
   // the value to the hidden old field — clear them first.
@@ -78,19 +78,25 @@ function scanPageFields(prefix) {
     return "";
   }
 
+  function labelText(node) {
+    const copy = node.cloneNode(true);
+    copy.querySelectorAll("input, select, textarea, button, [role='combobox'], .ant-select, .el-select").forEach((control) => control.remove());
+    return (copy.textContent || "").trim();
+  }
+
   function labelFor(el) {
     if (el.id) {
       const byFor = document.querySelector('label[for="' + el.id + '"]');
-      if (byFor && byFor.textContent) return byFor.textContent.trim();
+      if (byFor && labelText(byFor)) return labelText(byFor);
     }
     const wrapping = el.closest("label");
-    if (wrapping && wrapping.textContent) return wrapping.textContent.trim();
+    if (wrapping && labelText(wrapping)) return labelText(wrapping);
     const ariaLabel = el.getAttribute("aria-label");
     if (ariaLabel) return ariaLabel;
     const ariaLabelledby = el.getAttribute("aria-labelledby");
     if (ariaLabelledby) {
-      const ref = document.getElementById(ariaLabelledby);
-      if (ref && ref.textContent) return ref.textContent.trim();
+      const text = ariaLabelledby.split(/\s+/).map((id) => document.getElementById(id)).filter(Boolean).map(labelText).filter(Boolean).join(" ");
+      if (text) return text;
     }
     const fromFormItem = labelFromFormItem(el);
     if (fromFormItem) return fromFormItem;
@@ -141,9 +147,11 @@ function scanPageFields(prefix) {
   // radio's own label, filled later by clicking the matching one.
   function radioGroup(el) {
     const name = el.getAttribute("name");
-    if (!name || seenRadioGroups.has(name)) return null;
-    seenRadioGroups.add(name);
     const scope = el.form || document;
+    if (!name) return null;
+    if (!seenRadioGroups.has(scope)) seenRadioGroups.set(scope, new Set());
+    if (seenRadioGroups.get(scope).has(name)) return null;
+    seenRadioGroups.get(scope).add(name);
     const radios = Array.from(scope.querySelectorAll('input[type="radio"]')).filter((r) => r.getAttribute("name") === name);
     const options = radios.map((r) => {
       const wrapping = r.closest("label");
@@ -173,8 +181,8 @@ function scanPageFields(prefix) {
     if (container.classList.contains("ant-select-disabled") || container.classList.contains("is-disabled") || container.getAttribute("aria-disabled") === "true") return;
     const multiple = container.classList.contains("ant-select-multiple") || container.getAttribute("aria-multiselectable") === "true";
     if (multiple) return; // never guess multi-selects
-    const shown = container.querySelector(".ant-select-selection-item, .el-select__selected-item, .el-select__tags");
-    const innerInput = container.querySelector("input");
+    const shown = container.querySelector(".ant-select-selection-item, .el-select__selected-item:not(.el-select__placeholder), .el-select__tags");
+    const innerInput = container.matches("input") ? container : container.querySelector("input");
     const hasValue = !!(shown && shown.textContent.trim()) || !!(innerInput && innerInput.readOnly && innerInput.value && innerInput.value.trim());
     const id = prefix + "s" + counter++;
     container.setAttribute("data-cp-fill-id", id);
@@ -217,7 +225,11 @@ function scanPageFields(prefix) {
       hasValue: !!(el.value && String(el.value).trim()),
     };
     if (entry.tag === "select") {
+      const selected = el.options[el.selectedIndex];
+      const placeholder = !selected?.value || /^(?:请(?:选择|选取)|please\s*(?:select|choose)|select\s*(?:one|an?\b)|choose\s*(?:one|an?\b)|[-—]+\s*(?:请选择|select))/i.test((selected?.textContent || "").trim());
+      entry.hasValue = !placeholder;
       entry.options = Array.from(el.options)
+        .filter((o) => !o.disabled && !!o.value && !/^(?:请选择|please\s*(?:select|choose))/i.test((o.textContent || "").trim()))
         .map((o) => (o.textContent || "").trim())
         .filter(Boolean);
     }
@@ -322,11 +334,15 @@ function detectApplicationSuccess() {
 }
 
 function markResumeFileInputs() {
-  const inputs = Array.from(document.querySelectorAll('input[type="file"]')).filter((el) => !el.disabled);
+  const inputs = Array.from(document.querySelectorAll('input[type="file"]'));
+  inputs.forEach((el) => el.removeAttribute("data-cp-resume-upload"));
   let marked = 0;
   for (const el of inputs) {
+    if (el.disabled || el.files?.length) continue;
     const label = el.id ? document.querySelector(`label[for="${CSS.escape(el.id)}"]`) : null;
     const nearby = el.closest("label, .form-item, .ant-form-item, .el-form-item, [class*='upload']");
+    const uploadArea = el.closest(".ant-form-item, .el-form-item") || nearby;
+    if (uploadArea?.querySelector(".ant-upload-list-item-done, .el-upload-list__item.is-success")) continue;
     const description = [
       el.name, el.id, el.getAttribute("aria-label"), el.getAttribute("title"),
       label && label.textContent, nearby && nearby.textContent,
@@ -436,7 +452,9 @@ async function fillFields(pairs) {
       failed.push(p.label || p.id);
       continue;
     }
-    if ((el.value && String(el.value).trim()) || el.getAttribute("data-cp-user-edited") === "1") {
+    const selected = el.tagName.toLowerCase() === "select" ? el.options[el.selectedIndex] : null;
+    const placeholder = selected && (!selected.value || /^(?:请(?:选择|选取)|please\s*(?:select|choose)|select\s*(?:one|an?\b)|choose\s*(?:one|an?\b)|[-—]+\s*(?:请选择|select))/i.test((selected.textContent || "").trim()));
+    if ((!placeholder && el.value && String(el.value).trim()) || el.getAttribute("data-cp-user-edited") === "1") {
       skipped.push(p.id);
       continue;
     }
@@ -488,7 +506,7 @@ async function fillFields(pairs) {
       continue;
     }
     if (tag === "select") {
-      const match = Array.from(el.options).find((o) => o.textContent.trim() === p.value);
+      const match = Array.from(el.options).find((o) => !o.disabled && o.textContent.trim() === p.value);
       if (!match) { failed.push(p.label || p.id); continue; }
       el.value = match.value;
     } else if (tag === "textarea") {
@@ -543,12 +561,10 @@ async function fillCustomSelects(pairs) {
   }
   function pickOne(options, value) {
     const v = String(value).trim();
-    return (
-      options.find((o) => optionText(o) === v) ||
-      options.find((o) => optionText(o).includes(v)) ||
-      options.find((o) => v.includes(optionText(o)) && optionText(o).length >= 2) ||
-      null
-    );
+    const exact = options.find((o) => optionText(o) === v);
+    if (exact) return exact;
+    const fuzzy = options.filter((o) => optionText(o).includes(v) || (v.includes(optionText(o)) && optionText(o).length >= 2));
+    return fuzzy.length === 1 ? fuzzy[0] : null;
   }
   // `alternatives` carries synonyms such as 学士 → 本科 for degree dropdowns.
   function pick(options, p) {
@@ -603,8 +619,9 @@ async function fillCustomSelects(pairs) {
       target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
       target.click();
       await sleep(150);
-      const shown = container.querySelector(".ant-select-selection-item, .el-select__selected-item, .el-select__tags");
-      const visibleValue = (shown?.textContent || container.querySelector("input[readonly]")?.value || "").trim();
+      const shown = container.querySelector(".ant-select-selection-item, .el-select__selected-item:not(.el-select__placeholder), .el-select__tags");
+      const input = container.matches("input") ? container : container.querySelector("input[readonly]");
+      const visibleValue = (shown?.textContent || input?.value || "").trim();
       if (visibleValue && (visibleValue === wanted || visibleValue.includes(wanted) || visibleValue.includes(String(p.value).trim()))) {
         mark(container, p.source || "profile");
         filled.push(p.id);
@@ -1199,8 +1216,10 @@ function repeatFieldGoesToAi(info, profile) {
 function matchFieldOption(field, value) {
   if (!value) return null;
   if (!field.options) return value;
-  return field.options.find((option) => option === value) ||
-    field.options.find((option) => option.includes(value) || value.includes(option)) || null;
+  const exact = field.options.find((option) => option === value);
+  if (exact) return exact;
+  const fuzzy = field.options.filter((option) => option.includes(value) || value.includes(option));
+  return fuzzy.length === 1 ? fuzzy[0] : null;
 }
 
 function matchFlatField(field, profile) {
@@ -1263,6 +1282,7 @@ function attachResumeFile(base64, filename, mimeType) {
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   let attached = 0;
   for (const input of inputs) {
+    if (input.disabled || input.files?.length) continue;
     const transfer = new DataTransfer();
     transfer.items.add(new File([bytes], filename, { type: mimeType || "application/octet-stream" }));
     input.files = transfer.files;
@@ -1356,7 +1376,7 @@ async function scanFrames(adapter) {
   return { fields, frameById };
 }
 
-async function fillFrames(adapter, pairs, frameById) {
+async function fillFrames(adapter, pairs, frameById, initialUrl) {
   const byFrame = new Map();
   for (const p of pairs) {
     const frame = frameById.get(p.id);
@@ -1368,23 +1388,20 @@ async function fillFrames(adapter, pairs, frameById) {
   const failed = [];
   const skipped = [];
   for (const [frame, subset] of byFrame) {
+    if (!adapter.stillOnPage(initialUrl)) throw new Error("页面或标签已切换，已停止写入；请在当前页面重新填充");
     const plain = subset.filter((p) => !/-s\d+$/.test(p.id));
     const custom = subset.filter((p) => /-s\d+$/.test(p.id));
-    try {
-      if (plain.length) {
-        const result = await adapter.run(frame, fillFields, [plain]);
+    for (const [batch, writer] of [[plain, fillFields], [custom, fillCustomSelects]]) {
+      if (!batch.length) continue;
+      if (!adapter.stillOnPage(initialUrl)) throw new Error("页面或标签已切换，已停止写入");
+      try {
+        const result = await adapter.run(frame, writer, [batch]);
         filled.push(...result.filled);
         failed.push(...result.failed);
         skipped.push(...(result.skipped || []));
+      } catch {
+        failed.push(...batch.map((p) => p.label || p.id));
       }
-      if (custom.length) {
-        const result = await adapter.run(frame, fillCustomSelects, [custom]);
-        filled.push(...result.filled);
-        failed.push(...result.failed);
-        skipped.push(...(result.skipped || []));
-      }
-    } catch {
-      failed.push(...subset.map((p) => p.label || p.id));
     }
   }
   return { filled, failed, skipped };
@@ -1465,12 +1482,16 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       }
     }
     const basicCount = pairs.length;
+    if (!adapter.stillOnPage(initialUrl)) throw new Error("页面或标签已切换，已停止写入；请在当前页面重新填充");
+    adapter.status({ phase: "scanning", message: `正在填写 ${basicCount} 个资料字段…` });
+    const basicResult = await fillFrames(adapter, pairs, frameById, initialUrl);
+    const basicPairCount = pairs.length;
 
     let aiError = null;
     if (candidates.length > 0 && !resumeVersionId) {
       aiError = "没选简历，这些字段跳过了";
     } else if (candidates.length > 0) {
-      adapter.status({ phase: "ai", message: `已匹配 ${basicCount} 个基础字段，正在用 AI 生成 ${candidates.length} 个字段的内容…` });
+      adapter.status({ phase: "ai", message: `已验证填入 ${basicResult.filled.length} 个资料字段，正在用 AI 生成 ${candidates.length} 个字段的内容…` });
       try {
         const answerRes = await adapter.api("answer-questions", {
           method: "POST",
@@ -1480,12 +1501,16 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
         if (answerRes.ok) {
           const { answers } = await answerRes.json();
           const kindById = new Map(candidates.map((c) => [c.id, c.kind]));
-          for (const a of answers || []) {
+          const seenAnswers = new Set();
+          for (const a of Array.isArray(answers) ? answers : []) {
+            if (!a || typeof a.answer !== "string" || !a.answer.trim()) continue;
             const kind = kindById.get(a.id);
+            if (!kind || seenAnswers.has(a.id)) continue;
             const isSentinel = a.answer.trim().toUpperCase() === NEEDS_MANUAL_INPUT;
             if (isSentinel || /简历里没有相关信息|需要自己填/.test(a.answer)) continue;
             const field = fields.find((f) => f.id === a.id);
             if (!field || !kind) continue;
+            seenAnswers.add(a.id);
             pairs.push({ id: a.id, value: a.answer, source: a.remembered ? "remembered" : "ai", label: field.label || field.placeholder || field.name, tag: field.tag, answerId: a.answerId, reused: a.reused, remembered: a.remembered });
           }
         } else {
@@ -1498,7 +1523,11 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     }
 
     if (!adapter.stillOnPage(initialUrl)) throw new Error("页面或标签已切换，已停止写入；请在当前页面重新填充");
-    const { filled, failed, skipped } = await fillFrames(adapter, pairs, frameById);
+    const aiResult = await fillFrames(adapter, pairs.slice(basicPairCount), frameById, initialUrl);
+    if (!adapter.stillOnPage(initialUrl)) throw new Error("页面或标签已切换，已停止写入；请在当前页面重新填充");
+    const filled = [...basicResult.filled, ...aiResult.filled];
+    const failed = [...basicResult.failed, ...aiResult.failed];
+    const skipped = [...basicResult.skipped, ...aiResult.skipped];
     const filledSet = new Set(filled);
     const rememberedDrafts = pairs.filter((p) => p.source !== "profile" && p.source !== "remembered-field" && p.answerId && filledSet.has(p.id) && isOpenEndedQuestionField(fields.find((f) => f.id === p.id) || p))
       .map((p) => ({ id: p.id, answerId: p.answerId, label: p.label, filledValue: p.value }));
@@ -1521,6 +1550,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     let uploadError = null;
     if (resumeVersionId && modules.has("resume")) {
       try {
+        if (!adapter.stillOnPage(initialUrl)) throw new Error("页面已切换，已停止上传简历");
         uploadedResumeCount = await adapter.uploadResume(resumeVersionId);
       } catch (err) {
         uploadError = err && err.message ? err.message : "简历附件上传失败";
@@ -1588,7 +1618,8 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     }
     parts.push("手写或修改的基础资料和开放题会自动记住；可在账号设置查看和修改；提交前请核对所有填入内容");
 
-    const result = { phase: "done", message: parts.join("；"), details };
+    const result = { phase: "done", message: parts.join("；"), details,
+      summary: { filled: filled.length, manual: details.filter((d) => d.source === "manual").length, preserved: alreadyFilled + skipped.length, excluded: excluded.size, uploaded: uploadedResumeCount } };
     adapter.status(result);
     return result;
   } catch (err) {

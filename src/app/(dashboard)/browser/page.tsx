@@ -61,9 +61,9 @@ export default async function BrowserPage({
   return (
     <div className="flex min-h-[calc(100vh-8rem)] flex-col gap-3 md:min-h-[calc(100vh-5rem)]">
       <div>
-        <h1 className="text-3xl font-semibold tracking-tight">网申浏览器</h1>
+        <h1 className="text-xl font-semibold tracking-tight">网申浏览器</h1>
         <p className="text-sm text-muted-foreground">
-          用网页上方的滑块调整高度，也可进入专注模式。你手填的基础资料和开放题会自动记住；可在记忆库修改或删除。提交前请核对填充结果，完成后再点「记为已投递」。
+          选择简历和填写范围，只补需要的空白。网页默认适应窗口，更多选项在「填写设置」中。
         </p>
       </div>
       <EmbeddedBrowser

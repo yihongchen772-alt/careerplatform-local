@@ -129,7 +129,7 @@ test("a selection made while AI is pending is preserved and reported as existing
   };
   const result = await core.runAutofillCore(adapter, "resume-test");
   assert.equal(result.phase, "done");
-  assert.match(statuses.find((s) => s.phase === "ai").message, /已匹配/);
+  assert.match(statuses.find((s) => s.phase === "ai").message, /已验证填入/);
   assert.match(result.message, /1 个填写期间已有修改的字段已保留/);
   assert.doesNotMatch(result.message, /需要自己填|未通过写入验证/);
   assert.equal(result.details[0].source, "prefilled");
@@ -238,6 +238,120 @@ test("module classification uses the section for generic fields and leaves unkno
     const field = { label, section, tag: "input", type: "text", placeholder: "", name: "" };
     assert.equal(fieldModule(field, resolveRepeatField(field, new Map())), expected, label);
   }
+});
+
+test("profile fields are written before waiting for AI, and malformed or duplicate AI answers cannot spoil them", async () => {
+  const core = require("../electron/autofill-core.js");
+  const writes = [];
+  const statuses = [];
+  const adapter = {
+    url: () => "https://careers.example.com/apply",
+    stillOnPage: () => true,
+    frames: async () => ["top"],
+    run: async (_frame, fn, args) => {
+      if (fn === core.scanPageFields) return [
+        { id: "c0-f0", tag: "input", type: "text", label: "姓名", hasValue: false },
+        { id: "c0-f1", tag: "textarea", label: "为什么申请？", hasValue: false },
+      ];
+      if (fn === core.fillFields) { writes.push(...args[0]); return { filled: args[0].map((p) => p.id), failed: [] }; }
+    },
+    api: async (name) => {
+      if (name.startsWith("profile")) return { ok: true, json: async () => ({ name: "测试姓名" }) };
+      assert.deepEqual(writes.map((p) => p.value), ["测试姓名"], "facts must already be visible when AI starts");
+      return { ok: true, json: async () => ({ answers: [null, { id: "c0-f1", answer: null }, { id: "c0-f1", answer: "有效回答" }, { id: "c0-f1", answer: "重复回答" }, { id: "unknown", answer: "无关回答" }] }) };
+    },
+    status: (s) => statuses.push(s),
+    uploadResume: async () => 0,
+    getDrafts: () => [], setDrafts: () => {},
+  };
+  const result = await core.runAutofillCore(adapter, "resume");
+  assert.equal(result.phase, "done");
+  assert.deepEqual(writes.map((p) => p.value), ["测试姓名", "有效回答"]);
+  assert.equal(result.summary.filled, 2);
+  assert.equal(result.summary.manual, 0);
+  assert.match(statuses.find((s) => s.phase === "ai").message, /已验证填入 1 个资料字段/);
+});
+
+test("changing pages after profile filling stops AI writes and attachments", async () => {
+  const core = require("../electron/autofill-core.js");
+  let samePage = true;
+  let uploads = 0;
+  const writes = [];
+  const adapter = {
+    url: () => "https://careers.example.com/apply", stillOnPage: () => samePage,
+    frames: async () => ["top"],
+    run: async (_frame, fn, args) => {
+      if (fn === core.scanPageFields) return [{ id: "c0-f0", tag: "input", label: "姓名", hasValue: false }, { id: "c0-f1", tag: "textarea", label: "为什么申请？", hasValue: false }];
+      if (fn === core.fillFields) { writes.push(...args[0]); return { filled: args[0].map((p) => p.id), failed: [] }; }
+    },
+    api: async (name) => {
+      if (name.startsWith("profile")) return { ok: true, json: async () => ({ name: "测试姓名" }) };
+      samePage = false;
+      return { ok: true, json: async () => ({ answers: [{ id: "c0-f1", answer: "回答" }] }) };
+    },
+    status: () => {}, uploadResume: async () => { uploads++; return 1; },
+    getDrafts: () => [], setDrafts: () => {},
+  };
+  const result = await core.runAutofillCore(adapter, "resume");
+  assert.equal(result.phase, "error");
+  assert.match(result.message, /页面或标签已切换/);
+  assert.deepEqual(writes.map((p) => p.id), ["c0-f0"]);
+  assert.equal(uploads, 0);
+});
+
+test("ambiguous partial dropdown values are left for the user", () => {
+  const { matchFieldOption } = require("../electron/autofill-core.js");
+  assert.equal(matchFieldOption({ options: ["北京", "上海"] }, "北京"), "北京");
+  assert.equal(matchFieldOption({ options: ["北京市", "上海市"] }, "北京"), "北京市");
+  assert.equal(matchFieldOption({ options: ["北京校区", "北京总部"] }, "北京"), null);
+});
+
+test("a native select's nonempty placeholder is fillable, but a real selected option is preserved", async () => {
+  const core = require("../electron/autofill-core.js");
+  const prototype = {};
+  Object.defineProperty(prototype, "value", { set(value) { this.value = value; } });
+  const select = {
+    tagName: "SELECT", selectedIndex: 0,
+    options: [{ value: "0", textContent: "请选择性别", disabled: true }, { value: "f", textContent: "女", disabled: false }, { value: "m", textContent: "男", disabled: false }],
+    getAttribute: () => null, setAttribute: () => {}, dispatchEvent: () => {},
+    style: { setProperty: () => {} },
+  };
+  Object.defineProperty(select, "value", { get() { return this.options[this.selectedIndex].value; }, set(value) { this.selectedIndex = this.options.findIndex((o) => o.value === value); } });
+  const sandbox = vm.createContext({
+    window: { HTMLInputElement: { prototype }, HTMLTextAreaElement: { prototype } },
+    document: { querySelector: () => select }, Event: class {}, setTimeout: (fn) => fn(),
+  });
+  const fill = vm.runInContext(`(${core.fillFields.toString()})`, sandbox);
+  const result = await fill([{ id: "test-f0", tag: "select", value: "女" }]);
+  assert.deepEqual(Array.from(result.filled), ["test-f0"]);
+  assert.equal(select.value, "f");
+  const again = await fill([{ id: "test-f0", tag: "select", value: "男" }]);
+  assert.deepEqual(Array.from(again.skipped), ["test-f0"]);
+  assert.equal(select.value, "f");
+});
+
+test("already uploaded resumes lose stale markers and cannot be replaced by the extension", () => {
+  const core = require("../electron/autofill-core.js");
+  const makeInput = (files) => {
+    const attrs = { "data-cp-resume-upload": "1" };
+    return { name: "resume", id: "", files,
+      removeAttribute: (key) => { delete attrs[key]; }, setAttribute: (key, value) => { attrs[key] = value; },
+      getAttribute: (key) => key === "accept" ? "application/pdf" : attrs[key] ?? null,
+      closest: () => null,
+    };
+  };
+  const empty = makeInput([]);
+  const uploaded = makeInput([{ name: "用户已选.pdf" }]);
+  const sandbox = vm.createContext({ document: { querySelectorAll: () => [empty, uploaded] } });
+  const mark = vm.runInContext(`(${core.markResumeFileInputs.toString()})`, sandbox);
+  assert.equal(mark(), 1);
+  assert.equal(empty.getAttribute("data-cp-resume-upload"), "1");
+  assert.equal(uploaded.getAttribute("data-cp-resume-upload"), null);
+  sandbox.document.querySelectorAll = () => [uploaded];
+  sandbox.atob = () => "x";
+  const attach = vm.runInContext(`(${core.attachResumeFile.toString()})`, sandbox);
+  assert.equal(attach("eA==", "新的简历.pdf", "application/pdf"), 0);
+  assert.equal(uploaded.files[0].name, "用户已选.pdf");
 });
 
 test("an untouched AI draft is never remembered, even with the draft list lost", async () => {

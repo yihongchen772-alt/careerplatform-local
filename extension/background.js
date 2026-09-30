@@ -107,6 +107,7 @@ async function adapterFor(tabId) {
       api: (name, init) => api(name, init),
       status: (payload) => broadcast(tabId, payload),
       uploadResume: async (resumeVersionId) => {
+        const initialUrl = liveUrl;
         let candidates = 0;
         const frames = await tabFrames(tabId);
         for (const frameId of frames) candidates += (await runInFrame(tabId, frameId, core.markResumeFileInputs).catch(() => 0)) || 0;
@@ -117,6 +118,7 @@ async function adapterFor(tabId) {
         const base64 = bytesToBase64(await res.arrayBuffer());
         let attached = 0;
         for (const frameId of frames) {
+          if (liveUrl !== initialUrl) throw new Error("页面已切换，已停止上传简历");
           attached += (await runInFrame(tabId, frameId, core.attachResumeFile, [base64, filename, res.headers.get("content-type")]).catch(() => 0)) || 0;
         }
         return attached;
