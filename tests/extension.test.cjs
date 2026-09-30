@@ -106,6 +106,62 @@ test("runAutofillCore drives any adapter the same way", async () => {
   assert.match(result.message, /已验证填入 2 个基础字段/);
 });
 
+test("a selection made while AI is pending is preserved and reported as existing content", async () => {
+  const core = require("../electron/autofill-core.js");
+  const statuses = [];
+  let id;
+  const adapter = {
+    url: () => "https://careers.example.com/apply",
+    stillOnPage: () => true,
+    frames: async () => ["top"],
+    run: async (_frame, fn, args) => {
+      if (fn === core.scanPageFields) {
+        id = `${args[0]}r0`;
+        return [{ id, tag: "radio", label: "是否接受调剂", options: ["是", "否"], hasValue: false }];
+      }
+      if (fn === core.fillFields) return { filled: [], failed: [], skipped: [id] };
+    },
+    api: async (name) => ({ ok: true, json: async () => name.startsWith("profile") ? {} : { answers: [{ id, answer: "是" }] } }),
+    status: (payload) => statuses.push(payload),
+    uploadResume: async () => 0,
+    getDrafts: () => [],
+    setDrafts: () => {},
+  };
+  const result = await core.runAutofillCore(adapter, "resume-test");
+  assert.equal(result.phase, "done");
+  assert.match(statuses.find((s) => s.phase === "ai").message, /已匹配/);
+  assert.match(result.message, /1 个填写期间已有修改的字段已保留/);
+  assert.doesNotMatch(result.message, /需要自己填|未通过写入验证/);
+  assert.equal(result.details[0].source, "prefilled");
+});
+
+test("injected writers preserve a newly selected radio, dropdown, or manually cleared input", async () => {
+  const core = require("../electron/autofill-core.js");
+  const inputPrototype = {};
+  Object.defineProperty(inputPrototype, "value", { set(value) { this.value = value; } });
+  const input = { tagName: "INPUT", value: "", getAttribute: () => "1" };
+  const radio = { checked: true, getAttribute: () => null };
+  const dropdown = {
+    classList: { contains: () => false },
+    getAttribute: () => null,
+    querySelector: (selector) => selector.includes("selection-item") ? { textContent: "已手选" } : null,
+    matches: () => false,
+  };
+  const sandbox = vm.createContext({
+    window: { HTMLInputElement: { prototype: inputPrototype }, HTMLTextAreaElement: { prototype: inputPrototype } },
+    document: { querySelectorAll: () => [radio], querySelector: (selector) => selector.includes("test-s0") ? dropdown : input },
+  });
+  const fill = vm.runInContext(`(${core.fillFields.toString()})`, sandbox);
+  const custom = vm.runInContext(`(${core.fillCustomSelects.toString()})`, sandbox);
+  const result = await fill([{ id: "test-r0", value: "是" }, { id: "test-f0", value: "旧资料", tag: "input" }]);
+  assert.deepEqual(Array.from(result.skipped), ["test-r0", "test-f0"]);
+  assert.equal(result.filled.length, 0);
+  assert.equal(result.failed.length, 0);
+  const selected = await custom([{ id: "test-s0", value: "旧资料" }]);
+  assert.deepEqual(Array.from(selected.skipped), ["test-s0"]);
+  assert.equal(selected.filled.length, 0);
+});
+
 test("an untouched AI draft is never remembered, even with the draft list lost", async () => {
   const core = require("../electron/autofill-core.js");
   const posted = [];

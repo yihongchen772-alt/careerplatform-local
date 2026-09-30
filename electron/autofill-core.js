@@ -351,6 +351,7 @@ const NEEDS_MANUAL_INPUT = "NEEDS_MANUAL_INPUT";
 async function fillFields(pairs) {
   const filled = [];
   const failed = [];
+  const skipped = [];
   // Most 网申 forms are React/Vue-controlled: writing `el.value = x` directly
   // gets silently ignored, because those frameworks override the native
   // value property's setter to track changes themselves — an event fired
@@ -414,12 +415,16 @@ async function fillFields(pairs) {
       // radio group (ids are "<frame>-r<n>", fields are "<frame>-f<n>"):
       // click the option whose label matches
       const radios = Array.from(document.querySelectorAll('[data-cp-fill-id^="' + p.id + ':"]'));
+      if (radios.some((r) => r.checked || r.getAttribute("data-cp-user-edited") === "1")) {
+        skipped.push(p.id);
+        continue;
+      }
       const target = radios.find((r) => {
         const wrapping = r.closest("label");
         const text = ((wrapping ? wrapping.textContent : r.nextSibling && r.nextSibling.textContent) || r.value || "").trim();
         return text === p.value;
       });
-      if (!target) { failed.push(p.label || p.id); continue; }
+      if (!target || target.disabled) { failed.push(p.label || p.id); continue; }
       target.click();
       if (!target.checked) { failed.push(p.label || p.id); continue; }
       mark(target.closest("label") || target, p.source || "profile", p.answerId);
@@ -427,8 +432,12 @@ async function fillFields(pairs) {
       continue;
     }
     const el = document.querySelector('[data-cp-fill-id="' + p.id + '"]');
-    if (!el || (p.tag && el.tagName.toLowerCase() !== p.tag) || (el.value && String(el.value).trim())) {
+    if (!el || (p.tag && el.tagName.toLowerCase() !== p.tag) || el.disabled || el.readOnly) {
       failed.push(p.label || p.id);
+      continue;
+    }
+    if ((el.value && String(el.value).trim()) || el.getAttribute("data-cp-user-edited") === "1") {
+      skipped.push(p.id);
       continue;
     }
     const tag = el.tagName.toLowerCase();
@@ -444,7 +453,12 @@ async function fillFields(pairs) {
       const group = Array.from(picker.querySelectorAll("input")).map((input) => {
         const id = input.getAttribute("data-cp-fill-id");
         const pair = input === el ? p : pairs.find((other) => other.id === id && other.value && other.value !== "至今");
-        return pair && !(input.value && String(input.value).trim()) ? { input, pair } : null;
+        if (pair && ((input.value && String(input.value).trim()) || input.getAttribute("data-cp-user-edited") === "1")) {
+          pickerDone.add(pair.id);
+          skipped.push(pair.id);
+          return null;
+        }
+        return pair && !input.disabled && !input.readOnly ? { input, pair } : null;
       }).filter(Boolean);
       for (const { input, pair } of group) {
         pickerDone.add(pair.id);
@@ -495,7 +509,7 @@ async function fillFields(pairs) {
     mark(el, p.source || "profile", p.answerId);
     filled.push(p.id);
   }
-  return { filled, failed };
+  return { filled, failed, skipped };
 }
 
 // Opens each custom dropdown, reads whatever options it renders, clicks the
@@ -505,6 +519,13 @@ async function fillCustomSelects(pairs) {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const filled = [];
   const failed = [];
+  const skipped = [];
+  function hasExistingValue(container) {
+    const shown = container.querySelector(".ant-select-selection-item, .el-select__selected-item:not(.el-select__placeholder), .el-select__tags");
+    const input = container.matches("input") ? container : container.querySelector("input[readonly]");
+    return !!((shown?.textContent || "").trim() || (input?.value || "").trim()) ||
+      container.getAttribute("data-cp-user-edited") === "1" || !!container.querySelector('[data-cp-user-edited="1"]');
+  }
   function visibleOptions() {
     const nodes = document.querySelectorAll(
       ".ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option:not(.ant-select-item-option-disabled), " +
@@ -545,12 +566,18 @@ async function fillCustomSelects(pairs) {
   for (const p of pairs) {
     const container = document.querySelector('[data-cp-fill-id="' + p.id + '"]');
     if (!container || !p.value) continue;
+    if (container.classList.contains("ant-select-disabled") || container.classList.contains("is-disabled") || container.getAttribute("aria-disabled") === "true" || container.disabled) {
+      failed.push(p.label || p.id);
+      continue;
+    }
+    if (hasExistingValue(container)) { skipped.push(p.id); continue; }
     // Innermost first: a click on the inner input bubbles up through the
     // wrapper/selector, so every library's own handler sees it.
     const trigger = container.querySelector("input:not([type='hidden'])") || container.querySelector(".ant-select-selector, .el-select__wrapper") || container;
     trigger.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
     trigger.click();
     await sleep(350);
+    if (hasExistingValue(container)) { skipped.push(p.id); continue; }
     let options = visibleOptions();
     let target = pick(options, p);
     // Searchable selects (and virtual lists that only render a screenful):
@@ -561,6 +588,7 @@ async function fillCustomSelects(pairs) {
       setter.call(searchInput, String(p.value));
       searchInput.dispatchEvent(new Event("input", { bubbles: true }));
       await sleep(450);
+      if (hasExistingValue(container)) { skipped.push(p.id); continue; }
       options = visibleOptions();
       target = pick(options, p);
       if (!target) {
@@ -590,7 +618,7 @@ async function fillCustomSelects(pairs) {
       await sleep(100);
     }
   }
-  return { filled, failed };
+  return { filled, failed, skipped };
 }
 
 // Side-effect-free count of what an autofill could touch right now — used
@@ -1321,6 +1349,7 @@ async function fillFrames(adapter, pairs, frameById) {
   }
   const filled = [];
   const failed = [];
+  const skipped = [];
   for (const [frame, subset] of byFrame) {
     const plain = subset.filter((p) => !/-s\d+$/.test(p.id));
     const custom = subset.filter((p) => /-s\d+$/.test(p.id));
@@ -1329,17 +1358,19 @@ async function fillFrames(adapter, pairs, frameById) {
         const result = await adapter.run(frame, fillFields, [plain]);
         filled.push(...result.filled);
         failed.push(...result.failed);
+        skipped.push(...(result.skipped || []));
       }
       if (custom.length) {
         const result = await adapter.run(frame, fillCustomSelects, [custom]);
         filled.push(...result.filled);
         failed.push(...result.failed);
+        skipped.push(...(result.skipped || []));
       }
     } catch {
       failed.push(...subset.map((p) => p.label || p.id));
     }
   }
-  return { filled, failed };
+  return { filled, failed, skipped };
 }
 
 // `options`: { variantId, expandBlocks } from the UI, plus round/modal/added
@@ -1415,7 +1446,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     if (candidates.length > 0 && !resumeVersionId) {
       aiError = "没选简历，这些字段跳过了";
     } else if (candidates.length > 0) {
-      adapter.status({ phase: "ai", message: `已填 ${basicCount} 个基础字段，正在用 AI 补全 ${candidates.length} 个字段…` });
+      adapter.status({ phase: "ai", message: `已匹配 ${basicCount} 个基础字段，正在用 AI 生成 ${candidates.length} 个字段的内容…` });
       try {
         const answerRes = await adapter.api("answer-questions", {
           method: "POST",
@@ -1443,7 +1474,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     }
 
     if (!adapter.stillOnPage(initialUrl)) throw new Error("页面或标签已切换，已停止写入；请在当前页面重新填充");
-    const { filled, failed } = await fillFrames(adapter, pairs, frameById);
+    const { filled, failed, skipped } = await fillFrames(adapter, pairs, frameById);
     const filledSet = new Set(filled);
     const rememberedDrafts = pairs.filter((p) => p.source !== "profile" && p.source !== "remembered-field" && p.answerId && filledSet.has(p.id) && isOpenEndedQuestionField(fields.find((f) => f.id === p.id) || p))
       .map((p) => ({ id: p.id, answerId: p.answerId, label: p.label, filledValue: p.value }));
@@ -1456,7 +1487,10 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     const essayReused = pairs.filter((p) => p.tag === "textarea" && p.reused && filledSet.has(p.id)).length;
     const aiReused = essayReused - rememberedFilled;
     const failedSet = new Set(failed);
-    const details = fields.map((field) => fillDetail(field, pairs.find((p) => p.id === field.id), filledSet, failedSet));
+    const skippedSet = new Set(skipped);
+    const details = fields.map((field) => skippedSet.has(field.id)
+      ? { label: field.label || field.placeholder || field.name || "未命名字段", state: "填写期间已有修改，已保留", source: "prefilled" }
+      : fillDetail(field, pairs.find((p) => p.id === field.id), filledSet, failedSet));
     let uploadedResumeCount = 0;
     let uploadError = null;
     if (resumeVersionId) {
@@ -1482,11 +1516,12 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     if (uploadError) parts.push(uploadError);
     // After an 添加 round the earlier rounds' own fills count as "已有内容".
     if (alreadyFilled > 0 && !options.round) parts.push(`${alreadyFilled} 个已有内容的字段没动`);
+    if (skipped.length > 0) parts.push(`${skipped.length} 个填写期间已有修改的字段已保留`);
     if (failed.length > 0) {
       parts.push(`${failed.length} 个字段未通过写入验证（${failed.slice(0, 3).join("、")}${failed.length > 3 ? "…" : ""}），需要手填`);
     }
     if (neverGuessCount > 0) parts.push(`${neverGuessCount} 个需核对的姓名拆分或敏感字段，没有自动填`);
-    const attempted = filled.length + neverGuessCount + alreadyFilled + failed.length;
+    const attempted = filled.length + neverGuessCount + alreadyFilled + failed.length + skipped.length;
     const stillManual = fields.length - attempted;
     if (stillManual > 0) {
       parts.push(aiError ? `${stillManual} 个字段没能自动填（${aiError}）` : `${stillManual} 个字段简历里没有对应信息，需要自己填`);
