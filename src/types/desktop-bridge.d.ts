@@ -11,9 +11,13 @@ export type DesktopBridgeTab = {
 export type DesktopBridgeTabsState = { tabs: DesktopBridgeTab[]; activeId: number | null };
 
 /** Where an autofilled value came from — matches the outline colour on the page. */
-export type DesktopBridgeFillSource = "profile" | "memory" | "ai" | "manual" | "prefilled";
+export type DesktopBridgeFillSource = "profile" | "memory" | "ai" | "manual" | "prefilled" | "excluded";
+
+export type DesktopBridgeAutofillModule = "basic" | "education" | "experience" | "project" | "questions" | "other" | "resume";
 
 export type DesktopBridgeAutofillOptions = {
+  /** Only fill these modules; omitted = all, empty = none. */
+  modules?: DesktopBridgeAutofillModule[];
   /** Press the page's 添加 button when the profile has more 教育/实习/项目 rows than blocks shown. */
   expandBlocks?: boolean;
   /** 网申资料方案 id; omitted = the default profile. */

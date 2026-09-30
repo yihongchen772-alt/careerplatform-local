@@ -10,7 +10,7 @@ const drafts = new Map(); // tabId -> AI drafts filled there (for 记住本页)
 const running = new Set(); // tabIds with an autofill in progress
 
 async function settings() {
-  const stored = await chrome.storage.local.get(["token", "appBase", "resumeVersionId", "variantId", "expandBlocks"]);
+  const stored = await chrome.storage.local.get(["token", "appBase", "resumeVersionId", "variantId", "expandBlocks", "fillModules"]);
   return { base: stored.appBase || DEFAULT_BASE, ...stored };
 }
 
@@ -138,6 +138,7 @@ async function fillTab(tabId, options) {
     return await core.runAutofillCore(adapter, resumeVersionId || undefined, {
       variantId: options.variantId ?? prefs.variantId ?? undefined,
       expandBlocks: options.expandBlocks ?? !!prefs.expandBlocks,
+      modules: options.modules ?? prefs.fillModules,
     });
   } catch (err) {
     const status = { phase: "error", message: err.message || "填写失败" };

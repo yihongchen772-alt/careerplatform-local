@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -35,6 +35,7 @@ import { AiProgress } from "@/components/ui/ai-progress";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuCheckboxItem,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -54,6 +55,7 @@ import { MarkAppliedFromBrowserDialog, type PoolPosition } from "@/components/br
 import { ScreenshotDialog, type ApplicationOption } from "@/components/browser/screenshot-dialog";
 import { SiteBanner, type KnownSite } from "@/components/browser/site-banner";
 import type {
+  DesktopBridgeAutofillModule,
   DesktopBridgeAutofillStatus,
   DesktopBridgeFillSource,
   DesktopBridgeTab,
@@ -91,12 +93,24 @@ function shortTitle(tab: DesktopBridgeTab) {
 // Same colours as the outlines fillFields draws on the page, so a dot here
 // and a border there mean the same thing.
 const FILL_SOURCES: { source: DesktopBridgeFillSource; label: string; dot: string }[] = [
+  { source: "excluded", label: "未选择的模块", dot: "bg-muted-foreground/40" },
   { source: "manual", label: "需要你手填", dot: "bg-red-500" },
   { source: "ai", label: "AI 生成（紫红框）", dot: "bg-fuchsia-500" },
   { source: "memory", label: "记忆库 / 你的回答（绿框）", dot: "bg-green-600" },
   { source: "profile", label: "网申资料（紫框）", dot: "bg-violet-500" },
   { source: "prefilled", label: "页面原有内容", dot: "bg-muted-foreground/40" },
 ];
+
+const FILL_MODULES: { id: DesktopBridgeAutofillModule; label: string }[] = [
+  { id: "basic", label: "基本信息 / 求职意向" },
+  { id: "education", label: "教育经历" },
+  { id: "experience", label: "实习 / 工作经历" },
+  { id: "project", label: "项目经历" },
+  { id: "questions", label: "开放题 / 自我评价" },
+  { id: "other", label: "其他字段" },
+  { id: "resume", label: "简历附件" },
+];
+const ALL_FILL_MODULES = FILL_MODULES.map(({ id }) => id);
 
 function FillDetails({ details }: { details: NonNullable<DesktopBridgeAutofillStatus["details"]> }) {
   const manual = details.filter((item) => item.source === "manual");
@@ -197,6 +211,18 @@ export function EmbeddedBrowser({
   // default profile), "default" = always the default, otherwise a variant id.
   const [variantChoice, setVariantChoice] = useState("");
   const [variantMenuOpen, setVariantMenuOpen] = useState(false);
+  const [scopeMenuOpen, setScopeMenuOpen] = useState(false);
+  const scopePreference = useSyncExternalStore(noop, () => {
+    try { return localStorage.getItem("careerplatform.browser.fillModules") ?? ALL_FILL_MODULES.join(","); }
+    catch { return ALL_FILL_MODULES.join(","); }
+  }, () => ALL_FILL_MODULES.join(","));
+  const [scopeOverride, setScopeOverride] = useState<DesktopBridgeAutofillModule[] | null>(null);
+  const fillModules = useMemo(() => scopeOverride ?? ALL_FILL_MODULES.filter((id) => scopePreference.split(",").includes(id)), [scopeOverride, scopePreference]);
+  function setFillModules(modules: DesktopBridgeAutofillModule[]) {
+    setScopeOverride(modules);
+    try { localStorage.setItem("careerplatform.browser.fillModules", modules.join(",")); }
+    catch { /* Keep the current selection even if local storage is unavailable. */ }
+  }
   const [resumeVersionId, setResumeVersionId] = useState(
     resumeVersions.find((r) => r.isDefault)?.id ?? resumeVersions[0]?.id ?? ""
   );
@@ -245,16 +271,16 @@ export function EmbeddedBrowser({
   const autoRemember = rememberOverride ?? rememberedPreference;
   // Latest values for the long-lived IPC listener below, updated in an
   // effect (the lint rule forbids touching refs during render).
-  const liveRef = useRef({ resumeVersionId, autoFill, autofilling, expandBlocks, variantChoice });
+  const liveRef = useRef({ resumeVersionId, autoFill, autofilling, expandBlocks, variantChoice, fillModules });
   useEffect(() => {
-    liveRef.current = { resumeVersionId, autoFill, autofilling, expandBlocks, variantChoice };
-  }, [resumeVersionId, autoFill, autofilling, expandBlocks, variantChoice]);
+    liveRef.current = { resumeVersionId, autoFill, autofilling, expandBlocks, variantChoice, fillModules };
+  }, [resumeVersionId, autoFill, autofilling, expandBlocks, variantChoice, fillModules]);
 
   const bridge = useDesktopBridge();
   const activeTab = tabsState.tabs.find((t) => t.id === tabsState.activeId) ?? null;
   const currentUrl = activeTab?.url && activeTab.url !== "about:blank" ? activeTab.url : null;
   const overlayOpen =
-    captureOpen || portalOpen || quickOpen || markOpen || shotOpen || resumeMenuOpen || moreOpen || variantMenuOpen;
+    captureOpen || portalOpen || quickOpen || markOpen || shotOpen || resumeMenuOpen || moreOpen || variantMenuOpen || scopeMenuOpen;
   const linkedVariant = profileVariants.find((v) => v.resumeVersionId && v.resumeVersionId === resumeVersionId);
 
   useEffect(() => {
@@ -288,11 +314,11 @@ export function EmbeddedBrowser({
     const offForm = bridge.onFormDetected((payload) => {
       const live = liveRef.current;
       if (live.autofilling) return;
-      if (live.autoFill && live.resumeVersionId) {
+      if (live.autoFill && live.resumeVersionId && live.fillModules.length > 0) {
         setDetected(null);
         setAutofilling(true);
         setStatus({ phase: "scanning", message: `检测到新一页表单（${payload.count} 个字段），自动填充中…` });
-        void bridge.autofill(live.resumeVersionId, { expandBlocks: live.expandBlocks, variantId: live.variantChoice || undefined });
+        void bridge.autofill(live.resumeVersionId, { expandBlocks: live.expandBlocks, variantId: live.variantChoice || undefined, modules: live.fillModules });
       } else {
         setDetected(payload);
       }
@@ -453,10 +479,11 @@ export function EmbeddedBrowser({
 
   function handleAutofill() {
     if (!bridge || autofilling) return;
+    if (!fillModules.length) { toast.info("请先在「填写范围」里至少勾选一个模块"); return; }
     setDetected(null);
     setAutofilling(true);
     setStatus({ phase: "scanning", message: "正在读取页面…" });
-    bridge.autofill(resumeVersionId || undefined, { expandBlocks, variantId: variantChoice || undefined });
+    bridge.autofill(resumeVersionId || undefined, { expandBlocks, variantId: variantChoice || undefined, modules: fillModules });
   }
 
   async function handleSaveCorrections() {
@@ -779,9 +806,25 @@ export function EmbeddedBrowser({
             </SelectContent>
           </Select>
         )}
-        <Button type="button" size="sm" disabled={autofilling || !currentUrl} onClick={handleAutofill} title="按账号资料 + 简历自动填表单，含 iframe 里的表单和单选按钮">
+        <DropdownMenu open={scopeMenuOpen} onOpenChange={setScopeMenuOpen}>
+          <DropdownMenuTrigger render={<Button type="button" size="sm" variant="outline" disabled={autofilling} />}>
+            填写范围：{fillModules.length === ALL_FILL_MODULES.length ? "全部模块" : fillModules.length === 1 ? FILL_MODULES.find(({ id }) => id === fillModules[0])?.label : `${fillModules.length} 个模块`}
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="w-64">
+            <p className="px-2 py-1.5 text-xs text-muted-foreground">只补所选模块的空白，已填内容保留。<br />选择会记住，「每页自动填」也使用此范围。</p>
+            <DropdownMenuItem onClick={() => setFillModules([...ALL_FILL_MODULES])}>全选</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setFillModules([])}>取消全选</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            {FILL_MODULES.map(({ id, label }) => (
+              <DropdownMenuCheckboxItem key={id} checked={fillModules.includes(id)} closeOnClick={false} onCheckedChange={(checked) => setFillModules(checked ? [...fillModules, id] : fillModules.filter((item) => item !== id))}>
+                {label}
+              </DropdownMenuCheckboxItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <Button type="button" size="sm" disabled={autofilling || !currentUrl || !fillModules.length} onClick={handleAutofill} title="仅补填写范围内的空白字段，已填内容保留">
           <Sparkles className="size-4" />
-          {autofilling ? "填充中..." : "AI 一键填充"}
+          {autofilling ? "填充中..." : fillModules.length === ALL_FILL_MODULES.length ? "AI 一键填充" : "填写所选模块"}
         </Button>
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground" title="网申分好几页时（基本信息→教育→实习→开放题），每翻到一页有空表单就自动填，不用每页点一次">
           <input type="checkbox" checked={autoFill} onChange={(e) => setAutoFillEveryPage(e.target.checked)} />

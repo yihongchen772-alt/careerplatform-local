@@ -2,6 +2,25 @@ const $ = (id) => document.getElementById(id);
 let tab = null;
 let siteInfo = null;
 let statusInfo = null;
+let filling = false;
+
+function fillModules() {
+  return Array.from(document.querySelectorAll("[data-module]:checked"), (input) => input.dataset.module);
+}
+
+function updateScope() {
+  const selected = fillModules();
+  const total = document.querySelectorAll("[data-module]").length;
+  const single = selected.length === 1 ? document.querySelector(`[data-module="${selected[0]}"]`).closest("label").textContent.trim() : null;
+  $("scope-summary").textContent = `填写范围：${selected.length === total ? "全部模块" : single || `${selected.length} 个模块`}`;
+  $("fill").textContent = selected.length === total ? "一键填写这一页" : "填写所选模块";
+  $("fill").disabled = filling || !selected.length;
+}
+
+function saveScope() {
+  updateScope();
+  return chrome.storage.local.set({ fillModules: fillModules() });
+}
 
 function send(type, payload = {}) {
   return chrome.runtime.sendMessage({ type, tabId: tab && tab.id, ...payload }).then((res) => {
@@ -106,7 +125,11 @@ async function load() {
   }
   setConn(`已连接 · v${statusInfo.appVersion}`, "ok");
   show("main");
-  const prefs = await chrome.storage.local.get(["resumeVersionId", "variantId", "expandBlocks"]);
+  const prefs = await chrome.storage.local.get(["resumeVersionId", "variantId", "expandBlocks", "fillModules"]);
+  if (Array.isArray(prefs.fillModules)) {
+    for (const input of document.querySelectorAll("[data-module]")) input.checked = prefs.fillModules.includes(input.dataset.module);
+  }
+  updateScope();
   const resume = $("resume");
   resume.textContent = "";
   resume.appendChild(option("", "不用简历（只填基础资料）"));
@@ -145,19 +168,32 @@ $("retry").addEventListener("click", load);
 $("resume").addEventListener("change", (e) => chrome.storage.local.set({ resumeVersionId: e.target.value }));
 $("variant").addEventListener("change", (e) => chrome.storage.local.set({ variantId: e.target.value }));
 $("expand").addEventListener("change", (e) => chrome.storage.local.set({ expandBlocks: e.target.checked }));
+for (const input of document.querySelectorAll("[data-module]")) input.addEventListener("change", saveScope);
+$("scope-all").addEventListener("click", () => {
+  for (const input of document.querySelectorAll("[data-module]")) input.checked = true;
+  void saveScope();
+});
+$("scope-none").addEventListener("click", () => {
+  for (const input of document.querySelectorAll("[data-module]")) input.checked = false;
+  void saveScope();
+});
 
 $("fill").addEventListener("click", async () => {
+  const modules = fillModules();
+  if (!modules.length) { message("请先在「填写范围」里至少勾选一个模块", "error"); return; }
   // Cross-origin iframes (北森/Moka forms are often embedded) need host
   // access beyond the clicked tab; asked once, and the fill still runs on the
   // top frame if the applicant declines.
   await chrome.permissions.request({ origins: ["https://*/*", "http://*/*"] }).catch(() => false);
+  filling = true;
   $("fill").disabled = true;
   message("正在读取页面…");
   try {
-    await send("fill", { resumeVersionId: $("resume").value || undefined, variantId: $("variant").value || undefined, expandBlocks: $("expand").checked });
+    await send("fill", { resumeVersionId: $("resume").value || undefined, variantId: $("variant").value || undefined, expandBlocks: $("expand").checked, modules });
   } catch (err) {
     message(err.message, "error");
-    $("fill").disabled = false;
+    filling = false;
+    updateScope();
   }
 });
 
@@ -207,7 +243,7 @@ $("record").addEventListener("submit", async (event) => {
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type !== "status" || !tab || msg.tabId !== tab.id) return;
   message(msg.status.message, msg.status.phase === "error" ? "error" : "");
-  if (msg.status.phase === "done" || msg.status.phase === "error") $("fill").disabled = false;
+  if (msg.status.phase === "done" || msg.status.phase === "error") { filling = false; updateScope(); }
 });
 
 load();

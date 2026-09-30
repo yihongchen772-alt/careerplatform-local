@@ -27,3 +27,10 @@ form { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1p
 .banner button { margin-top: 6px; width: 100%; }
 
 [hidden] { display: none !important; }
+
+#fill-scope { padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
+#fill-scope summary { cursor: pointer; font-weight: 600; }
+#fill-scope .hint { margin: 6px 0; }
+#fill-scope label { margin: 5px 0; }
+.scope-actions { display: flex; gap: 6px; margin: 6px 0; }
+.scope-actions button { padding: 3px 8px; font-size: 12px; }

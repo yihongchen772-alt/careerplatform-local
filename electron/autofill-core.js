@@ -111,7 +111,7 @@ function scanPageFields(prefix) {
   // labels; the nearest block heading tells the matcher which list and, for
   // "本科阶段"/"硕士阶段" style headings, which row. Sibling blocks that contain
   // their own inputs are skipped so row two never inherits row one's heading.
-  const SECTION_HEADING = /教育|学习经历|本科|硕士|研究生|博士|大专|专科|实习|工作经历|工作经验|实践经历|社会实践|项目|第\s*[一二三四五六七八九十\d]+\s*段|education|academic|internship|employment|work experience|project/i;
+  const SECTION_HEADING = /基本信息|个人信息|联系方式|求职意向|开放题|问答|补充信息|自我评价|教育|学习经历|本科|硕士|研究生|博士|大专|专科|实习|工作经历|工作经验|实践经历|社会实践|项目|第\s*[一二三四五六七八九十\d]+\s*段|personal information|contact information|questions|education|academic|internship|employment|work experience|project/i;
   function sectionFor(el) {
     let node = el;
     let depth = 0;
@@ -864,6 +864,23 @@ function sectionGroup(section) {
   return null;
 }
 
+const AUTOFILL_MODULES = ["basic", "education", "experience", "project", "questions", "other", "resume"];
+
+function fieldModule(field, repeat) {
+  const group = sectionGroup(field.section || "");
+  if (group) return group;
+  const section = String(field.section || "");
+  if (/开放题|问答|自我评价|questions/i.test(section)) return "questions";
+  if (/基本信息|个人信息|联系方式|求职意向|personal information|contact information/i.test(section)) return "basic";
+  if (repeat) return repeat.group;
+  if (isOpenEndedQuestionField(field)) return "questions";
+  const text = fieldHaystack(field);
+  if (BASIC_FIELD_RULES.some((rule) => rule.keys.some((key) =>
+    key === "name" || key === "city" ? new RegExp(`(^|\\W)${key}($|\\W)`, "i").test(text) : text.includes(key.toLowerCase())
+  )) || isSplitNameField(field)) return "basic";
+  return "other";
+}
+
 // Label alone, without "*"/"：" decoration — generic block labels such as
 // "名称"/"开始时间" are only trusted when they are the whole label.
 function bareLabel(field) {
@@ -1378,6 +1395,8 @@ async function fillFrames(adapter, pairs, frameById) {
 async function runAutofillCore(adapter, resumeVersionId, options = {}) {
   const initialUrl = adapter.url();
   try {
+    const modules = new Set(Array.isArray(options.modules) ? options.modules.filter((id) => AUTOFILL_MODULES.includes(id)) : AUTOFILL_MODULES);
+    if (!modules.size) throw new Error("请先在「填写范围」里至少勾选一个模块");
     adapter.status({ phase: "scanning", message: "正在读取页面…" });
 
     const profileQuery = new URLSearchParams({ contextKey: portalContext(initialUrl) });
@@ -1398,10 +1417,15 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     const pageContext = portalContext(initialUrl);
     let neverGuessCount = 0;
     let alreadyFilled = 0;
+    const excluded = new Set();
     for (const field of fields) {
       // Classify before skipping prefilled fields: a filled first education
       // block still occupies row one, so the next empty "学校" gets row two.
       const repeat = resolveRepeatField(field, rowIndexes);
+      if (!modules.has(fieldModule(field, repeat))) {
+        excluded.add(field.id);
+        continue;
+      }
       if (field.hasValue) {
         alreadyFilled++;
         continue;
@@ -1488,12 +1512,14 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     const aiReused = essayReused - rememberedFilled;
     const failedSet = new Set(failed);
     const skippedSet = new Set(skipped);
-    const details = fields.map((field) => skippedSet.has(field.id)
+    const details = fields.map((field) => excluded.has(field.id)
+      ? { label: field.section ? `${field.section} · ${field.label || field.placeholder || field.name || "未命名字段"}` : field.label || field.placeholder || field.name || "未命名字段", state: "未勾选此模块，已跳过", source: "excluded" }
+      : skippedSet.has(field.id)
       ? { label: field.label || field.placeholder || field.name || "未命名字段", state: "填写期间已有修改，已保留", source: "prefilled" }
       : fillDetail(field, pairs.find((p) => p.id === field.id), filledSet, failedSet));
     let uploadedResumeCount = 0;
     let uploadError = null;
-    if (resumeVersionId) {
+    if (resumeVersionId && modules.has("resume")) {
       try {
         uploadedResumeCount = await adapter.uploadResume(resumeVersionId);
       } catch (err) {
@@ -1517,17 +1543,18 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     // After an 添加 round the earlier rounds' own fills count as "已有内容".
     if (alreadyFilled > 0 && !options.round) parts.push(`${alreadyFilled} 个已有内容的字段没动`);
     if (skipped.length > 0) parts.push(`${skipped.length} 个填写期间已有修改的字段已保留`);
+    if (excluded.size > 0) parts.push(`${excluded.size} 个不在填写范围内的字段已跳过`);
     if (failed.length > 0) {
       parts.push(`${failed.length} 个字段未通过写入验证（${failed.slice(0, 3).join("、")}${failed.length > 3 ? "…" : ""}），需要手填`);
     }
     if (neverGuessCount > 0) parts.push(`${neverGuessCount} 个需核对的姓名拆分或敏感字段，没有自动填`);
     const attempted = filled.length + neverGuessCount + alreadyFilled + failed.length + skipped.length;
-    const stillManual = fields.length - attempted;
+    const stillManual = fields.length - excluded.size - attempted;
     if (stillManual > 0) {
       parts.push(aiError ? `${stillManual} 个字段没能自动填（${aiError}）` : `${stillManual} 个字段简历里没有对应信息，需要自己填`);
     }
     const added = options.added || [];
-    const missing = missingRepeatCounts(profile, rowIndexes);
+    const missing = missingRepeatCounts(profile, rowIndexes).filter(({ group }) => modules.has(group));
     const round = options.round || 0;
     if (options.expandBlocks && missing.length && round < 4 && !options.modal && adapter.stillOnPage(initialUrl)) {
       const clicked = [];
@@ -1553,7 +1580,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       parts.unshift(`已自动添加 ${[...counts].map(([label, n]) => `${n} 组${label}`).join("、")}`);
       if (options.modal) parts.push("新栏目在弹窗里：核对后点弹窗的保存，再点一次一键填写继续下一段");
     }
-    const missingBlocks = missingRepeatBlocks(profile, rowIndexes);
+    const missingBlocks = missing.map(({ saved, shown, label }) => `有 ${saved} 段${label}、页面只有 ${shown} 组`);
     if (missingBlocks.length) {
       parts.push(options.expandBlocks
         ? `网申资料里${missingBlocks.join("、")}，没找到能自动点的「添加」按钮——请手动添加后再点一次一键填写`
@@ -1637,6 +1664,8 @@ async function saveCorrectionsCore(adapter, resumeVersionId, onlyUserEdited = fa
 }
 
 module.exports = {
+  AUTOFILL_MODULES,
+  fieldModule,
   attachResumeFile,
   showPageStatus,
   fillFrames,

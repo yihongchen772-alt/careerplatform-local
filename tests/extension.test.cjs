@@ -162,6 +162,84 @@ test("injected writers preserve a newly selected radio, dropdown, or manually cl
   assert.equal(selected.filled.length, 0);
 });
 
+test("module selection limits fields, AI questions, add buttons and resume uploads together", async () => {
+  const core = require("../electron/autofill-core.js");
+  const writes = [];
+  const questions = [];
+  const addGroups = [];
+  let uploads = 0;
+  const fields = [
+    { id: "c0-f0", label: "邮箱", section: "基本信息", hasValue: false },
+    { id: "c0-f1", label: "学校", section: "教育经历", hasValue: false },
+    { id: "c0-f2", label: "公司", section: "实习经历", hasValue: false },
+    { id: "c0-f3", label: "项目名称", section: "项目经历", hasValue: true },
+    { id: "c0-f4", label: "项目名称", section: "项目经历", hasValue: false },
+    { id: "c0-f5", label: "请说明使用的技术", section: "项目经历", hasValue: false },
+    { id: "c0-f6", label: "为什么申请？", section: "开放题", hasValue: false },
+  ].map((field) => ({ tag: "input", type: "text", placeholder: "", name: "", ...field }));
+  const profile = { email: "test@example.invalid", education: [{ school: "学校一" }, { school: "学校二" }], experiences: [{ company: "公司一" }, { company: "公司二" }], projects: [{ name: "项目一" }, { name: "项目二" }, { name: "项目三" }] };
+  const adapter = {
+    url: () => "https://careers.example.com/apply",
+    stillOnPage: () => true,
+    frames: async () => ["top"],
+    run: async (_frame, fn, args) => {
+      if (fn === core.scanPageFields) return fields;
+      if (fn === core.fillFields) { writes.push(...args[0]); return { filled: args[0].map((p) => p.id), failed: [] }; }
+      if (fn === core.clickAddBlock) { addGroups.push(args[0]); return { clicked: false }; }
+    },
+    api: async (name, init) => {
+      if (name.startsWith("profile")) return { ok: true, json: async () => profile };
+      questions.push(...JSON.parse(init.body).questions);
+      return { ok: true, json: async () => ({ answers: questions.map((q) => ({ id: q.id, answer: "测试技术" })) }) };
+    },
+    status: () => {},
+    uploadResume: async () => { uploads++; return 1; },
+    getDrafts: () => [],
+    setDrafts: () => {},
+  };
+  const result = await core.runAutofillCore(adapter, "resume-test", { modules: ["project"], expandBlocks: true });
+  assert.equal(result.phase, "done");
+  assert.deepEqual(writes.map((p) => p.id), ["c0-f4", "c0-f5"]);
+  assert.equal(writes[0].value, "项目二", "prefilled first project still consumes row one");
+  assert.deepEqual(questions.map((q) => q.id), ["c0-f5"]);
+  assert.deepEqual(addGroups, ["project"]);
+  assert.equal(uploads, 0, "using a resume for AI must not upload it when attachment module is unchecked");
+  assert.equal(result.details.filter((d) => d.source === "excluded").length, 4);
+  assert.match(result.message, /4 个不在填写范围内的字段已跳过/);
+  assert.doesNotMatch(result.message, /段教育经历|段实习/);
+  writes.length = 0;
+  questions.length = 0;
+  addGroups.length = 0;
+  const uploadOnly = await core.runAutofillCore(adapter, "resume-test", { modules: ["resume"], expandBlocks: true });
+  assert.equal(uploadOnly.phase, "done");
+  assert.equal(uploads, 1);
+  assert.equal(writes.length, 0);
+  assert.equal(questions.length, 0);
+  assert.equal(addGroups.length, 0);
+  const empty = await core.runAutofillCore({ url: adapter.url, status: () => {} }, "resume-test", { modules: [] });
+  assert.equal(empty.phase, "error");
+  assert.match(empty.message, /至少勾选一个模块/);
+});
+
+test("module classification uses the section for generic fields and leaves unknown fields separate", () => {
+  const { fieldModule, resolveRepeatField } = require("../electron/autofill-core.js");
+  const cases = [
+    ["学校", "教育经历", "education"],
+    ["专业课程", "教育经历", "education"],
+    ["名称", "项目经历", "project"],
+    ["描述", "实习经历", "experience"],
+    ["手机", "", "basic"],
+    ["期望岗位", "求职意向", "basic"],
+    ["自我评价", "", "questions"],
+    ["为什么申请？", "", "questions"],
+    ["未知字段", "", "other"],
+  ];
+  for (const [label, section, expected] of cases) {
+    const field = { label, section, tag: "input", type: "text", placeholder: "", name: "" };
+    assert.equal(fieldModule(field, resolveRepeatField(field, new Map())), expected, label);
+  }
+});
+
 test("an untouched AI draft is never remembered, even with the draft list lost", async () => {
   const core = require("../electron/autofill-core.js");
   const posted = [];
