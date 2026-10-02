@@ -9,10 +9,10 @@ const TERMINAL = ["REJECTED", "ACCEPTED", "DECLINED", "WITHDRAWN", "CANCELLED"] 
 export default async function BrowserPage({
   searchParams,
 }: {
-  searchParams: Promise<{ url?: string }>;
+  searchParams: Promise<{ url?: string; positionId?: string }>;
 }) {
   const user = await requireUser();
-  const { url } = await searchParams;
+  const { url, positionId } = await searchParams;
 
   const [resumeVersions, companies, careerCompanies, positions, applications, knownSites] = await Promise.all([
     db.resumeVersion.findMany({
@@ -66,7 +66,7 @@ export default async function BrowserPage({
           选择简历和填写范围，只补需要的空白。网页默认适应窗口，更多选项在「填写设置」中。
         </p>
       </div>
-      <EmbeddedBrowser
+      <EmbeddedBrowser initialPositionId={positionId}
         initialUrl={url}
         knownSites={knownSites}
         profileVariants={parseApplicationProfile(user.applicationProfile).variants.map((v) => ({ id: v.id, name: v.name, resumeVersionId: v.resumeVersionId ?? null }))}

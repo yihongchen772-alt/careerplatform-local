@@ -25,7 +25,10 @@
   </section>
 
   <section id="main" hidden>
+    <button id="sidepanel" type="button">打开常驻侧栏</button>
     <div id="site"></div>
+    <label>当前申请岗位<select id="job"><option value="">未关联（通用填写）</option></select></label>
+    <p id="job-hint" class="hint"></p>
     <label>简历（上传附件、AI 作答依据）
       <select id="resume"></select>
     </label>
@@ -45,6 +48,10 @@
       <label class="check"><input type="checkbox" data-module="resume" checked> 简历附件</label>
     </details>
     <label class="check"><input type="checkbox" id="expand"> 自动补齐所选栏目（资料段数多于页面时点「添加」）</label>
+    <label>开放题长度<select id="answer-length"><option value="100">100 字</option><option value="200" selected>200 字</option><option value="300">300 字</option><option value="500">500 字</option></select></label>
+    <button id="preview" type="button">扫描并逐字段预览</button>
+    <div id="plan" hidden></div>
+    <details><summary>资料卡 · 点击复制</summary><div id="profile-cards"></div></details>
     <button id="fill" class="primary">一键填写这一页</button>
     <button id="cancel" hidden>停止填写</button>
     <div class="row">

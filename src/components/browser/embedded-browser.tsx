@@ -53,8 +53,10 @@ import { PortalSyncDialog, type PortalCompany } from "@/components/browser/porta
 import { QuickOpenDialog, type QuickLinks } from "@/components/browser/quick-open-dialog";
 import { MarkAppliedFromBrowserDialog, type PoolPosition } from "@/components/browser/mark-applied-from-browser";
 import { ScreenshotDialog, type ApplicationOption } from "@/components/browser/screenshot-dialog";
+import { ApplicationAssistant } from "@/components/browser/application-assistant";
 import { SiteBanner, type KnownSite } from "@/components/browser/site-banner";
 import type {
+  DesktopBridgeAutofillOptions,
   DesktopBridgeAutofillModule,
   DesktopBridgeAutofillStatus,
   DesktopBridgeFillSource,
@@ -159,7 +161,7 @@ function FillDetails({ details }: { details: NonNullable<DesktopBridgeAutofillSt
 }
 
 export function EmbeddedBrowser({
-  initialUrl,
+  initialUrl, initialPositionId,
   knownSites,
   profileVariants,
   resumeVersions,
@@ -168,7 +170,7 @@ export function EmbeddedBrowser({
   poolPositions,
   applications,
 }: {
-  initialUrl?: string;
+  initialUrl?: string; initialPositionId?: string;
   knownSites: KnownSite[];
   profileVariants: { id: string; name: string; resumeVersionId: string | null }[];
   resumeVersions: ResumeOption[];
@@ -188,6 +190,8 @@ export function EmbeddedBrowser({
   const [autofilling, setAutofilling] = useState(false);
   const [savingCorrections, setSavingCorrections] = useState(false);
   const [rememberedCount, setRememberedCount] = useState(0);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [jobBindings, setJobBindings] = useState<Record<number, string>>({});
   const [expanded, setExpanded] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [autoHeight, setAutoHeight] = useState(true);
@@ -281,10 +285,11 @@ export function EmbeddedBrowser({
   const autoRemember = rememberOverride ?? rememberedPreference;
   // Latest values for the long-lived IPC listener below, updated in an
   // effect (the lint rule forbids touching refs during render).
-  const liveRef = useRef({ resumeVersionId, autoFill, autofilling, expandBlocks, variantChoice, fillModules });
+  const positionId = tabsState.activeId === null ? "" : jobBindings[tabsState.activeId] || "";
+  const liveRef = useRef({ positionId, resumeVersionId, autoFill, autofilling, expandBlocks, variantChoice, fillModules });
   useEffect(() => {
-    liveRef.current = { resumeVersionId, autoFill, autofilling, expandBlocks, variantChoice, fillModules };
-  }, [resumeVersionId, autoFill, autofilling, expandBlocks, variantChoice, fillModules]);
+    liveRef.current = { positionId, resumeVersionId, autoFill, autofilling, expandBlocks, variantChoice, fillModules };
+  }, [positionId, resumeVersionId, autoFill, autofilling, expandBlocks, variantChoice, fillModules]);
 
   const bridge = useDesktopBridge();
   const activeTab = tabsState.tabs.find((t) => t.id === tabsState.activeId) ?? null;
@@ -303,16 +308,19 @@ export function EmbeddedBrowser({
       }
       setTabsState(state);
     });
-    const offStatus = bridge.onAutofillStatus((s) => {
-      const tabId = s.tabId ?? activeIdRef.current;
+    const offStatus = bridge.onAutofillStatus((incoming) => {
+      const tabId = incoming.tabId ?? activeIdRef.current;
+      const previous = tabId === null ? null : tabStatusRef.current.get(tabId);
+      const s = (incoming.phase === "scanning" || incoming.phase === "ai") && previous?.plan ? { ...incoming, plan: previous.plan } : incoming;
       if (tabId !== null) {
         tabStatusRef.current.set(tabId, s);
-        if (s.phase === "done" || s.phase === "error") busyTabsRef.current.delete(tabId);
+        if (s.phase === "done" || s.phase === "error" || s.phase === "preview") busyTabsRef.current.delete(tabId);
         else busyTabsRef.current.add(tabId);
       }
       if (tabId === activeIdRef.current) {
         setStatus(s);
-        setAutofilling(s.phase !== "done" && s.phase !== "error");
+        setAutofilling(s.phase !== "done" && s.phase !== "error" && s.phase !== "preview");
+        if (s.phase === "preview") setAssistantOpen(true);
       }
     });
     const offShortcut = bridge.onShortcut(({ action, tabId }) => {
@@ -341,7 +349,7 @@ export function EmbeddedBrowser({
         setDetected(null);
         setAutofilling(true);
         setStatus({ phase: "scanning", message: `检测到新一页表单（${payload.count} 个字段），自动填充中…` });
-        void bridge.autofill(live.resumeVersionId || undefined, { expandBlocks: live.expandBlocks, variantId: live.variantChoice || undefined, modules: live.fillModules });
+        void bridge.autofill(live.resumeVersionId || undefined, { expandBlocks: live.expandBlocks, variantId: live.variantChoice || undefined, modules: live.fillModules, positionId: live.positionId || undefined });
       } else {
         setDetected(payload);
       }
@@ -350,7 +358,7 @@ export function EmbeddedBrowser({
       setSubmitted(payload);
       toast.success(`检测到“${payload.evidence}”，确认后可以记入投递看板`);
     });
-    bridge.getTabs().then((state) => { activeIdRef.current = state.activeId; setTabsState(state); }).catch(() => {});
+    bridge.getTabs().then((state) => { activeIdRef.current = state.activeId; setTabsState(state); if (state.activeId !== null && initialPositionId) setJobBindings((bindings) => ({ ...bindings, [state.activeId!]: initialPositionId })); }).catch(() => {});
     if (initialUrl) bridge.navigate(initialUrl);
     return () => {
       offTabs();
@@ -506,13 +514,13 @@ export function EmbeddedBrowser({
     catch { /* per-device preference only */ }
   }
 
-  function handleAutofill() {
+  function handleAutofill(extra: DesktopBridgeAutofillOptions = {}) {
     if (!bridge || autofilling) return;
     if (!fillModules.length) { toast.info("请先在「填写范围」里至少勾选一个模块"); return; }
     setDetected(null);
     setAutofilling(true);
-    setStatus({ phase: "scanning", message: "正在读取页面…" });
-    bridge.autofill(resumeVersionId || undefined, { expandBlocks, variantId: variantChoice || undefined, modules: fillModules });
+    setStatus((old) => ({ phase: "scanning", message: "正在读取页面…", plan: old?.plan }));
+    bridge.autofill(resumeVersionId || undefined, { expandBlocks, variantId: variantChoice || undefined, modules: fillModules, positionId: positionId || undefined, ...extra });
   }
 
   async function handleSaveCorrections() {
@@ -821,7 +829,8 @@ export function EmbeddedBrowser({
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
-        <Button type="button" size="sm" disabled={autofilling || !currentUrl || !fillModules.length} onClick={handleAutofill} title="仅补填写范围内的空白字段，已填内容保留">
+        <Button type="button" size="sm" variant="outline" onClick={() => setAssistantOpen((open) => !open)}>{assistantOpen ? "收起填写助手" : "填写助手 / 逐字段预览"}</Button>
+        <Button type="button" size="sm" disabled={autofilling || !currentUrl || !fillModules.length} onClick={() => handleAutofill()} title="仅补填写范围内的空白字段，已填内容保留">
           <Sparkles className="size-4" />
           {autofilling ? "填充中..." : fillModules.length === ALL_FILL_MODULES.length ? "AI 一键填充" : "填写所选模块"}
         </Button>
@@ -879,7 +888,7 @@ export function EmbeddedBrowser({
       {detected && !autofilling && detected.tabId === tabsState.activeId && (
         <div className="flex flex-wrap items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs">
           <span>这页有 {detected.count} 个可填字段。</span>
-          <Button type="button" size="sm" className="h-7" onClick={handleAutofill}>
+          <Button type="button" size="sm" className="h-7" onClick={() => handleAutofill()}>
             <Sparkles className="size-3.5" />
             填这页
           </Button>
@@ -928,7 +937,8 @@ export function EmbeddedBrowser({
         sites={knownSites}
         onPickPortalCompany={() => setPortalOpen(true)}
       />
-      <div ref={panelRef} role="region" aria-label="网页内容" style={expanded || autoHeight ? undefined : { height: browserHeight }} className={expanded || autoHeight ? "relative min-h-48 flex-1 overflow-hidden rounded-lg border bg-card" : "relative min-h-[26rem] shrink-0 overflow-hidden rounded-lg border bg-card"}>
+      <div className="flex min-h-48 flex-1 gap-3 overflow-hidden">
+      <div ref={panelRef} role="region" aria-label="网页内容" style={expanded || autoHeight ? undefined : { height: browserHeight }} className={expanded || autoHeight ? "relative min-h-48 flex-1 overflow-hidden rounded-lg border bg-card" : "relative min-h-[26rem] min-w-0 flex-1 overflow-hidden rounded-lg border bg-card"}>
         {overlayOpen && (
           <p className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">
             页面暂时隐藏，关掉弹窗后恢复
@@ -945,6 +955,8 @@ export function EmbeddedBrowser({
         )}
       </div>
 
+      {assistantOpen && <ApplicationAssistant key={activeTab?.id ?? "none"} bridge={bridge} status={status} busy={autofilling} resumeId={resumeVersionId} variantId={variantChoice} positionId={positionId} onPosition={(id) => { if (activeTab) setJobBindings((bindings) => ({ ...bindings, [activeTab.id]: id })); setStatus(null); }} onPreview={(extra) => handleAutofill({ mode: "preview", ...extra })} onApply={(options) => handleAutofill(options)} />}
+      </div>
       {(status || capturing) && <div className="shrink-0 rounded-lg border bg-card px-3 py-2 text-xs" role="status">
         {autofilling && status?.phase === "ai" ? <AiProgress active expectedSeconds={30} stages={["基础资料已填，AI 正在生成回答…", "正在从简历中核对信息…", "AI 仍在生成，请稍候…"]} /> : status && <div className="flex items-center gap-2">
           {status.phase === "scanning" && <RotateCw className="size-3.5 shrink-0 animate-spin" />}
@@ -993,6 +1005,8 @@ export function EmbeddedBrowser({
           pageTitle={activeTab?.title ?? ""}
           pageUrl={currentUrl ?? ""}
           positions={poolPositions}
+          initialPositionId={positionId || undefined}
+          initialResumeId={resumeVersionId || undefined}
           resumeVersions={resumeVersions}
         />
       )}

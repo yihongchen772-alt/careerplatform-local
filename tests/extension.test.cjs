@@ -428,7 +428,7 @@ function workerFixture() {
   const events = () => { const listeners = new Set(); return { addListener: (fn) => listeners.add(fn), removeListener: (fn) => listeners.delete(fn), fire: (...args) => [...listeners].forEach((fn) => fn(...args)), size: () => listeners.size }; };
   const updated = events(), history = events(); let failInit = true, cleared = 0, coreRuns = 0;
   const sandbox = {
-    self: { JobCompassCore: { runAutofillCore: async () => { coreRuns++; return { phase: 'done' }; } } }, importScripts() {},
+    self: { JobCompassCore: { portalContext: (url) => url, runAutofillCore: async () => { coreRuns++; return { phase: 'done' }; } } }, importScripts() {},
     chrome: { tabs: { get: async () => { if (failInit) throw new Error('closed fixture tab'); return { url: 'https://fixture.example/apply' }; }, onUpdated: updated, onRemoved: events() },
       webNavigation: { getAllFrames: async () => [{ frameId: 0 }], onHistoryStateUpdated: history },
       scripting: { executeScript: async () => [{ result: null }] },
@@ -451,7 +451,8 @@ test("extension reload at the same URL invalidates its task even if URL returns 
   assert.equal(ready.adapter.stillOnPage('https://fixture.example/apply'), true);
   f.updated.fire(1, { status: 'loading' });
   assert.equal(ready.adapter.stillOnPage('https://fixture.example/apply'), false);
-  ready.dispose(); assert.equal(f.updated.size(), 0);
+  ready.dispose(); assert.equal(f.updated.size(), 1);
+  vm.runInContext("plans.set(1, {id: 'pending'})", f.sandbox); f.updated.fire(1, { status: 'loading' }); assert.equal(vm.runInContext("plans.size", f.sandbox), 0);
 });
 
 test('cancellation while a custom dropdown opens prevents the option click', async () => {

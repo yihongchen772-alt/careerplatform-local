@@ -62,7 +62,8 @@ export default async function DashboardPage() {
 
   const { levels } = computeFunnel(funnelApps);
   const outcomes = computeOutcomes(funnelApps);
-  const todos = buildTodos(applications, positions, stageHistories, personalTasks, contacts);
+  const calendarEvents = await db.calendarEvent.findMany({ where: { userId: user.id } });
+  const todos = buildTodos(applications, positions, stageHistories, personalTasks, contacts, calendarEvents);
   const dailyDigest = await getTodayDigest();
   const weeklyReview = await getWeeklyReview();
 
@@ -162,6 +163,7 @@ export default async function DashboardPage() {
               positionId: t.positionId,
               applicationId: t.applicationId,
               done: t.done,
+              mailEventDraft: t.mailEventDraft, mailEventId: t.mailEventId,
             }))}
             positions={positionOptions}
             applications={applicationOptions}

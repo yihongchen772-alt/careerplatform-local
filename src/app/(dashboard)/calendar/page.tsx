@@ -89,6 +89,8 @@ export default async function CalendarPage() {
           候选岗位投递截止日期 + 投递记录里填写的下一步截止日期 + 你自己写的日程 + 联系人跟进提醒，一次看清楚有没有撞期
         </p>
       </div>
+      <a className="inline-flex rounded border px-3 py-2 text-sm" href="/api/calendar-export">导出 ICS 到系统 / 手机日历</a>
+      <p className="text-xs text-muted-foreground">导出当前日程快照；之后修改安排需要重新导入。系统日历是否提醒取决于你的日历设置。</p>
       <DesktopLinks />
       <DeadlineCalendar
         events={events}

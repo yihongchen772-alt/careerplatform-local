@@ -21,8 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { createApplication } from "@/lib/actions/applications";
-import { markPositionApplied } from "@/lib/actions/positions";
+import type { ApplicationSnapshot } from "@/types/desktop-bridge";
 import { sourceFromUrl } from "@/components/browser/embedded-browser";
 
 export type PoolPosition = { id: string; label: string; companyName: string; source: string | null };
@@ -48,6 +47,7 @@ export function MarkAppliedFromBrowserDialog({
   pageUrl,
   positions,
   resumeVersions,
+  initialPositionId, initialResumeId,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -55,43 +55,30 @@ export function MarkAppliedFromBrowserDialog({
   pageUrl: string;
   positions: PoolPosition[];
   resumeVersions: ResumeOption[];
+  initialPositionId?: string; initialResumeId?: string;
 }) {
   const router = useRouter();
   const guessed = positions.find((p) => pageTitle && pageTitle.includes(p.companyName));
-  const [positionId, setPositionId] = useState(guessed?.id ?? (positions[0]?.id ?? NEW));
+  const [positionId, setPositionId] = useState(initialPositionId || guessed?.id || NEW);
   const [companyName, setCompanyName] = useState("");
   const [title, setTitle] = useState("");
   const [appliedDate, setAppliedDate] = useState(todayKey);
   const [source, setSource] = useState(sourceFromUrl(pageUrl));
   const [resumeVersionId, setResumeVersionId] = useState(
-    resumeVersions.find((r) => r.isDefault)?.id ?? resumeVersions[0]?.id ?? ""
+    initialResumeId || resumeVersions.find((r) => r.isDefault)?.id || resumeVersions[0]?.id || ""
   );
+  const [archive, setArchive] = useState(true);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     try {
-      if (positionId === NEW) {
-        if (!companyName.trim() || !title.trim()) {
-          toast.error("公司和岗位必填");
-          return;
-        }
-        await createApplication({
-          companyName: companyName.trim(),
-          title: title.trim(),
-          appliedDate: new Date(appliedDate),
-          source: source || undefined,
-          resumeVersionId: resumeVersionId || undefined,
-          applyUrl: pageUrl || undefined,
-        });
-      } else {
-        await markPositionApplied(positionId, {
-          appliedDate: new Date(appliedDate),
-          resumeVersionId: resumeVersionId || undefined,
-          applyUrl: pageUrl || undefined,
-        });
-      }
+      const selected = positions.find((p) => p.id === positionId);
+      if (!selected && (!companyName.trim() || !title.trim())) { toast.error("公司和岗位必填"); return; }
+      const snapshot: ApplicationSnapshot | null = archive ? await window.desktopBridge?.applicationSnapshot() || null : null;
+      const res = await fetch("/api/desktop-browser/record-application", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ companyName: selected?.companyName || companyName.trim(), title: selected ? selected.label.replace(`${selected.companyName} · `, "") : title.trim(), appliedDate: new Date(appliedDate).toISOString(), source, positionId: selected?.id, resumeVersionId: resumeVersionId || undefined, applyUrl: pageUrl, snapshot: snapshot || undefined }) });
+      const body = await res.json(); if (!res.ok) throw new Error(body.error);
       toast.success("已记为投递。之后打开这家公司的「我的投递」页，可以一键设为进度页自动同步阶段");
       onOpenChange(false);
       router.refresh();
@@ -167,7 +154,8 @@ export function MarkAppliedFromBrowserDialog({
               </Select>
             </div>
           )}
-          <DialogFooter>
+          <label className="flex gap-2 text-xs"><input type="checkbox" checked={archive} onChange={(e) => setArchive(e.target.checked)} />确认已经提交，保存本次简历、资料和当前可读取的填写内容</label>
+        <DialogFooter>
             <Button type="submit" disabled={loading}>
               {loading ? "保存中..." : "记为已投递"}
             </Button>

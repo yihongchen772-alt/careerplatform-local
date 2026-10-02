@@ -21,6 +21,7 @@ datasource db {
 // ---------- Auth (NextAuth / Auth.js) ----------
 
 model User {
+  applicationDrafts ApplicationDraft[]
   desktopNotes DesktopNote[]
   calendarEvents CalendarEvent[]
   id                    String    @id @default(cuid())
@@ -36,6 +37,7 @@ model User {
   /// keyword matcher needs verbatim: education rows (学校/专业/学历/GPA/
   /// 起止), experience rows, and the odd fields every Chinese form asks
   /// (政治面貌/籍贯/民族/英语水平). See src/lib/application-profile.ts.
+  autofillMappings      Json?
   applicationProfile    Json?
   /// Free text rather than an enum, matching this app's convention
   /// elsewhere (see Contact.role) — a fixed list doesn't fit everyone.
@@ -513,6 +515,8 @@ model JobLead {
 }
 
 model Position {
+  applicationRules Json?
+  rulesRevision Int @default(0)
   captureKey String? @unique
   recruitmentType String?
   id             String         @id @default(cuid())
@@ -567,6 +571,9 @@ enum ApplicationStage {
 }
 
 model Application {
+  submissionPackage Json?
+  workflowChecklist Json?
+  workflowRevision Int @default(0)
   id               String           @id @default(cuid())
   userId           String
   positionId       String?
@@ -843,6 +850,7 @@ model SkillGapAnalysis {
 /// for) an answer every time. Matched by text similarity against
 /// questionLabel at lookup time — see answer-questions/route.ts.
 model AutofillAnswer {
+  contextDigest String?
   id              String   @id @default(cuid())
   userId          String
   resumeVersionId String?
@@ -941,6 +949,8 @@ model InterviewQA {
 // but standalone tasks (positionId/applicationId both null) are equally
 // valid — not everything is tied to a specific job.
 model PersonalTask {
+  mailEventDraft Json?
+  mailEventId String?
   id            String    @id @default(cuid())
   userId        String
   /// Stable identity for an inbox-created task, so concurrent/retried scans
@@ -1158,4 +1168,17 @@ model CareerFitAnalysis {
   updatedAt DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// In-progress material is never counted as an application.
+model ApplicationDraft {
+  id String @id @default(cuid())
+  userId String
+  contextKey String
+  url String
+  name String
+  content Json
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([userId, contextKey])
 }

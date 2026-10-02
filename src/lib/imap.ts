@@ -1,3 +1,4 @@
+import { parseCalendarInvite, type MailEventDraft } from "@/lib/mail-calendar";
 import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
 import { db } from "@/lib/db";
@@ -13,6 +14,7 @@ export type InboxEmail = {
   /** Plain-text snippet only — not the full body, to keep AI calls cheap and
    * limit how much of the user's mail content leaves the machine. */
   snippet: string;
+  calendarInvite?: MailEventDraft | null;
 };
 
 export type ImapConfig = {
@@ -119,7 +121,8 @@ export async function fetchRecentEmails(
           subject: message.envelope?.subject ?? "(无主题)",
           from: message.envelope?.from?.[0]?.address ?? "",
           date: message.envelope?.date ?? new Date(),
-          snippet: bodyText.slice(0, 600),
+          snippet: bodyText.slice(0, 12000),
+          calendarInvite: parsed?.attachments?.filter((a) => a.contentType === "text/calendar" || /\.ics$/i.test(a.filename || "")).slice(0, 1).map((a) => a.size < 1024 * 1024 ? (() => { try { return parseCalendarInvite(a.content.toString("utf8")); } catch { return null; } })() : null)[0] || null,
         });
       }
       // ImapFlow normally yields in UID order, but keep the contract explicit

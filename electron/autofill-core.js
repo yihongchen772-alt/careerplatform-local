@@ -12,6 +12,11 @@
 // all frames so the fill step can route each value back to the right one.
 function scanPageFields(prefix, readOnly = false) {
   const results = [];
+  const host = typeof location !== "undefined" ? location.hostname : "";
+  // Portal families keep their own wrappers; common DOM rules remain the fallback.
+  const portal = /(^|\.)mokahr\.com$/.test(host) ? { name: "Moka", wrapper: /question|formItem|form-item/i, label: "[class*='questionTitle'], [class*='label'], label" }
+    : /(^|\.)(zhiye\.com|beisen\.com|italent\.cn)$/.test(host) ? { name: "北森", wrapper: /resume-item|form-item|field|question/i, label: "[class*='field-name'], [class*='label'], label" }
+    : /(^|\.)(dayee\.com|hotjob\.cn)$/.test(host) ? { name: "大易", wrapper: /form-group|resume-item|field|item-row/i, label: "[class*='title'], [class*='label'], label" } : null;
   let counter = 0;
   const seenRadioGroups = new Map();
   const customContainers = new Set();
@@ -42,9 +47,9 @@ function scanPageFields(prefix, readOnly = false) {
     // seven wrappers below its .ant-form-item-label.
     while (container && depth < 8) {
       const cls = (container.className || "").toString().toLowerCase();
-      if (/form-item|form-group|field|form-row|input-group|form-cell|form-control-wrap|el-form/.test(cls)) {
+      if (/form-item|form-group|field|form-row|input-group|form-cell|form-control-wrap|el-form/.test(cls) || portal?.wrapper.test(cls)) {
         // A label wrapping its own checkbox ("至今") belongs to that checkbox.
-        const explicit = Array.from(container.querySelectorAll("label, .ant-form-item-label, .el-form-item__label, [class*='label']"))
+        const explicit = Array.from(container.querySelectorAll(portal?.label || "label, .ant-form-item-label, .el-form-item__label, [class*='label']"))
           .find((node) => !node.contains(el) && !node.querySelector("input, select, textarea"));
         if (explicit) {
           const text = (explicit.textContent || "").trim();
@@ -238,6 +243,18 @@ function scanPageFields(prefix, readOnly = false) {
     results.push(entry);
   });
 
+  for (const field of results) {
+    const el = readOnly ? null : document.querySelector('[data-cp-fill-id="' + field.id + '"]');
+    if (el) {
+      field.required = !!el.required || el.getAttribute("aria-required") === "true" || !!el.closest(".ant-form-item-required, .is-required");
+      field.maxLength = el.maxLength > 0 ? el.maxLength : null;
+      field.pattern = el.getAttribute("pattern") || "";
+      field.min = el.getAttribute("min"); field.max = el.getAttribute("max");
+      field.currentValue = field.hasValue ? (el.value || el.textContent || "").trim().slice(0, 20000) : "";
+      field.portal = portal?.name || "通用表单";
+      field.mappingKey = [field.section, field.label || field.placeholder || field.name, field.tag, field.name, field.id.replace(/^.*?-[fsr]/, "")].join("|");
+    }
+  }
   if (!readOnly) for (const field of results) {
     const el = document.querySelector('[data-cp-fill-id="' + field.id + '"]');
     if (el) {
@@ -1357,6 +1374,7 @@ async function scanFrames(adapter) {
     try {
       await adapter.run(frames[i], trackUserEdits, []);
       const found = await adapter.run(frames[i], scanPageFields, [`c${i}${run}-`]);
+      await adapter.run(frames[i], watchApplicationFields, [readCurrentApplicationFields.toString(), adapter.archiveScope?.() || portalContext(adapter.url())]).catch(() => {});
       for (const f of found || []) {
         frameById.set(f.id, frames[i]);
         fields.push(f);
@@ -1403,6 +1421,7 @@ async function fillFrames(adapter, pairs, frameById, initialUrl) {
 // carried between 自动补齐栏目 rounds.
 async function runAutofillCore(adapter, resumeVersionId, options = {}) {
   const initialUrl = adapter.url();
+  const priorPlan = adapter.getPlan?.();
   const assertActive = () => {
     if (!adapter.stillOnPage(initialUrl)) throw new Error(adapter.stopReason?.() || "页面或标签已切换，已停止写入；请在当前页面重新填充");
   };
@@ -1412,7 +1431,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     assertActive();
     adapter.status({ phase: "scanning", message: "正在读取页面…" });
 
-    const profileQuery = new URLSearchParams({ contextKey: portalContext(initialUrl) });
+    const profileQuery = new URLSearchParams({ contextKey: options.positionId ? `job:v1:${options.positionId}` : portalContext(initialUrl) });
     if (options.variantId) profileQuery.set("variantId", options.variantId);
     if (resumeVersionId) profileQuery.set("resumeVersionId", resumeVersionId);
     const profileRes = await adapter.api(`profile?${profileQuery}`);
@@ -1427,9 +1446,9 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     if (fields.length === 0 && !resumeVersionId) throw new Error("这个页面上没找到可以填的表单——如果表单在弹窗里，先把它打开");
 
     const pairs = [];
-    const candidates = []; // fields going to AI: {id, label, kind, options?}
+    let candidates = []; // fields going to AI: {id, label, kind, options?}
     const rowIndexes = new Map();
-    const pageContext = portalContext(initialUrl);
+    const pageContext = options.positionId ? `job:v1:${options.positionId}` : portalContext(initialUrl);
     let neverGuessCount = 0;
     let alreadyFilled = 0;
     const excluded = new Set();
@@ -1445,6 +1464,11 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
         alreadyFilled++;
         continue;
       }
+      field.module = fieldModule(field, repeat);
+      if (isNeverGuessField(field)) { neverGuessCount++; continue; }
+      const mapping = (profile.mappings || []).find((m) => m.fieldKey === field.mappingKey);
+      const mapped = mapping && profileChoices(profile).find((c) => c.ref === mapping.ref);
+      if (mapped?.value) { pairs.push({ id: field.id, value: mapped.value, source: "profile", label: field.label, tag: field.tag, ref: mapped.ref }); continue; }
       // Saved 网申资料 rows are the source of truth for repeated blocks. A
       // remembered "学校" is one value and would otherwise fill every row.
       const structured = repeat ? repeatFieldValue(field, repeat, profile) : null;
@@ -1479,12 +1503,25 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
         candidates.push({ id: field.id, label, kind: "short" });
       }
     }
+    const tooLong = new Set();
+    function rejectOversize(from = 0) { for (let i = pairs.length - 1; i >= from; i--) { const field = fields.find((f) => f.id === pairs[i].id); if (options.mode !== "preview" && field?.maxLength && pairs[i].value.length > field.maxLength) { tooLong.add(field.id); pairs.splice(i, 1); } } }
+    rejectOversize();
     const basicCount = pairs.length;
     if (!adapter.stillOnPage(initialUrl)) throw new Error("页面或标签已切换，已停止写入；请在当前页面重新填充");
     adapter.status({ phase: "scanning", message: `正在填写 ${basicCount} 个资料字段…` });
-    const basicResult = await fillFrames(adapter, pairs, frameById, initialUrl);
+    const basicResult = options.mode === "preview" ? { filled: [], failed: [], skipped: [] } : await fillFrames(adapter, pairs, frameById, initialUrl);
     assertActive();
     const basicPairCount = pairs.length;
+    const questionKeys = new Set((options.questionIds || []).map((id) => priorPlan?.fields.find((f) => f.id === id)?.mappingKey).filter(Boolean));
+    if (questionKeys.size) {
+      for (const field of fields) {
+        if (questionKeys.has(field.mappingKey)) continue;
+        const priorField = priorPlan.fields.find((f) => f.mappingKey === field.mappingKey);
+        const priorPair = priorPlan.pairs.find((p) => p.id === priorField?.id);
+        if (priorPair && !pairs.some((p) => p.id === field.id)) pairs.push({ ...priorPair, id: field.id });
+      }
+      candidates = candidates.filter((q) => questionKeys.has(fields.find((f) => f.id === q.id)?.mappingKey));
+    }
 
     let aiError = null;
     if (candidates.length > 0 && !resumeVersionId) {
@@ -1495,7 +1532,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
         const answerRes = await adapter.api("answer-questions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ questions: candidates, resumeVersionId, profile, contextKey: pageContext }),
+          body: JSON.stringify({ questions: candidates.map((q) => ({ ...q, maxLength: fields.find((f) => f.id === q.id)?.maxLength || undefined })), resumeVersionId, profile, contextKey: pageContext, positionId: options.positionId, regenerate: options.regenerate, answerLength: options.answerLength }),
         });
         if (answerRes.ok) {
           const { answers } = await answerRes.json();
@@ -1522,6 +1559,27 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     }
 
     if (!adapter.stillOnPage(initialUrl)) throw new Error("页面或标签已切换，已停止写入；请在当前页面重新填充");
+    if (options.mode === "preview") {
+      const choices = profileChoices(profile);
+      const restored = await adapter.api(`application-draft?contextKey=${encodeURIComponent(pageContext)}`).then((r) => r.ok ? r.json() : null).catch(() => null);
+      const plan = { id: adapter.taskId || String(Date.now()), url: initialUrl, at: Date.now(), fields, pairs, frameById, profile, options, resumeVersionId };
+      const proposals = fields.map((field) => {
+        const pair = pairs.find((p) => p.id === field.id);
+        const eligible = !excluded.has(field.id) && !field.hasValue && !isNeverGuessField(field);
+        const oldField = priorPlan?.fields.find((f) => f.mappingKey === field.mappingKey);
+        const stored = !priorPlan && restored?.content?.url === initialUrl && (restored.content?.resumeVersionId || "") === (resumeVersionId || "") && (restored.content?.variantId || "") === (options.variantId || "") && (Array.isArray(restored.content?.fields) ? restored.content.fields.find((f) => f && typeof f.value === "string" && f.fieldKey === field.mappingKey) : null);
+        const candidateEdit = options.previewEdits?.find((row) => row.id === oldField?.id);
+        const sameContext = priorPlan?.url === initialUrl && priorPlan?.resumeVersionId === resumeVersionId && priorPlan?.options.variantId === options.variantId && priorPlan?.options.positionId === options.positionId;
+        const edit = stored || (sameContext && !questionKeys.has(field.mappingKey) && (!options.regenerate || questionKeys.size || candidateEdit?.edited) && candidateEdit);
+        return { ...(edit || {}), id: field.id, fieldKey: field.mappingKey, label: field.label || field.placeholder || field.name || "未命名字段", section: field.section, value: edit ? edit.value : pair?.value || "", selected: eligible && (edit ? edit.selected : !!pair && pair.source !== "ai"), eligible,
+          source: pair?.source || "manual", ref: edit?.ref || pair?.ref || "", required: field.required, maxLength: field.maxLength,
+          note: field.hasValue ? "已有内容，保持不动" : excluded.has(field.id) ? "未选择此模块" : !eligible ? "需在网页上手动填写" : pair?.source === "ai" ? "AI 草稿，请核对后勾选" : pair ? "来自已保存资料或回答" : (aiError || "请选择资料或输入内容") };
+      });
+      const result = { phase: "preview", message: "填写建议已准备好，勾选并核对后再写入；网页内容尚未改动", plan: { id: plan.id, url: initialUrl, proposals, choices, resumeVersionId, positionId: options.positionId, uploadResume: modules.has("resume") && !!resumeVersionId, contextKey: pageContext, variantId: options.variantId } };
+      plan.preview = result.plan; await adapter.setPlan(plan);
+      adapter.status(result); return result;
+    }
+    rejectOversize(basicPairCount);
     const aiResult = await fillFrames(adapter, pairs.slice(basicPairCount), frameById, initialUrl);
     if (!adapter.stillOnPage(initialUrl)) throw new Error("页面或标签已切换，已停止写入；请在当前页面重新填充");
     const filled = [...basicResult.filled, ...aiResult.filled];
@@ -1541,10 +1599,10 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     const failedSet = new Set(failed);
     const skippedSet = new Set(skipped);
     const details = fields.map((field) => excluded.has(field.id)
-      ? { label: field.section ? `${field.section} · ${field.label || field.placeholder || field.name || "未命名字段"}` : field.label || field.placeholder || field.name || "未命名字段", state: "未勾选此模块，已跳过", source: "excluded" }
+      ? { label: field.section ? `${field.section} · ${field.label || field.placeholder || field.name || "未命名字段"}` : field.label || field.placeholder || field.name || "未命名字段", id: field.id, state: "未勾选此模块，已跳过", source: "excluded" }
       : skippedSet.has(field.id)
       ? { label: field.label || field.placeholder || field.name || "未命名字段", state: "填写期间已有修改，已保留", source: "prefilled" }
-      : fillDetail(field, pairs.find((p) => p.id === field.id), filledSet, failedSet));
+      : { ...fillDetail(field, pairs.find((p) => p.id === field.id), filledSet, failedSet), id: field.id });
     const previous = options.accumulated || { filled: 0, uploaded: 0, details: [] };
     const earlier = new Map(previous.details.map((d) => [d.key, d]));
     const merged = new Map(earlier);
@@ -1559,6 +1617,8 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
         merged.set(key, prior);
       } else merged.set(key, { ...detail, key });
     });
+    const validation = [...await validateFrames(adapter, frameById), ...[...tooLong].map((id) => ({ id, message: "内容超过网页字数上限，已跳过，请缩短后填写" }))];
+    for (const issue of validation) { const field = fields.find((f) => f.id === issue.id); if (field) merged.set(field.resultKey || field.id, { id: field.id, label: field.label || field.placeholder || field.name, state: issue.message, source: "manual" }); }
     const allDetails = [...merged.values()];
     let uploadedResumeCount = 0;
     let uploadError = null;
@@ -1696,7 +1756,7 @@ async function saveCorrectionsCore(adapter, resumeVersionId, onlyUserEdited = fa
   const res = await adapter.api("save-corrections", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ resumeVersionId, contextKey: portalContext(pageUrl), answers }),
+    body: JSON.stringify({ resumeVersionId, contextKey: adapter.jobId?.() ? `job:v1:${adapter.jobId()}` : portalContext(pageUrl), answers }),
   });
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "保存回答失败");
   const body = await res.json();
@@ -1711,7 +1771,134 @@ async function saveCorrectionsCore(adapter, resumeVersionId, onlyUserEdited = fa
   return { saved: body.saved ?? 0 };
 }
 
+// Values are referenced from the saved profile, never reconstructed by the model.
+function profileChoices(profile) {
+  const choices = [];
+  const labels = { name: "姓名", phone: "手机", email: "邮箱", gender: "性别", birthDate: "出生日期", currentCity: "现居地", targetRole: "期望岗位", selfIntro: "自我评价", politics: "政治面貌", hometown: "籍贯", ethnicity: "民族", english: "英语水平" };
+  for (const [ref, label] of Object.entries(labels)) if (profile[ref]) choices.push({ ref, label, value: String(profile[ref]) });
+  const columns = { school: "学校", major: "专业", degree: "学历", gpa: "GPA", start: "开始时间", end: "结束时间", company: "公司", role: "角色/职位", name: "名称", description: "描述", responsibilities: "职责" };
+  for (const [list, label] of [["education", "教育"], ["experiences", "工作/实习"], ["projects", "项目"]]) {
+    (profile[list] || []).forEach((row, index) => { for (const [key, text] of Object.entries(columns)) if (row[key]) choices.push({ ref: `${list}.${index}.${key}`, label: `${label} ${index + 1}（${row.school || row.company || row.name || row.degree || ""}）· ${text}`, value: String(row[key]) }); });
+  }
+  return choices;
+}
+
+function focusFormField(id) {
+  const el = document.querySelector('[data-cp-fill-id="' + CSS.escape(id) + '"]');
+  if (!el) return false;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  el.focus({ preventScroll: true });
+  el.style.outline = "3px solid #f59e0b";
+  return true;
+}
+
+function validatePageFields() {
+  const issues = [];
+  for (const el of document.querySelectorAll("[data-cp-fill-id]")) {
+    if (el.disabled || el.readOnly || !el.getBoundingClientRect().width) continue;
+    const id = el.getAttribute("data-cp-fill-id");
+    const row = el.closest(".ant-form-item, .el-form-item, .form-group, [class*='form-item']");
+    const message = row?.querySelector(".ant-form-item-explain-error, .el-form-item__error, [role='alert']")?.textContent?.trim();
+    if (message || el.getAttribute("aria-invalid") === "true") issues.push({ id, message: `网页提示：${message || "内容未通过校验"}` });
+    else if (el.validity && !el.validity.valid) issues.push({ id, message: el.validity.valueMissing ? "必填项尚未填写" : `格式需核对：${el.validationMessage || "网页校验未通过"}` });
+  }
+  return issues;
+}
+
+async function validateFrames(adapter, frameById) {
+  const issues = [];
+  for (const frame of new Set(frameById.values())) issues.push(...((await adapter.run(frame, validatePageFields, []).catch(() => [])) || []));
+  return issues;
+}
+
+// Explicitly captured only when the user records a submitted application.
+function readCurrentApplicationFields() {
+  const fields = [];
+  const seen = new Set();
+  for (const el of document.querySelectorAll("[data-cp-fill-id]")) {
+    if (!el.getBoundingClientRect().width || el.type === "password") continue;
+    const label = el.getAttribute("aria-label") || (el.id && document.querySelector('label[for="' + CSS.escape(el.id) + '"]')?.textContent) || el.closest(".ant-form-item, .el-form-item, .form-group")?.querySelector("label, [class*='label']")?.textContent || el.name || el.placeholder || "字段";
+    if (/密码|验证码|证件|身份证|银行卡|护照|家庭住址|password|captcha|passport|social security|bank account/i.test(label)) continue;
+    let value = el.value || el.querySelector(".ant-select-selection-item, .el-select__selected-item")?.textContent || "";
+    if (el.type === "radio") {
+      const scope = el.form || document;
+      const checked = Array.from(scope.querySelectorAll('input[type="radio"]')).find((r) => r.name === el.name && r.checked);
+      value = checked?.closest("label")?.textContent || checked?.value || "";
+    } else if (el.tagName === "SELECT") value = el.options[el.selectedIndex]?.textContent || "";
+    value = String(value).trim();
+    if (!value || fields.length >= 250 || /\d{17}[\dXx]/.test(value)) continue;
+    const key = `${label}:${value}`;
+    if (!seen.has(key)) fields.push({ label: String(label).trim().slice(0, 200), value: value.slice(0, 20000) });
+    seen.add(key);
+  }
+  return fields;
+}
+
+// Cache only values already present on the visited page, for the success screen.
+function watchApplicationFields(source, contextKey) {
+  if (window.__cpArchiveContextKey !== contextKey) { try { sessionStorage.removeItem("cp-submission-fields"); } catch {} }
+  window.__cpArchiveContextKey = contextKey;
+  if (window.__cpArchiveWatch) return;
+  const collect = new Function("return (" + source + ")")();
+  const capture = () => { try { const fields = collect(); if (fields.length) sessionStorage.setItem("cp-submission-fields", JSON.stringify({ at: Date.now(), url: location.href, fields, contextKey: window.__cpArchiveContextKey })); } catch { /* Storage can be disabled by the site. */ } };
+  window.__cpArchiveWatch = true;
+  document.addEventListener("submit", capture, true);
+  document.addEventListener("click", (event) => { if (event.target.closest?.("button, input[type='submit'], [role='button']")) capture(); }, true);
+  window.addEventListener("beforeunload", capture);
+}
+function collectApplicationFields(source, contextKey) {
+  const current = new Function("return (" + source + ")")()();
+  if (current.length) return current;
+  try { const stored = JSON.parse(sessionStorage.getItem("cp-submission-fields") || "null"); if (stored && stored.contextKey === contextKey && Date.now() - stored.at < 3600000 && Array.isArray(stored.fields)) return stored.fields.slice(0, 250); } catch { /* No readable previous step. */ }
+  return [];
+}
+
+async function applyAutofillPlan(adapter, input) {
+  const plan = adapter.getPlan();
+  try {
+    if (!plan || plan.id !== input.planId || Date.now() - plan.at > 10 * 60000 || !adapter.stillOnPage(plan.url)) throw new Error("预览已过期或页面已变化，请重新扫描");
+    const choices = profileChoices(plan.profile);
+    const live = await scanFrames(adapter);
+    const liveByOldId = new Map(plan.fields.map((f) => [f.id, live.fields.find((current) => f.resultKey ? current.resultKey === f.resultKey : current.id === f.id || current.mappingKey === f.mappingKey)]));
+    const pairs = [];
+    const selected = new Set();
+    for (const row of (input.approved || []).slice(0, 500)) {
+      const field = plan.fields.find((f) => f.id === row.id);
+      if (!field || field.hasValue || isNeverGuessField(field) || selected.has(row.id)) continue;
+      const current = liveByOldId.get(row.id);
+      if (!current) throw new Error("网页表单已变化，请重新扫描预览");
+      if (current.hasValue) { selected.add(row.id); continue; }
+      const original = plan.pairs.find((p) => p.id === row.id);
+      const choice = row.ref && choices.find((c) => c.ref === row.ref);
+      const value = String(choice ? choice.value : row.value || "").trim();
+      if (!value || value.length > 20000) continue;
+      if (field.maxLength && value.length > field.maxLength) throw new Error(`「${field.label || field.name}」超过 ${field.maxLength} 字，请缩短后再填`);
+      if (!plan.options.modules?.includes((field.module || fieldModule(field))) && plan.options.modules) continue;
+      pairs.push({ ...original, id: current.id, label: field.label, tag: field.tag, value, source: choice || value !== original?.value ? "profile" : original?.source || "profile" });
+      selected.add(row.id);
+    }
+    if (!pairs.length && !selected.size && !(input.uploadResume && plan.resumeVersionId)) throw new Error("请至少勾选一个有内容的字段或简历附件");
+    const result = await fillFrames(adapter, pairs, live.frameById, plan.url);
+    const issues = await validateFrames(adapter, live.frameById);
+    const filledSet = new Set(result.filled);
+    adapter.setDrafts([...adapter.getDrafts(), ...pairs.filter((p) => filledSet.has(p.id) && p.answerId && p.value === plan.pairs.find((o) => liveByOldId.get(o.id)?.id === p.id)?.value).map((p) => ({ id: p.id, answerId: p.answerId, label: p.label, filledValue: p.value }))]);
+    // Store reference mappings only for fields that actually accepted the chosen value.
+    const mappings = (input.approved || []).filter((row) => row.remember && row.ref && filledSet.has(liveByOldId.get(row.id)?.id)).map((row) => ({ fieldKey: plan.fields.find((f) => f.id === row.id).mappingKey, ref: row.ref }));
+    if (mappings.length) await adapter.api("field-mapping", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contextKey: plan.options.positionId ? `job:v1:${plan.options.positionId}` : portalContext(plan.url), mappings }) }).then((r) => { if (!r.ok) throw new Error("填写已完成，但字段对应关系保存失败"); });
+    let uploaded = 0;
+    if (input.uploadResume && plan.resumeVersionId && adapter.stillOnPage(plan.url)) uploaded = await adapter.uploadResume(plan.resumeVersionId);
+    const details = plan.fields.map((field) => {
+      const current = liveByOldId.get(field.id) || field;
+      const issue = issues.find((i) => i.id === current.id);
+      return { id: current.id, label: field.section ? `${field.section} · ${field.label || field.name}` : field.label || field.name || "字段", source: issue || result.failed.includes(current.id) ? "manual" : filledSet.has(current.id) ? "profile" : current.hasValue || result.skipped.includes(current.id) ? "prefilled" : "excluded", state: issue?.message || (filledSet.has(current.id) ? "已写入；提交前核对网页" : result.failed.includes(current.id) ? "写入未通过，需要手填" : current.hasValue || result.skipped.includes(current.id) ? "已有或手改内容，已保留" : "本次未选择") };
+    });
+    const status = { phase: "done", message: `已写入 ${result.filled.length} 项，网页校验发现 ${issues.length} 项需处理；未替你保存或提交`, details, summary: { filled: result.filled.length, manual: details.filter((d) => d.source === "manual").length, preserved: details.filter((d) => d.source === "prefilled").length, excluded: details.filter((d) => d.source === "excluded").length, uploaded } };
+    await adapter.setPlan(null); if (adapter.onFilled) await adapter.onFilled(); adapter.status(status); return status;
+  } catch (error) { const valid = plan && plan.id === input.planId && Date.now() - plan.at <= 10 * 60000 && adapter.stillOnPage(plan.url); const status = { phase: "error", message: error.message || "填写失败", ...(valid && plan.preview ? { plan: plan.preview } : {}) }; if (!valid) await adapter.setPlan(null); adapter.status(status); return status; }
+}
+
 module.exports = {
+  profileChoices, applyAutofillPlan, validatePageFields, focusFormField, collectApplicationFields, readCurrentApplicationFields, watchApplicationFields,
   AUTOFILL_MODULES,
   fieldModule,
   attachResumeFile,

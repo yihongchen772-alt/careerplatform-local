@@ -65,6 +65,7 @@ const {
   sectionGroup,
   sectionOrdinal,
   snapshotFormStructure,
+  applyAutofillPlan, focusFormField, collectApplicationFields, readCurrentApplicationFields,
   trackUserEdits,
   runAutofillCore,
   saveCorrectionsCore,
@@ -143,6 +144,7 @@ let attachedView = null;
 // AI-answered fields from the most recent autofill run, per tab id —
 // [{id, answerId, filledValue, frame}]. Reset on every autofill call.
 const lastAiFilled = new Map();
+const pendingPlans = new Map();
 const savingAnswersForTabs = new Set();
 const fillingTabs = new Set();
 const fillTasks = new Map();
@@ -274,11 +276,13 @@ function createTab(url, { activate = true } = {}) {
 
   wc.on("did-start-navigation", () => {
     tab.revision++;
+    pendingPlans.delete(tab.id);
     stopFillTask(tab.id, "页面已变化，已停止填写；请在当前页面重新填写");
   });
   wc.on("did-navigate", () => { lastAiFilled.delete(tab.id); sendTabsState(); });
   wc.on("did-navigate-in-page", () => {
     tab.revision++;
+    pendingPlans.delete(tab.id);
     stopFillTask(tab.id, "页面已变化，已停止填写；请在当前页面重新填写");
     sendTabsState();
   });
@@ -381,6 +385,7 @@ function closeTab(id) {
   const [tab] = tabs.splice(index, 1);
   if (attachedView === tab.view) detach();
   lastAiFilled.delete(id);
+  pendingPlans.delete(id);
   tab.view.webContents.close();
   if (activeId === id) {
     const next = tabs[index] || tabs[index - 1] || null;
@@ -828,6 +833,10 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
         if (!stillOnPage()) throw new Error("页面已切换，已停止上传简历");
         return uploadResumeFiles(wc, file.path, stillOnPage);
       },
+      jobId: () => tab.positionId,
+      archiveScope: () => tab.positionId ? `job:v1:${tab.positionId}` : portalContext(tab.archiveUrl || wc.getURL()),
+      getPlan: () => { const plan = pendingPlans.get(tab.id); return plan?.revision === tab.revision ? plan : null; },
+      setPlan: (plan) => plan ? pendingPlans.set(tab.id, { ...plan, revision: tab.revision }) : pendingPlans.delete(tab.id),
       getDrafts: () => lastAiFilled.get(tab.id) || [],
       setDrafts: (list) => lastAiFilled.set(tab.id, list),
       // Whatever this page looked like, it's handled — don't re-prompt for it.
@@ -853,10 +862,21 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     fillTasks.set(tab.id, task);
     try {
       for (const frame of allFrames(tab.view.webContents)) await frame.executeJavaScript(`document.documentElement.setAttribute("data-cp-task", ${JSON.stringify(task.id)})`).catch(() => {});
-      await runAutofillCore(electronAdapter(tab, task), resumeVersionId, options || {});
+      if (options?.mode === "apply") await applyAutofillPlan(electronAdapter(tab, task), options);
+      else { tab.archiveUrl = tab.view.webContents.getURL(); tab.positionId = options?.positionId; tab.resumeVersionId = resumeVersionId; tab.variantId = options?.variantId; await runAutofillCore(electronAdapter(tab, task), resumeVersionId, options || {}); }
     } finally { fillingTabs.delete(tab.id); fillTasks.delete(tab.id); }
   });
 
+  handle("browser:focus-field", async (_e, id) => {
+    const tab = activeTab(); if (!tab || typeof id !== "string") return;
+    for (const frame of allFrames(tab.view.webContents)) if (await frame.executeJavaScript(`(${focusFormField.toString()})(${JSON.stringify(id)})`).catch(() => false)) break;
+  });
+  handle("browser:application-snapshot", async () => {
+    const tab = activeTab(); if (!tab) return null;
+    const fields = [];
+    for (const frame of allFrames(tab.view.webContents)) fields.push(...await frame.executeJavaScript(`(${collectApplicationFields.toString()})(${JSON.stringify(readCurrentApplicationFields.toString())}, ${JSON.stringify(tab.positionId ? `job:v1:${tab.positionId}` : portalContext(tab.archiveUrl || tab.view.webContents.getURL()))})`).catch(() => []));
+    return { fields, url: tab.view.webContents.getURL(), positionId: tab.positionId, resumeVersionId: tab.resumeVersionId, variantId: tab.variantId };
+  });
   handle("browser:cancel-autofill", (_e, tabId) => stopFillTask(tabId ?? activeId));
 
   // Remember manually entered facts and essays; never save untouched drafts.

@@ -1,7 +1,7 @@
 :root { color-scheme: light dark; --bg: #fff; --fg: #1f2328; --muted: #57606a; --line: #d0d7de; --accent: #4f46e5; --accent-fg: #fff; --soft: #f6f8fa; --warn: #9a6700; --err: #b42318; }
 @media (prefers-color-scheme: dark) { :root { --bg: #161b22; --fg: #e6edf3; --muted: #9da7b3; --line: #30363d; --accent: #818cf8; --accent-fg: #0d1117; --soft: #0d1117; --warn: #d4a72c; --err: #ff7b72; } }
 * { box-sizing: border-box; }
-body { width: 340px; margin: 0; padding: 12px 14px 14px; background: var(--bg); color: var(--fg); font: 13px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+body { width: 100%; min-width: 300px; max-width: 440px; margin: 0; padding: 12px 14px 14px; background: var(--bg); color: var(--fg); font: 13px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
 header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 header strong { flex: 1; font-size: 14px; }
 .pill { padding: 1px 8px; border-radius: 999px; background: var(--soft); color: var(--muted); font-size: 11px; white-space: nowrap; }
@@ -34,3 +34,7 @@ form { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1p
 #fill-scope label { margin: 5px 0; }
 .scope-actions { display: flex; gap: 6px; margin: 6px 0; }
 .scope-actions button { padding: 3px 8px; font-size: 12px; }
+
+#plan fieldset { margin: 8px 0; border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+#plan textarea { width: 100%; min-height: 70px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); }
+#profile-cards button { display: block; width: 100%; margin: 6px 0; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; }

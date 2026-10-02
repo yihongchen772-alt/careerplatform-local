@@ -129,6 +129,7 @@ function runPrismaMigrate(appRoot, env) {
 // leaves the old folder untouched so a bug here can never look like data
 // loss.
 function migrateLegacyUserData(userDataDir) {
+  if (process.env.CAREERPLATFORM_TEST_MODE === "1") return;
   if (fs.existsSync(path.join(userDataDir, "local.db"))) return;
   const legacyDir = path.join(app.getPath("appData"), "秋招追踪");
   if (!fs.existsSync(path.join(legacyDir, "local.db"))) return;

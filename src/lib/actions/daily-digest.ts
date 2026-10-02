@@ -80,7 +80,8 @@ async function run(): Promise<DigestItem[]> {
 
   const { applications, positions, stageHistories, personalTasks, contacts } =
     await fetchTodoInputs(user.id);
-  const todos = buildTodos(applications, positions, stageHistories, personalTasks, contacts);
+  const calendarEvents = await db.calendarEvent.findMany({ where: { userId: user.id } });
+  const todos = buildTodos(applications, positions, stageHistories, personalTasks, contacts, calendarEvents);
 
   const topMatches = await db.positionMatch.findMany({
     where: {

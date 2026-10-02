@@ -32,6 +32,7 @@ import { ConfirmDeleteButton } from "@/components/ui/confirm-delete-button";
 import { deletePosition } from "@/lib/actions/positions";
 import { POSITION_STATUS_LABELS } from "@/lib/stage-labels";
 import { daysUntil } from "@/lib/reminders";
+import { ApplicationRulesDialog } from "@/components/pool/application-rules-dialog";
 import { PositionFormDialog } from "@/components/pool/position-form-dialog";
 import {
   CompanyInsightDialog,
@@ -430,7 +431,7 @@ export function PoolTable({
                   )}
                   {p.jdUrl && (
                     <Link
-                      href={`/browser?url=${encodeURIComponent(p.jdUrl)}`}
+                      href={`/browser?url=${encodeURIComponent(p.jdUrl)}&positionId=${p.id}`}
                       className={buttonVariants({ size: "sm", variant: "outline" })}
                     >
                       <Globe className="size-3.5" />
@@ -453,6 +454,7 @@ export function PoolTable({
                     <FileText className="size-3.5" />
                     定制简历
                   </Link>
+                  <ApplicationRulesDialog positionId={p.id} />
                   <PositionFormDialog
                     mode="edit"
                     positionId={p.id}
@@ -604,7 +606,7 @@ export function PoolTable({
                   )}
                   {p.jdUrl && (
                     <Link
-                      href={`/browser?url=${encodeURIComponent(p.jdUrl)}`}
+                      href={`/browser?url=${encodeURIComponent(p.jdUrl)}&positionId=${p.id}`}
                       className={buttonVariants({ size: "sm", variant: "outline" })}
                     >
                       <Globe className="size-3.5" />
@@ -627,6 +629,7 @@ export function PoolTable({
                     <FileText className="size-3.5" />
                     定制简历
                   </Link>
+                  <ApplicationRulesDialog positionId={p.id} />
                   <PositionFormDialog
                     mode="edit"
                     positionId={p.id}

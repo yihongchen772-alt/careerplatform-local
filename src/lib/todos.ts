@@ -116,9 +116,20 @@ export function buildTodos(
   positions: TodoPosition[],
   stageHistories: TodoStageHistory[],
   personalTasks: TodoPersonalTask[] = [],
-  contacts: TodoContact[] = []
+  contacts: TodoContact[] = [],
+  calendarEvents: { id: string; title: string; startsAt: Date; endsAt?: Date | null; allDay?: boolean; dateKey?: string; timeZone?: string }[] = []
 ): Todo[] {
   const todos: Todo[] = [];
+  for (const event of calendarEvents) {
+    let timezone = event.timeZone || "UTC";
+    try { new Intl.DateTimeFormat("en", { timeZone: timezone }).format(event.startsAt); } catch { timezone = "UTC"; }
+    const todayParts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date()).map((p) => [p.type, p.value]));
+    const today = `${todayParts.year}-${todayParts.month}-${todayParts.day}`;
+    if (event.allDay ? (event.dateKey || "") < today : (event.endsAt || event.startsAt).getTime() < Date.now()) continue;
+    const daysLeft = daysUntil(event.startsAt); if (daysLeft > NEXT_STEP_WINDOW_DAYS) continue;
+    const when = event.allDay ? event.dateKey : new Intl.DateTimeFormat("zh-CN", { timeZone: timezone, month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(event.startsAt);
+    todos.push({ id: `event-${event.id}`, label: event.title, sublabel: `${when}（${timezone}）`, urgency: urgencyOf(daysLeft), href: `/desktop/calendar?id=${event.id}`, order: event.startsAt.getTime() });
+  }
 
   // User-written plans surface the same way the auto-derived ones do — due
   // today/overdue is urgent, within the window is "soon". Undated tasks

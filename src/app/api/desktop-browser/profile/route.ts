@@ -30,6 +30,7 @@ export async function GET(request: Request) {
   const exp = structured.experiences[0];
   return NextResponse.json({
     fieldMemories,
+    mappings: Array.isArray(user.autofillMappings) ? user.autofillMappings.filter((m) => m && typeof m === "object" && !Array.isArray(m) && m.contextKey === contextKey) : [],
     variantName: variant?.name ?? null,
     name: user.name,
     phone: user.phone,

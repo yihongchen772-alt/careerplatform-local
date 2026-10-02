@@ -1,3 +1,6 @@
+import { ApplicationWorkspace } from "@/components/applications/application-workspace";
+import { parseWorkflowChecklist } from "@/lib/application-workflow";
+import { parseSubmissionPackage } from "@/lib/submission-package";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
@@ -163,6 +166,7 @@ export default async function ApplicationDetailPage({
         </div>
       </div>
 
+      <ApplicationWorkspace key={`${application.id}-${application.currentStage}`} id={application.id} company={application.company.name} title={application.title} stage={application.currentStage} revision={application.workflowRevision} checklist={parseWorkflowChecklist(application.workflowChecklist)} material={parseSubmissionPackage(application.submissionPackage)} attachments={application.attachments} />
       <Card>
         <CardHeader>
           <CardTitle>Offer letter / 其他文件</CardTitle>

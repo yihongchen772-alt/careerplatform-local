@@ -8,10 +8,11 @@ const core = self.JobCompassCore;
 const DEFAULT_BASE = "http://localhost:3210";
 const drafts = new Map(); // tabId -> AI drafts filled there (for 记住本页)
 const tasks = new Map();
+const plans = new Map();
 const running = new Set(); // tabIds with an autofill in progress
 
 async function settings() {
-  const stored = await chrome.storage.local.get(["token", "appBase", "resumeVersionId", "variantId", "expandBlocks", "fillModules"]);
+  const stored = await chrome.storage.local.get(["token", "appBase", "resumeVersionId", "variantId", "expandBlocks", "fillModules", "positionId"]);
   return { base: stored.appBase || DEFAULT_BASE, ...stored };
 }
 
@@ -93,6 +94,7 @@ function storeDrafts(tabId, list) {
 async function adapterFor(tabId, task) {
   await loadDrafts(tabId);
   const tab = await chrome.tabs.get(tabId);
+  const boundJob = (await chrome.storage.session.get(`job:${tabId}`))[`job:${tabId}`];
   let liveUrl = tab.url;
   const onUpdated = (id, info) => {
     if (id !== tabId) return;
@@ -128,6 +130,10 @@ async function adapterFor(tabId, task) {
         }
         return attached;
       },
+      jobId: () => task?.positionId ?? boundJob,
+      archiveScope: () => task?.positionId ? `job:v1:${task.positionId}` : core.portalContext(liveUrl),
+      getPlan: () => plans.get(tabId),
+      setPlan: async (plan) => { if (plan) { plans.set(tabId, plan); await chrome.storage.session.set({ [`plan:${tabId}`]: { ...plan, frameById: [...plan.frameById] } }); } else { plans.delete(tabId); await chrome.storage.session.remove(`plan:${tabId}`); } },
       getDrafts: () => drafts.get(tabId) || [],
       setDrafts: (list) => storeDrafts(tabId, list),
     },
@@ -151,8 +157,14 @@ async function fillTab(tabId, options) {
     const adapter = ready.adapter;
     for (const frameId of await tabFrames(tabId)) await runInFrame(tabId, frameId, (id) => document.documentElement.setAttribute("data-cp-task", id), [task.id]).catch(() => {});
     const prefs = await settings();
+    const session = await chrome.storage.session.get([`plan:${tabId}`, `job:${tabId}`, `archive:${tabId}`]);
+    if (!plans.has(tabId) && session[`plan:${tabId}`]) { const plan = session[`plan:${tabId}`]; plans.set(tabId, { ...plan, frameById: new Map(plan.frameById) }); }
     const resumeVersionId = options.resumeVersionId ?? prefs.resumeVersionId ?? undefined;
+    task.positionId = options.positionId ?? session[`job:${tabId}`];
+    if (options.mode === "apply") return await core.applyAutofillPlan(adapter, options);
+    await chrome.storage.session.set({ [`archive:${tabId}`]: { resumeVersionId: resumeVersionId || undefined, variantId: options.variantId ?? prefs.variantId, positionId: task.positionId, contextKey: task.positionId ? `job:v1:${task.positionId}` : core.portalContext(adapter.url()) } });
     return await core.runAutofillCore(adapter, resumeVersionId || undefined, {
+      mode: options.mode, questionIds: options.questionIds, previewEdits: options.previewEdits, positionId: task.positionId, regenerate: options.regenerate, answerLength: options.answerLength,
       variantId: options.variantId ?? prefs.variantId ?? undefined,
       expandBlocks: options.expandBlocks ?? !!prefs.expandBlocks,
       modules: options.modules ?? prefs.fillModules,
@@ -196,6 +208,12 @@ async function pageInfo(tabId) {
 }
 
 const handlers = {
+  async saveDraft({ draft }) { return jsonOrThrow(await api("application-draft", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(draft) })); },
+  async context({ tabId }) { const data = await jsonOrThrow(await api("application-context")); const session = await chrome.storage.session.get(`job:${tabId}`); return { ...data, positionId: session[`job:${tabId}`] || "" }; },
+  async bind({ tabId, positionId }) { await chrome.storage.session.set({ [`job:${tabId}`]: positionId || "" }); plans.delete(tabId); await chrome.storage.session.remove(`plan:${tabId}`); },
+  async profile({ resumeVersionId, variantId }) { return jsonOrThrow(await api(`profile?${new URLSearchParams({ resumeVersionId: resumeVersionId || "", variantId: variantId || "" })}`)); },
+  async focus({ tabId, id }) { for (const frame of await tabFrames(tabId)) if (await runInFrame(tabId, frame, core.focusFormField, [id]).catch(() => false)) break; },
+  async sidepanel({ tabId }) { await chrome.sidePanel.open({ tabId }); },
   async status() {
     return jsonOrThrow(await api("status"));
   },
@@ -222,8 +240,14 @@ const handlers = {
     const page = await pageInfo(tabId);
     return jsonOrThrow(await api("capture-job", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: page.url, title: page.title, text: page.text }) }));
   },
-  async record({ companyName, title, applyUrl, resumeVersionId }) {
-    return jsonOrThrow(await api("record-application", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ companyName, title, applyUrl, resumeVersionId }) }));
+  async record({ tabId, companyName, title, applyUrl, resumeVersionId }) {
+    const prefs = await settings();
+    const session = await chrome.storage.session.get([`job:${tabId}`, `archive:${tabId}`]);
+    const archive = session[`archive:${tabId}`] || {};
+    const positionId = session[`job:${tabId}`] || undefined;
+    const fields = [];
+    for (const frame of await tabFrames(tabId)) fields.push(...await runInFrame(tabId, frame, core.collectApplicationFields, [core.readCurrentApplicationFields.toString(), archive.contextKey || (positionId ? `job:v1:${positionId}` : core.portalContext(applyUrl))]).catch(() => []));
+    return jsonOrThrow(await api("record-application", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ companyName, title, applyUrl, appliedDate: new Date().toISOString(), resumeVersionId, positionId, snapshot: { fields, url: applyUrl, resumeVersionId: archive.resumeVersionId || resumeVersionId, variantId: archive.variantId || prefs.variantId, positionId: archive.positionId || positionId } }) }));
   },
   async portal({ companyId, url }) {
     return jsonOrThrow(await api("portal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ companyId, url }) }));
@@ -251,10 +275,12 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
   fillTab(tab.id, {});
 });
 
-chrome.webNavigation.onHistoryStateUpdated.addListener(({ tabId }) => cancelFill(tabId, "页面已变化，填写已停止"));
+chrome.webNavigation.onHistoryStateUpdated.addListener(({ tabId }) => { plans.delete(tabId); chrome.storage.session.remove(`plan:${tabId}`).catch(() => {}); cancelFill(tabId, "页面已变化，填写已停止"); });
+chrome.tabs.onUpdated.addListener((tabId, info) => { if (info.url || info.status === "loading") { plans.delete(tabId); chrome.storage.session.remove(`plan:${tabId}`).catch(() => {}); } });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   cancelFill(tabId, "标签页已关闭，填写已停止");
   drafts.delete(tabId);
-  chrome.storage.session.remove([`status:${tabId}`, `drafts:${tabId}`]).catch(() => {});
+  plans.delete(tabId);
+  chrome.storage.session.remove([`status:${tabId}`, `drafts:${tabId}`, `plan:${tabId}`, `job:${tabId}`, `archive:${tabId}`]).catch(() => {});
 });

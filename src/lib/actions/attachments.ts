@@ -71,6 +71,11 @@ export async function deleteAttachment(id: string) {
   });
   if (!attachment) return;
 
+  if (attachment.applicationId) {
+    const app = await db.application.findUnique({ where: { id: attachment.applicationId }, select: { submissionPackage: true } });
+    const material = app?.submissionPackage;
+    if (material && typeof material === "object" && !Array.isArray(material) && material.resumeAttachmentId === id) throw new Error("这是投递材料包中的简历副本，会随投递记录保留");
+  }
   await db.attachment.delete({ where: { id } });
   await deleteLocalFileByUrl(attachment.url);
 

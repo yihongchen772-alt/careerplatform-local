@@ -15,7 +15,19 @@ export type DesktopBridgeFillSource = "profile" | "memory" | "ai" | "manual" | "
 
 export type DesktopBridgeAutofillModule = "basic" | "education" | "experience" | "project" | "questions" | "other" | "resume";
 
+export type FillProposal = { id: string; fieldKey: string; label: string; section?: string; value: string; selected: boolean; eligible: boolean; source: string; ref: string; required?: boolean; maxLength?: number | null; note: string; edited?: boolean; remember?: boolean };
+export type FillPlan = { id: string; url: string; proposals: FillProposal[]; choices: { ref: string; label: string; value: string }[]; uploadResume: boolean; contextKey: string; positionId?: string; resumeVersionId?: string; variantId?: string };
+export type ApplicationSnapshot = { fields: { label: string; value: string }[]; url: string; positionId?: string; resumeVersionId?: string; variantId?: string; contextKey?: string };
 export type DesktopBridgeAutofillOptions = {
+  mode?: "preview" | "apply";
+  positionId?: string;
+  regenerate?: boolean;
+  questionIds?: string[];
+  previewEdits?: { id: string; value: string; selected: boolean; ref?: string; remember?: boolean; edited?: boolean }[];
+  answerLength?: number;
+  planId?: string;
+  approved?: { id: string; value: string; ref?: string; remember?: boolean; edited?: boolean }[];
+  uploadResume?: boolean;
   /** Only fill these modules; omitted = all, empty = none. */
   modules?: DesktopBridgeAutofillModule[];
   /** Press the page's 添加 button when the profile has more 教育/实习/项目 rows than blocks shown. */
@@ -26,10 +38,11 @@ export type DesktopBridgeAutofillOptions = {
 
 export type DesktopBridgeAutofillStatus = {
   tabId?: number;
-  phase: "scanning" | "ai" | "done" | "error";
+  phase: "scanning" | "ai" | "done" | "error" | "preview";
   message: string;
+  plan?: FillPlan;
   summary?: { filled: number; manual: number; preserved: number; excluded: number; uploaded: number };
-  details?: { label: string; state: string; source?: DesktopBridgeFillSource }[];
+  details?: { id?: string; label: string; state: string; source?: DesktopBridgeFillSource }[];
 };
 
 export type DesktopBridgeCapturedPage = { url: string; title: string; text: string };
@@ -52,6 +65,8 @@ export type DesktopBridge = {
   reload(): Promise<void>;
   stop(): Promise<void>;
   setBounds(rect: DesktopBridgeRect | null): Promise<void>;
+  focusField(id: string): Promise<void>;
+  applicationSnapshot(): Promise<ApplicationSnapshot | null>;
   autofill(resumeVersionId?: string, options?: DesktopBridgeAutofillOptions): Promise<void>;
   cancelAutofill(tabId?: number): Promise<void>;
   saveCorrections(resumeVersionId?: string, onlyUserEdited?: boolean): Promise<{ saved: number }>;

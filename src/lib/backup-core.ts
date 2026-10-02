@@ -39,6 +39,7 @@ export const TABLES = [
   "jobLead",
   "resumeVersion",
   "position",
+  "applicationDraft",
   "application",
   "stageHistory",
   "interviewNoteExtract",

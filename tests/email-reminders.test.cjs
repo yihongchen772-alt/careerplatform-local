@@ -43,7 +43,7 @@ test('scheduled digest persists daily deduplication, claims concurrent checks, r
   const wait = new Promise((r) => { release = r; });
   let pause = true;
   const empty = { findMany: async () => [] };
-  const dbFacade = { user: db.user, application: empty, position: empty, stageHistory: empty, personalTask: empty, contact: empty };
+  const dbFacade = { user: db.user, application: empty, position: empty, stageHistory: empty, personalTask: empty, contact: empty, calendarEvent: empty };
   const mocks = { '@/lib/db': { db: dbFacade }, '@/lib/session': { requireUser: async () => ({ id: 'fixture' }) }, '@/lib/email-reminder-schedule': schedule,
     '@/lib/todos': { buildTodos: () => urgent ? [{ label: '<面试>', sublabel: '明天', urgency: 'urgent' }] : [] },
     '@/lib/action-result': load('src/lib/action-result.ts'),
@@ -108,7 +108,7 @@ test('a claimed email checks the latest schedule and mailbox before SMTP, and re
     const signal = new Promise((r) => { started = r; }), wait = new Promise((r) => { release = r; });
     const empty = { findMany: async () => [] };
     const actions = load('src/lib/actions/reminder-digest.ts', {
-      '@/lib/db': { db: { user: db.user, application: { findMany: async () => { started(); await wait; return []; } }, position: empty, stageHistory: empty, personalTask: empty, contact: empty } },
+      '@/lib/db': { db: { user: db.user, application: { findMany: async () => { started(); await wait; return []; } }, position: empty, stageHistory: empty, personalTask: empty, contact: empty, calendarEvent: empty } },
       '@/lib/session': {}, '@/lib/email-reminder-schedule': schedule, '@/lib/action-result': load('src/lib/action-result.ts'),
       '@/lib/todos': { buildTodos: () => [{ label: 'fixture', sublabel: 'fixture', urgency: 'urgent' }] },
       '@/lib/mailer': { getUserMailConfig: async () => ({ user: 'mail@example.invalid' }), sendMail: async () => { sent++; } },

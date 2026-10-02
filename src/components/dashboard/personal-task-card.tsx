@@ -1,4 +1,5 @@
 "use client";
+import { MailEventDialog } from "@/components/dashboard/mail-event-dialog";
 
 import { useState } from "react";
 import { toast } from "sonner";
@@ -15,7 +16,7 @@ import { toggleTaskDone, deletePersonalTask, cleanupDuplicateImportedTasks } fro
 
 type LinkOption = { id: string; label: string };
 
-export type PersonalTaskRow = PersonalTaskInitial & { done: boolean };
+export type PersonalTaskRow = PersonalTaskInitial & { done: boolean; mailEventDraft?: unknown; mailEventId?: string | null };
 
 export function PersonalTaskCard({
   tasks,
@@ -180,6 +181,7 @@ function TaskRow({
             .join(" · ")}
         </p>
         {task.note && <p className="mt-1 text-xs">{task.note}</p>}
+        {task.mailEventDraft ? <MailEventDialog taskId={task.id} initial={task.mailEventDraft} eventId={task.mailEventId} /> : null}
       </div>
       <div className="flex shrink-0 gap-1">
         <PersonalTaskFormDialog
