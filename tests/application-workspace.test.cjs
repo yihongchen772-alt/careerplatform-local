@@ -59,6 +59,18 @@ test('malformed imported material and checklist JSON fall back safely', () => {
   assert.equal(load('src/lib/submission-package.ts').parseSubmissionPackage({ fields: 'invalid' }), null);
   assert.equal(load('src/lib/application-workflow.ts').parseWorkflowChecklist({ APPLIED: ['invalid'] }), null);
 });
+test('snapshot capture works when CSP forbids dynamic functions and survives leaving the form', () => {
+  const storage = new Map(); const listeners = {}; let onForm = true;
+  const field = { type: 'text', value: '原回答', tagName: 'TEXTAREA', getBoundingClientRect: () => ({ width: 100 }), getAttribute: () => '申请理由', closest: () => null };
+  const context = vm.createContext({ window: { addEventListener: (event, callback) => { listeners[event] = callback; } }, document: { querySelectorAll: () => onForm ? [field] : [], addEventListener: (event, callback) => { listeners[event] = callback; } }, sessionStorage: { setItem: (key, value) => storage.set(key, value), getItem: (key) => storage.get(key), removeItem: (key) => storage.delete(key) }, location: { href: 'https://fixture.example/apply' }, Date, Set, Function: function () { throw new Error('CSP unsafe-eval blocked'); } });
+  vm.runInContext(`(${core.readCurrentApplicationFields.toString()})()`, context);
+  assert.equal(vm.runInContext(`(${core.watchApplicationFields.toString()})("job:v1:fixture")`, context), true);
+  field.value = '最终人工回答'; listeners.submit(); onForm = false;
+  vm.runInContext(`(${core.readCurrentApplicationFields.toString()})()`, context);
+  const fields = vm.runInContext(`(${core.collectApplicationFields.toString()})("job:v1:fixture")`, context);
+  assert.equal(fields[0].value, '最终人工回答');
+  assert.equal(vm.runInContext(`(${core.collectApplicationFields.toString()})("job:v1:another")`, context).length, 0);
+});
 test('calendar wall time rejects impossible and ambiguous dates; invites preserve stated time zone', () => {
   const { confirmedWallTime, parseCalendarInvite } = load('src/lib/mail-calendar.ts');
   assert.equal(confirmedWallTime('2026-10-05T09:30', 'Asia/Shanghai').toISOString(), '2026-10-05T01:30:00.000Z');

@@ -874,7 +874,10 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
   handle("browser:application-snapshot", async () => {
     const tab = activeTab(); if (!tab) return null;
     const fields = [];
-    for (const frame of allFrames(tab.view.webContents)) fields.push(...await frame.executeJavaScript(`(${collectApplicationFields.toString()})(${JSON.stringify(readCurrentApplicationFields.toString())}, ${JSON.stringify(tab.positionId ? `job:v1:${tab.positionId}` : portalContext(tab.archiveUrl || tab.view.webContents.getURL()))})`).catch(() => []));
+    for (const frame of allFrames(tab.view.webContents)) {
+      await frame.executeJavaScript(`(${readCurrentApplicationFields.toString()})()`).catch(() => {});
+      fields.push(...((await frame.executeJavaScript(`(${collectApplicationFields.toString()})(${JSON.stringify(tab.positionId ? `job:v1:${tab.positionId}` : portalContext(tab.archiveUrl || tab.view.webContents.getURL()))})`).catch(() => [])) || []));
+    }
     return { fields, url: tab.view.webContents.getURL(), positionId: tab.positionId, resumeVersionId: tab.resumeVersionId, variantId: tab.variantId };
   });
   handle("browser:cancel-autofill", (_e, tabId) => stopFillTask(tabId ?? activeId));

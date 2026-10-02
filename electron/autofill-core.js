@@ -258,6 +258,7 @@ function scanPageFields(prefix, readOnly = false) {
   if (!readOnly) for (const field of results) {
     const el = document.querySelector('[data-cp-fill-id="' + field.id + '"]');
     if (el) {
+      el.setAttribute("data-cp-fill-label", field.label || field.placeholder || field.name || "字段");
       if (!el.hasAttribute("data-cp-result-key")) el.setAttribute("data-cp-result-key", (typeof crypto.randomUUID === "function" ? crypto.randomUUID() : prefix + Date.now().toString(36) + Math.random().toString(36).slice(2)));
       field.resultKey = el.getAttribute("data-cp-result-key");
     }
@@ -1374,7 +1375,8 @@ async function scanFrames(adapter) {
     try {
       await adapter.run(frames[i], trackUserEdits, []);
       const found = await adapter.run(frames[i], scanPageFields, [`c${i}${run}-`]);
-      await adapter.run(frames[i], watchApplicationFields, [readCurrentApplicationFields.toString(), adapter.archiveScope?.() || portalContext(adapter.url())]).catch(() => {});
+      await adapter.run(frames[i], readCurrentApplicationFields, []);
+      await adapter.run(frames[i], watchApplicationFields, [adapter.archiveScope?.() || portalContext(adapter.url())]).catch(() => {});
       for (const f of found || []) {
         frameById.set(f.id, frames[i]);
         fields.push(f);
@@ -1813,11 +1815,14 @@ async function validateFrames(adapter, frameById) {
 
 // Explicitly captured only when the user records a submitted application.
 function readCurrentApplicationFields() {
+  // A named function can register itself without eval. MV3's isolated world
+  // disallows constructing functions from strings, even for our own code.
+  window.__cpReadApplicationFields = readCurrentApplicationFields;
   const fields = [];
   const seen = new Set();
   for (const el of document.querySelectorAll("[data-cp-fill-id]")) {
     if (!el.getBoundingClientRect().width || el.type === "password") continue;
-    const label = el.getAttribute("aria-label") || (el.id && document.querySelector('label[for="' + CSS.escape(el.id) + '"]')?.textContent) || el.closest(".ant-form-item, .el-form-item, .form-group")?.querySelector("label, [class*='label']")?.textContent || el.name || el.placeholder || "字段";
+    const label = el.getAttribute("data-cp-fill-label") || el.getAttribute("aria-label") || (el.id && document.querySelector('label[for="' + CSS.escape(el.id) + '"]')?.textContent) || el.closest(".ant-form-item, .el-form-item, .form-group")?.querySelector("label, [class*='label']")?.textContent || el.name || el.placeholder || "字段";
     if (/密码|验证码|证件|身份证|银行卡|护照|家庭住址|password|captcha|passport|social security|bank account/i.test(label)) continue;
     let value = el.value || el.querySelector(".ant-select-selection-item, .el-select__selected-item")?.textContent || "";
     if (el.type === "radio") {
@@ -1835,19 +1840,21 @@ function readCurrentApplicationFields() {
 }
 
 // Cache only values already present on the visited page, for the success screen.
-function watchApplicationFields(source, contextKey) {
+function watchApplicationFields(contextKey) {
   if (window.__cpArchiveContextKey !== contextKey) { try { sessionStorage.removeItem("cp-submission-fields"); } catch {} }
   window.__cpArchiveContextKey = contextKey;
-  if (window.__cpArchiveWatch) return;
-  const collect = new Function("return (" + source + ")")();
+  if (window.__cpArchiveWatch) return true;
+  const collect = window.__cpReadApplicationFields;
+  if (typeof collect !== "function") return false;
   const capture = () => { try { const fields = collect(); if (fields.length) sessionStorage.setItem("cp-submission-fields", JSON.stringify({ at: Date.now(), url: location.href, fields, contextKey: window.__cpArchiveContextKey })); } catch { /* Storage can be disabled by the site. */ } };
   window.__cpArchiveWatch = true;
   document.addEventListener("submit", capture, true);
   document.addEventListener("click", (event) => { if (event.target.closest?.("button, input[type='submit'], [role='button']")) capture(); }, true);
   window.addEventListener("beforeunload", capture);
+  return true;
 }
-function collectApplicationFields(source, contextKey) {
-  const current = new Function("return (" + source + ")")()();
+function collectApplicationFields(contextKey) {
+  const current = typeof window.__cpReadApplicationFields === "function" ? window.__cpReadApplicationFields() : [];
   if (current.length) return current;
   try { const stored = JSON.parse(sessionStorage.getItem("cp-submission-fields") || "null"); if (stored && stored.contextKey === contextKey && Date.now() - stored.at < 3600000 && Array.isArray(stored.fields)) return stored.fields.slice(0, 250); } catch { /* No readable previous step. */ }
   return [];

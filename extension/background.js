@@ -246,7 +246,10 @@ const handlers = {
     const archive = session[`archive:${tabId}`] || {};
     const positionId = session[`job:${tabId}`] || undefined;
     const fields = [];
-    for (const frame of await tabFrames(tabId)) fields.push(...await runInFrame(tabId, frame, core.collectApplicationFields, [core.readCurrentApplicationFields.toString(), archive.contextKey || (positionId ? `job:v1:${positionId}` : core.portalContext(applyUrl))]).catch(() => []));
+    for (const frame of await tabFrames(tabId)) {
+      await runInFrame(tabId, frame, core.readCurrentApplicationFields).catch(() => {});
+      fields.push(...((await runInFrame(tabId, frame, core.collectApplicationFields, [archive.contextKey || (positionId ? `job:v1:${positionId}` : core.portalContext(applyUrl))]).catch(() => [])) || []));
+    }
     return jsonOrThrow(await api("record-application", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ companyName, title, applyUrl, appliedDate: new Date().toISOString(), resumeVersionId, positionId, snapshot: { fields, url: applyUrl, resumeVersionId: archive.resumeVersionId || resumeVersionId, variantId: archive.variantId || prefs.variantId, positionId: archive.positionId || positionId } }) }));
   },
   async portal({ companyId, url }) {
