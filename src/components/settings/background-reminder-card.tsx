@@ -47,9 +47,9 @@ export function BackgroundReminderCard({ initial }: { initial: AppSettings }) {
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-sm text-muted-foreground">
-          默认情况下，提醒只在你打开 App 时检查一次——App 没开就不会提醒。打开后台提醒后，
+          系统通知默认只在打开 App 时检查一次。打开后台提醒后，
           App 会常驻在菜单栏/任务栏托盘里定时检查（每 30 分钟），有当天到期或已过期的事项时弹
-          系统通知。
+          系统通知。邮件提醒按上方设置的每天时间检查，关闭窗口后也会继续运行。
         </p>
 
         <label className="flex items-start gap-2 rounded-md border p-3">

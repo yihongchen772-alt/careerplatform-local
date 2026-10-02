@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   stop: () => ipcRenderer.invoke("browser:stop"),
   setBounds: (rect) => ipcRenderer.invoke("browser:set-bounds", rect),
   autofill: (resumeVersionId, options) => ipcRenderer.invoke("browser:autofill", resumeVersionId, options),
+  cancelAutofill: (tabId) => ipcRenderer.invoke("browser:cancel-autofill", tabId),
   saveCorrections: (resumeVersionId, onlyUserEdited) => ipcRenderer.invoke("browser:save-corrections", resumeVersionId, onlyUserEdited),
   clearMarks: () => ipcRenderer.invoke("browser:clear-marks"),
   capturePage: () => ipcRenderer.invoke("browser:capture-page"),

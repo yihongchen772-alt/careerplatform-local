@@ -382,3 +382,86 @@ test("an untouched AI draft is never remembered, even with the draft list lost",
   assert.equal(result.saved, 2);
   assert.deepEqual(posted.map((a) => a.answer).sort(), ["我手写的回答", "我自己改过的回答"]);
 });
+
+test("automatically added blocks retain earlier verified counts and field sources", async () => {
+  const core = require('../electron/autofill-core.js');
+  let count = 1;
+  const completed = new Set();
+  const adapter = {
+    url: () => 'https://fixture.example/apply', stillOnPage: () => true,
+    frames: async () => ['top'],
+    run: async (_frame, fn, args) => {
+      if (fn === core.scanPageFields) return Array.from({ length: count }, (_, i) => ({ id: `${args[0]}f${i}`, resultKey: `school-${i}`, label: '学校', section: '教育经历', tag: 'input', hasValue: completed.has(i) }));
+      if (fn === core.fillFields) { for (const p of args[0]) completed.add(Number(p.id.match(/f(\d+)$/)[1])); return { filled: args[0].map((p) => p.id), failed: [] }; }
+      if (fn === core.clickAddBlock) { count++; return { clicked: true }; }
+    },
+    api: async () => ({ ok: true, json: async () => ({ education: [{ school: '大学 A' }, { school: '大学 B' }, { school: '大学 C' }] }) }),
+    status() {}, uploadResume: async () => 0, getDrafts: () => [], setDrafts() {},
+  };
+  const result = await core.runAutofillCore(adapter, undefined, { expandBlocks: true, modules: ['education'] });
+  assert.equal(result.summary.filled, 3); assert.equal(result.summary.preserved, 0);
+  assert.equal(result.details.length, 3); assert.ok(result.details.every((d) => d.source === 'profile'));
+  assert.match(result.message, /本次累计填入 3 个字段/);
+});
+
+test("cancelled AI request keeps profile values and never uploads or writes AI", async () => {
+  const core = require('../electron/autofill-core.js');
+  let stopped = false, uploads = 0; const writes = [];
+  const adapter = {
+    url: () => 'https://fixture.example/apply', stillOnPage: () => !stopped, stopReason: () => stopped ? '已停止填写，已填入的内容保留' : null,
+    frames: async () => ['top'],
+    run: async (_frame, fn) => {
+      if (fn === core.scanPageFields) return [{ id: 'f0', label: '姓名', tag: 'input', hasValue: false }, { id: 'f1', label: '为什么选择我们？', tag: 'textarea', hasValue: false }];
+      if (fn === core.fillFields) { writes.push('profile'); return { filled: ['f0'], failed: [] }; }
+    },
+    api: async (name) => {
+      if (name.startsWith('profile')) return { ok: true, json: async () => ({ name: '虚构姓名' }) };
+      stopped = true; throw new Error('aborted');
+    },
+    status() {}, uploadResume: async () => { uploads++; }, getDrafts: () => [], setDrafts() {},
+  };
+  const result = await core.runAutofillCore(adapter, 'resume');
+  assert.match(result.message, /已停止填写/); assert.deepEqual(writes, ['profile']); assert.equal(uploads, 0);
+});
+
+function workerFixture() {
+  const events = () => { const listeners = new Set(); return { addListener: (fn) => listeners.add(fn), removeListener: (fn) => listeners.delete(fn), fire: (...args) => [...listeners].forEach((fn) => fn(...args)), size: () => listeners.size }; };
+  const updated = events(), history = events(); let failInit = true, cleared = 0, coreRuns = 0;
+  const sandbox = {
+    self: { JobCompassCore: { runAutofillCore: async () => { coreRuns++; return { phase: 'done' }; } } }, importScripts() {},
+    chrome: { tabs: { get: async () => { if (failInit) throw new Error('closed fixture tab'); return { url: 'https://fixture.example/apply' }; }, onUpdated: updated, onRemoved: events() },
+      webNavigation: { getAllFrames: async () => [{ frameId: 0 }], onHistoryStateUpdated: history },
+      scripting: { executeScript: async () => [{ result: null }] },
+      storage: { session: { get: async () => ({}), set: async () => {}, remove: async () => {} }, local: { get: async () => ({}) } },
+      runtime: { sendMessage: async () => {}, onMessage: events(), getPlatformInfo: async () => {} }, commands: { onCommand: events() } },
+    crypto: require('node:crypto').webcrypto, AbortController, URL, URLSearchParams, setInterval: () => 1, clearInterval: () => { cleared++; }, console,
+  };
+  vm.createContext(sandbox); vm.runInContext(fs.readFileSync(path.join(__dirname, '../extension/background.js'), 'utf8'), sandbox);
+  return { sandbox, updated, history, allowInit: () => { failInit = false; }, cleared: () => cleared, coreRuns: () => coreRuns };
+}
+test("extension initialization failure releases running flag and keepalive; next fill can start", async () => {
+  const f = workerFixture(); const result = await vm.runInContext('fillTab(1, {})', f.sandbox);
+  assert.equal(result.phase, 'error'); assert.equal(f.cleared(), 1);
+  assert.equal(vm.runInContext('running.size', f.sandbox), 0); assert.equal(vm.runInContext('tasks.size', f.sandbox), 0);
+  f.allowInit(); await vm.runInContext('fillTab(1, {})', f.sandbox); assert.equal(f.coreRuns(), 1); assert.equal(f.cleared(), 2);
+});
+test("extension reload at the same URL invalidates its task even if URL returns unchanged", async () => {
+  const f = workerFixture(); f.allowInit();
+  const ready = await vm.runInContext('tasks.set(1, { id: "fixture", controller: new AbortController() }); adapterFor(1, tasks.get(1))', f.sandbox);
+  assert.equal(ready.adapter.stillOnPage('https://fixture.example/apply'), true);
+  f.updated.fire(1, { status: 'loading' });
+  assert.equal(ready.adapter.stillOnPage('https://fixture.example/apply'), false);
+  ready.dispose(); assert.equal(f.updated.size(), 0);
+});
+
+test('cancellation while a custom dropdown opens prevents the option click', async () => {
+  const core = require('../electron/autofill-core.js'); let active = true, optionClicks = 0;
+  const trigger = { dispatchEvent() {}, click() {} };
+  const container = { classList: { contains: () => false }, getAttribute: () => null, matches: () => false,
+    querySelector: (selector) => selector === "input:not([type='hidden'])" ? trigger : null };
+  const sandbox = vm.createContext({ document: { documentElement: { getAttribute: () => active ? 'fixture-task' : null }, querySelector: () => container, querySelectorAll: () => [{ click: () => optionClicks++, getBoundingClientRect: () => ({ width: 100, height: 30 }) }] },
+    MouseEvent: class {}, setTimeout: (fn) => { active = false; fn(); } });
+  const fill = vm.runInContext(`(${core.fillCustomSelects.toString()})`, sandbox);
+  await assert.rejects(fill([{ id: 'field-s0', value: '北京' }], 'fixture-task'), /填写已停止/);
+  assert.equal(optionClicks, 0);
+});

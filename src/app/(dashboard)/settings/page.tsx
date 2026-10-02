@@ -69,7 +69,7 @@ export default async function SettingsPage() {
         <AppearanceForm />
         <AiSettingsForm keys={aiKeys} />
         <ProxySettingsCard initial={appSettings} />
-        <EmailSettingsForm currentUser={user.smtpUser} />
+        <EmailSettingsForm currentUser={user.smtpUser} schedule={{ enabled: user.emailReminderEnabled, time: user.emailReminderTime, timeZone: user.emailReminderTimeZone, lastError: user.emailReminderLastError }} />
         <MailAccountsCard accounts={mailAccounts} />
         <BackgroundReminderCard initial={appSettings} />
         <BackupCard initialFreshness={freshness} />

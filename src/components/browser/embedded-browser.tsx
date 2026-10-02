@@ -113,9 +113,14 @@ const FILL_MODULES: { id: DesktopBridgeAutofillModule; label: string }[] = [
 const ALL_FILL_MODULES = FILL_MODULES.map(({ id }) => id);
 
 function FillDetails({ details }: { details: NonNullable<DesktopBridgeAutofillStatus["details"]> }) {
+  const [onlyManual, setOnlyManual] = useState(false);
   const manual = details.filter((item) => item.source === "manual");
+  const visible = onlyManual ? manual : details;
   return (
     <div className="mt-1 space-y-1">
+      <div className="flex gap-2">
+        <Button size="sm" variant={onlyManual ? "default" : "outline"} onClick={() => setOnlyManual(!onlyManual)}>{onlyManual ? "显示全部字段" : "只看未填 / 失败"}</Button>
+      </div>
       {manual.length > 0 && (
         <p className="text-foreground">
           需要手填：{manual.slice(0, 8).map((item) => item.label).join("、")}
@@ -131,7 +136,7 @@ function FillDetails({ details }: { details: NonNullable<DesktopBridgeAutofillSt
         </summary>
         <div className="mt-1 max-h-48 space-y-2 overflow-auto">
           {FILL_SOURCES.map(({ source, label, dot }) => {
-            const rows = details.filter((item) => (item.source ?? "profile") === source);
+            const rows = visible.filter((item) => (item.source ?? "profile") === source);
             if (!rows.length) return null;
             return (
               <div key={source}>
@@ -331,12 +336,12 @@ export function EmbeddedBrowser({
     const offFind = bridge.onFindResult((r) => setFindResult({ active: r.active, total: r.total }));
     const offForm = bridge.onFormDetected((payload) => {
       const live = liveRef.current;
-      if (live.autofilling) return;
-      if (live.autoFill && live.resumeVersionId && live.fillModules.length > 0) {
+      if (live.autofilling || payload.tabId !== activeIdRef.current) return;
+      if (live.autoFill && live.fillModules.length > 0) {
         setDetected(null);
         setAutofilling(true);
         setStatus({ phase: "scanning", message: `检测到新一页表单（${payload.count} 个字段），自动填充中…` });
-        void bridge.autofill(live.resumeVersionId, { expandBlocks: live.expandBlocks, variantId: live.variantChoice || undefined, modules: live.fillModules });
+        void bridge.autofill(live.resumeVersionId || undefined, { expandBlocks: live.expandBlocks, variantId: live.variantChoice || undefined, modules: live.fillModules });
       } else {
         setDetected(payload);
       }
@@ -820,6 +825,7 @@ export function EmbeddedBrowser({
           <Sparkles className="size-4" />
           {autofilling ? "填充中..." : fillModules.length === ALL_FILL_MODULES.length ? "AI 一键填充" : "填写所选模块"}
         </Button>
+        {autofilling && <Button type="button" size="sm" variant="outline" onClick={() => void bridge.cancelAutofill(tabsState.activeId ?? undefined)}>停止填写</Button>}
         <span className="hidden text-xs text-muted-foreground xl:inline">只补空白，已填内容保留</span>
         <Button type="button" size="sm" variant={toolsOpen ? "secondary" : "ghost"} className="ml-auto" onClick={() => setToolsOpen((value) => !value)}>{toolsOpen ? "收起设置" : "填写设置"}</Button>
       </div>

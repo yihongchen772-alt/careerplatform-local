@@ -496,6 +496,7 @@ function buildTray() {
 
 const CHECK_INTERVAL_MS = 30 * 60 * 1000;
 let reminderTimer = null;
+let emailReminderTimer = null;
 // Ids already surfaced, so a still-overdue item doesn't re-notify every
 // 30 minutes for days on end.
 const notified = new Set();
@@ -707,9 +708,24 @@ function startScanLoop() {
   }, 5 * 60 * 1000);
 }
 
+function startEmailReminderLoop() {
+  if (emailReminderTimer) return;
+  if (process.env.CAREERPLATFORM_TEST_MODE !== "1") {
+    let checkingEmail = false;
+    emailReminderTimer = setInterval(async () => {
+      if (checkingEmail || (!readAppSettings().backgroundReminders && (!mainWindow || mainWindow.isDestroyed()))) return;
+      checkingEmail = true;
+      try { await fetch(`http://localhost:${PORT}/api/check-email-reminders`, { method: "POST", signal: AbortSignal.timeout(180000) }); }
+      catch { /* Retry on the next tick; the database deduplicates delivery. */ }
+      finally { checkingEmail = false; }
+    }, 60000);
+  }
+}
+
 function startReminderLoop() {
   if (reminderTimer) return;
   checkReminders();
+
   reminderTimer = setInterval(() => {
     if (readAppSettings().backgroundReminders) checkReminders();
   }, CHECK_INTERVAL_MS);
@@ -785,6 +801,7 @@ app.whenReady().then(async () => {
     // Never in test mode: an isolated copy of real data still carries the
     // user's real backup folder and WebDAV settings.
     if (process.env.CAREERPLATFORM_TEST_MODE !== "1") startAutoBackupLoop();
+    startEmailReminderLoop();
     // After an app update, bring an already-installed unpacked extension copy
     // up to the new version (Chrome picks it up on its next reload/restart).
     try {
@@ -807,6 +824,7 @@ app.whenReady().then(async () => {
 
 function shutdown() {
   productivity?.shutdown();
+  if (emailReminderTimer) { clearInterval(emailReminderTimer); emailReminderTimer = null; }
   if (reminderTimer) {
     clearInterval(reminderTimer);
     reminderTimer = null;

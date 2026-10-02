@@ -1,5 +1,6 @@
 "use server";
 
+import { dueEmailReminderDay } from "@/lib/email-reminder-schedule";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { buildTodos, type Todo } from "@/lib/todos";
@@ -94,28 +95,32 @@ export async function sendReminderDigestNow(): Promise<ActionResult<{ count: num
   });
 }
 
-/**
- * Called once per app launch (see the API route Electron's main process
- * hits after the server is up). Silent no-op if email isn't configured or
- * there's nothing urgent — this must never surface an error to a plain app
- * boot, so it swallows failures itself rather than using the throw-based
- * ActionResult pattern the user-triggered actions use.
- */
+/** Daily check shared by launch, inbox scans and the desktop minute timer. */
 export async function checkAndSendOnLaunch(userId: string): Promise<void> {
+  const now = new Date();
+  let claimed = false;
   try {
+    const user = await db.user.findUnique({ where: { id: userId } });
+    if (!user?.smtpUser) return;
+    const day = dueEmailReminderDay({ enabled: user.emailReminderEnabled, time: user.emailReminderTime, timeZone: user.emailReminderTimeZone }, now);
+    if (!day || user.emailReminderLastDay === day) return;
     const config = await getUserMailConfig(userId);
     if (!config) return;
-
-    const todos = await collectTodos(userId);
-    const urgent = todos.filter((t) => t.urgency === "overdue" || t.urgency === "urgent");
-    if (urgent.length === 0) return;
-
-    await sendMail(config, {
-      to: config.user,
-      subject: `求职罗盘：${urgent.length} 件事需要关注`,
-      html: renderDigestHtml(urgent),
-    });
+    const claim = await db.user.updateMany({ where: {
+      id: userId, emailReminderEnabled: true,
+      emailReminderTime: user.emailReminderTime, emailReminderTimeZone: user.emailReminderTimeZone,
+      AND: [
+        { OR: [{ emailReminderLastDay: null }, { emailReminderLastDay: { not: day } }] },
+        { OR: [{ emailReminderClaimUntil: null }, { emailReminderClaimUntil: { lte: now } }] },
+      ],
+    }, data: { emailReminderClaimUntil: new Date(now.getTime() + 5 * 60000) } });
+    if (!claim.count) return;
+    claimed = true;
+    const urgent = (await collectTodos(userId)).filter((t) => t.urgency === "overdue" || t.urgency === "urgent");
+    if (urgent.length) await sendMail(config, { to: config.user, subject: `求职罗盘：${urgent.length} 件事需要关注`, html: renderDigestHtml(urgent) });
+    await db.user.update({ where: { id: userId }, data: { emailReminderLastDay: day, emailReminderClaimUntil: null, emailReminderLastError: null, ...(urgent.length ? { emailReminderLastSentAt: new Date() } : {}) } });
   } catch (err) {
-    console.error("[reminder-digest] on-launch check failed", err);
+    console.error("[reminder-digest] scheduled check failed", err);
+    if (claimed) await db.user.update({ where: { id: userId }, data: { emailReminderClaimUntil: null, emailReminderLastError: err instanceof Error ? err.message : "提醒邮件发送失败" } }).catch(() => {});
   }
 }

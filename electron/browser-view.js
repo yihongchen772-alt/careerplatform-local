@@ -1,3 +1,4 @@
+const crypto = require("node:crypto");
 const { ipcMain, WebContentsView, BrowserWindow, Menu, session, shell, app, clipboard, dialog } = require("electron");
 const fs = require("fs");
 const path = require("path");
@@ -144,6 +145,17 @@ let attachedView = null;
 const lastAiFilled = new Map();
 const savingAnswersForTabs = new Set();
 const fillingTabs = new Set();
+const fillTasks = new Map();
+function stopFillTask(tabId, reason = "已停止填写，已填入的内容保留") {
+  const task = fillTasks.get(tabId);
+  if (!task || task.controller.signal.aborted) return;
+  task.reason = reason;
+  task.controller.abort();
+  const tab = tabs.find((t) => t.id === tabId);
+  if (tab && !tab.view.webContents.isDestroyed()) {
+    for (const frame of allFrames(tab.view.webContents)) frame.executeJavaScript('document.documentElement.removeAttribute("data-cp-task")').catch(() => {});
+  }
+}
 const submittedSignatures = new Map();
 
 function assertTrustedBrowserEvent(event, window, expectedOrigin) {
@@ -256,12 +268,20 @@ function createTab(url, { activate = true } = {}) {
     },
   });
   view.setBackgroundColor("#ffffff");
-  const tab = { id: nextTabId++, view };
+  const tab = { id: nextTabId++, view, revision: 0 };
   tabs.push(tab);
   const wc = view.webContents;
 
+  wc.on("did-start-navigation", () => {
+    tab.revision++;
+    stopFillTask(tab.id, "页面已变化，已停止填写；请在当前页面重新填写");
+  });
   wc.on("did-navigate", () => { lastAiFilled.delete(tab.id); sendTabsState(); });
-  wc.on("did-navigate-in-page", () => sendTabsState());
+  wc.on("did-navigate-in-page", () => {
+    tab.revision++;
+    stopFillTask(tab.id, "页面已变化，已停止填写；请在当前页面重新填写");
+    sendTabsState();
+  });
   wc.on("page-title-updated", () => {
     recordHistory(wc.getURL(), wc.getTitle());
     sendTabsState();
@@ -346,6 +366,7 @@ function createTab(url, { activate = true } = {}) {
 
   wc.loadURL(normalizeUrl(url || "about:blank"));
   if (activate) {
+    if (activeId !== tab.id) stopFillTask(activeId, "标签页已切换，填写已停止");
     activeId = tab.id;
     attach(tab);
   }
@@ -356,6 +377,7 @@ function createTab(url, { activate = true } = {}) {
 function closeTab(id) {
   const index = tabs.findIndex((t) => t.id === id);
   if (index === -1) return;
+  stopFillTask(id, "标签页已关闭，填写已停止");
   const [tab] = tabs.splice(index, 1);
   if (attachedView === tab.view) detach();
   lastAiFilled.delete(id);
@@ -377,6 +399,7 @@ function closeTab(id) {
 function switchTab(id) {
   const tab = tabs.find((t) => t.id === id);
   if (!tab) return;
+  if (activeId !== id) stopFillTask(activeId, "标签页已切换，填写已停止");
   activeId = id;
   attach(tab);
   sendTabsState();
@@ -783,19 +806,23 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
 
   // The autofill flow itself lives in autofill-core.js (shared with the
   // Chrome extension); this adapter is everything Electron-specific about it.
-  function electronAdapter(tab) {
+  function electronAdapter(tab, task) {
     const wc = tab.view.webContents;
+    const revision = tab.revision;
+    const isActive = (url) => !wc.isDestroyed() && wc.getURL() === url && activeId === tab.id && revision === tab.revision && !task?.controller.signal.aborted;
     return {
       url: () => wc.getURL(),
-      stillOnPage: (initialUrl) => !wc.isDestroyed() && wc.getURL() === initialUrl && activeId === tab.id,
+      stillOnPage: isActive,
+      taskId: task?.id,
+      stopReason: () => task?.reason,
       frames: async () => allFrames(wc),
       run: (frame, fn, args = []) => frame.executeJavaScript(`(${fn.toString()})(${args.map((arg) => JSON.stringify(arg)).join(",")})`),
-      api: (name, init) => fetch(`http://localhost:${port}/api/desktop-browser/${name}`, init),
+      api: (name, init) => fetch(`http://localhost:${port}/api/desktop-browser/${name}`, { ...init, signal: task?.controller.signal }),
       status: (payload) => send("browser:autofill-status", { ...payload, tabId: tab.id }),
       uploadResume: async (resumeVersionId) => {
         const initialUrl = wc.getURL();
-        const stillOnPage = () => !wc.isDestroyed() && wc.getURL() === initialUrl && activeId === tab.id;
-        const fileRes = await fetch(`http://localhost:${port}/api/desktop-browser/resume-file?resumeVersionId=${encodeURIComponent(resumeVersionId)}`);
+        const stillOnPage = () => isActive(initialUrl);
+        const fileRes = await fetch(`http://localhost:${port}/api/desktop-browser/resume-file?resumeVersionId=${encodeURIComponent(resumeVersionId)}`, { signal: task?.controller.signal });
         if (!fileRes.ok) throw new Error((await fileRes.json().catch(() => ({}))).error || "简历附件上传失败");
         const file = await fileRes.json();
         if (!stillOnPage()) throw new Error("页面已切换，已停止上传简历");
@@ -822,9 +849,15 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     if (!tab) return;
     if (fillingTabs.has(tab.id)) return;
     fillingTabs.add(tab.id);
-    try { await runAutofillCore(electronAdapter(tab), resumeVersionId, options || {}); }
-    finally { fillingTabs.delete(tab.id); }
+    const task = { id: crypto.randomUUID(), controller: new AbortController(), reason: null };
+    fillTasks.set(tab.id, task);
+    try {
+      for (const frame of allFrames(tab.view.webContents)) await frame.executeJavaScript(`document.documentElement.setAttribute("data-cp-task", ${JSON.stringify(task.id)})`).catch(() => {});
+      await runAutofillCore(electronAdapter(tab, task), resumeVersionId, options || {});
+    } finally { fillingTabs.delete(tab.id); fillTasks.delete(tab.id); }
   });
+
+  handle("browser:cancel-autofill", (_e, tabId) => stopFillTask(tabId ?? activeId));
 
   // Remember manually entered facts and essays; never save untouched drafts.
   handle("browser:save-corrections", async (_e, resumeVersionId, onlyUserEdited = false) => {

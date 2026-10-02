@@ -53,6 +53,7 @@ export type DesktopBridge = {
   stop(): Promise<void>;
   setBounds(rect: DesktopBridgeRect | null): Promise<void>;
   autofill(resumeVersionId?: string, options?: DesktopBridgeAutofillOptions): Promise<void>;
+  cancelAutofill(tabId?: number): Promise<void>;
   saveCorrections(resumeVersionId?: string, onlyUserEdited?: boolean): Promise<{ saved: number }>;
   clearMarks(): Promise<void>;
   capturePage(): Promise<DesktopBridgeCapturedPage>;

@@ -236,6 +236,13 @@ function scanPageFields(prefix) {
     results.push(entry);
   });
 
+  for (const field of results) {
+    const el = document.querySelector('[data-cp-fill-id="' + field.id + '"]');
+    if (el) {
+      if (!el.hasAttribute("data-cp-result-key")) el.setAttribute("data-cp-result-key", (typeof crypto.randomUUID === "function" ? crypto.randomUUID() : prefix + Date.now().toString(36) + Math.random().toString(36).slice(2)));
+      field.resultKey = el.getAttribute("data-cp-result-key");
+    }
+  }
   return results;
 }
 
@@ -533,7 +540,10 @@ async function fillFields(pairs) {
 // Opens each custom dropdown, reads whatever options it renders, clicks the
 // best match for the wanted value, and closes it again if nothing fits.
 // Async because these libraries render the option list on the next tick.
-async function fillCustomSelects(pairs) {
+async function fillCustomSelects(pairs, taskId) {
+  const assertActive = () => {
+    if (taskId && document.documentElement.getAttribute("data-cp-task") !== taskId) throw new Error("填写已停止");
+  };
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const filled = [];
   const failed = [];
@@ -580,6 +590,7 @@ async function fillCustomSelects(pairs) {
     el.style.setProperty("outline-offset", "1px", "important");
   }
   for (const p of pairs) {
+    assertActive();
     const container = document.querySelector('[data-cp-fill-id="' + p.id + '"]');
     if (!container || !p.value) continue;
     if (container.classList.contains("ant-select-disabled") || container.classList.contains("is-disabled") || container.getAttribute("aria-disabled") === "true" || container.disabled) {
@@ -593,6 +604,7 @@ async function fillCustomSelects(pairs) {
     trigger.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
     trigger.click();
     await sleep(350);
+    assertActive();
     if (hasExistingValue(container)) { skipped.push(p.id); continue; }
     let options = visibleOptions();
     let target = pick(options, p);
@@ -604,6 +616,7 @@ async function fillCustomSelects(pairs) {
       setter.call(searchInput, String(p.value));
       searchInput.dispatchEvent(new Event("input", { bubbles: true }));
       await sleep(450);
+      assertActive();
       if (hasExistingValue(container)) { skipped.push(p.id); continue; }
       options = visibleOptions();
       target = pick(options, p);
@@ -619,6 +632,7 @@ async function fillCustomSelects(pairs) {
       target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
       target.click();
       await sleep(150);
+      assertActive();
       const shown = container.querySelector(".ant-select-selection-item, .el-select__selected-item:not(.el-select__placeholder), .el-select__tags");
       const input = container.matches("input") ? container : container.querySelector("input[readonly]");
       const visibleValue = (shown?.textContent || input?.value || "").trim();
@@ -633,6 +647,7 @@ async function fillCustomSelects(pairs) {
       document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
       document.body.click();
       await sleep(100);
+      assertActive();
     }
   }
   return { filled, failed, skipped };
@@ -1395,7 +1410,7 @@ async function fillFrames(adapter, pairs, frameById, initialUrl) {
       if (!batch.length) continue;
       if (!adapter.stillOnPage(initialUrl)) throw new Error("页面或标签已切换，已停止写入");
       try {
-        const result = await adapter.run(frame, writer, [batch]);
+        const result = await adapter.run(frame, writer, writer === fillCustomSelects ? [batch, adapter.taskId] : [batch]);
         filled.push(...result.filled);
         failed.push(...result.failed);
         skipped.push(...(result.skipped || []));
@@ -1411,9 +1426,13 @@ async function fillFrames(adapter, pairs, frameById, initialUrl) {
 // carried between 自动补齐栏目 rounds.
 async function runAutofillCore(adapter, resumeVersionId, options = {}) {
   const initialUrl = adapter.url();
+  const assertActive = () => {
+    if (!adapter.stillOnPage(initialUrl)) throw new Error(adapter.stopReason?.() || "页面或标签已切换，已停止写入；请在当前页面重新填充");
+  };
   try {
     const modules = new Set(Array.isArray(options.modules) ? options.modules.filter((id) => AUTOFILL_MODULES.includes(id)) : AUTOFILL_MODULES);
     if (!modules.size) throw new Error("请先在「填写范围」里至少勾选一个模块");
+    assertActive();
     adapter.status({ phase: "scanning", message: "正在读取页面…" });
 
     const profileQuery = new URLSearchParams({ contextKey: portalContext(initialUrl) });
@@ -1423,7 +1442,9 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     if (!profileRes.ok) throw new Error("拿不到你的资料，先去求职罗盘的账号设置填一下");
     const profile = await profileRes.json();
 
+    assertActive();
     const { fields, frameById } = await scanFrames(adapter);
+    assertActive();
     // A page may only contain an upload control. Keep going when a resume
     // is selected so the attachment pass below still gets a chance to run.
     if (fields.length === 0 && !resumeVersionId) throw new Error("这个页面上没找到可以填的表单——如果表单在弹窗里，先把它打开");
@@ -1485,6 +1506,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     if (!adapter.stillOnPage(initialUrl)) throw new Error("页面或标签已切换，已停止写入；请在当前页面重新填充");
     adapter.status({ phase: "scanning", message: `正在填写 ${basicCount} 个资料字段…` });
     const basicResult = await fillFrames(adapter, pairs, frameById, initialUrl);
+    assertActive();
     const basicPairCount = pairs.length;
 
     let aiError = null;
@@ -1546,6 +1568,21 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       : skippedSet.has(field.id)
       ? { label: field.label || field.placeholder || field.name || "未命名字段", state: "填写期间已有修改，已保留", source: "prefilled" }
       : fillDetail(field, pairs.find((p) => p.id === field.id), filledSet, failedSet));
+    const previous = options.accumulated || { filled: 0, uploaded: 0, details: [] };
+    const earlier = new Map(previous.details.map((d) => [d.key, d]));
+    const merged = new Map(earlier);
+    let priorFillsOnPage = 0;
+    details.forEach((detail, index) => {
+      const field = fields[index];
+      const key = field.resultKey || field.id;
+      const prior = earlier.get(key);
+      const wasFilled = prior && ["profile", "memory", "ai"].includes(prior.source);
+      if (detail.source === "prefilled" && wasFilled) {
+        priorFillsOnPage++;
+        merged.set(key, prior);
+      } else merged.set(key, { ...detail, key });
+    });
+    const allDetails = [...merged.values()];
     let uploadedResumeCount = 0;
     let uploadError = null;
     if (resumeVersionId && modules.has("resume")) {
@@ -1591,6 +1628,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       let modal = false;
       for (const { group, label } of missing) {
         for (const frame of await adapter.frames()) {
+          assertActive();
           const result = await adapter.run(frame, clickAddBlock, [group]).catch(() => null);
           if (result && result.clicked) {
             clicked.push(label);
@@ -1602,7 +1640,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       }
       if (clicked.length) {
         adapter.status({ phase: "scanning", message: `已点页面上的「添加」补出 ${clicked.join("、")}，继续填写…` });
-        return runAutofillCore(adapter, resumeVersionId, { ...options, round: round + 1, modal, added: [...added, ...clicked] });
+        return runAutofillCore(adapter, resumeVersionId, { ...options, round: round + 1, modal, added: [...added, ...clicked], accumulated: { filled: previous.filled + filled.length, uploaded: previous.uploaded + uploadedResumeCount, details: allDetails } });
       }
     }
     if (added.length) {
@@ -1618,12 +1656,14 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     }
     parts.push("手写或修改的基础资料和开放题会自动记住；可在账号设置查看和修改；提交前请核对所有填入内容");
 
-    const result = { phase: "done", message: parts.join("；"), details,
-      summary: { filled: filled.length, manual: details.filter((d) => d.source === "manual").length, preserved: alreadyFilled + skipped.length, excluded: excluded.size, uploaded: uploadedResumeCount } };
+    assertActive();
+    const summary = { filled: previous.filled + filled.length, manual: allDetails.filter((d) => d.source === "manual").length, preserved: Math.max(0, alreadyFilled - priorFillsOnPage) + skipped.length, excluded: allDetails.filter((d) => d.source === "excluded").length, uploaded: previous.uploaded + uploadedResumeCount };
+    if (round) parts.unshift(`本次累计填入 ${summary.filled} 个字段、上传 ${summary.uploaded} 个附件；以下为最后一轮说明`);
+    const result = { phase: "done", message: parts.join("；"), details: allDetails, summary };
     adapter.status(result);
     return result;
   } catch (err) {
-    const result = { phase: "error", message: err && err.message ? err.message : "自动填充失败" };
+    const result = { phase: "error", message: adapter.stopReason?.() || (err && err.message ? err.message : "自动填充失败") };
     adapter.status(result);
     return result;
   }

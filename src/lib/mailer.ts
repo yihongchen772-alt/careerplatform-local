@@ -45,6 +45,9 @@ export async function sendMail(
     // upgrades via STARTTLS — getting this backwards is the #1 reason SMTP
     // "just hangs" instead of giving a clear error.
     secure: config.port === 465,
+    connectionTimeout: 30000,
+    greetingTimeout: 30000,
+    socketTimeout: 120000,
     auth: { user: config.user, pass: config.password },
   });
 

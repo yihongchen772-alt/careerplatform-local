@@ -15,6 +15,7 @@ function updateScope() {
   $("scope-summary").textContent = `填写范围：${selected.length === total ? "全部模块" : single || `${selected.length} 个模块`}`;
   $("fill").textContent = selected.length === total ? "一键填写这一页" : "填写所选模块";
   $("fill").disabled = filling || !selected.length;
+  $("cancel").hidden = !filling;
 }
 
 function saveScope() {
@@ -44,6 +45,19 @@ function message(text, kind = "") {
   el.textContent = text || "";
   el.className = `message ${kind}`;
 }
+
+let resultDetails = [];
+function renderDetails(details = resultDetails) {
+  resultDetails = details;
+  $("result-details").hidden = !details.length;
+  $("result-list").textContent = "";
+  const visible = $("only-manual").checked ? details.filter((d) => d.source === "manual") : details;
+  for (const detail of visible) {
+    const li = document.createElement("li"); li.textContent = `${detail.label} · ${detail.state}`; $("result-list").appendChild(li);
+  }
+  if (!visible.length && details.length) { const li = document.createElement("li"); li.textContent = "没有需要手填或写入失败的字段"; $("result-list").appendChild(li); }
+}
+$("only-manual").addEventListener("change", () => renderDetails());
 
 function setConn(text, kind) {
   const el = $("conn");
@@ -144,7 +158,12 @@ async function load() {
   variant.value = prefs.variantId || "";
   $("expand").checked = !!prefs.expandBlocks;
   const last = await send("lastStatus").catch(() => null);
-  if (last && Date.now() - last.at < 10 * 60 * 1000) message(last.message, last.phase === "error" ? "error" : "");
+  if (last && Date.now() - last.at < 10 * 60 * 1000) {
+    renderDetails(last.details || []);
+    message(last.message, last.phase === "error" ? "error" : "");
+    filling = last.phase !== "done" && last.phase !== "error";
+    updateScope();
+  }
   renderSite();
 }
 
@@ -186,7 +205,7 @@ $("fill").addEventListener("click", async () => {
   // top frame if the applicant declines.
   await chrome.permissions.request({ origins: ["https://*/*", "http://*/*"] }).catch(() => false);
   filling = true;
-  $("fill").disabled = true;
+  updateScope();
   message("正在读取页面…");
   try {
     await send("fill", { resumeVersionId: $("resume").value || undefined, variantId: $("variant").value || undefined, expandBlocks: $("expand").checked, modules });
@@ -196,6 +215,8 @@ $("fill").addEventListener("click", async () => {
     updateScope();
   }
 });
+
+$("cancel").addEventListener("click", () => send("cancel").catch((err) => message(err.message, "error")));
 
 $("save").addEventListener("click", async () => {
   try {
@@ -242,8 +263,10 @@ $("record").addEventListener("submit", async (event) => {
 
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type !== "status" || !tab || msg.tabId !== tab.id) return;
+  renderDetails(msg.status.details || []);
   message(msg.status.message, msg.status.phase === "error" ? "error" : "");
-  if (msg.status.phase === "done" || msg.status.phase === "error") { filling = false; updateScope(); }
+  filling = msg.status.phase !== "done" && msg.status.phase !== "error";
+  updateScope();
 });
 
 load();

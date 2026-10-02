@@ -7,6 +7,7 @@ const core = self.JobCompassCore;
 
 const DEFAULT_BASE = "http://localhost:3210";
 const drafts = new Map(); // tabId -> AI drafts filled there (for 记住本页)
+const tasks = new Map();
 const running = new Set(); // tabIds with an autofill in progress
 
 async function settings() {
@@ -89,22 +90,26 @@ function storeDrafts(tabId, list) {
   chrome.storage.session.set({ [`drafts:${tabId}`]: list }).catch(() => {});
 }
 
-async function adapterFor(tabId) {
+async function adapterFor(tabId, task) {
   await loadDrafts(tabId);
   const tab = await chrome.tabs.get(tabId);
   let liveUrl = tab.url;
   const onUpdated = (id, info) => {
-    if (id === tabId && info.url) liveUrl = info.url;
+    if (id !== tabId) return;
+    if (info.url) liveUrl = info.url;
+    if (task && (info.url || info.status === "loading")) cancelFill(tabId, "页面已变化，填写已停止");
   };
   chrome.tabs.onUpdated.addListener(onUpdated);
   return {
     dispose: () => chrome.tabs.onUpdated.removeListener(onUpdated),
     adapter: {
       url: () => liveUrl,
-      stillOnPage: (initialUrl) => liveUrl === initialUrl,
+      stillOnPage: (initialUrl) => liveUrl === initialUrl && !task?.controller.signal.aborted,
+      taskId: task?.id,
+      stopReason: () => task?.reason,
       frames: () => tabFrames(tabId),
       run: (frameId, fn, args) => runInFrame(tabId, frameId, fn, args),
-      api: (name, init) => api(name, init),
+      api: (name, init) => api(name, { ...init, signal: task?.controller.signal }),
       status: (payload) => broadcast(tabId, payload),
       uploadResume: async (resumeVersionId) => {
         const initialUrl = liveUrl;
@@ -112,13 +117,13 @@ async function adapterFor(tabId) {
         const frames = await tabFrames(tabId);
         for (const frameId of frames) candidates += (await runInFrame(tabId, frameId, core.markResumeFileInputs).catch(() => 0)) || 0;
         if (!candidates) return 0;
-        const res = await api(`resume-file?resumeVersionId=${encodeURIComponent(resumeVersionId)}`);
+        const res = await api(`resume-file?resumeVersionId=${encodeURIComponent(resumeVersionId)}`, { signal: task?.controller.signal });
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "简历附件上传失败");
         const filename = decodeURIComponent(res.headers.get("x-file-name") || "resume.pdf");
         const base64 = bytesToBase64(await res.arrayBuffer());
         let attached = 0;
         for (const frameId of frames) {
-          if (liveUrl !== initialUrl) throw new Error("页面已切换，已停止上传简历");
+          if (liveUrl !== initialUrl || task?.controller.signal.aborted) throw new Error("页面已切换，已停止上传简历");
           attached += (await runInFrame(tabId, frameId, core.attachResumeFile, [base64, filename, res.headers.get("content-type")]).catch(() => 0)) || 0;
         }
         return attached;
@@ -133,8 +138,18 @@ async function fillTab(tabId, options) {
   if (running.has(tabId)) return { phase: "error", message: "这页正在填写中" };
   running.add(tabId);
   const stop = keepAlive();
-  const { adapter, dispose } = await adapterFor(tabId);
+  const task = { id: crypto.randomUUID(), controller: new AbortController(), reason: null };
+  tasks.set(tabId, task);
+  let dispose = () => {};
+  const onNavigation = (id, info) => {
+    if (id === tabId && (info.url || info.status === "loading")) cancelFill(tabId, "页面已变化，填写已停止");
+  };
+  chrome.tabs.onUpdated.addListener(onNavigation);
   try {
+    const ready = await adapterFor(tabId, task);
+    dispose = ready.dispose;
+    const adapter = ready.adapter;
+    for (const frameId of await tabFrames(tabId)) await runInFrame(tabId, frameId, (id) => document.documentElement.setAttribute("data-cp-task", id), [task.id]).catch(() => {});
     const prefs = await settings();
     const resumeVersionId = options.resumeVersionId ?? prefs.resumeVersionId ?? undefined;
     return await core.runAutofillCore(adapter, resumeVersionId || undefined, {
@@ -143,14 +158,24 @@ async function fillTab(tabId, options) {
       modules: options.modules ?? prefs.fillModules,
     });
   } catch (err) {
-    const status = { phase: "error", message: err.message || "填写失败" };
+    const status = { phase: "error", message: task.reason || err.message || "填写失败" };
     broadcast(tabId, status);
     return status;
   } finally {
     dispose();
+    chrome.tabs.onUpdated.removeListener(onNavigation);
     stop();
     running.delete(tabId);
+    tasks.delete(tabId);
   }
+}
+
+function cancelFill(tabId, reason = "已停止填写，已填入的内容保留") {
+  const task = tasks.get(tabId);
+  if (!task || task.controller.signal.aborted) return;
+  task.reason = reason;
+  task.controller.abort();
+  tabFrames(tabId).then((frames) => Promise.all(frames.map((frameId) => runInFrame(tabId, frameId, () => document.documentElement.removeAttribute("data-cp-task")).catch(() => {})))).catch(() => {});
 }
 
 async function saveTab(tabId) {
@@ -189,6 +214,7 @@ const handlers = {
     fillTab(tabId, options);
     return { started: true };
   },
+  async cancel({ tabId }) { cancelFill(tabId); return { stopped: true }; },
   async save({ tabId }) {
     return saveTab(tabId);
   },
@@ -225,7 +251,10 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
   fillTab(tab.id, {});
 });
 
+chrome.webNavigation.onHistoryStateUpdated.addListener(({ tabId }) => cancelFill(tabId, "页面已变化，填写已停止"));
+
 chrome.tabs.onRemoved.addListener((tabId) => {
+  cancelFill(tabId, "标签页已关闭，填写已停止");
   drafts.delete(tabId);
   chrome.storage.session.remove([`status:${tabId}`, `drafts:${tabId}`]).catch(() => {});
 });

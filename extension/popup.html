@@ -46,6 +46,7 @@
     </details>
     <label class="check"><input type="checkbox" id="expand"> 自动补齐所选栏目（资料段数多于页面时点「添加」）</label>
     <button id="fill" class="primary">一键填写这一页</button>
+    <button id="cancel" hidden>停止填写</button>
     <div class="row">
       <button id="save" title="把这页你手填或改过的内容存进记忆库">记住本页</button>
       <button id="capture" title="用 AI 解析这页岗位信息，加进候选岗位池">收藏岗位</button>
@@ -57,6 +58,7 @@
       <button class="primary" type="submit">保存到投递记录</button>
     </form>
     <p id="message" class="message" hidden></p>
+    <details id="result-details" hidden><summary>逐字段填写结果</summary><label class="check"><input id="only-manual" type="checkbox" checked>只看未填 / 失败</label><ul id="result-list"></ul></details>
     <p class="hint">快捷键 Alt+Shift+Y 也能填写当前页。提交前请核对所有内容，插件不会替你点提交。</p>
   </section>
   <script src="popup.js"></script>

@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { encryptSecret } from "@/lib/crypto";
 import { getUserMailConfig, sendMail } from "@/lib/mailer";
+import { validReminderTimeZone, type EmailReminderSchedule } from "@/lib/email-reminder-schedule";
 import { emailSettingsSchema } from "@/lib/validation";
 import { toActionResult, type ActionResult } from "@/lib/action-result";
 
@@ -54,6 +55,17 @@ export async function sendTestEmail(): Promise<ActionResult<null>> {
       subject: "求职罗盘 · 测试邮件",
       html: "<p>这是一封测试邮件——收到就说明邮箱配置对了。</p>",
     });
+    return null;
+  });
+}
+
+export async function updateEmailReminderSchedule(input: EmailReminderSchedule): Promise<ActionResult<null>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const data = z.object({ enabled: z.boolean(), time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), timeZone: z.string().min(1).max(100) }).parse(input);
+    if (!validReminderTimeZone(data.timeZone)) throw new Error("请选择有效的时区");
+    await db.user.update({ where: { id: user.id }, data: { emailReminderEnabled: data.enabled, emailReminderTime: data.time, emailReminderTimeZone: data.timeZone } });
+    revalidatePath("/settings");
     return null;
   });
 }
