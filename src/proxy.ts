@@ -7,3 +7,7 @@ export function proxy(request: NextRequest) {
   }
   return NextResponse.next();
 }
+
+// This route performs the identical loopback/origin check itself and streams
+// its bounded upload. Proxy's default 10MB body clone would truncate backups.
+export const config = { matcher: ["/((?!api/data-transfer$).*)"] };

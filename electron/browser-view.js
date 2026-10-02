@@ -501,7 +501,7 @@ async function checkForms() {
   const sigs = [];
   for (const frame of allFrames(wc)) {
     try {
-      const r = await frame.executeJavaScript(`(${countFillableFields.toString()})()`);
+      const r = await frame.executeJavaScript(`(${countFillableFields.toString()})(${scanPageFields.toString()})`);
       count += r.count;
       sigs.push(r.signature);
     } catch {
@@ -833,7 +833,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       // Whatever this page looked like, it's handled — don't re-prompt for it.
       onFilled: async () => {
         for (const frame of allFrames(wc)) {
-          const r = await frame.executeJavaScript(`(${countFillableFields.toString()})()`).catch(() => null);
+          const r = await frame.executeJavaScript(`(${countFillableFields.toString()})(${scanPageFields.toString()})`).catch(() => null);
           if (r) markFormSettled(tab.id, r.signature);
         }
         formWatch.lastSignature.delete(tab.id);

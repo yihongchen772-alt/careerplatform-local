@@ -22,7 +22,12 @@ export type MemoryAnswer = {
 
 function scopeName(contextKey: string | null) {
   if (!contextKey) return "跨企业复用";
-  try { return new URL(contextKey).hostname; } catch { return "当前企业"; }
+  const current = /^(?:page|tenant):v2:/.test(contextKey);
+  try {
+    const url = new URL(contextKey.replace(/^(?:page|tenant):v2:/, ""));
+    if (!current) return `${url.hostname}（旧记录，请在对应网页重新保存）`;
+    return `${url.hostname}${url.pathname === "/" ? "" : url.pathname}${url.search}${url.hash}`;
+  } catch { return "当前网页"; }
 }
 
 export function AutofillMemoryCard({ initial }: { initial: MemoryAnswer[] }) {
@@ -94,7 +99,7 @@ export function AutofillMemoryCard({ initial }: { initial: MemoryAnswer[] }) {
                   <button key={row.id} type="button" onClick={() => select(row)} className={cn("w-full rounded-xl border p-3 text-left transition-colors", selectedId === row.id ? "border-primary/40 bg-primary/5" : "border-border/60 bg-background/35 hover:bg-muted/50")}>
                     <span className="block truncate text-sm font-medium">{row.questionLabel}<span className="ml-2 text-[11px] font-normal text-muted-foreground">{row.kind === "field" ? "基础资料" : "开放题"}</span></span>
                     <span className="mt-1 block truncate text-xs text-muted-foreground">{row.answer}</span>
-                    <span className="mt-2 block text-[11px] text-muted-foreground">{scopeName(row.contextKey)} · {new Date(row.updatedAt).toLocaleDateString("zh-CN")}</span>
+                    <span className="mt-2 block truncate text-[11px] text-muted-foreground" title={scopeName(row.contextKey)}>{scopeName(row.contextKey)} · {new Date(row.updatedAt).toLocaleDateString("zh-CN")}</span>
                   </button>
                 ))}
                 {filtered.length === 0 && <p className="py-6 text-center text-xs text-muted-foreground">没有匹配的记忆</p>}
@@ -113,7 +118,7 @@ export function AutofillMemoryCard({ initial }: { initial: MemoryAnswer[] }) {
                 </div>
                 <label className="flex items-start gap-2 text-sm">
                   <input type="checkbox" className="mt-1" checked={draft.shareAcrossCompanies} disabled={!selected.contextKey} onChange={(event) => setDraft((current) => ({ ...current, shareAcrossCompanies: event.target.checked }))} />
-                  <span><span className="font-medium">跨企业复用</span><span className="mt-0.5 block text-xs leading-5 text-muted-foreground">{selected.contextKey ? "开启后，其他企业的同类字段或相似问题也可能使用它。请先检查有无公司专属内容。" : "这条已是通用记忆；若不想继续复用，可以删除它。"}</span></span>
+                  <span><span className="font-medium">跨企业复用</span><span className="mt-0.5 block text-xs leading-5 text-muted-foreground">{selected.contextKey ? "开启后，其他企业的同类字段或相同问法也可能使用它。请先检查有无公司专属内容。" : "这条已是通用记忆；若不想继续复用，可以删除它。"}</span></span>
                 </label>
                 <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-4">
                   <ConfirmDeleteButton trigger={<Button type="button" size="sm" variant="ghost" className="text-destructive"><Trash2 className="size-4" />删除记忆</Button>} title="删除这条网申记忆？" description="删除后，下次遇到同类字段或问题不会再复用它。" onConfirm={remove} />

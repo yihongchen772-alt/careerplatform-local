@@ -73,7 +73,7 @@ export default async function ApplicationsPage() {
 
       {portals.length > 0 && <section className="rounded-[1.35rem] border border-border/65 bg-card/65 p-4 text-xs shadow-sm sm:p-5" aria-label="官网进度同步状态">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div><h2 className="text-sm font-semibold">官网进度同步</h2><p className="mt-1 text-muted-foreground">{autoSyncEnabled ? `自动检查：每 ${settings.applicationSyncIntervalHours} 小时（设置变更重启 App 后生效）` : "自动检查未开启，可点上方按钮手动同步"}</p></div>
+          <div><h2 className="text-sm font-semibold">官网进度同步</h2><p className="mt-1 text-muted-foreground">{autoSyncEnabled ? `自动检查：每 ${settings.applicationSyncIntervalHours} 小时（设置变更 1 秒内生效）` : "自动检查未开启，可点上方按钮手动同步"}</p></div>
           <Link href="/settings" className="font-medium text-primary hover:underline">同步设置</Link>
         </div>
         {unassigned.length > 0 && <p className="mt-3 rounded-xl border border-amber-500/25 bg-amber-500/5 p-2.5 text-amber-700 dark:text-amber-300">{unassigned.length} 条投递尚未指定进度页，不会自动同步：{unassigned.slice(0, 3).map((app, index) => <span key={app.id}>{index > 0 ? "、" : ""}<Link href={`/applications/${app.id}`} className="underline underline-offset-2">{app.company.name} · {app.title}</Link></span>)}{unassigned.length > 3 ? "等" : ""}</p>}

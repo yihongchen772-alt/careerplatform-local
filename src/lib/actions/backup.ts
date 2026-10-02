@@ -3,13 +3,17 @@
 import os from "os";
 import path from "path";
 import { statSync } from "fs";
-import { mkdir, writeFile } from "fs/promises";
+import { randomUUID } from "crypto";
+import { mkdir, writeFile, mkdtemp, open, readFile, rm } from "fs/promises";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireUser, LOCAL_USER_ID } from "@/lib/session";
-import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
-import { saveLocalFile, mimeTypeForExtension, ALLOWED_LIBRARY_MIME } from "@/lib/local-storage";
-import { BACKUP_VERSION, TABLES, buildBackupPayload, uploadsDir, type Delegate, type TableName } from "@/lib/backup-core";
+import { toActionResult, type ActionResult } from "@/lib/action-result";
+import { mimeTypeForExtension } from "@/lib/local-storage";
+import { parseBackup } from "@/lib/backup-validation";
+import { fetchBackupFile } from "@/lib/fetch-backup-file";
+import { FILE_FIELDS, MAX_BACKUP_BYTES, referencedBackupFiles, storedBackupFilename } from "@/lib/backup-files";
+import { TABLES, buildBackupPayload, uploadsDir, type Delegate, type TableName } from "@/lib/backup-core";
 
 /** Where a backup lands. Downloads exists on both macOS and Windows; fall back to userData. */
 async function backupTargetDir(): Promise<string> {
@@ -117,6 +121,7 @@ function remapToLocalUser(
   if (table === "eventReminder") { copy.claimToken = null; copy.claimUntil = null; }
   if (table === "user") {
     copy.id = LOCAL_USER_ID;
+    copy.emailReminderClaimUntil = null;
   } else if ("userId" in copy) {
     copy.userId = LOCAL_USER_ID;
   }
@@ -212,29 +217,6 @@ const COUNT_LABELS: Partial<Record<TableName, string>> = {
   examSession: "模拟考试",
 };
 
-function parseBackup(json: string): { data: Record<string, unknown[]>; files: Record<string, string>; exportedAt: string } {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(json);
-  } catch {
-    throw new UserFacingError("这个文件不是有效的备份文件（JSON 解析失败）");
-  }
-  const obj = parsed as Record<string, unknown>;
-  if (typeof obj?.backupVersion !== "number") {
-    throw new UserFacingError("这个文件不像是本 App 导出的备份");
-  }
-  if (obj.backupVersion !== BACKUP_VERSION) {
-    throw new UserFacingError(
-      `备份文件版本是 ${obj.backupVersion}，当前 App 只认识版本 ${BACKUP_VERSION}，没法安全恢复`
-    );
-  }
-  return {
-    data: (obj.data ?? {}) as Record<string, unknown[]>,
-    files: (obj.files ?? {}) as Record<string, string>,
-    exportedAt: String(obj.exportedAt ?? ""),
-  };
-}
-
 /** Read-only: parses and summarises a backup so the user can see what they're about to overwrite. */
 export async function previewBackup(json: string): Promise<ActionResult<ImportPreview>> {
   return toActionResult(async () => {
@@ -245,41 +227,6 @@ export async function previewBackup(json: string): Promise<ActionResult<ImportPr
       .filter((c) => c.n > 0);
     return { exportedAt, counts, files: Object.keys(files).length };
   });
-}
-
-/**
- * A backup coming from the web version's export carries `fileUrl`/`url`
- * pointing at its cloud blob storage, not a local file — this app only ever
- * reads resumes/attachments off disk (src/lib/local-storage.ts, used by
- * AI features like 简历体检/岗位匹配). Left as-is, "查看文件" still works fine
- * (it's a plain absolute-URL link), but anything that reads the file's
- * *content* would fail with "简历文件已丢失". Best-effort fetch it once at
- * import time and rewrite the field to the freshly-saved local copy; a
- * failure (offline, expired link, unrecognized file type) just leaves the
- * original URL in place rather than failing the whole restore — the row is
- * still useful (and still openable) without a local copy of its file.
- */
-const REMOTE_FILE_FIELDS: Partial<Record<TableName, string>> = {
-  resumeVersion: "fileUrl",
-  attachment: "url",
-};
-
-async function migrateRemoteFile(url: string): Promise<string | null> {
-  if (!/^https?:\/\//i.test(url)) return null;
-  try {
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    let mimeType = res.headers.get("content-type")?.split(";")[0]?.trim() ?? "";
-    if (!ALLOWED_LIBRARY_MIME.includes(mimeType)) {
-      mimeType = mimeTypeForExtension(path.extname(new URL(url).pathname)) ?? "";
-    }
-    if (!ALLOWED_LIBRARY_MIME.includes(mimeType)) return null;
-    const buf = Buffer.from(await res.arrayBuffer());
-    const { url: localUrl } = await saveLocalFile(buf, mimeType);
-    return localUrl;
-  } catch {
-    return null;
-  }
 }
 
 /** Destructive: wipes current data and restores the backup wholesale. */
@@ -306,66 +253,91 @@ export async function importBackup(
       idsByTable.set(table, new Set(keep.map((r) => String(r.id))));
     }
 
-    // Write files first: if this fails we haven't touched the database yet,
-    // so the user still has their existing data intact.
+    // Allocate fresh immutable names. Old attachments are never overwritten,
+    // even if SQLite rejects a row or the process crashes before commit.
     await mkdir(uploadsDir(), { recursive: true });
-    for (const [name, b64] of Object.entries(files)) {
-      if (name.includes("/") || name.includes("\\") || name.includes("..")) continue;
-      await writeFile(path.join(uploadsDir(), name), Buffer.from(b64, "base64"));
-    }
-
-    // Sequential, not Promise.all: this only ever runs against a handful of
-    // resumes/attachments, and hammering someone's blob storage with a burst
-    // of concurrent requests during an import isn't worth the speedup.
+    const staging = await mkdtemp(path.join(uploadsDir(), ".restore-"));
+    const promoted: string[] = [];
+    const replacements = new Map<string, string>();
+    let committed = false;
     let filesMigrated = 0;
     let filesFailed = 0;
-    for (const [table, field] of Object.entries(REMOTE_FILE_FIELDS) as [TableName, string][]) {
-      for (const row of cleaned.get(table) ?? []) {
-        const value = row[field];
-        if (typeof value !== "string" || !/^https?:\/\//i.test(value)) continue;
-        const migrated = await migrateRemoteFile(value);
-        if (migrated) {
-          row[field] = migrated;
-          filesMigrated++;
-        } else {
-          filesFailed++;
+    let restored = 0;
+    const usedFiles = referencedBackupFiles(Object.fromEntries(cleaned));
+    let fileBytes = [...usedFiles].reduce((sum, name) => sum + Buffer.byteLength(files[name], "base64"), 0);
+    const downloadDeadline = AbortSignal.timeout(120000);
+    try {
+      for (const [name, b64] of Object.entries(files)) {
+        if (!usedFiles.has(name)) continue;
+        const fresh = `${randomUUID()}${path.extname(name)}`;
+        await writeFile(path.join(staging, fresh), Buffer.from(b64, "base64"), { flag: "wx" });
+        replacements.set(name, fresh);
+      }
+      for (const [table, field] of Object.entries(FILE_FIELDS) as [TableName, string][]) {
+        for (const row of cleaned.get(table) ?? []) {
+          const value = row[field];
+          const local = storedBackupFilename(value);
+          if (local) { row[field] = `/api/files/${replacements.get(local)}`; continue; }
+          if (typeof value !== "string" || !/^https?:\/\//i.test(value)) continue;
+          try {
+            const remaining = MAX_BACKUP_BYTES * 0.75 - fileBytes;
+            if (remaining <= 0) throw new Error("附件总大小超出限制");
+            const { buffer, mimeType } = await fetchBackupFile(value, { signal: downloadDeadline, maxBytes: remaining });
+            fileBytes += buffer.length;
+            const ext = [".pdf", ".png", ".jpg", ".webp", ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".zip", ".txt", ".md"].find((e) => mimeTypeForExtension(e) === mimeType);
+            if (!ext) throw new Error("不支持的附件类型");
+            const fresh = `${randomUUID()}${ext}`;
+            await writeFile(path.join(staging, fresh), buffer, { flag: "wx" });
+            replacements.set(fresh, fresh);
+            row[field] = `/api/files/${fresh}`;
+            filesMigrated++;
+          } catch { filesFailed++; }
         }
       }
-    }
-
-    let restored = 0;
-    await db.$transaction(async (tx) => {
-      const txDelegate = (t: TableName) => (tx as unknown as Record<TableName, Delegate>)[t];
-      // Children first so foreign keys never dangle mid-wipe.
-      for (const table of [...TABLES].reverse()) {
-        await txDelegate(table).deleteMany();
+      for (const fresh of new Set(replacements.values())) {
+        const target = path.join(uploadsDir(), fresh);
+        const handle = await open(target, "wx");
+        promoted.push(target);
+        try { await handle.writeFile(await readFile(path.join(staging, fresh))); }
+        finally { await handle.close(); }
       }
-      for (const table of TABLES) {
-        for (const row of cleaned.get(table) ?? []) {
-          await txDelegate(table).create({ data: row });
+      await db.$transaction(async (tx) => {
+        const txDelegate = (t: TableName) => (tx as unknown as Record<TableName, Delegate>)[t];
+        // Children first so foreign keys never dangle mid-wipe.
+        for (const table of [...TABLES].reverse()) {
+          await txDelegate(table).deleteMany();
+        }
+        for (const table of TABLES) {
+          for (const row of cleaned.get(table) ?? []) {
+            await txDelegate(table).create({ data: row });
+            restored++;
+          }
+        }
+        // Backups made before ApplicationPortal existed only carry the legacy
+        // Company.portalUrl columns. Materialize those after restore so an old
+        // backup does not silently lose all configured progress syncing.
+        const restoredPortals = cleaned.get("applicationPortal") ?? [];
+        for (const company of cleaned.get("company") ?? []) {
+          const url = typeof company.portalUrl === "string" ? company.portalUrl : null;
+          if (!url || restoredPortals.some((p) => p.companyId === company.id && p.url === url)) continue;
+          await tx.applicationPortal.create({
+            data: {
+              id: `portal_${company.id}`,
+              companyId: String(company.id),
+              url,
+              contentHash: typeof company.portalContentHash === "string" ? company.portalContentHash : null,
+              lastCheckedAt: typeof company.portalLastCheckedAt === "string" ? new Date(company.portalLastCheckedAt) : null,
+              lastError: typeof company.portalLastError === "string" ? company.portalLastError : null,
+            },
+          });
           restored++;
         }
-      }
-      // Backups made before ApplicationPortal existed only carry the legacy
-      // Company.portalUrl columns. Materialize those after restore so an old
-      // backup does not silently lose all configured progress syncing.
-      const restoredPortals = cleaned.get("applicationPortal") ?? [];
-      for (const company of cleaned.get("company") ?? []) {
-        const url = typeof company.portalUrl === "string" ? company.portalUrl : null;
-        if (!url || restoredPortals.some((p) => p.companyId === company.id && p.url === url)) continue;
-        await tx.applicationPortal.create({
-          data: {
-            id: `portal_${company.id}`,
-            companyId: String(company.id),
-            url,
-            contentHash: typeof company.portalContentHash === "string" ? company.portalContentHash : null,
-            lastCheckedAt: company.portalLastCheckedAt instanceof Date ? company.portalLastCheckedAt : null,
-            lastError: typeof company.portalLastError === "string" ? company.portalLastError : null,
-          },
-        });
-        restored++;
-      }
-    });
+      }, { timeout: 30000 });
+      committed = true;
+    } finally {
+      if (!committed) await Promise.all(promoted.map((file) => rm(file, { force: true })));
+      await rm(staging, { recursive: true, force: true }).catch((err) => console.error("[restore] staging cleanup failed", err));
+    }
 
     for (const p of [
       "/dashboard",

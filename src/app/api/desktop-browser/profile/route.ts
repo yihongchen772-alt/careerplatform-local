@@ -12,7 +12,8 @@ import { db } from "@/lib/db";
 export async function GET(request: Request) {
   const user = await requireUser();
   const params = new URL(request.url).searchParams;
-  const contextKey = params.get("contextKey")?.slice(0, 300) || null;
+  const contextKey = params.get("contextKey") || null;
+  if (contextKey && contextKey.length > 16384) return NextResponse.json({ error: "页面地址过长" }, { status: 400 });
   const fieldMemories = await db.autofillAnswer.findMany({
     where: { userId: user.id, kind: "field", confirmed: true, OR: [{ contextKey: null }, { contextKey }] },
     select: { questionLabel: true, answer: true, contextKey: true },

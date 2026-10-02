@@ -10,6 +10,6 @@ import { scanInboxOnLaunch } from "@/lib/actions/inbox-scan";
 // feature isn't configured, and both swallow their own errors.
 export async function POST() {
   const user = await requireUser();
-  await Promise.all([checkAndSendOnLaunch(user.id), scanInboxOnLaunch(user.id)]);
-  return NextResponse.json({ ok: true });
+  const [, inbox] = await Promise.all([checkAndSendOnLaunch(user.id), scanInboxOnLaunch(user.id)]);
+  return NextResponse.json(inbox);
 }

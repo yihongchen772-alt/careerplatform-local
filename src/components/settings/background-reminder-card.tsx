@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { updateAppSettings } from "@/lib/actions/app-settings";
+import { getAppSettings, updateAppSettings } from "@/lib/actions/app-settings";
 import {
   SCAN_INTERVAL_OPTIONS,
   RADAR_INTERVAL_OPTIONS,
@@ -34,7 +34,14 @@ export function BackgroundReminderCard({ initial }: { initial: AppSettings }) {
         return;
       }
       setSettings(res.data);
-      toast.success("已保存，重启 App 后生效");
+      if (window.desktopBridge) {
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+        setSettings(await getAppSettings());
+      }
+      toast.success("已保存，1 秒内生效");
+    } catch {
+      setSettings(settings);
+      toast.error("保存设置失败，请稍后重试");
     } finally {
       setSaving(false);
     }
@@ -174,7 +181,7 @@ export function BackgroundReminderCard({ initial }: { initial: AppSettings }) {
           <p className="text-xs text-muted-foreground">
             在网申浏览器里登录某家公司的招聘系统、打开「我的投递」页面后点「设为进度页」，这里就会按频率用那个
             登录态重新打开该页面，让 AI 读取已关联投递的官网进度。明确的新阶段会更新看板；淘汰、Offer 和不常见的阶段顺序会先请你核对，已结束的投递不会改动。
-            登录过期或读取失败会提醒你，失败后会较快重试。默认关闭；修改频率后请重启 App，让后台定时器生效。
+            登录过期或读取失败会提醒你，失败后会较快重试。默认关闭；修改频率后 1 秒内生效。
           </p>
           <Select
             value={String(settings.applicationSyncIntervalHours ?? 0)}
@@ -206,7 +213,7 @@ export function BackgroundReminderCard({ initial }: { initial: AppSettings }) {
 
         {settings.autoLaunchFailed && (
           <p className="rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive">
-            上次启动时系统拒绝了开机自启的设置（这个 App 没有做代码签名，macOS
+            系统拒绝了开机自启的设置（这个 App 没有做代码签名，macOS
             和部分 Windows 策略会拦）。可以手动加：Mac 在「系统设置 → 通用 →
             登录项」里添加本 App；Windows 把快捷方式放进「启动」文件夹。
             常驻托盘那项不受影响，照常工作。

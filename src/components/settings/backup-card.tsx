@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import type { ActionResult } from "@/lib/action-result";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,11 +17,16 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   exportBackup,
-  previewBackup,
-  importBackup,
   type ImportPreview,
   type DataFreshness,
 } from "@/lib/actions/backup";
+
+async function requestBackup<T>(mode: "preview" | "import", json: string): Promise<ActionResult<T>> {
+  try {
+    const res = await fetch(`/api/data-transfer?mode=${mode}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: json });
+    return await res.json();
+  } catch { return { ok: false, message: "备份服务连接失败，请稍后重试" }; }
+}
 
 // Purely a nudge threshold, not a hard rule — 2 weeks of local-only changes
 // with no cloud copy felt like a reasonable "you should probably do this
@@ -66,10 +72,11 @@ export function BackupCard({ initialFreshness }: { initialFreshness: DataFreshne
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
+    if (file.size > 256 * 1024 * 1024) { toast.error("备份超过 256MB"); return; }
     setImporting(true);
     try {
       const json = await file.text();
-      const res = await previewBackup(json);
+      const res = await requestBackup<ImportPreview>("preview", json);
       if (!res.ok) {
         toast.error(res.message);
         return;
@@ -84,7 +91,7 @@ export function BackupCard({ initialFreshness }: { initialFreshness: DataFreshne
     if (!pending) return;
     setImporting(true);
     try {
-      const res = await importBackup(pending.json);
+      const res = await requestBackup<{ restored: number; skipped: number; filesMigrated: number; filesFailed: number }>("import", pending.json);
       if (!res.ok) {
         toast.error(res.message);
         return;

@@ -17,6 +17,7 @@ export async function updateEmailSettings(input: z.infer<typeof emailSettingsSch
   await db.user.update({
     where: { id: user.id },
     data: {
+      emailReminderClaimUntil: null,
       smtpHost: data.host,
       smtpPort: data.port,
       smtpUser: data.user,
@@ -34,6 +35,7 @@ export async function clearEmailSettings() {
   await db.user.update({
     where: { id: user.id },
     data: {
+      emailReminderClaimUntil: null,
       smtpHost: null,
       smtpPort: null,
       smtpUser: null,
@@ -64,7 +66,7 @@ export async function updateEmailReminderSchedule(input: EmailReminderSchedule):
     const user = await requireUser();
     const data = z.object({ enabled: z.boolean(), time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), timeZone: z.string().min(1).max(100) }).parse(input);
     if (!validReminderTimeZone(data.timeZone)) throw new Error("请选择有效的时区");
-    await db.user.update({ where: { id: user.id }, data: { emailReminderEnabled: data.enabled, emailReminderTime: data.time, emailReminderTimeZone: data.timeZone } });
+    await db.user.update({ where: { id: user.id }, data: { emailReminderClaimUntil: null, emailReminderEnabled: data.enabled, emailReminderTime: data.time, emailReminderTimeZone: data.timeZone } });
     revalidatePath("/settings");
     return null;
   });

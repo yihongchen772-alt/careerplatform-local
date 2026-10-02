@@ -10,14 +10,15 @@
 // `prefix` namespaces the field ids per frame: 网申 forms on 北森/Moka-style
 // portals commonly live inside an iframe, and ids must stay unique across
 // all frames so the fill step can route each value back to the right one.
-function scanPageFields(prefix) {
+function scanPageFields(prefix, readOnly = false) {
   const results = [];
   let counter = 0;
   const seenRadioGroups = new Map();
+  const customContainers = new Set();
   // Wizard pages keep earlier steps in the DOM, hidden. Their ids from the
   // last scan would collide with this scan's and querySelector would hand
   // the value to the hidden old field — clear them first.
-  document.querySelectorAll("[data-cp-fill-id]").forEach((el) => el.removeAttribute("data-cp-fill-id"));
+  if (!readOnly) document.querySelectorAll("[data-cp-fill-id]").forEach((el) => el.removeAttribute("data-cp-fill-id"));
   const elements = document.querySelectorAll(
     'input[type="text"], input[type="tel"], input[type="email"], input[type="number"], input[type="date"], input[type="month"], input[type="url"], input[type="radio"], input:not([type]), textarea, select'
   );
@@ -176,7 +177,7 @@ function scanPageFields(prefix) {
   const customSelectors = ".ant-select, .el-select, [role='combobox']:not(input):not(select), input[role='combobox'][readonly], input[aria-haspopup='listbox']";
   document.querySelectorAll(customSelectors).forEach((el) => {
     const container = el.closest(".ant-select, .el-select") || el;
-    if (container.getAttribute("data-cp-fill-id")) return;
+    if (customContainers.has(container)) return;
     if (!isVisible(container)) return;
     if (container.classList.contains("ant-select-disabled") || container.classList.contains("is-disabled") || container.getAttribute("aria-disabled") === "true") return;
     const multiple = container.classList.contains("ant-select-multiple") || container.getAttribute("aria-multiselectable") === "true";
@@ -185,7 +186,8 @@ function scanPageFields(prefix) {
     const innerInput = container.matches("input") ? container : container.querySelector("input");
     const hasValue = !!(shown && shown.textContent.trim()) || !!(innerInput && innerInput.readOnly && innerInput.value && innerInput.value.trim());
     const id = prefix + "s" + counter++;
-    container.setAttribute("data-cp-fill-id", id);
+    customContainers.add(container);
+    if (!readOnly) container.setAttribute("data-cp-fill-id", id);
     results.push({
       id,
       tag: "custom-select",
@@ -201,17 +203,17 @@ function scanPageFields(prefix) {
   elements.forEach((el) => {
     if (el.type === "password" || el.disabled || el.readOnly || !isVisible(el)) return;
     // Inner inputs of custom selects were handled above.
-    if (el.closest("[data-cp-fill-id^='" + prefix + "s']")) return;
+    if ([...customContainers].some((container) => container === el || container.contains(el))) return;
     if (el.type === "radio") {
       const group = radioGroup(el);
       if (!group) return;
       const id = prefix + "r" + counter++;
-      group.radios.forEach((r, i) => r.setAttribute("data-cp-fill-id", id + ":" + i));
+      if (!readOnly) group.radios.forEach((r, i) => r.setAttribute("data-cp-fill-id", id + ":" + i));
       results.push({ id, tag: "radio", type: "radio", label: group.label, placeholder: "", name: el.getAttribute("name") || "", section: sectionFor(group.radios[0]), options: group.options, hasValue: group.hasValue });
       return;
     }
     const id = prefix + "f" + counter++;
-    el.setAttribute("data-cp-fill-id", id);
+    if (!readOnly) el.setAttribute("data-cp-fill-id", id);
     const entry = {
       id,
       tag: el.tagName.toLowerCase(),
@@ -236,7 +238,7 @@ function scanPageFields(prefix) {
     results.push(entry);
   });
 
-  for (const field of results) {
+  if (!readOnly) for (const field of results) {
     const el = document.querySelector('[data-cp-fill-id="' + field.id + '"]');
     if (el) {
       if (!el.hasAttribute("data-cp-result-key")) el.setAttribute("data-cp-result-key", (typeof crypto.randomUUID === "function" ? crypto.randomUUID() : prefix + Date.now().toString(36) + Math.random().toString(36).slice(2)));
@@ -655,34 +657,10 @@ async function fillCustomSelects(pairs, taskId) {
 
 // Side-effect-free count of what an autofill could touch right now — used
 // by the multi-step form watcher to notice "a new form page just appeared".
-function countFillableFields() {
-  function isVisible(el) {
-    const rect = el.getBoundingClientRect();
-    const style = window.getComputedStyle(el);
-    return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
-  }
-  let count = 0;
-  const seenRadio = new Set();
-  const labels = [];
-  document
-    .querySelectorAll('input[type="text"], input[type="tel"], input[type="email"], input[type="number"], input[type="date"], input[type="month"], input[type="radio"], input:not([type]), textarea, select, .ant-select, .el-select')
-    .forEach((el) => {
-      if (el.disabled || !isVisible(el)) return;
-      if (el.type === "radio") {
-        const name = el.getAttribute("name") || "";
-        if (seenRadio.has(name)) return;
-        seenRadio.add(name);
-        const group = el.form ? el.form.querySelectorAll('input[type="radio"][name="' + name + '"]') : [el];
-        if (Array.from(group).some((r) => r.checked)) return;
-      } else if (el.classList && (el.classList.contains("ant-select") || el.classList.contains("el-select"))) {
-        if (el.querySelector(".ant-select-selection-item, .el-select__selected-item")) return;
-      } else if (el.readOnly || (el.value && String(el.value).trim())) {
-        return;
-      }
-      count++;
-      if (labels.length < 6) labels.push((el.getAttribute("name") || el.getAttribute("placeholder") || el.id || "").slice(0, 20));
-    });
-  return { count, signature: location.href.split("#")[0] + "|" + count + "|" + labels.join(",") };
+function countFillableFields(scan = scanPageFields) {
+  const fields = scan("readonly-", true).filter((field) => !field.hasValue);
+  const labels = fields.slice(0, 6).map((field) => (field.name || field.placeholder || field.label || "").slice(0, 20));
+  return { count: fields.length, signature: location.href + "|" + fields.length + "|" + labels.join(",") };
 }
 
 function clearFillMarks() {
@@ -1272,16 +1250,15 @@ function isNeverGuessField(field) {
 
 function portalContext(rawUrl) {
   const url = new URL(rawUrl);
-  const tenant = [...url.searchParams]
-    .filter(([key]) => /company|tenant|organization|orgid|brand|recruitment/i.test(key))
-    .map(([key, value]) => `${key}=${value}`)
-    .join("&");
-  // A company's own site is stable across /apply and /candidate pages.
-  // Shared job boards are not company identities: without a tenant id, stay
-  // on this exact page path rather than leaking an answer across employers.
   const sharedHost = /(?:^|\.)(?:mokahr\.com|beisen\.com|zhaopin\.com|zhipin\.com|liepin\.com|51job\.com|lagou\.com|nowcoder\.com|shixiseng\.com)$/i.test(url.hostname);
-  if (sharedHost && !tenant) return `${url.origin}${url.pathname}`.slice(0, 300);
-  return `${url.origin}${tenant ? `?${tenant}` : ""}`.slice(0, 300);
+  const tenant = [...url.searchParams].filter(([key]) => /^(?:company|companyId|tenant|tenantId|organization|orgid|brand|recruitment)$/i.test(key)).sort(([a], [b]) => a.localeCompare(b));
+  // An explicit tenant on a recognised shared portal is stable across steps.
+  // Unknown hosts, query-routed tenants and SPA routes stay page-specific.
+  // v2 prevents reuse of legacy origin-only memories; never truncate identity.
+  if (sharedHost && tenant.length) return `tenant:v2:${url.origin}?${new URLSearchParams(tenant)}`;
+  for (const key of [...url.searchParams.keys()]) if (/^(utm_.+|gclid|fbclid)$/i.test(key)) url.searchParams.delete(key);
+  url.searchParams.sort();
+  return `page:v2:${url.href}`;
 }
 
 

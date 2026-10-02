@@ -20,7 +20,7 @@ function isPrivatePath(relative) {
     /(?:^|[._-])backups?(?:[._-].*)?\.(?:zip|tar|gz|7z)$/i.test(part) ||
     /^(?:uploads|backups?|userData|\.git|\.local-run|\.local-data)$/i.test(part) ||
     /^.+[-_]backups?$/i.test(part) ||
-    /^(?:app-settings|desktop-windows|\.local-desktop)\.json$/i.test(part)
+    /^(?:app-settings(?:-status)?|desktop-windows|\.local-desktop)\.json$/i.test(part)
   );
 }
 

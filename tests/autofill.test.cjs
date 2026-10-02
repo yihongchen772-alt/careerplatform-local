@@ -11,7 +11,7 @@ const source = fs.readFileSync(path.join(__dirname, "../electron/browser-view.js
 // autofill-core.js is evaluated inside the same sandbox (wrapped, so its
 // declarations don't collide with browser-view's destructuring), letting a
 // test swap in a fake `document` that the injected helpers then see.
-const context = vm.createContext({ module: { exports: {} }, URL });
+const context = vm.createContext({ module: { exports: {} }, URL, URLSearchParams });
 const coreModule = { exports: {} };
 vm.runInContext(`(function (module, exports) {\n${fs.readFileSync(path.join(__dirname, "../electron/autofill-core.js"), "utf8")}\n})`, context)(coreModule, coreModule.exports);
 context.require = (name) => name === "electron" ? {} : name === "./autofill-core.js" ? coreModule.exports : require(name);
@@ -38,8 +38,8 @@ test("open-ended text inputs join textareas in answer memory", () => {
   assert.equal(isSensitiveMemoryField({ tag: "textarea", label: "自我介绍", placeholder: "", name: "" }), false);
 });
 
-test("company context survives own-site paths but isolates shared job board paths", () => {
-  assert.equal(portalContext("https://careers.example.com/apply/123"), portalContext("https://careers.example.com/candidate/456"));
+test("company context conservatively isolates unknown sites and shares explicit portal tenants", () => {
+  assert.notEqual(portalContext("https://careers.example.com/apply/123"), portalContext("https://careers.example.com/candidate/456"));
   assert.notEqual(portalContext("https://app.mokahr.com/apply/acme"), portalContext("https://app.mokahr.com/apply/other"));
   assert.equal(portalContext("https://app.mokahr.com/apply/a?tenant=acme"), portalContext("https://app.mokahr.com/candidate/b?tenant=acme"));
 });

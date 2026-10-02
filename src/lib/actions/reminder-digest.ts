@@ -99,6 +99,8 @@ export async function sendReminderDigestNow(): Promise<ActionResult<{ count: num
 export async function checkAndSendOnLaunch(userId: string): Promise<void> {
   const now = new Date();
   let claimed = false;
+  const claimUntil = new Date(now.getTime() + 5 * 60000);
+  const owned = { id: userId, emailReminderClaimUntil: claimUntil };
   try {
     const user = await db.user.findUnique({ where: { id: userId } });
     if (!user?.smtpUser) return;
@@ -113,14 +115,23 @@ export async function checkAndSendOnLaunch(userId: string): Promise<void> {
         { OR: [{ emailReminderLastDay: null }, { emailReminderLastDay: { not: day } }] },
         { OR: [{ emailReminderClaimUntil: null }, { emailReminderClaimUntil: { lte: now } }] },
       ],
-    }, data: { emailReminderClaimUntil: new Date(now.getTime() + 5 * 60000) } });
+    }, data: { emailReminderClaimUntil: claimUntil } });
     if (!claim.count) return;
     claimed = true;
     const urgent = (await collectTodos(userId)).filter((t) => t.urgency === "overdue" || t.urgency === "urgent");
+    const latest = await db.user.findUnique({ where: { id: userId } });
+    const scheduleUnchanged = latest && latest.emailReminderEnabled && latest.emailReminderTime === user.emailReminderTime && latest.emailReminderTimeZone === user.emailReminderTimeZone;
+    const mailUnchanged = latest && ["smtpHost", "smtpPort", "smtpUser", "smtpPasswordEncrypted", "smtpFrom"].every((key) => latest[key as keyof typeof latest] === user[key as keyof typeof user]);
+    const stillOwned = latest?.emailReminderClaimUntil?.getTime() === claimUntil.getTime() && claimUntil.getTime() > new Date().getTime();
+    const stillDue = latest && dueEmailReminderDay({ enabled: latest.emailReminderEnabled, time: latest.emailReminderTime, timeZone: latest.emailReminderTimeZone }, new Date()) === day;
+    if (!scheduleUnchanged || !mailUnchanged || !stillOwned || !stillDue) {
+      await db.user.updateMany({ where: owned, data: { emailReminderClaimUntil: null } });
+      return;
+    }
     if (urgent.length) await sendMail(config, { to: config.user, subject: `求职罗盘：${urgent.length} 件事需要关注`, html: renderDigestHtml(urgent) });
-    await db.user.update({ where: { id: userId }, data: { emailReminderLastDay: day, emailReminderClaimUntil: null, emailReminderLastError: null, ...(urgent.length ? { emailReminderLastSentAt: new Date() } : {}) } });
+    await db.user.updateMany({ where: owned, data: { emailReminderLastDay: day, emailReminderClaimUntil: null, emailReminderLastError: null, ...(urgent.length ? { emailReminderLastSentAt: new Date() } : {}) } });
   } catch (err) {
     console.error("[reminder-digest] scheduled check failed", err);
-    if (claimed) await db.user.update({ where: { id: userId }, data: { emailReminderClaimUntil: null, emailReminderLastError: err instanceof Error ? err.message : "提醒邮件发送失败" } }).catch(() => {});
+    if (claimed) await db.user.updateMany({ where: owned, data: { emailReminderClaimUntil: null, emailReminderLastError: err instanceof Error ? err.message : "提醒邮件发送失败" } }).catch(() => {});
   }
 }

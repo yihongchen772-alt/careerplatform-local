@@ -194,10 +194,12 @@ export async function scanInboxNow(): Promise<
  * throw into a plain app boot, so failures are swallowed here rather than
  * surfaced.
  */
-export async function scanInboxOnLaunch(userId: string): Promise<void> {
+export async function scanInboxOnLaunch(userId: string): Promise<{ ok: boolean; error?: string }> {
   try {
-    await runScan(userId);
+    const result = await runScan(userId);
+    return result.failedAccounts.length ? { ok: false, error: `${result.failedAccounts.join("、")} 扫描失败` } : { ok: true };
   } catch (err) {
     console.error("[inbox-scan] on-launch scan failed", err);
+    return { ok: false, error: err instanceof UserFacingError ? err.message : "收件箱扫描失败" };
   }
 }

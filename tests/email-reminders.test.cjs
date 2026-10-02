@@ -87,3 +87,38 @@ test('desktop checks mail every minute while open without background mode, and k
   context.mainWindow = null; await tick(); assert.equal(requests, 1);
   settings.backgroundReminders = true; await tick(); assert.equal(requests, 2);
 });
+
+test('a claimed email checks the latest schedule and mailbox before SMTP, and releases only its own lease', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jobcompass-mail-cancel-'));
+  const file = path.join(root, 'fixture.db'), sql = new DatabaseSync(file);
+  for (const name of fs.readdirSync(path.join(__dirname, '../prisma/migrations')).filter((s) => /^\d/.test(s)).sort()) sql.exec(fs.readFileSync(path.join(__dirname, '../prisma/migrations', name, 'migration.sql'), 'utf8'));
+  sql.close();
+  const db = new PrismaClient({ datasources: { db: { url: `file:${file}` } } });
+  t.after(async () => { await db.$disconnect(); fs.rmSync(root, { recursive: true }); });
+  const now = new Date('2026-10-03T10:00:00Z');
+  class Clock extends Date { constructor(...args) { super(...(args.length ? args : [now.getTime()])); } }
+  let sent = 0;
+  for (const mutation of [
+    { emailReminderEnabled: false }, { emailReminderTime: '23:00' }, { emailReminderTimeZone: 'Asia/Shanghai' },
+    { smtpUser: null }, { emailReminderClaimUntil: null }, { emailReminderClaimUntil: new Date(now.getTime() + 600000) },
+  ]) {
+    await db.user.deleteMany();
+    await db.user.create({ data: { id: 'fixture', email: 'fixture@local', smtpUser: 'mail@example.invalid', emailReminderTime: '09:00', emailReminderTimeZone: 'UTC' } });
+    let started, release;
+    const signal = new Promise((r) => { started = r; }), wait = new Promise((r) => { release = r; });
+    const empty = { findMany: async () => [] };
+    const actions = load('src/lib/actions/reminder-digest.ts', {
+      '@/lib/db': { db: { user: db.user, application: { findMany: async () => { started(); await wait; return []; } }, position: empty, stageHistory: empty, personalTask: empty, contact: empty } },
+      '@/lib/session': {}, '@/lib/email-reminder-schedule': schedule, '@/lib/action-result': load('src/lib/action-result.ts'),
+      '@/lib/todos': { buildTodos: () => [{ label: 'fixture', sublabel: 'fixture', urgency: 'urgent' }] },
+      '@/lib/mailer': { getUserMailConfig: async () => ({ user: 'mail@example.invalid' }), sendMail: async () => { sent++; } },
+    }, { Date: Clock });
+    const pending = actions.checkAndSendOnLaunch('fixture'); await signal;
+    await db.user.update({ where: { id: 'fixture' }, data: mutation }); release(); await pending;
+    assert.equal(sent, 0, JSON.stringify(mutation));
+    const user = await db.user.findUnique({ where: { id: 'fixture' } });
+    assert.equal(user.emailReminderLastDay, null);
+    if (mutation.emailReminderClaimUntil) assert.equal(user.emailReminderClaimUntil.getTime(), mutation.emailReminderClaimUntil.getTime(), 'must not clear a replacement lease');
+    else assert.equal(user.emailReminderClaimUntil, null);
+  }
+});

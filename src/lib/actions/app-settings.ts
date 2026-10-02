@@ -1,7 +1,9 @@
 "use server";
 
 import path from "path";
-import { readFile, writeFile, mkdir } from "fs/promises";
+import { randomUUID } from "crypto";
+import { z } from "zod";
+import { readFile, writeFile, mkdir, rename, rm } from "fs/promises";
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/session";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
@@ -22,7 +24,9 @@ function settingsPath(): string {
 export async function getAppSettings(): Promise<AppSettings> {
   try {
     const raw = await readFile(settingsPath(), "utf8");
-    return { ...DEFAULT_APP_SETTINGS, ...JSON.parse(raw) };
+    let status = {};
+    try { status = JSON.parse(await readFile(path.join(path.dirname(settingsPath()), "app-settings-status.json"), "utf8")); } catch { /* No OS status yet. */ }
+    return { ...DEFAULT_APP_SETTINGS, ...JSON.parse(raw), ...status };
   } catch {
     // No file yet (or unreadable) — the defaults are the correct answer.
     return DEFAULT_APP_SETTINGS;
@@ -34,10 +38,22 @@ export async function updateAppSettings(
 ): Promise<ActionResult<AppSettings>> {
   return toActionResult(async () => {
     await requireUser();
-    const merged = { ...(await getAppSettings()), ...next };
+    const patch = z.object({
+      autoLaunch: z.boolean().optional(), notesAtLogin: z.boolean().optional(), backgroundReminders: z.boolean().optional(),
+      inboxScanIntervalHours: z.number().refine((v) => [0, 1, 2, 4, 6, 12].includes(v)).optional(),
+      jobRadarIntervalHours: z.number().refine((v) => [0, 6, 12, 24].includes(v)).optional(),
+      applicationSyncIntervalHours: z.number().refine((v) => [0, 6, 12, 24].includes(v)).optional(),
+      proxyUrl: z.string().trim().max(1000).optional(),
+    }).strict().safeParse(next);
+    if (!patch.success) throw new UserFacingError("设置格式或检查频率不支持");
+    const merged = { ...(await getAppSettings()), ...patch.data };
     const file = settingsPath();
     await mkdir(path.dirname(file), { recursive: true });
-    await writeFile(file, JSON.stringify(merged, null, 2), "utf8");
+    const temp = `${file}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(temp, JSON.stringify(merged, null, 2), { encoding: "utf8", flag: "wx" });
+      await rename(temp, file);
+    } finally { await rm(temp, { force: true }); }
     if ("proxyUrl" in next) applyProxy(merged.proxyUrl);
     revalidatePath("/settings");
     return merged;

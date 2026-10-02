@@ -9,7 +9,7 @@ const { PrismaClient } = require("@prisma/client");
 function load(file, mocks = {}, globals = {}) {
   const mod = { exports: {} };
   const compiled = ts.transpileModule(fs.readFileSync(path.resolve(__dirname, "..", file), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
-  vm.runInNewContext(compiled, { exports: mod.exports, module: mod, require: (id) => mocks[id] || require(id), console, Date, Buffer, URL, process, setTimeout, clearTimeout, ...globals });
+  vm.runInNewContext(compiled, { exports: mod.exports, module: mod, require: (id) => mocks[id] || (id.startsWith("@/") ? load(`src/${id.slice(2)}.ts`, mocks, globals) : require(id)), console, Date, Error, Buffer, URL, process, AbortSignal, setTimeout, clearTimeout, ...globals });
   return mod.exports;
 }
 test("Gregorian grid: leap years, weekday alignment and cross-year navigation", () => {

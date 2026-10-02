@@ -7,7 +7,7 @@ import { canUpdateReferencedAnswer, companySpecificQuestion, shouldForkGlobalAns
 
 const bodySchema = z.object({
   resumeVersionId: z.string().min(1).nullish(),
-  contextKey: z.string().max(300).nullable(),
+  contextKey: z.string().max(16384).nullable(),
   answers: z.array(z.object({
     questionLabel: z.string().trim().min(2).max(500),
     answer: z.string().trim().min(1).max(10000),

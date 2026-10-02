@@ -58,7 +58,11 @@ export async function saveAutoBackupSettings(input: unknown): Promise<ActionResu
     if (folder) await prepareFolder(folder).catch((err: Error) => { throw new UserFacingError(err.message); });
     const current = await db.user.findUniqueOrThrow({ where: { id: user.id }, select: { webdavPasswordEncrypted: true } });
     const webdavUrl = data.clearWebdav ? null : data.webdavUrl || null;
-    if (webdavUrl && !/^https?:\/\//i.test(webdavUrl)) throw new UserFacingError("WebDAV 地址要以 https:// 开头");
+    if (webdavUrl) {
+      let url;
+      try { url = new URL(webdavUrl); } catch { throw new UserFacingError("WebDAV 地址格式不正确"); }
+      if (url.protocol !== "https:" || url.username || url.password || url.hash || url.search) throw new UserFacingError("WebDAV 请使用不含账号、查询或片段的 HTTPS 地址");
+    }
     const webdavPasswordEncrypted = data.clearWebdav ? null : data.webdavPassword ? encryptSecret(data.webdavPassword) : current.webdavPasswordEncrypted;
     if (webdavUrl && (!data.webdavUser || !webdavPasswordEncrypted)) throw new UserFacingError("WebDAV 需要账号和应用密码");
     if (data.enabled && !folder && !webdavUrl) throw new UserFacingError("开启自动备份前，先选一个备份文件夹或填写 WebDAV");

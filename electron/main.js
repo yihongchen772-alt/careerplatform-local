@@ -368,19 +368,15 @@ function readAppSettings() {
 }
 
 function writeAutoLaunchStatus(failed) {
-  // Reported back through the same shared file the UI reads, so a refusal by
-  // the OS (sandboxing, MDM policy, unsigned build) shows up as a warning in
-  // settings instead of a checkbox that looks on but does nothing.
+  // OS status has its own file so reporting it cannot overwrite a simultaneous
+  // settings save in the Next process.
   try {
-    const current = readAppSettings();
-    if (!!current.autoLaunchFailed === !!failed) return;
-    fs.writeFileSync(
-      settingsFile(),
-      JSON.stringify({ ...current, autoLaunchFailed: !!failed }, null, 2)
-    );
-  } catch (err) {
-    console.error("[autolaunch] could not record status", err);
-  }
+    const file = path.join(app.getPath("userData"), "app-settings-status.json");
+    const status = JSON.stringify({ autoLaunchFailed: !!failed });
+    if (fs.existsSync(file) && fs.readFileSync(file, "utf8") === status) return;
+    fs.writeFileSync(file + ".tmp", status);
+    fs.renameSync(file + ".tmp", file);
+  } catch (err) { console.error("[autolaunch] could not record status", err); }
 }
 
 function applyAutoLaunch(enabled) {
@@ -401,7 +397,7 @@ function applyAutoLaunch(enabled) {
 function setNotesAtLogin(enabled) {
   const settings = { ...readAppSettings(), notesAtLogin: enabled };
   fs.writeFileSync(settingsFile(), JSON.stringify(settings, null, 2));
-  if (process.env.CAREERPLATFORM_TEST_MODE !== "1") applyAutoLaunch(settings.autoLaunch || enabled);
+  if (process.env.CAREERPLATFORM_TEST_MODE !== "1") applyAutoLaunch((settings.autoLaunch && settings.backgroundReminders) || enabled);
   return readAppSettings().notesAtLogin;
 }
 
@@ -461,22 +457,19 @@ function buildTray() {
       {
         label: "立即扫描收件箱",
         click: () => {
-          lastScanAt = 0;
-          maybeScanInbox();
+          maybeScanInbox(true);
         },
       },
       {
         label: "立即检查岗位雷达",
         click: () => {
-          lastRadarCheckAt = 0;
-          maybeCheckJobRadar();
+          maybeCheckJobRadar(true);
         },
       },
       {
         label: "立即同步网申进度",
         click: () => {
-          lastApplicationSyncAt = 0;
-          maybeSyncApplications();
+          maybeSyncApplications(true);
         },
       },
       { type: "separator" },
@@ -502,10 +495,12 @@ let emailReminderTimer = null;
 const notified = new Set();
 
 async function checkReminders(force = false) {
+  if (!force && !readAppSettings().backgroundReminders) return;
   try {
     const res = await fetch(`http://localhost:${PORT}/api/reminders/due`);
     if (!res.ok) return;
     const { urgent } = await res.json();
+    if (!force && !readAppSettings().backgroundReminders) return;
     if (!Array.isArray(urgent) || urgent.length === 0) return;
 
     const fresh = force ? urgent : urgent.filter((u) => !notified.has(u.id));
@@ -535,18 +530,32 @@ async function checkReminders(force = false) {
 // interval rather than the 30-minute reminder tick. Re-read each tick so a
 // settings change takes effect without restarting.
 let scanTimer = null;
-let lastScanAt = 0;
-
-async function maybeScanInbox() {
-  const hours = Number(readAppSettings().inboxScanIntervalHours) || 0;
-  if (hours <= 0) return;
-  if (Date.now() - lastScanAt < hours * 3600 * 1000) return;
-  lastScanAt = Date.now();
+const inboxSchedule = createApplicationSyncSchedule();
+const radarSchedule = createApplicationSyncSchedule();
+const backgroundRequests = new Map();
+function backgroundRequest(kind) {
+  const controller = new AbortController();
+  backgroundRequests.set(kind, controller);
+  return { controller, signal: AbortSignal.any([controller.signal, AbortSignal.timeout(180000)]) };
+}
+function backgroundAllowed(force, key) {
+  const settings = readAppSettings();
+  return force || (settings.backgroundReminders && Number(settings[key]) > 0);
+}
+async function maybeScanInbox(force = false) {
+  if (!backgroundAllowed(force, "inboxScanIntervalHours")) return;
+  const intervalMs = (Number(readAppSettings().inboxScanIntervalHours) || 1) * 3600000;
+  if (force) inboxSchedule.reset();
+  if (!inboxSchedule.begin(intervalMs)) return;
+  const { controller, signal } = backgroundRequest("inbox");
+  let healthy = false;
   try {
-    await fetch(`http://localhost:${PORT}/api/check-reminders`, { method: "POST" });
-  } catch {
-    // Server not up yet, or transient — the next tick retries.
-  }
+    const res = await fetch(`http://localhost:${PORT}/api/check-reminders`, { method: "POST", signal });
+    if (!res.ok) throw new Error(`inbox endpoint returned ${res.status}`);
+    const outcome = await res.json();
+    healthy = outcome.ok !== false && !outcome.errors?.length && !outcome.error;
+  } catch { /* Retry within 15 minutes; do not wait a full successful interval. */ }
+  finally { if (backgroundRequests.get("inbox") === controller) backgroundRequests.delete("inbox"); inboxSchedule.finish(intervalMs, healthy); }
 }
 
 // Same idea as the inbox scan, on the same company's careerUrl the user
@@ -554,17 +563,19 @@ async function maybeScanInbox() {
 // text against the last-seen hash, and surface a notification when it
 // changed. The diff/hash/HTTP work all lives server-side (checkAllCompanyRadars
 // in src/lib/actions/job-radar.ts) — this is just the timer that hits it.
-let lastRadarCheckAt = 0;
-
-async function maybeCheckJobRadar() {
-  const hours = Number(readAppSettings().jobRadarIntervalHours) || 0;
-  if (hours <= 0) return;
-  if (Date.now() - lastRadarCheckAt < hours * 3600 * 1000) return;
-  lastRadarCheckAt = Date.now();
+async function maybeCheckJobRadar(force = false) {
+  if (!backgroundAllowed(force, "jobRadarIntervalHours")) return;
+  const intervalMs = (Number(readAppSettings().jobRadarIntervalHours) || 6) * 3600000;
+  if (force) radarSchedule.reset();
+  if (!radarSchedule.begin(intervalMs)) return;
+  const { controller, signal } = backgroundRequest("radar");
+  let healthy = false;
   try {
-    const res = await fetch(`http://localhost:${PORT}/api/job-radar/check`, { method: "POST" });
-    if (!res.ok) return;
-    const { changed } = await res.json();
+    const res = await fetch(`http://localhost:${PORT}/api/job-radar/check`, { method: "POST", signal });
+    if (!res.ok) throw new Error(`radar endpoint returned ${res.status}`);
+    const { changed, errors } = await res.json();
+    healthy = !errors?.length;
+    if (signal.aborted || !backgroundAllowed(force, "jobRadarIntervalHours")) return;
     if (!Array.isArray(changed) || changed.length === 0) return;
 
     const { Notification } = require("electron");
@@ -587,7 +598,7 @@ async function maybeCheckJobRadar() {
       .show();
   } catch {
     // Server not up yet, or transient — the next tick will retry.
-  }
+  } finally { if (backgroundRequests.get("radar") === controller) backgroundRequests.delete("radar"); radarSchedule.finish(intervalMs, healthy); }
 }
 
 // 网申进度同步: same timer pattern as the radar, but the page it reads is
@@ -598,17 +609,21 @@ async function maybeCheckJobRadar() {
 const applicationSyncSchedule = createApplicationSyncSchedule();
 let lastNotifiedApplicationSyncError = "";
 
-async function maybeSyncApplications() {
-  const hours = Number(readAppSettings().applicationSyncIntervalHours) || 0;
+async function maybeSyncApplications(force = false) {
+  if (!backgroundAllowed(force, "applicationSyncIntervalHours")) return;
+  const hours = Number(readAppSettings().applicationSyncIntervalHours) || 6;
   const intervalMs = hours * 3600 * 1000;
+  if (force) applicationSyncSchedule.reset();
   if (!applicationSyncSchedule.begin(intervalMs)) return;
+  const { controller, signal } = backgroundRequest("sync");
   let healthy = false;
   try {
-    const res = await fetch(`http://localhost:${PORT}/api/application-sync/check`, { method: "POST" });
+    const res = await fetch(`http://localhost:${PORT}/api/application-sync/check`, { method: "POST", signal });
     if (!res.ok) throw new Error(`sync endpoint returned ${res.status}`);
     const { changed, review, errors } = await res.json();
     const failures = Array.isArray(errors) ? errors : [];
     healthy = failures.length === 0;
+    if (signal.aborted || !backgroundAllowed(force, "applicationSyncIntervalHours")) return;
     const { Notification } = require("electron");
     if (!Notification.isSupported()) return;
 
@@ -654,6 +669,7 @@ async function maybeSyncApplications() {
     }
     lastNotifiedApplicationSyncError = failureKey;
   } catch {
+    if (signal.aborted || !backgroundAllowed(force, "applicationSyncIntervalHours")) return;
     if (lastNotifiedApplicationSyncError !== "service") {
       const { Notification } = require("electron");
       if (Notification.isSupported()) new Notification({
@@ -663,6 +679,7 @@ async function maybeSyncApplications() {
     }
     lastNotifiedApplicationSyncError = "service";
   } finally {
+    if (backgroundRequests.get("sync") === controller) backgroundRequests.delete("sync");
     applicationSyncSchedule.finish(intervalMs, healthy);
   }
 }
@@ -731,6 +748,31 @@ function startReminderLoop() {
   }, CHECK_INTERVAL_MS);
 }
 
+let settingsTimer = null;
+let appliedSettings = null;
+function reconcileAppSettings() {
+  const settings = readAppSettings();
+  if (process.env.CAREERPLATFORM_TEST_MODE === "1") return;
+  if (!appliedSettings || settings.autoLaunch !== appliedSettings.autoLaunch || settings.notesAtLogin !== appliedSettings.notesAtLogin || settings.backgroundReminders !== appliedSettings.backgroundReminders) {
+    applyAutoLaunch((settings.autoLaunch && settings.backgroundReminders) || settings.notesAtLogin);
+  }
+  for (const [kind, key, schedule] of [["inbox", "inboxScanIntervalHours", inboxSchedule], ["radar", "jobRadarIntervalHours", radarSchedule], ["sync", "applicationSyncIntervalHours", applicationSyncSchedule]]) {
+    if (!appliedSettings || settings[key] !== appliedSettings[key] || settings.backgroundReminders !== appliedSettings.backgroundReminders) {
+      backgroundRequests.get(kind)?.abort(); schedule.reset();
+    }
+  }
+  if (settings.backgroundReminders) { startReminderLoop(); startScanLoop(); }
+  else {
+    if (reminderTimer) { clearInterval(reminderTimer); reminderTimer = null; }
+    if (scanTimer) { clearInterval(scanTimer); scanTimer = null; }
+  }
+  appliedSettings = settings;
+}
+function startSettingsLoop() {
+  reconcileAppSettings();
+  if (!settingsTimer && process.env.CAREERPLATFORM_TEST_MODE !== "1") settingsTimer = setInterval(reconcileAppSettings, 1000);
+}
+
 let isQuitting = false;
 
 app.whenReady().then(async () => {
@@ -770,7 +812,6 @@ app.whenReady().then(async () => {
     await startNextServer();
 
     const settings = readAppSettings();
-    if (process.env.CAREERPLATFORM_TEST_MODE !== "1") applyAutoLaunch(settings.autoLaunch || settings.notesAtLogin);
 
     // Launched by the OS at login: start parked in the tray rather than
     // popping a window in the user's face on every boot.
@@ -809,11 +850,7 @@ app.whenReady().then(async () => {
     } catch {
       // Never block startup on the optional extension copy.
     }
-    if (settings.backgroundReminders && process.env.CAREERPLATFORM_TEST_MODE !== "1") {
-      buildTray();
-      startReminderLoop();
-      startScanLoop();
-    }
+    startSettingsLoop();
   } catch (err) {
     dialog.showErrorBox("启动失败", String(err && err.message ? err.message : err));
     app.quit();
@@ -823,6 +860,9 @@ app.whenReady().then(async () => {
 });
 
 function shutdown() {
+  if (settingsTimer) { clearInterval(settingsTimer); settingsTimer = null; }
+  for (const controller of backgroundRequests.values()) controller.abort();
+  if (autoBackupTimer) { clearInterval(autoBackupTimer); autoBackupTimer = null; }
   productivity?.shutdown();
   if (emailReminderTimer) { clearInterval(emailReminderTimer); emailReminderTimer = null; }
   if (reminderTimer) {

@@ -20,7 +20,7 @@ import { ApplicationProfileCard } from "@/components/settings/application-profil
 import { AutofillMemoryCard } from "@/components/settings/autofill-memory-card";
 import { parseApplicationProfile } from "@/lib/application-profile";
 import { db } from "@/lib/db";
-import { version } from "../../../../package.json";
+import packageInfo from "../../../../package.json";
 
 export default async function SettingsPage() {
   const user = await requireUser();
@@ -74,7 +74,7 @@ export default async function SettingsPage() {
         <BackgroundReminderCard initial={appSettings} />
         <BackupCard initialFreshness={freshness} />
         <AutoBackupCard initial={autoBackup} />
-        <UpdateCard currentVersion={version} />
+        <UpdateCard currentVersion={packageInfo.version} />
       </div>
     </div>
   );

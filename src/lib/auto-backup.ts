@@ -100,7 +100,8 @@ async function backupToFolder(folder: string, fileName: string, payload: string,
 
 function davBase(url: string): string {
   const trimmed = url.trim();
-  if (!/^https?:\/\//i.test(trimmed)) throw new Error("WebDAV 地址要以 https:// 开头");
+  const parsed = new URL(trimmed);
+  if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.hash || parsed.search) throw new Error("WebDAV 请使用不含账号、查询或片段的 HTTPS 地址");
   return trimmed.endsWith("/") ? trimmed : `${trimmed}/`;
 }
 
@@ -109,12 +110,15 @@ function davHeaders(target: WebdavTarget, extra: Record<string, string> = {}) {
 }
 
 async function davRequest(target: WebdavTarget, method: string, url: string, init: { body?: string; headers?: Record<string, string>; timeoutMs?: number } = {}) {
+  davBase(url);
   const res = await fetch(url, {
+    redirect: "manual",
     method,
     headers: davHeaders(target, init.headers),
     body: init.body,
     signal: AbortSignal.timeout(init.timeoutMs ?? 30000),
   });
+  if (res.status >= 300 && res.status < 400) throw new Error("WebDAV 地址发生重定向，请填写最终 HTTPS 地址");
   if (res.status === 401 || res.status === 403) throw new Error("WebDAV 账号或应用密码不对");
   return res;
 }

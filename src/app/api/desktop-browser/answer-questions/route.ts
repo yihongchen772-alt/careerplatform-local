@@ -57,7 +57,7 @@ const bodySchema = z.object({
   resumeVersionId: z.string().min(1, "没选简历"),
   profile: profileSchema.optional(),
   /** Stable page context supplied by the embedded browser. Empty means generic. */
-  contextKey: z.string().trim().max(300).optional(),
+  contextKey: z.string().trim().max(16384).optional(),
 });
 
 // The AI's honest "not derivable from the resume" answer for a short/choice
@@ -67,26 +67,11 @@ const bodySchema = z.object({
 // answer worth reusing).
 const NEEDS_MANUAL_INPUT = "NEEDS_MANUAL_INPUT";
 
-// Dice coefficient over character bigrams — a standard, tokenizer-free way
-// to compare short CJK strings. Two phrasings of "为什么选择我们" score high;
-// genuinely different questions score low. No fuzzy-matching dependency
-// needed for something this small.
-function bigrams(s: string): Set<string> {
-  const normalized = s.replace(/\s+/g, "");
-  const set = new Set<string>();
-  for (let i = 0; i < normalized.length - 1; i++) set.add(normalized.slice(i, i + 2));
-  return set;
+// Only typography may differ. Similarity cannot establish that negation,
+// dates, quantities or the subject of a question have the same meaning.
+function questionKey(label: string): string {
+  return label.normalize("NFKC").trim().toLowerCase().replace(/\s+/g, " ").replace(/[?？]+$/, "");
 }
-function similarity(a: string, b: string): number {
-  const setA = bigrams(a);
-  const setB = bigrams(b);
-  if (setA.size === 0 || setB.size === 0) return 0;
-  let overlap = 0;
-  for (const gram of setA) if (setB.has(gram)) overlap++;
-  return (2 * overlap) / (setA.size + setB.size);
-}
-const SIMILARITY_THRESHOLD = 0.6;
-const PERSONAL_THRESHOLD = 0.72;
 
 // Consumed by electron/browser-view.js's autofill handler. One AI call
 // covers every field that isn't already cached or matched from the saved
@@ -139,8 +124,8 @@ export async function POST(request: Request) {
       if (c.contextKey && c.contextKey !== contextKey) continue;
       if (companySpecificQuestion(q.label) && !c.contextKey && !c.confirmed) continue;
       if (q.kind === "choice" && (!q.options?.includes(c.answer))) continue;
-      const score = similarity(q.label, c.questionLabel);
-      const threshold = c.confirmed ? PERSONAL_THRESHOLD : q.kind === "essay" ? SIMILARITY_THRESHOLD : 0.9;
+      const score = questionKey(q.label) === questionKey(c.questionLabel) ? 1 : 0;
+      const threshold = 1;
       const rank = score + (c.confirmed ? 1 : 0);
       if (score >= threshold && (!best || rank > best.score)) {
         best = { answer: c.answer, score: rank, id: c.id, confirmed: c.confirmed };
