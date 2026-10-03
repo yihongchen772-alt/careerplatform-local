@@ -40,6 +40,7 @@ export const TABLES = [
   "resumeVersion",
   "position",
   "applicationDraft",
+  "pendingApplicationChange",
   "application",
   "stageHistory",
   "interviewNoteExtract",

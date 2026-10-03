@@ -100,7 +100,7 @@ export function AutofillMemoryCard({ initial }: { initial: MemoryAnswer[] }) {
       </CardHeader>
       <CardContent>
         {rows.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-border/70 px-5 py-8 text-center text-sm text-muted-foreground">还没有记住的内容。在网申浏览器手填内容后会自动保存，也可点「记住本页」。</div>
+          <div className="rounded-2xl border border-dashed border-border/70 px-5 py-8 text-center text-sm text-muted-foreground">还没有确认过的字段或回答。网申浏览器发现的新内容会先放入「待核对变化」，确认保存范围后才会出现在这里。</div>
         ) : (
           <div className="grid gap-4 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
             <div className="min-w-0 space-y-3">

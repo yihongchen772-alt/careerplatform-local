@@ -55,6 +55,7 @@ const FOREIGN_KEYS: Partial<Record<TableName, [field: string, parent: TableName]
   jobLead: [["userId", "user"]],
   resumeVersion: [["userId", "user"]],
   applicationDraft: [["userId", "user"]],
+  pendingApplicationChange: [["userId", "user"], ["resumeVersionId", "resumeVersion"]],
   position: [["userId", "user"], ["companyId", "company"]],
   application: [
     ["userId", "user"],
@@ -186,6 +187,7 @@ const COUNT_LABELS: Partial<Record<TableName, string>> = {
   resumeComparisonSummary: "简历对比总结",
   interviewIntelligence: "面试能力总结",
   applicationDraft: "网申填写草稿",
+  pendingApplicationChange: "待核对网申变化",
   position: "候选岗位",
   application: "投递记录",
   resumeVersion: "简历版本",

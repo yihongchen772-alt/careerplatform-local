@@ -107,6 +107,7 @@ model User {
   resumeVersions          ResumeVersion[]
   autofillAnswers         AutofillAnswer[]
   applicationMemories     ApplicationMemory[]
+  pendingApplicationChanges PendingApplicationChange[]
   addedCompanies          Company[]
   attachments             Attachment[]
   interviewPreps          InterviewPrep[]
@@ -153,6 +154,27 @@ model ApplicationMemory {
 
   @@unique([userId, category, identity])
   @@index([userId, enabled])
+}
+
+/// Hand-written form content discovered by the browser. Discovery is not
+/// consent to reuse: these rows stay out of autofill until the user reviews
+/// and promotes them to ApplicationMemory or AutofillAnswer.
+model PendingApplicationChange {
+  id              String   @id @default(cuid())
+  userId          String
+  kind            String
+  label           String
+  payload         Json
+  sourceUrl       String
+  contextKey      String?
+  resumeVersionId String?
+  fingerprint     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, fingerprint])
+  @@index([userId, updatedAt])
 }
 
 model DesktopNote {

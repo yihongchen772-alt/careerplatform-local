@@ -19,6 +19,8 @@ import { UpdateCard } from "@/components/settings/update-card";
 import { ApplicationProfileCard } from "@/components/settings/application-profile-card";
 import { AutofillMemoryCard } from "@/components/settings/autofill-memory-card";
 import { ApplicationMemoryCard } from "@/components/settings/application-memory-card";
+import { PendingApplicationChangesCard } from "@/components/settings/pending-application-changes-card";
+import { toPendingApplicationChangeView } from "@/lib/pending-application-change";
 import { toMemoryView, type MemoryView } from "@/lib/application-memory";
 import { parseApplicationProfile } from "@/lib/application-profile";
 import { db } from "@/lib/db";
@@ -26,7 +28,7 @@ import packageInfo from "../../../../package.json";
 
 export default async function SettingsPage() {
   const user = await requireUser();
-  const [aiKeys, appSettings, mailAccounts, freshnessResult, resumeVersions, rememberedAnswers, autoBackup, extensionPairing, memories] = await Promise.all([
+  const [aiKeys, appSettings, mailAccounts, freshnessResult, resumeVersions, rememberedAnswers, autoBackup, extensionPairing, memories, pendingChanges] = await Promise.all([
     getAiKeysOverview(user.id),
     getAppSettings(),
     listMailAccounts(user.id),
@@ -44,8 +46,10 @@ export default async function SettingsPage() {
     getAutoBackupSettings(),
     getExtensionPairing(),
     db.applicationMemory.findMany({ where: { userId: user.id }, orderBy: { updatedAt: "desc" } }),
+    db.pendingApplicationChange.findMany({ where: { userId: user.id }, orderBy: { updatedAt: "desc" }, take: 100 }),
   ]);
   const freshness = freshnessResult.ok ? freshnessResult.data : null;
+  const memoryViews = memories.map(toMemoryView).filter((row): row is MemoryView => row !== null);
 
   return (
     <div className="space-y-6">
@@ -67,7 +71,8 @@ export default async function SettingsPage() {
           }}
         />
         <ApplicationProfileCard initial={parseApplicationProfile(user.applicationProfile)} resumeVersions={resumeVersions} />
-        <ApplicationMemoryCard initial={memories.map(toMemoryView).filter((row): row is MemoryView => row !== null)} />
+        <PendingApplicationChangesCard initial={pendingChanges.map(toPendingApplicationChangeView)} currentMemories={memoryViews} />
+        <ApplicationMemoryCard initial={memoryViews} />
         <ExtensionCard initial={extensionPairing} />
         <AutofillMemoryCard initial={rememberedAnswers.map((answer) => ({ ...answer, updatedAt: answer.updatedAt.toISOString() }))} />
         <AppearanceForm />

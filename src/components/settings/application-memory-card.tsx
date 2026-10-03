@@ -65,7 +65,7 @@ export function ApplicationMemoryCard({ initial }: { initial: MemoryView[] }) {
   return <Card id="experience-memory" className="md:col-span-2 scroll-mt-6">
     <CardHeader>
       <CardTitle>经历记忆库</CardTitle>
-      <p className="text-sm text-muted-foreground">手填的项目、实习、教育和获奖按整条记住，可在其他官网复用。重复记录自动合并，每条最多保留 5 个其他版本；网申资料里手动维护的内容优先。</p>
+      <p className="text-sm text-muted-foreground">你确认加入的项目、实习、教育和获奖按整条保存，可在其他官网选择使用。重复记录自动合并，每条最多保留 5 个其他版本；网申资料里手动维护的内容优先。</p>
     </CardHeader>
     <CardContent className="space-y-4">
       <div className="flex flex-wrap gap-2" role="group" aria-label="经历类型">
@@ -76,7 +76,7 @@ export function ApplicationMemoryCard({ initial }: { initial: MemoryView[] }) {
         }}>{label} {rows.filter((row) => value === "all" || row.category === value).length}</Button>)}
       </div>
       <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索项目、公司或奖项" aria-label="搜索经历记忆" />
-      {!rows.length ? <p className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">在网申浏览器手填一段经历，离开输入框后会自动记住。也可以点击「记住本页经历」收录当前页面。密码、证件号和未修改的 AI 草稿不会收录。</p> : <div className="grid gap-4 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+      {!rows.length ? <p className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">还没有确认加入的经历。网申浏览器发现完整经历后会放入「待核对变化」；只有你确认加入，才会出现在这里并可用于以后填写。</p> : <div className="grid gap-4 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
         <div className="space-y-3">
           <div className="max-h-[32rem] space-y-2 overflow-y-auto">
             {filtered.map((row) => <div key={row.id} className={cn("flex items-start gap-2 rounded-xl border p-3", selectedId === row.id && "border-primary/50 bg-primary/5")}>

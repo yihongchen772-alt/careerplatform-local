@@ -190,7 +190,7 @@ export function EmbeddedBrowser({
   const [status, setStatus] = useState<DesktopBridgeAutofillStatus | null>(null);
   const [autofilling, setAutofilling] = useState(false);
   const [savingCorrections, setSavingCorrections] = useState(false);
-  const [rememberedCount, setRememberedCount] = useState(0);
+  const [pendingChangeCount, setPendingChangeCount] = useState(0);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [jobBindings, setJobBindings] = useState<Record<number, string>>({});
   const [expanded, setExpanded] = useState(false);
@@ -430,12 +430,11 @@ export function EmbeddedBrowser({
       if (autoSavingRef.current) return;
       autoSavingRef.current = true;
       try {
-        const { saved, conflicts } = await bridge.saveCorrections(resumeVersionId || undefined, true, positionId || "");
-        if (saved > 0) setRememberedCount((count) => count + saved);
-        if (conflicts) toast.info("经历描述有不同版本，已保留在经历记忆库，可选择下次使用的版本");
+        const { pending = 0 } = await bridge.saveCorrections(resumeVersionId || undefined, true, positionId || "");
+        if (pending > 0) setPendingChangeCount((count) => count + pending);
         autoSaveErrorRef.current = false;
       } catch {
-        if (!autoSaveErrorRef.current) toast.error("自动记住手填内容失败；可点「记住本页」重试");
+        if (!autoSaveErrorRef.current) toast.error("自动检测手填变化失败；可点「核对本页变化」重试");
         autoSaveErrorRef.current = true;
       } finally {
         autoSavingRef.current = false;
@@ -534,11 +533,12 @@ export function EmbeddedBrowser({
     if (!bridge || savingCorrections) return;
     setSavingCorrections(true);
     try {
-      const { saved, recordsSaved, answersSaved, unchanged, conflicts } = await bridge.saveCorrections(resumeVersionId || undefined, false, positionId || "");
-      if (saved > 0) {
-        toast.success(`已记住 ${recordsSaved || 0} 条经历、${answersSaved ?? saved} 项字段或回答${conflicts ? "；差异描述已保留为版本" : ""}`);
+      const { pending = 0, unchanged } = await bridge.saveCorrections(resumeVersionId || undefined, false, positionId || "");
+      if (pending > 0) {
+        setPendingChangeCount((count) => count + pending);
+        toast.success(`发现 ${pending} 项可保存内容，已放入账号设置的「待核对变化」`);
       } else {
-        toast.info(unchanged ? "这些内容已经记住，重复保存不会增加记录" : "没有可收录的新内容；经历需有名称及其他内容，未修改的 AI 草稿不收录");
+        toast.info(unchanged ? "这些变化已经在待核对列表中" : "没有发现完整的新内容；未修改的 AI 草稿不会进入待核对列表");
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "保存修改失败");
@@ -699,8 +699,8 @@ export function EmbeddedBrowser({
             <DropdownMenuItem disabled={!currentUrl} onClick={() => setMarkOpen(true)}><Send className="size-4" />记为已投递</DropdownMenuItem>
             <DropdownMenuItem onClick={() => setPortalOpen(true)}><Radar className="size-4" />设置进度同步</DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem disabled={savingCorrections || !currentUrl} onClick={handleSaveCorrections}><Check className="size-4" />{savingCorrections ? "记忆中…" : "记住本页手填内容"}</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => router.push("/settings#answer-memory")}><NotebookPen className="size-4" />打开记忆库</DropdownMenuItem>
+            <DropdownMenuItem disabled={savingCorrections || !currentUrl} onClick={handleSaveCorrections}><Check className="size-4" />{savingCorrections ? "检测中…" : "核对本页变化"}</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push("/settings#pending-application-changes")}><NotebookPen className="size-4" />打开待核对变化</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => bridge.zoomOut()}><ZoomOut className="size-4" />缩小网页</DropdownMenuItem>
             <DropdownMenuItem onClick={() => bridge.zoomReset()}>还原缩放（当前 {zoomPercent}%）</DropdownMenuItem>
@@ -843,7 +843,7 @@ export function EmbeddedBrowser({
         </Button>
         {autofilling && <Button type="button" size="sm" variant="outline" onClick={() => void bridge.cancelAutofill(tabsState.activeId ?? undefined)}>停止填写</Button>}
         <span className="hidden text-xs text-muted-foreground xl:inline">只补空白，已填内容保留</span>
-        <Button type="button" size="sm" variant="outline" disabled={savingCorrections || autofilling || !currentUrl} onClick={handleSaveCorrections}>记住本页经历</Button>
+        <Button type="button" size="sm" variant="outline" disabled={savingCorrections || autofilling || !currentUrl} onClick={handleSaveCorrections}>核对本页变化</Button>
         <Button type="button" size="sm" variant={toolsOpen ? "secondary" : "ghost"} className="ml-auto" onClick={() => setToolsOpen((value) => !value)}>{toolsOpen ? "收起设置" : "填写设置"}</Button>
       </div>
       {toolsOpen && <div className="flex max-h-44 min-h-0 flex-wrap items-center gap-x-4 gap-y-3 overflow-auto rounded-lg border bg-muted/30 p-3">
@@ -874,9 +874,9 @@ export function EmbeddedBrowser({
           <input type="checkbox" checked={expandBlocks} onChange={(e) => setExpandBlocks(e.target.checked)} />
           自动补齐栏目
         </label>
-        <label className="flex items-center gap-1.5 text-xs text-muted-foreground" title="记住你手填或修改的基础资料与开放题；密码、证件、银行卡、验证码不保存">
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground" title="发现你手填或修改的经历与回答，先放入待核对列表；确认前不会影响以后填写">
           <input type="checkbox" checked={autoRemember} onChange={(e) => setAutoRememberAnswers(e.target.checked)} />
-          自动记住经历与回答
+          自动发现待核对变化
         </label>
         {!expanded && <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span className="font-medium">网页视区</span>
@@ -889,7 +889,7 @@ export function EmbeddedBrowser({
             <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setBrowserHeight(650)}>还原</Button>
           </>}
         </div>}
-        <p className="w-full text-xs text-muted-foreground">{autoRemember ? `离开输入框后，完整经历与手填回答会自动记住${rememberedCount > 0 ? ` · 本次新增或更新 ${rememberedCount} 条` : ""}` : "手填内容自动记忆已关闭"} · 经历记忆库在账号设置中。</p>
+        <p className="w-full text-xs text-muted-foreground">{autoRemember ? `离开输入框后检测完整变化，确认前不会用于自动填写${pendingChangeCount > 0 ? ` · 本次发现 ${pendingChangeCount} 项` : ""}` : "自动发现已关闭"} · 可在账号设置的「待核对变化」处理。</p>
       </div>}
 
 

@@ -6,8 +6,10 @@ import { requireUser } from "@/lib/session";
 import { canUpdateReferencedAnswer, companySpecificQuestion, shouldForkGlobalAnswer } from "@/lib/autofill-answer-scope";
 import { memoryCaptureSchema, memorySourceUrl, normalizeMemoryText } from "@/lib/application-memory";
 import { storeApplicationMemories } from "@/lib/application-memory-store";
+import { stageApplicationChanges } from "@/lib/pending-application-change";
 
 const bodySchema = z.object({
+  mode: z.enum(["stage", "commit"]).default("commit"),
   resumeVersionId: z.string().min(1).nullish(),
   contextKey: z.string().max(16384).nullable(),
   sourceUrl: z.string().max(16384).optional(),
@@ -39,6 +41,18 @@ export async function POST(request: Request) {
   if (resumeVersionId) {
     const resume = await db.resumeVersion.findFirst({ where: { id: resumeVersionId, userId: user.id }, select: { id: true } });
     if (!resume) return NextResponse.json({ error: "选的简历不存在" }, { status: 400 });
+  }
+
+  if (parsed.data.mode === "stage") {
+    const result = await db.$transaction((tx) => stageApplicationChanges(tx, user.id, {
+      answers,
+      records,
+      sourceUrl,
+      contextKey,
+      resumeVersionId,
+    }));
+    if (result.staged > 0) revalidatePath("/settings");
+    return NextResponse.json({ saved: 0, pending: result.staged, processed: result.processed, unchanged: result.processed - result.staged });
   }
 
   const result = await db.$transaction(async (tx) => {

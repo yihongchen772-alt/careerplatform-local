@@ -175,7 +175,7 @@ async function load() {
 }
 
 function renderMemoryStatus(status) {
-  $("memory-state").textContent = status.error ? `记忆保存失败：${status.error}，可点「记住本页经历」重试` : `已新增或更新 ${status.saved} 条记忆${status.conflicts ? "；差异描述已保留为版本" : ""}`;
+  $("memory-state").textContent = status.error ? `变化检测失败：${status.error}，可点「核对本页变化」重试` : `发现 ${status.pending || 0} 项待核对变化；确认前不会用于以后填写`;
 }
 $("auto-remember").addEventListener("change", async () => {
   const enabled = $("auto-remember").checked;
@@ -183,7 +183,7 @@ $("auto-remember").addEventListener("change", async () => {
     if (enabled && tab?.url) await chrome.permissions.request({ origins: [`${new URL(tab.url).origin}/*`] });
     await chrome.storage.local.set({ autoRemember: enabled });
     await send("watchMemory", { enabled });
-    $("memory-state").textContent = enabled ? "已开启本网站自动记忆，离开输入框后保存" : "自动记忆已关闭";
+    $("memory-state").textContent = enabled ? "已开启变化检测；确认前不会用于以后填写" : "自动发现已关闭";
   } catch (error) { $("memory-state").textContent = `自动记忆设置失败：${error.message}`; }
 });
 
@@ -240,8 +240,8 @@ $("cancel").addEventListener("click", () => send("cancel").catch((err) => messag
 
 $("save").addEventListener("click", async () => {
   try {
-    const { saved, recordsSaved, answersSaved, unchanged, conflicts } = await send("save");
-    message(saved > 0 ? `已记住 ${recordsSaved || 0} 条经历、${answersSaved ?? saved} 项字段或回答${conflicts ? "；差异描述已保留为版本" : ""}` : unchanged ? "这些内容已经记住，重复保存不会增加记录" : "没有可收录的新内容，经历需要名称及其他内容，未修改的 AI 草稿不收录");
+    const { pending = 0, unchanged } = await send("save");
+    message(pending > 0 ? `发现 ${pending} 项可保存内容；请在 App 的账号设置中核对` : unchanged ? "这些变化已经在待核对列表中" : "没有发现完整的新内容；未修改的 AI 草稿不会进入待核对列表");
   } catch (err) {
     message(err.message, "error");
   }

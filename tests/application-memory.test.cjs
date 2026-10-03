@@ -106,6 +106,36 @@ test('flat answers deduplicate without merging opposite questions or company sco
   const tidy = await load('src/lib/actions/autofill-memory.ts').tidyAutofillMemories(); assert.equal(tidy.ok, true); assert.equal(tidy.data.length, 1); assert.equal(await db.autofillAnswer.count(), 4);
 });
 
+test('browser discoveries stay pending until reviewed, then use the chosen reuse scope', async (t) => {
+  const { db, post, load } = await fixture(t);
+  const answer = { questionLabel: '为什么选择这家公司？', answer: '因为岗位方向与我的经历匹配。', kind: 'essay' };
+  const record = { category: 'project', content: { name: '待确认项目', description: '这是本次申请中补写的描述' } };
+  const staged = (await post([record], { mode: 'stage', answers: [answer] })).data;
+  assert.equal(staged.pending, 2);
+  assert.equal(await db.pendingApplicationChange.count(), 2);
+  assert.equal(await db.autofillAnswer.count(), 0, 'pending answers must not become reusable');
+  assert.equal(await db.applicationMemory.count(), 0, 'pending experiences must not enter the profile');
+
+  const actions = load('src/lib/actions/pending-application-change.ts');
+  const pending = await db.pendingApplicationChange.findMany({ orderBy: { kind: 'asc' } });
+  const pendingAnswer = pending.find((row) => row.kind === 'answer');
+  const pendingRecord = pending.find((row) => row.kind === 'record');
+  assert.equal((await actions.acceptPendingApplicationChange(pendingAnswer.id, { shareAcrossCompanies: false })).ok, true);
+  const savedAnswer = await db.autofillAnswer.findFirst();
+  assert.equal(savedAnswer.contextKey, 'page:v2:https://company-one.example/apply');
+  assert.equal(savedAnswer.confirmed, true);
+  assert.equal((await actions.acceptPendingApplicationChange(pendingRecord.id, { shareAcrossCompanies: false })).ok, true);
+  assert.equal(await db.applicationMemory.count(), 1);
+  assert.equal(await db.pendingApplicationChange.count(), 0);
+
+  await post([{ ...record, content: { ...record.content, description: '准备设为默认的新描述' } }], { mode: 'stage' });
+  const replacement = await db.pendingApplicationChange.findFirst();
+  assert.equal((await actions.acceptPendingApplicationChange(replacement.id, { shareAcrossCompanies: false, recordPreference: 'replace' })).ok, true);
+  const updated = await db.applicationMemory.findFirst();
+  assert.equal(updated.content.description, '准备设为默认的新描述');
+  assert.equal(updated.alternatives[0].content.description, '这是本次申请中补写的描述');
+});
+
 test('sparse repeated blocks use one record; existing anchors reorder rows; unmatched projects and missing descriptions never go to AI', () => {
   const profile = { projects: [{ name: '甲项目', role: '负责人', description: '甲描述' }, { name: '乙项目', role: '开发', description: '乙描述' }] };
   const field = (id, blockKey, label, extra = {}) => ({ id, blockKey, label, section: '项目经历', tag: 'input', ...extra });

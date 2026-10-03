@@ -1901,7 +1901,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
         ? `网申资料里${missingBlocks.join("、")}，没找到能自动点的「添加」按钮——请手动添加后再点一次一键填写`
         : `网申资料里${missingBlocks.join("、")}，但这页的对应栏目不够——先点页面上的「添加」再点一次一键填写，或勾选「自动补齐栏目」`);
     }
-    parts.push("手写或修改的基础资料和开放题会自动记住；可在账号设置查看和修改；提交前请核对所有填入内容");
+    parts.push("手写或修改的资料会先进入待核对列表；确认前不会用于以后填写；提交前请核对所有填入内容");
 
     assertActive();
     const summary = { filled: previous.filled + filled.length, manual: allDetails.filter((d) => d.source === "manual").length, preserved: Math.max(0, alreadyFilled - priorFillsOnPage) + skipped.length, excluded: allDetails.filter((d) => d.source === "excluded").length, uploaded: previous.uploaded + uploadedResumeCount };
@@ -2022,7 +2022,7 @@ async function saveCorrectionsCore(adapter, resumeVersionId, onlyUserEdited = fa
   const res = await adapter.api("save-corrections", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ resumeVersionId, sourceUrl: pageUrl, contextKey: adapter.jobId?.() ? `job:v1:${adapter.jobId()}` : portalContext(pageUrl), answers, records }),
+    body: JSON.stringify({ mode: "stage", resumeVersionId, sourceUrl: pageUrl, contextKey: adapter.jobId?.() ? `job:v1:${adapter.jobId()}` : portalContext(pageUrl), answers, records }),
   });
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "保存回答失败");
   const body = await res.json();
@@ -2034,7 +2034,7 @@ async function saveCorrectionsCore(adapter, resumeVersionId, onlyUserEdited = fa
     const confirmedIds = new Set(answers.map((answer) => answer.answerId).filter(Boolean));
     adapter.setDrafts(filledList.filter((entry) => !confirmedIds.has(entry.answerId)));
   }
-  return { saved: body.saved ?? 0, recordsSaved: body.recordsSaved ?? 0, answersSaved: body.answersSaved ?? body.saved ?? 0, unchanged: body.unchanged ?? 0, conflicts: body.conflicts ?? 0 };
+  return { saved: body.saved ?? 0, pending: body.pending ?? 0, recordsSaved: body.recordsSaved ?? 0, answersSaved: body.answersSaved ?? body.saved ?? 0, unchanged: body.unchanged ?? 0, conflicts: body.conflicts ?? 0 };
 }
 
 // Values are referenced from the saved profile, never reconstructed by the model.

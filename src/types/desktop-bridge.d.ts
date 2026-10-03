@@ -70,7 +70,7 @@ export type DesktopBridge = {
   applicationSnapshot(): Promise<ApplicationSnapshot | null>;
   autofill(resumeVersionId?: string, options?: DesktopBridgeAutofillOptions): Promise<void>;
   cancelAutofill(tabId?: number): Promise<void>;
-  saveCorrections(resumeVersionId?: string, onlyUserEdited?: boolean, positionId?: string): Promise<{ saved: number; recordsSaved?: number; answersSaved?: number; unchanged?: number; conflicts?: number }>;
+  saveCorrections(resumeVersionId?: string, onlyUserEdited?: boolean, positionId?: string): Promise<{ saved: number; pending?: number; recordsSaved?: number; answersSaved?: number; unchanged?: number; conflicts?: number }>;
   clearMarks(): Promise<void>;
   capturePage(): Promise<DesktopBridgeCapturedPage>;
   exportFormStructure(): Promise<{ path: string; fields: number; frames: number }>;

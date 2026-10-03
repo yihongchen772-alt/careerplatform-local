@@ -244,8 +244,8 @@ async function rememberAutomatically(sender, message) {
   if (!state?.enabled || new URL(tab.url).origin !== state.origin || sender.url !== message.url) return { saved: 0 };
   try {
     const result = await saveTab(tabId, true);
-    if (result.saved) {
-      const status = { saved: result.saved, conflicts: result.conflicts, at: Date.now() };
+    if (result.pending) {
+      const status = { pending: result.pending, at: Date.now() };
       await chrome.storage.session.set({ [`memory-status:${tabId}`]: status });
       chrome.runtime.sendMessage({ type: "memory-status", tabId, status }).catch(() => {});
     }
