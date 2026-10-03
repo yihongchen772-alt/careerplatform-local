@@ -368,7 +368,7 @@ test("an untouched AI draft is never remembered, even with the draft list lost",
     frames: async () => ["top"],
     run: async (_frame, fn, args) => {
       if (fn === core.scanPageFields) return [essay("c0-f0", "为什么选择我们？"), essay("c0-f1", "你的职业规划？"), essay("c0-f2", "请介绍一个项目经历？")];
-      if (fn === core.readFieldValues) return { [args[0][0]]: values[args[0][0]] };
+      if (fn === core.readFieldValues) return Object.fromEntries(args[0].map((id) => [id, values[id]]));
       return undefined;
     },
     api: async (_name, init) => {

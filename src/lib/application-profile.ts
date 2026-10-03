@@ -19,7 +19,7 @@ export const experienceSchema = z.object({
   role: z.string().trim().max(80).default(""),
   start: z.string().trim().max(20).default(""),
   end: z.string().trim().max(20).default(""),
-  description: z.string().trim().max(1000).default(""),
+  description: z.string().trim().max(5000).default(""),
 });
 
 export const projectSchema = z.object({
@@ -27,8 +27,16 @@ export const projectSchema = z.object({
   role: z.string().trim().max(80).default(""),
   start: z.string().trim().max(20).default(""),
   end: z.string().trim().max(20).default(""),
-  description: z.string().trim().max(1500).default(""),
-  responsibilities: z.string().trim().max(1500).default(""),
+  description: z.string().trim().max(5000).default(""),
+  responsibilities: z.string().trim().max(5000).default(""),
+});
+
+export const awardSchema = z.object({
+  name: z.string().trim().max(120).default(""),
+  issuer: z.string().trim().max(120).default(""),
+  level: z.string().trim().max(80).default(""),
+  date: z.string().trim().max(20).default(""),
+  description: z.string().trim().max(3000).default(""),
 });
 
 export const EXTRA_FIELDS = [
@@ -62,6 +70,7 @@ export const applicationProfileSchema = z.object({
   education: z.array(educationSchema).max(10).default([]),
   experiences: z.array(experienceSchema).max(20).default([]),
   projects: z.array(projectSchema).max(20).default([]),
+  awards: z.array(awardSchema).max(30).default([]),
   extras: z.record(z.string(), z.string().trim().max(1000)).default({}),
   variants: z.array(profileVariantSchema).max(8).default([]),
 });
@@ -92,8 +101,9 @@ export function resolveProfileVariant(
 export type EducationRow = z.infer<typeof educationSchema>;
 export type ExperienceRow = z.infer<typeof experienceSchema>;
 export type ProjectRow = z.infer<typeof projectSchema>;
+export type AwardRow = z.infer<typeof awardSchema>;
 
-export const EMPTY_APPLICATION_PROFILE: ApplicationProfile = { education: [], experiences: [], projects: [], extras: {}, variants: [] };
+export const EMPTY_APPLICATION_PROFILE: ApplicationProfile = { education: [], experiences: [], projects: [], awards: [], extras: {}, variants: [] };
 
 export function parseApplicationProfile(raw: unknown): ApplicationProfile {
   const parsed = applicationProfileSchema.safeParse(raw);
@@ -140,6 +150,10 @@ export function describeApplicationProfile(p: ApplicationProfile): string {
     if (bits.length || project.description || project.responsibilities) {
       lines.push(`项目经历${i + 1}：${bits.join(" / ")}${project.description ? `；项目描述：${project.description}` : ""}${project.responsibilities ? `；个人职责与成果：${project.responsibilities}` : ""}`);
     }
+  });
+  (p.awards || []).forEach((award, i) => {
+    const bits = [award.name, award.level, award.issuer, award.date, award.description].filter(Boolean);
+    if (bits.length) lines.push(`获奖情况${i + 1}：${bits.join(" / ")}`);
   });
   for (const f of EXTRA_FIELDS) {
     const v = p.extras[f.key];

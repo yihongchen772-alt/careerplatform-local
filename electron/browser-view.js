@@ -883,9 +883,10 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
   handle("browser:cancel-autofill", (_e, tabId) => stopFillTask(tabId ?? activeId));
 
   // Remember manually entered facts and essays; never save untouched drafts.
-  handle("browser:save-corrections", async (_e, resumeVersionId, onlyUserEdited = false) => {
+  handle("browser:save-corrections", async (_e, resumeVersionId, onlyUserEdited = false, positionId) => {
     const tab = activeTab();
     if (!tab) return { saved: 0 };
+    if (typeof positionId === "string") tab.positionId = positionId || undefined;
     if (savingAnswersForTabs.has(tab.id)) return { saved: 0 };
     savingAnswersForTabs.add(tab.id);
     try {

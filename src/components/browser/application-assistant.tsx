@@ -9,8 +9,9 @@ function copyChoices(profile: Record<string, unknown>) {
   const choices: { label: string; value: string }[] = [];
   const labels: Record<string, string> = { name: "姓名", phone: "手机", email: "邮箱", gender: "性别", birthDate: "出生日期", currentCity: "现居地", selfIntro: "自我评价", targetRole: "期望岗位", politics: "政治面貌", hometown: "籍贯", english: "英语水平" };
   for (const [key, label] of Object.entries(labels)) if (typeof profile[key] === "string" && profile[key]) choices.push({ label, value: profile[key] as string });
-  for (const [key, label] of [["education", "教育"], ["experiences", "工作/实习"], ["projects", "项目"]]) if (Array.isArray(profile[key])) (profile[key] as Record<string, string>[]).forEach((row, i) => {
-    for (const [name, value] of Object.entries(row)) if (typeof value === "string" && value) choices.push({ label: `${label} ${i + 1} · ${name}`, value });
+  const columns: Record<string, string> = { school: "学校", company: "公司", name: "名称", role: "职位 / 角色", start: "开始", end: "结束", major: "专业", degree: "学历", description: "描述", responsibilities: "职责与成果", issuer: "颁发单位", level: "等级", date: "获奖时间" };
+  for (const [key, label] of [["education", "教育"], ["experiences", "工作/实习"], ["projects", "项目"], ["awards", "获奖"]]) if (Array.isArray(profile[key])) (profile[key] as Record<string, string>[]).forEach((row, i) => {
+    for (const [name, value] of Object.entries(row)) if (typeof value === "string" && value) choices.push({ label: `${label} ${i + 1} · ${columns[name] || name}`, value });
   });
   return choices;
 }
@@ -61,7 +62,17 @@ function PlanEditor({ plan, busy, bridge, onApply, onQuestion, onRows }: { plan:
     return () => { clearTimeout(timer); controller.abort(); };
   }, [rows, plan]);
   const patch = (id: string, value: Partial<typeof rows[number]>) => setRows((items) => items.map((p) => p.id === id ? { ...p, ...value, edited: true } : p));
-  return <div className="space-y-2"><h3 className="font-medium">填写前预览</h3><p className="text-xs text-muted-foreground">{saveState}</p><p className="text-xs text-muted-foreground">AI 草稿默认不勾选。可以指定某组字段使用哪段教育或工作资料。</p>
+  return <div className="space-y-2"><h3 className="font-medium">填写前预览</h3><p className="text-xs text-muted-foreground">{saveState}</p><p className="text-xs text-muted-foreground">先整段选择经历，再核对字段。AI 草稿需要自行勾选。</p>
+    {plan.blocks?.filter((block) => block.fieldIds.some((id) => rows.some((row) => row.id === id && row.eligible))).map((block) => <div key={block.id} className="space-y-1 rounded border border-primary/30 bg-primary/5 p-2 text-xs">
+      <label className="block font-medium">{block.label}<select aria-label={`${block.label}整段来源`} disabled={busy || !block.choices.length} className="mt-1 w-full rounded border bg-background p-1" value={block.choices.find((choice) => {
+        const sources = rows.filter((row) => block.fieldIds.includes(row.id) && row.eligible && row.ref);
+        return sources.length > 0 && sources.every((row) => row.ref === choice.ref || row.ref.startsWith(choice.ref + ":"));
+      })?.ref || ""} onChange={(event) => {
+        const choice = block.choices.find((item) => item.ref === event.target.value); if (!choice) return;
+        setRows((current) => current.map((row) => block.fieldIds.includes(row.id) && row.eligible ? { ...row, value: choice.values[row.id]?.value || "", ref: choice.values[row.id]?.ref || "", selected: !!choice.values[row.id]?.value, remember: true, edited: true } : row));
+      }}><option value="">保持原建议 / 手动填写</option>{block.choices.map((choice) => <option key={choice.ref} value={choice.ref}>{choice.label}</option>)}</select></label>
+      <p className="text-muted-foreground">{block.note}。选择后会记住本页整段对应关系。</p>
+    </div>)}
     {rows.map((p) => <fieldset key={p.id} disabled={busy || !p.eligible} className="space-y-1 rounded border p-2 text-xs disabled:opacity-60">
       <label className="flex gap-2"><input type="checkbox" checked={p.selected} onChange={(e) => patch(p.id, { selected: e.target.checked })} /><span>{p.section ? `${p.section} · ` : ""}{p.label}{p.required ? " *" : ""}</span></label>
       <button type="button" className="underline" onClick={() => bridge.focusField(p.id)}>定位网页字段</button>

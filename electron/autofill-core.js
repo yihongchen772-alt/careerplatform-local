@@ -12,6 +12,7 @@
 // all frames so the fill step can route each value back to the right one.
 function scanPageFields(prefix, readOnly = false) {
   const results = [];
+  const nodes = new Map();
   const host = typeof location !== "undefined" ? location.hostname : "";
   // Portal families keep their own wrappers; common DOM rules remain the fallback.
   const portal = /(^|\.)mokahr\.com$/.test(host) ? { name: "Moka", wrapper: /question|formItem|form-item/i, label: "[class*='questionTitle'], [class*='label'], label" }
@@ -123,7 +124,7 @@ function scanPageFields(prefix, readOnly = false) {
   // labels; the nearest block heading tells the matcher which list and, for
   // "本科阶段"/"硕士阶段" style headings, which row. Sibling blocks that contain
   // their own inputs are skipped so row two never inherits row one's heading.
-  const SECTION_HEADING = /基本信息|个人信息|联系方式|求职意向|开放题|问答|补充信息|自我评价|教育|学习经历|本科|硕士|研究生|博士|大专|专科|实习|工作经历|工作经验|实践经历|社会实践|项目|第\s*[一二三四五六七八九十\d]+\s*段|personal information|contact information|questions|education|academic|internship|employment|work experience|project/i;
+  const SECTION_HEADING = /基本信息|个人信息|联系方式|求职意向|开放题|问答|补充信息|自我评价|教育|学习经历|本科|硕士|研究生|博士|大专|专科|实习|工作经历|工作经验|实践经历|社会实践|项目|获奖|荣誉|奖项|第\s*[一二三四五六七八九十\d]+\s*段|personal information|contact information|questions|education|academic|internship|employment|work experience|project|award|honou?r/i;
   function sectionFor(el) {
     let node = el;
     let depth = 0;
@@ -191,6 +192,7 @@ function scanPageFields(prefix, readOnly = false) {
     const innerInput = container.matches("input") ? container : container.querySelector("input");
     const hasValue = !!(shown && shown.textContent.trim()) || !!(innerInput && innerInput.readOnly && innerInput.value && innerInput.value.trim());
     const id = prefix + "s" + counter++;
+    nodes.set(id, container);
     customContainers.add(container);
     if (!readOnly) container.setAttribute("data-cp-fill-id", id);
     results.push({
@@ -206,18 +208,20 @@ function scanPageFields(prefix, readOnly = false) {
   });
 
   elements.forEach((el) => {
-    if (el.type === "password" || el.disabled || el.readOnly || !isVisible(el)) return;
+    if (el.type === "password" || ((el.disabled || el.readOnly) && !String(el.value || "").trim()) || !isVisible(el)) return;
     // Inner inputs of custom selects were handled above.
     if ([...customContainers].some((container) => container === el || container.contains(el))) return;
     if (el.type === "radio") {
       const group = radioGroup(el);
       if (!group) return;
       const id = prefix + "r" + counter++;
+      nodes.set(id, group.radios[0]);
       if (!readOnly) group.radios.forEach((r, i) => r.setAttribute("data-cp-fill-id", id + ":" + i));
       results.push({ id, tag: "radio", type: "radio", label: group.label, placeholder: "", name: el.getAttribute("name") || "", section: sectionFor(group.radios[0]), options: group.options, hasValue: group.hasValue });
       return;
     }
     const id = prefix + "f" + counter++;
+    nodes.set(id, el);
     if (!readOnly) el.setAttribute("data-cp-fill-id", id);
     const entry = {
       id,
@@ -243,20 +247,57 @@ function scanPageFields(prefix, readOnly = false) {
     results.push(entry);
   });
 
+  // Dropdowns and text inputs must share DOM order. Per-kind counters were
+  // previously mixing rows whenever a dropdown preceded ordinary inputs.
+  results.sort((a, b) => a === b || !nodes.get(a.id).compareDocumentPosition ? 0 : nodes.get(a.id).compareDocumentPosition(nodes.get(b.id)) & 4 ? -1 : 1);
+  const groupFor = (field) => {
+    const section = field.section || "";
+    const text = section || field.label || "";
+    return /获奖|荣誉|奖项|award|honou?r/i.test(text) ? "award" : /项目|project/i.test(text) ? "project" : /实习|工作经历|工作经验|实践经历|internship|employment|work experience/i.test(text) ? "experience" : /教育|学习经历|本科|硕士|博士|大专|学校|education|academic/i.test(text) ? "education" : null;
+  };
+  const isAnchor = (field, group) => {
+    const text = field.label || field.placeholder || "";
+    return group === "project" ? /^(?:项目)?(?:名称|名)|project[ _-]*(?:name|title)|^name$/i.test(text)
+      : group === "experience" ? /公司|单位|企业|机构|company|employer/i.test(text) && !/描述|介绍|职责/.test(text)
+      : group === "award" ? /奖项名称|获奖名称|荣誉名称|^(?:名称|奖项|荣誉|name)$|award[ _-]*(?:name|title)/i.test(text)
+      : /学校|院校|school|university/i.test(text) && !/城市|性质|排名/.test(text);
+  };
   for (const field of results) {
-    const el = readOnly ? null : document.querySelector('[data-cp-fill-id="' + field.id + '"]');
+    const group = groupFor(field), el = nodes.get(field.id);
+    if (!group || !el) continue;
+    let candidate = null;
+    for (let node = el.parentElement, depth = 0; node && node !== document.body && depth < 12; node = node.parentElement, depth++) {
+      const children = results.filter((item) => node.contains(nodes.get(item.id)));
+      if (children.some((item) => groupFor(item) !== group)) break;
+      const members = children;
+      const anchors = members.filter((item) => isAnchor(item, group));
+      if (anchors.length > 1) break;
+      if (anchors.length === 1 && members.length > 1) candidate = node;
+    }
+    if (candidate) {
+      let key = candidate.getAttribute("data-cp-block-key");
+      if (!key) { key = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2); if (!readOnly) candidate.setAttribute("data-cp-block-key", key); }
+      field.blockKey = group + ":" + key;
+    }
+  }
+  const occurrences = new Map();
+  for (const field of results) {
+    const el = nodes.get(field.id);
     if (el) {
       field.required = !!el.required || el.getAttribute("aria-required") === "true" || !!el.closest(".ant-form-item-required, .is-required");
       field.maxLength = el.maxLength > 0 ? el.maxLength : null;
       field.pattern = el.getAttribute("pattern") || "";
       field.min = el.getAttribute("min"); field.max = el.getAttribute("max");
-      field.currentValue = field.hasValue ? (el.value || el.textContent || "").trim().slice(0, 20000) : "";
+      field.currentValue = field.hasValue ? (field.tag === "select" ? el.options[el.selectedIndex]?.textContent || "" : field.tag === "custom-select" ? el.querySelector(".ant-select-selection-item, .el-select__selected-item:not(.el-select__placeholder)")?.textContent || el.value || "" : field.tag === "radio" ? Array.from((el.form || document).querySelectorAll('input[type="radio"]')).find((item) => item.name === el.name && item.checked)?.closest("label")?.textContent || "" : el.value || "").trim().slice(0, 20000) : "";
+      field.userEdited = el.getAttribute("data-cp-user-edited") === "1" || !!el.querySelector('[data-cp-user-edited="1"]') || (field.tag === "radio" && Array.from((el.form || document).querySelectorAll('input[type="radio"]')).some((item) => item.name === el.name && item.getAttribute("data-cp-user-edited") === "1"));
       field.portal = portal?.name || "通用表单";
-      field.mappingKey = [field.section, field.label || field.placeholder || field.name, field.tag, field.name, field.id.replace(/^.*?-[fsr]/, "")].join("|");
+      const key = [field.section, field.label || field.placeholder || field.name, field.tag, field.name].join("|");
+      const count = occurrences.get(key) || 0; occurrences.set(key, count + 1);
+      field.mappingKey = `${key}|${count}`;
     }
   }
   if (!readOnly) for (const field of results) {
-    const el = document.querySelector('[data-cp-fill-id="' + field.id + '"]');
+    const el = nodes.get(field.id);
     if (el) {
       el.setAttribute("data-cp-fill-label", field.label || field.placeholder || field.name || "字段");
       if (!el.hasAttribute("data-cp-result-key")) el.setAttribute("data-cp-result-key", (typeof crypto.randomUUID === "function" ? crypto.randomUUID() : prefix + Date.now().toString(36) + Math.random().toString(36).slice(2)));
@@ -322,7 +363,7 @@ function profileSecrets(profile) {
   add(profile.phone, true);
   add(profile.email, true);
   for (const key of ["birthDate", "school", "hometown", "currentCity", "major", "english", "latestCompany", "latestRole"]) add(profile[key]);
-  for (const row of [...(profile.education || []), ...(profile.experiences || []), ...(profile.projects || [])]) {
+  for (const row of [...(profile.education || []), ...(profile.experiences || []), ...(profile.projects || []), ...(profile.awards || [])]) {
     for (const value of Object.values(row || {})) add(value);
   }
   for (const memory of profile.fieldMemories || []) add(memory.answer);
@@ -471,6 +512,9 @@ async function fillFields(pairs) {
       target.click();
       if (!target.checked) { failed.push(p.label || p.id); continue; }
       mark(target.closest("label") || target, p.source || "profile", p.answerId);
+      if (p.answerId) target.setAttribute("data-cp-answer-id", p.answerId);
+      if ((p.source || "profile") === "profile") target.setAttribute("data-cp-profile-filled", "1");
+      if (p.manualConfirmed) { target.setAttribute("data-cp-user-edited", "1"); target.setAttribute("data-cp-user-edited-at", String(Date.now())); target.setAttribute("data-cp-memory-pending", "1"); }
       filled.push(p.id);
       continue;
     }
@@ -528,6 +572,8 @@ async function fillFields(pairs) {
         mark(picker, pair.source || "profile", pair.answerId);
         // Memory reads the input itself, not the outlined wrapper.
         if ((pair.source || "profile") === "profile") input.setAttribute("data-cp-profile-filled", "1");
+        if (pair.answerId) input.setAttribute("data-cp-answer-id", pair.answerId);
+        if (pair.manualConfirmed) { input.setAttribute("data-cp-user-edited", "1"); input.setAttribute("data-cp-user-edited-at", String(Date.now())); input.setAttribute("data-cp-memory-pending", "1"); }
         filled.push(pair.id);
       }
       continue;
@@ -552,6 +598,7 @@ async function fillFields(pairs) {
     const expected = el.type === "date" || el.type === "month" ? normalizeDate(p.value, el.type) : p.value;
     if (actual !== expected) { failed.push(p.label || p.id); continue; }
     mark(el, p.source || "profile", p.answerId);
+    if (p.manualConfirmed) { el.setAttribute("data-cp-user-edited", "1"); el.setAttribute("data-cp-user-edited-at", String(Date.now())); el.setAttribute("data-cp-memory-pending", "1"); }
     filled.push(p.id);
   }
   return { filled, failed, skipped };
@@ -657,7 +704,10 @@ async function fillCustomSelects(pairs, taskId) {
       const input = container.matches("input") ? container : container.querySelector("input[readonly]");
       const visibleValue = (shown?.textContent || input?.value || "").trim();
       if (visibleValue && (visibleValue === wanted || visibleValue.includes(wanted) || visibleValue.includes(String(p.value).trim()))) {
-        mark(container, p.source || "profile");
+    mark(container, p.source || "profile");
+    if (p.answerId) container.setAttribute("data-cp-answer-id", p.answerId);
+    if ((p.source || "profile") === "profile") container.setAttribute("data-cp-profile-filled", "1");
+    if (p.manualConfirmed) { container.setAttribute("data-cp-user-edited", "1"); container.setAttribute("data-cp-user-edited-at", String(Date.now())); container.setAttribute("data-cp-memory-pending", "1"); }
         filled.push(p.id);
       } else {
         failed.push(p.label || p.id);
@@ -702,13 +752,31 @@ function trackUserEdits() {
     if (el.disabled || el.readOnly) return;
     el.setAttribute("data-cp-user-edited", "1");
     el.setAttribute("data-cp-user-edited-at", String(Date.now()));
+    el.setAttribute("data-cp-memory-pending", "1");
   };
   document.addEventListener("input", mark, true);
   document.addEventListener("change", mark, true);
+  let selected = null;
+  document.addEventListener("pointerdown", (event) => {
+    if (!event.isTrusted) return;
+    const el = event.target?.closest?.(".ant-select, .el-select, [role='combobox']");
+    if (el) selected = { el, at: Date.now(), value: (el.querySelector(".ant-select-selection-item, .el-select__selected-item:not(.el-select__placeholder)")?.textContent || el.value || "").trim() };
+  }, true);
+  document.addEventListener("click", (event) => {
+    if (!event.isTrusted || !selected || Date.now() - selected.at > 30000) return;
+    const candidate = selected;
+    setTimeout(() => {
+      const value = (candidate.el.querySelector(".ant-select-selection-item, .el-select__selected-item:not(.el-select__placeholder)")?.textContent || candidate.el.value || "").trim();
+      if (value !== candidate.value) {
+        candidate.el.setAttribute("data-cp-user-edited", "1"); candidate.el.setAttribute("data-cp-user-edited-at", String(Date.now())); candidate.el.setAttribute("data-cp-memory-pending", "1");
+        selected = null;
+      }
+    }, 150);
+  }, true);
 }
 
 function hasUserEditedFields() {
-  return !!document.querySelector('[data-cp-user-edited="1"]');
+  return !!document.querySelector('[data-cp-memory-pending="1"], [data-cp-user-edited="1"]:not([data-cp-memory-saved])');
 }
 
 // Read side of fillFields — same element lookup and same "select reads by
@@ -721,17 +789,15 @@ function readFieldValues(ids) {
     if (radio.length) {
       const selected = radio.find((el) => el.checked);
       const label = selected && (selected.closest("label")?.textContent || selected.nextSibling?.textContent || selected.value || "");
-      result[id] = { value: (label || "").trim(), answerId: null, profileFilled: radio.some((el) => el.getAttribute("data-cp-profile-filled") === "1"), userEdited: radio.some((el) => el.getAttribute("data-cp-user-edited") === "1"), editedAt: Math.max(...radio.map((el) => Number(el.getAttribute("data-cp-user-edited-at")) || 0)) };
+      result[id] = { value: (label || "").trim(), answerId: selected?.getAttribute("data-cp-answer-id"), profileFilled: radio.some((el) => el.getAttribute("data-cp-profile-filled") === "1"), userEdited: radio.some((el) => el.getAttribute("data-cp-user-edited") === "1"), editedAt: Math.max(...radio.map((el) => Number(el.getAttribute("data-cp-user-edited-at")) || 0)), memorySaved: radio[0].getAttribute("data-cp-memory-saved") };
       return;
     }
     const el = document.querySelector('[data-cp-fill-id="' + id + '"]');
     if (!el) return;
-    if (el.tagName.toLowerCase() === "select") {
-      const selected = el.options[el.selectedIndex];
-      result[id] = { value: selected ? selected.textContent.trim() : "", answerId: el.getAttribute("data-cp-answer-id"), profileFilled: el.getAttribute("data-cp-profile-filled") === "1", userEdited: el.getAttribute("data-cp-user-edited") === "1", editedAt: Number(el.getAttribute("data-cp-user-edited-at")) || 0 };
-    } else {
-      result[id] = { value: el.value, answerId: el.getAttribute("data-cp-answer-id"), profileFilled: el.getAttribute("data-cp-profile-filled") === "1", userEdited: el.getAttribute("data-cp-user-edited") === "1", editedAt: Number(el.getAttribute("data-cp-user-edited-at")) || 0 };
-    }
+    const value = el.tagName.toLowerCase() === "select" ? el.options[el.selectedIndex]?.textContent || "" : el.querySelector(".ant-select-selection-item, .el-select__selected-item:not(.el-select__placeholder)")?.textContent || el.value || "";
+    const block = el.closest("[data-cp-block-key]");
+    const editing = document.activeElement?.matches?.('input:not([type="button"]):not([type="submit"]), textarea, select, [role="combobox"]') && document.hasFocus();
+    result[id] = { value: value.trim(), answerId: el.getAttribute("data-cp-answer-id"), profileFilled: el.getAttribute("data-cp-profile-filled") === "1", userEdited: el.getAttribute("data-cp-user-edited") === "1", editedAt: Number(el.getAttribute("data-cp-user-edited-at")) || 0, memorySaved: el.getAttribute("data-cp-memory-saved"), active: !!editing && (el === document.activeElement || !!block?.contains(document.activeElement)) };
   });
   return result;
 }
@@ -742,23 +808,24 @@ function clearSavedUserEdits(saved) {
     if (radios.length) {
       const selected = radios.find((el) => el.checked);
       const value = String(selected && (selected.closest("label")?.textContent || selected.nextSibling?.textContent || selected.value || "") || "").trim();
-      if (value === item.value) radios.forEach((el) => { el.removeAttribute("data-cp-user-edited"); el.removeAttribute("data-cp-user-edited-at"); });
+      if (value === item.value) radios.forEach((el) => { el.setAttribute("data-cp-memory-saved", value); el.removeAttribute("data-cp-memory-pending"); });
       continue;
     }
     const el = document.querySelector('[data-cp-fill-id="' + item.id + '"]');
-    const value = el?.tagName.toLowerCase() === "select" ? el.options[el.selectedIndex]?.textContent.trim() : el?.value;
+    const value = el?.tagName.toLowerCase() === "select" ? el.options[el.selectedIndex]?.textContent.trim() : el?.querySelector(".ant-select-selection-item, .el-select__selected-item:not(.el-select__placeholder)")?.textContent || el?.value;
     if (el && String(value || "").trim() === item.value) {
-      el.removeAttribute("data-cp-user-edited");
-      el.removeAttribute("data-cp-user-edited-at");
+      el.setAttribute("data-cp-memory-saved", item.value);
+      el.removeAttribute("data-cp-memory-pending");
     }
   }
 }
 
 function memoryCandidate(snapshot, filledList, onlyUserEdited = false) {
-  if (onlyUserEdited && (!snapshot.userEdited || !snapshot.editedAt || Date.now() - snapshot.editedAt < 2500)) return null;
+  if (onlyUserEdited && (!snapshot.userEdited || snapshot.active || !snapshot.editedAt || Date.now() - snapshot.editedAt < 2500)) return null;
   if (snapshot.profileFilled && !snapshot.userEdited) return null;
   const value = String(snapshot.value || "").trim();
   if (!value) return null;
+  if (onlyUserEdited && snapshot.memorySaved === value) return null;
   const draft = filledList.findLast((entry) => entry.answerId === snapshot.answerId);
   if (draft && draft.filledValue === value) return null;
   return { value, answerId: draft?.answerId };
@@ -886,15 +953,18 @@ function sectionOrdinal(section) {
 }
 
 function sectionGroup(section) {
+  if (/获奖|荣誉|奖项|award|honou?r/i.test(section)) return "award";
   if (/项目|project/i.test(section)) return "project";
   if (/实习|工作经历|工作经验|实践经历|社会实践|internship|employment|work experience/i.test(section)) return "experience";
   if (/教育|学习经历|本科|硕士|研究生|博士|大专|专科|education|academic/i.test(section)) return "education";
   return null;
 }
 
-const AUTOFILL_MODULES = ["basic", "education", "experience", "project", "questions", "other", "resume"];
+const AUTOFILL_MODULES = ["basic", "education", "experience", "project", "award", "questions", "other", "resume"];
 
 function fieldModule(field, repeat) {
+  if (/自我评价|个人评价|自我描述|个人优势|求职动机|职业规划/i.test(field.label || "")) return "questions";
+  if (repeat) return repeat.group;
   const group = sectionGroup(field.section || "");
   if (group) return group;
   const section = String(field.section || "");
@@ -925,6 +995,7 @@ const END_LABEL = /结束|截止|毕业(?:时间|年份|年月|日期)|离职(?:
 const NOT_A_DATE = /原因|理由|说明|契机|部门|证明|方式/;
 
 function educationFieldKind(haystack, inSection, bare = "") {
+  if (/^(?:教育经历|教育背景|学习经历|education(?:background|experience)?)$/.test(bare)) return "summary";
   if (/英语|外语|cet|toefl|ielts|托福|雅思|语言/i.test(haystack)) return null;
   if (/最高学历|highest/i.test(haystack)) return null;
   if (/学校|院校|school|university|college/i.test(haystack)) return /城市|所在地|地区|省份|类型|性质|层次|排名|city|type|rank/i.test(haystack) ? null : "school";
@@ -939,6 +1010,8 @@ function educationFieldKind(haystack, inSection, bare = "") {
 }
 
 function experienceFieldKind(haystack, inSection, bare = "") {
+  if (/^(?:实习经历|工作经历|工作经验|实习情况|workexperience|internshipexperience)$/.test(bare)) return "summary";
+  if (inSection && /描述|内容|职责|业绩|成果|description|responsibilit|achievement/i.test(haystack)) return "description";
   if (/实习(?:单位|公司|企业|机构)|工作单位|任职(?:单位|公司)/.test(haystack)) return "company";
   if (!inSection) return null;
   if (/公司|单位|企业|机构|company|employer|organi[sz]ation/i.test(haystack)) return "company";
@@ -946,7 +1019,17 @@ function experienceFieldKind(haystack, inSection, bare = "") {
   if (START_LABEL.test(haystack) && !NOT_A_DATE.test(haystack)) return "start";
   if (END_LABEL.test(haystack) && !NOT_A_DATE.test(haystack)) return "end";
   if (RANGE_LABEL.test(bare)) return "range";
-  if (/描述|内容|职责|业绩|成果|description|responsibilit|achievement/i.test(haystack)) return "description";
+  return null;
+}
+
+function awardFieldKind(haystack, bare, inSection) {
+  if (/奖项名称|获奖名称|荣誉名称|award[ _-]*(?:name|title)/i.test(haystack) || (inSection && /^(?:名称|奖项|荣誉|name|title)$/.test(bare))) return "name";
+  if (!inSection && !/获奖|奖项|荣誉|award/i.test(haystack)) return null;
+  if (/颁发|颁奖|授予|单位|机构|issuer|organi[sz]ation/i.test(haystack)) return "issuer";
+  if (/等级|级别|奖级|奖等|level|grade/i.test(haystack)) return "level";
+  if (/日期|时间|年月|年度|date|year/i.test(haystack)) return "date";
+  if (/描述|说明|介绍|内容|description|details/i.test(haystack)) return "description";
+  if (/^(?:获奖情况|获奖经历|荣誉奖励|荣誉奖项|awards?|honou?rs?)$/.test(bare)) return "summary";
   return null;
 }
 
@@ -957,7 +1040,7 @@ function projectFieldKind(haystack, bare = "", inSection = false) {
   if (/项目(?:结束|截止)|project[\s_-]*end/i.test(haystack)) return "end";
   if (/项目(?:职责|负责|贡献|成果)|project[\s_-]*(?:responsibilit|contribution|achievement)/i.test(haystack)) return "responsibilities";
   if (/项目(?:描述|简介|介绍|内容)|project[\s_-]*(?:description|summary|overview)/i.test(haystack)) return "description";
-  if (/项目经历|project[\s_-]*experience/i.test(haystack)) return "summary";
+  if (/^(?:项目经历|projectexperience)$/.test(bare)) return "summary";
   if (!inSection) return null;
   if (/^(?:名称|name|title)$/.test(bare)) return "name";
   if (/^(?:角色|担任角色|职务|role)$/.test(bare)) return "role";
@@ -974,13 +1057,16 @@ function projectFieldKind(haystack, bare = "", inSection = false) {
 // be called once for every scanned field, in page order.
 function resolveRepeatField(field, rowIndexes) {
   if (isSplitNameField(field)) return null;
+  if (/[?？]|为什么|为何|谈谈|你(?:的|在|如何)|如何|遇到|挑战|收获|\bwhy\b|\bhow\b|tell us/i.test(field.label || "")) return null;
   const haystack = fieldHaystack(field);
   const section = String(field.section || "");
   const group = sectionGroup(section);
   const bare = bareLabel(field);
   let info = null;
+  const awardKind = awardFieldKind(haystack, bare, group === "award");
+  if (awardKind) info = { group: "award", kind: awardKind };
   const projectKind = projectFieldKind(haystack, bare, group === "project");
-  if (projectKind) info = { group: "project", kind: projectKind };
+  if (!info && projectKind) info = { group: "project", kind: projectKind };
   if (!info && group === "experience") {
     const kind = experienceFieldKind(haystack, true, bare);
     if (kind) info = { group: "experience", kind };
@@ -990,7 +1076,7 @@ function resolveRepeatField(field, rowIndexes) {
     if (kind) info = { group: "education", kind };
   }
   if (!info) {
-    const kind = experienceFieldKind(haystack, false);
+    const kind = experienceFieldKind(haystack, false, bare);
     if (kind) info = { group: "experience", kind };
   }
   if (!info) return null;
@@ -999,10 +1085,22 @@ function resolveRepeatField(field, rowIndexes) {
   const key = `${info.group}:${info.kind}:${group === info.group ? "in" : "out"}`;
   const counted = rowIndexes?.get(key) || 0;
   rowIndexes?.set(key, counted + 1);
+  const anchor = info.group === "experience" ? "company" : info.group === "education" ? "school" : "name";
+  const anchorKey = `${info.group}:anchor:${group === info.group ? "in" : "out"}`;
+  if (info.kind === anchor) rowIndexes?.set(anchorKey, counted);
   const ordinal = sectionOrdinal(section);
   // The degree field's own label ("学历（本科及以上）") is a requirement, not a row.
   const hint = info.group === "education" ? degreeLevel(`${info.kind === "degree" ? "" : field.label || ""} ${group === "education" ? section : ""}`) : 0;
-  return { ...info, row: ordinal ?? counted, degreeHint: hint };
+  let row = ordinal ?? (info.kind === "summary" ? counted : Math.max(counted, rowIndexes?.get(anchorKey) || 0));
+  if (field.blockKey && rowIndexes) {
+    const block = `block:${info.group}:${field.blockKey}`;
+    if (!rowIndexes.has(block)) {
+      const next = rowIndexes.get(`blocks:${info.group}`) || 0;
+      rowIndexes.set(block, ordinal ?? next); rowIndexes.set(`blocks:${info.group}`, next + 1);
+    }
+    row = rowIndexes.get(block);
+  }
+  return { ...info, row, degreeHint: hint, blockKey: field.blockKey || `${info.group}:${hint ? `degree${hint}` : row}` };
 }
 
 // Highest degree first (the order most forms and resume extraction use),
@@ -1113,25 +1211,129 @@ function rowDateValue(field, kind, row) {
 }
 
 function repeatFieldValue(field, info, profile) {
+  if (info.unmatched) return null;
+  if (info.record) {
+    const list = info.group === "experience" ? "experiences" : info.group === "project" ? "projects" : info.group === "award" ? "awards" : "education";
+    return repeatFieldValue(field, { ...info, record: null, row: 0, degreeHint: 0 }, { ...profile, [list]: [info.record] });
+  }
+  if (info.all && info.kind === "summary") {
+    if (info.summaryText) return info.summaryText;
+    const rows = rowsForGroup(profile, info.group);
+    return rows.map((_, row) => repeatFieldValue(field, { ...info, all: false, row }, profile)).filter(Boolean).join("\n\n") || profile.summaries?.[info.group] || null;
+  }
+  if (info.group === "award") {
+    const award = profile.awards?.[info.row];
+    if (!award) return null;
+    const value = info.kind === "date" ? formatDateForField(field, award.date) : info.kind === "summary" ? [award.name, award.level, award.issuer, award.date, award.description].filter(Boolean).join("；") : award[info.kind];
+    return matchFieldOption(field, value);
+  }
   if (info.group === "project") {
     const project = profile.projects?.[info.row];
     if (!project) return null;
     const value = ["start", "end", "range"].includes(info.kind) ? rowDateValue(field, info.kind, project) : info.kind === "summary"
       ? [project.name, project.role, project.description, project.responsibilities].filter(Boolean).join("；")
-      : info.kind === "description" ? project.description || project.responsibilities
-      : info.kind === "responsibilities" ? project.responsibilities || project.description
       : project[info.kind];
     return matchFieldOption(field, value);
   }
   if (info.group === "experience") {
     const experience = (profile.experiences || [])[info.row];
-    return experience ? matchFieldOption(field, rowDateValue(field, info.kind, experience)) : null;
+    return experience ? matchFieldOption(field, info.kind === "summary" ? [experience.company, experience.role, [experience.start, experience.end].filter(Boolean).join(" 至 "), experience.description].filter(Boolean).join("；") : rowDateValue(field, info.kind, experience)) : null;
   }
   const rows = educationRows(profile);
   // "本科院校" must never receive the 硕士 row just because it came first.
   const row = info.degreeHint ? rows.find((item) => degreeLevel(item.degree) === info.degreeHint) : rows[info.row];
   if (!row) return null;
+  if (info.kind === "summary") return [row.school, row.degree, row.major, [row.start, row.end].filter(Boolean).join(" 至 "), row.gpa && `GPA ${row.gpa}`].filter(Boolean).join("；");
   return info.kind === "degree" ? matchDegreeOption(field, row.degree) : matchFieldOption(field, rowDateValue(field, info.kind, row));
+}
+
+function rowsForGroup(profile, group, includeLibrary = false) {
+  const list = group === "experience" ? "experiences" : group === "project" ? "projects" : group === "award" ? "awards" : "education";
+  const rows = group === "education" ? educationRows(profile) : [...(profile[list] || [])];
+  if (includeLibrary) for (const entry of profile.library || []) {
+    if (entry.category === group && entry.enabled && !entry.content.text && !rows.some((row) => recordReference(group, row) === recordReference(group, entry.content))) rows.push(entry.content);
+  }
+  return rows;
+}
+
+function recordReference(group, row) {
+  return `row:${group}:${encodeURIComponent(JSON.stringify([row.school || row.company || row.name || "", row.role || row.degree || row.level || "", row.start || row.date || "", row.end || row.issuer || ""]))}`;
+}
+
+/** One source per DOM block, aligned with existing names/dates instead of
+ * blindly filling remaining fields from the first saved experience. */
+function classifyRepeatBlocks(fields, profile) {
+  const rowIndexes = new Map(), repeats = new Map(), blocks = new Map();
+  for (const field of fields) {
+    const info = resolveRepeatField(field, rowIndexes);
+    if (!info) continue;
+    repeats.set(field.id, info);
+    if (!blocks.has(info.blockKey)) blocks.set(info.blockKey, { id: info.blockKey, group: info.group, row: info.row, fields: [] });
+    blocks.get(info.blockKey).fields.push(field);
+  }
+  const reserved = new Map();
+  for (const block of blocks.values()) {
+    const rows = rowsForGroup(profile, block.group);
+    const known = block.fields.filter((field) => field.hasValue && field.currentValue && ["name", "company", "school", "role", "degree", "start", "end", "date"].includes(repeats.get(field.id).kind));
+    if (!known.length) continue;
+    const normalized = (value) => String(value || "").normalize("NFKC").replace(/\s+/g, "").toLowerCase();
+    const candidates = rows.map((row, index) => ({ row, index })).filter(({ index }) => known.every((field) => {
+      const info = repeats.get(field.id);
+      const value = repeatFieldValue(field, { ...info, row: index, degreeHint: 0 }, profile);
+      return value && normalized(value) === normalized(field.currentValue);
+    }));
+    block.unmatched = candidates.length !== 1;
+    if (candidates.length === 1) {
+      block.row = candidates[0].index;
+      if (!reserved.has(block.group)) reserved.set(block.group, new Set());
+      reserved.get(block.group).add(block.row);
+    }
+    block.anchored = true;
+  }
+  for (const block of blocks.values()) {
+    if (!block.anchored) {
+      const used = reserved.get(block.group) || new Set();
+      const rows = rowsForGroup(profile, block.group);
+      let row = block.row;
+      if (used.has(row)) row = rows.findIndex((_, index) => !used.has(index));
+      if (row >= 0) { block.row = row; used.add(row); reserved.set(block.group, used); }
+    }
+    const groupBlocks = [...blocks.values()].filter((other) => other.group === block.group);
+    for (const field of block.fields) {
+      const info = repeats.get(field.id);
+      info.row = block.row; info.unmatched = block.unmatched;
+      info.all = groupBlocks.length === 1 && block.fields.length === 1 && info.kind === "summary";
+      if (info.all && (profile.mappings || []).some((item) => item.fieldKey === field.mappingKey && item.ref === `summary:${block.group}`)) {
+        info.summaryText = profileChoices(profile).find((choice) => choice.ref === `summary:${block.group}`)?.value;
+      }
+    }
+    if (!block.anchored) {
+      const refs = new Set(block.fields.map((field) => (profile.mappings || []).find((item) => item.fieldKey === field.mappingKey)?.ref).filter((ref) => ref?.startsWith(`row:${block.group}:`)).map((ref) => ref.slice(0, ref.lastIndexOf(":"))));
+      if (refs.size === 1) {
+        const record = rowsForGroup(profile, block.group, true).find((row) => refs.has(recordReference(block.group, row)));
+        if (record) for (const field of block.fields) repeats.get(field.id).record = record;
+      }
+    }
+  }
+  return { repeats, blocks: [...blocks.values()], rowIndexes };
+}
+
+function previewRecordBlocks(blocks, repeats, profile) {
+  const labels = { education: "教育经历", experience: "实习 / 工作", project: "项目经历", award: "获奖情况" };
+  return blocks.map((block, index) => ({
+    id: block.id, label: `${labels[block.group]} · ${block.fields[0].section || `第 ${index + 1} 段`}`,
+    note: block.unmatched ? "网页已有的名称或日期无法唯一匹配，请核对这段经历后选择来源" : "整段选择一条经历，已有内容保持不动",
+    fieldIds: block.fields.map((field) => field.id),
+    choices: rowsForGroup(profile, block.group, true).map((row, rowIndex) => {
+      const ref = recordReference(block.group, row);
+      const one = { ...profile, [block.group === "experience" ? "experiences" : block.group === "project" ? "projects" : block.group === "award" ? "awards" : "education"]: [row] };
+      return { ref, label: [row.school || row.company || row.name || `经历 ${rowIndex + 1}`, row.role || row.degree || row.level, row.start || row.date].filter(Boolean).join(" · "),
+        values: Object.fromEntries(block.fields.map((field) => [field.id, { value: repeatFieldValue(field, { ...repeats.get(field.id), record: null, summaryText: null, row: 0, degreeHint: 0, unmatched: false, all: false }, one) || "", ref: `${ref}:${repeats.get(field.id).kind}` }])) };
+    }).filter((choice) => block.fields.filter((field) => field.hasValue && field.currentValue && ["name", "company", "school", "role", "degree", "start", "end", "date"].includes(repeats.get(field.id).kind)).every((field) => {
+      const normalize = (value) => String(value || "").normalize("NFKC").replace(/\s+/g, "").toLowerCase();
+      return normalize(choice.values[field.id]?.value) === normalize(field.currentValue);
+    })).concat(block.fields.length === 1 && repeats.get(block.fields[0].id).all ? profileChoices(profile).filter((choice) => choice.ref === `summary:${block.group}`).map((choice) => ({ ref: choice.ref, label: "保存的整段原文", values: { [block.fields[0].id]: { value: choice.value, ref: choice.ref } } })) : []),
+  }));
 }
 
 // One line per scanned field for the 逐字段结果 list: where the value came
@@ -1140,7 +1342,7 @@ function repeatFieldValue(field, info, profile) {
 function fillDetail(field, pair, filledSet, failedSet) {
   const own = field.label || field.placeholder || field.name || "未命名字段";
   const label = field.section && !own.includes(field.section) && sectionGroup(field.section) ? `${field.section} · ${own}` : own;
-  if (field.hasValue) return { label, state: "页面已有内容，未改动", source: "prefilled" };
+  if (field.hasValue || field.userEdited) return { label, state: field.userEdited ? "手动修改过，保持不动" : "页面已有内容，未改动", source: "prefilled" };
   if (pair && filledSet.has(field.id)) {
     if (pair.source === "profile") return { label, state: "来自网申资料", source: "profile" };
     if (pair.source === "remembered-field") return { label, state: "来自记忆库", source: "memory" };
@@ -1160,6 +1362,7 @@ function missingRepeatCounts(profile, rowIndexes) {
     ["education", "school", educationRows(profile).length, "教育经历"],
     ["experience", "company", (profile.experiences || []).length, "实习/工作经历"],
     ["project", "name", (profile.projects || []).length, "项目经历"],
+    ["award", "name", (profile.awards || []).length, "获奖情况"],
   ];
   return checks
     .map(([group, kind, saved, label]) => ({ group, label, saved, shown: seen(group, kind) }))
@@ -1181,6 +1384,7 @@ async function clickAddBlock(group) {
     education: /教育|学历|学习经历|education/i,
     experience: /实习|工作经历|工作经验|实践|internship|work experience|employment/i,
     project: /项目|project/i,
+    award: /获奖|奖项|荣誉|award|honou?r/i,
   };
   const words = GROUP_WORDS[group];
   const ADD = /^[+＋]?\s*(?:添加|新增|增加|继续添加|再添加|add\b)/i;
@@ -1219,7 +1423,10 @@ async function clickAddBlock(group) {
 // and it's the first block — the AI can't tell which row a second "学校" means
 // and would repeat the first one.
 function repeatFieldGoesToAi(info, profile) {
-  if (info.kind === "description" || info.kind === "responsibilities" || info.kind === "summary") return true;
+  // A missing fact is not a prompt to invent an experience. Open questions
+  // remain eligible for AI in their separate pass.
+  if (info.unmatched || info.record || info.group === "award") return false;
+  if (["description", "responsibilities", "summary"].includes(info.kind)) return false;
   const saved = info.group === "education" ? educationRows(profile) : info.group === "experience" ? profile.experiences || [] : profile.projects || [];
   return saved.length === 0 && info.row === 0 && !info.degreeHint;
 }
@@ -1449,7 +1656,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
 
     const pairs = [];
     let candidates = []; // fields going to AI: {id, label, kind, options?}
-    const rowIndexes = new Map();
+    const { repeats, blocks, rowIndexes } = classifyRepeatBlocks(fields, profile);
     const pageContext = options.positionId ? `job:v1:${options.positionId}` : portalContext(initialUrl);
     let neverGuessCount = 0;
     let alreadyFilled = 0;
@@ -1457,28 +1664,29 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     for (const field of fields) {
       // Classify before skipping prefilled fields: a filled first education
       // block still occupies row one, so the next empty "学校" gets row two.
-      const repeat = resolveRepeatField(field, rowIndexes);
+      const repeat = repeats.get(field.id);
       if (!modules.has(fieldModule(field, repeat))) {
         excluded.add(field.id);
         continue;
       }
-      if (field.hasValue) {
+      if (field.hasValue || field.userEdited) {
         alreadyFilled++;
         continue;
       }
       field.module = fieldModule(field, repeat);
       if (isNeverGuessField(field)) { neverGuessCount++; continue; }
-      const mapping = (profile.mappings || []).find((m) => m.fieldKey === field.mappingKey);
+      const mapping = !repeat && (profile.mappings || []).find((m) => m.fieldKey === field.mappingKey);
       const mapped = mapping && profileChoices(profile).find((c) => c.ref === mapping.ref);
       if (mapped?.value) { pairs.push({ id: field.id, value: mapped.value, source: "profile", label: field.label, tag: field.tag, ref: mapped.ref }); continue; }
       // Saved 网申资料 rows are the source of truth for repeated blocks. A
       // remembered "学校" is one value and would otherwise fill every row.
       const structured = repeat ? repeatFieldValue(field, repeat, profile) : null;
       if (structured) {
-        pairs.push({ id: field.id, value: structured, source: "profile", label: field.label, tag: field.tag, alternatives: degreeAlternatives(field, structured) });
+        const row = repeat.record || (repeat.degreeHint ? educationRows(profile).find((item) => degreeLevel(item.degree) === repeat.degreeHint) : rowsForGroup(profile, repeat.group)[repeat.row]);
+        pairs.push({ id: field.id, value: structured, source: "profile", label: field.label, tag: field.tag, ref: repeat.all && (repeat.summaryText || !rowsForGroup(profile, repeat.group).length) ? `summary:${repeat.group}` : row && !repeat.all ? `${recordReference(repeat.group, row)}:${repeat.kind}` : "", alternatives: degreeAlternatives(field, structured) });
         continue;
       }
-      const rememberedValue = repeat && (repeat.row > 0 || repeat.degreeHint) ? null : matchRememberedField(field, profile.fieldMemories, pageContext);
+      const rememberedValue = repeat && (repeat.group !== "education" || repeat.row > 0 || repeat.degreeHint || repeat.unmatched) ? null : matchRememberedField(field, profile.fieldMemories, pageContext);
       if (rememberedValue) {
         pairs.push({ id: field.id, value: rememberedValue, source: "remembered-field", label: field.label, tag: field.tag, remembered: true });
         continue;
@@ -1567,7 +1775,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       const plan = { id: adapter.taskId || String(Date.now()), url: initialUrl, at: Date.now(), fields, pairs, frameById, profile, options, resumeVersionId };
       const proposals = fields.map((field) => {
         const pair = pairs.find((p) => p.id === field.id);
-        const eligible = !excluded.has(field.id) && !field.hasValue && !isNeverGuessField(field);
+        const eligible = !excluded.has(field.id) && !field.hasValue && !field.userEdited && !isNeverGuessField(field);
         const oldField = priorPlan?.fields.find((f) => f.mappingKey === field.mappingKey);
         const stored = !priorPlan && restored?.content?.url === initialUrl && (restored.content?.resumeVersionId || "") === (resumeVersionId || "") && (restored.content?.variantId || "") === (options.variantId || "") && (Array.isArray(restored.content?.fields) ? restored.content.fields.find((f) => f && typeof f.value === "string" && f.fieldKey === field.mappingKey) : null);
         const candidateEdit = options.previewEdits?.find((row) => row.id === oldField?.id);
@@ -1575,9 +1783,9 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
         const edit = stored || (sameContext && !questionKeys.has(field.mappingKey) && (!options.regenerate || questionKeys.size || candidateEdit?.edited) && candidateEdit);
         return { ...(edit || {}), id: field.id, fieldKey: field.mappingKey, label: field.label || field.placeholder || field.name || "未命名字段", section: field.section, value: edit ? edit.value : pair?.value || "", selected: eligible && (edit ? edit.selected : !!pair && pair.source !== "ai"), eligible,
           source: pair?.source || "manual", ref: edit?.ref || pair?.ref || "", required: field.required, maxLength: field.maxLength,
-          note: field.hasValue ? "已有内容，保持不动" : excluded.has(field.id) ? "未选择此模块" : !eligible ? "需在网页上手动填写" : pair?.source === "ai" ? "AI 草稿，请核对后勾选" : pair ? "来自已保存资料或回答" : (aiError || "请选择资料或输入内容") };
+          note: field.userEdited ? "手动修改过，保持不动" : field.hasValue ? "已有内容，保持不动" : excluded.has(field.id) ? "未选择此模块" : !eligible ? "需在网页上手动填写" : pair?.source === "ai" ? "AI 草稿，请核对后勾选" : pair ? "来自已保存资料或回答" : (aiError || "请选择资料或输入内容") };
       });
-      const result = { phase: "preview", message: "填写建议已准备好，勾选并核对后再写入；网页内容尚未改动", plan: { id: plan.id, url: initialUrl, proposals, choices, resumeVersionId, positionId: options.positionId, uploadResume: modules.has("resume") && !!resumeVersionId, contextKey: pageContext, variantId: options.variantId } };
+      const result = { phase: "preview", message: "填写建议已准备好，勾选并核对后再写入；网页内容尚未改动", plan: { id: plan.id, url: initialUrl, proposals, choices, blocks: previewRecordBlocks(blocks, repeats, profile), resumeVersionId, positionId: options.positionId, uploadResume: modules.has("resume") && !!resumeVersionId, contextKey: pageContext, variantId: options.variantId } };
       plan.preview = result.plan; await adapter.setPlan(plan);
       adapter.status(result); return result;
     }
@@ -1721,20 +1929,35 @@ async function saveCorrectionsCore(adapter, resumeVersionId, onlyUserEdited = fa
   if (onlyUserEdited && !(await frameHasUserEdits(adapter))) return { saved: 0 };
   const filledList = adapter.getDrafts();
   const answers = [];
+  const records = [];
   const savedFields = [];
+  const emptyEdits = [];
   // A fresh scan also includes answers the user wrote entirely by hand.
   // Read the original AI ids first; scanning replaces the temporary DOM ids.
   const { fields, frameById } = await scanFrames(adapter);
   const rowIndexes = new Map();
+  const snapshots = {};
+  // One IPC/script call per frame, rather than one per field.
+  for (const frame of new Set(frameById.values())) {
+    const ids = fields.filter((field) => frameById.get(field.id) === frame).map((field) => field.id);
+    Object.assign(snapshots, await adapter.run(frame, readFieldValues, [ids]).catch(() => ({})));
+  }
+  const groups = new Map();
   for (const field of fields) {
     const repeat = resolveRepeatField(field, rowIndexes);
     const label = field.label || field.placeholder || field.name;
     if (!label || isForbiddenMemoryField(field)) continue;
-    if (field.tag === "custom-select") continue;
     const frame = frameById.get(field.id);
     if (frame === undefined) continue;
-    const values = await adapter.run(frame, readFieldValues, [[field.id]]).catch(() => ({}));
-    const snapshot = (values || {})[field.id] || {};
+    const snapshot = snapshots[field.id] || {};
+    if (snapshot.userEdited && !String(snapshot.value || "").trim() && !snapshot.active && Date.now() - snapshot.editedAt >= 2500) emptyEdits.push({ frame, id: field.id, value: "" });
+    if (repeat) {
+      // Structured descriptions never enter the generic essay library.
+      const key = `${field.id.split("-")[0]}:${repeat.blockKey}`;
+      if (!groups.has(key)) groups.set(key, { category: repeat.group, captureKey: repeat.blockKey, fields: [] });
+      groups.get(key).fields.push({ field, info: repeat, snapshot, frame });
+      continue;
+    }
     // A field copied from saved facts isn't a newly confirmed answer, and
     // an unchanged AI draft stays unconfirmed even after another autofill.
     const candidate = memoryCandidate(snapshot, filledList, onlyUserEdited);
@@ -1745,24 +1968,65 @@ async function saveCorrectionsCore(adapter, resumeVersionId, onlyUserEdited = fa
     if (snapshot.answerId && !snapshot.userEdited) continue;
     const openEnded = isOpenEndedQuestionField(field) && !isSensitiveMemoryField(field);
     if (!openEnded && !snapshot.userEdited) continue;
-    // Only the first block may become a reusable "学校"/"项目名称" memory;
-    // a second row's school saved under the same key would replace it.
-    if (!openEnded && repeat && (repeat.row > 0 || repeat.degreeHint)) continue;
     const key = openEnded ? label : fieldMemoryKey(field);
     if (!key) continue;
     answers.push({ questionLabel: key, answer: candidate.value, answerId: openEnded ? candidate.answerId : undefined, kind: openEnded ? field.tag === "textarea" ? "essay" : "short" : "field" });
     savedFields.push({ frame, id: field.id, value: candidate.value });
   }
-  if (!answers.length || adapter.url() !== pageUrl) return { saved: 0 };
+  for (const group of groups.values()) {
+    const content = {}, members = [];
+    const candidates = group.fields.filter(({ snapshot }) => memoryCandidate(snapshot, filledList, onlyUserEdited) && (!snapshot.answerId || snapshot.userEdited));
+    if (!candidates.length || (onlyUserEdited && group.fields.some(({ snapshot }) => snapshot.active || (snapshot.userEdited && Date.now() - snapshot.editedAt < 2500)))) continue;
+    // A portal may expose the whole module as one textarea. Preserve its
+    // original text, without interpreting it as a project name or an essay.
+    if (group.fields.length === 1 && group.fields[0].info.kind === "summary") {
+      const { field, snapshot, frame } = candidates[0];
+      const candidate = memoryCandidate(snapshot, filledList, onlyUserEdited);
+      if (candidate.value.length >= 2 && candidate.value.length <= 10000) {
+        records.push({ category: group.category, content: { text: candidate.value }, captureKey: group.captureKey });
+        savedFields.push({ frame, id: field.id, value: candidate.value });
+      }
+      continue;
+    }
+    for (const { field, info, snapshot, frame } of group.fields) {
+      const value = String(snapshot.value || "").trim();
+      if (!value || value.length > 10000 || (snapshot.answerId && !snapshot.userEdited) || ["summary"].includes(info.kind)) continue;
+      if (info.kind === "range") {
+        const dates = value.match(/\d{4}(?:[-./年]\d{1,2}(?:月)?(?:[-./月]\d{1,2}(?:日)?)?)?|至今|现在|present/gi);
+        if (dates?.length === 2) { content.start = dates[0]; content.end = dates[1]; }
+      } else if (!content[info.kind]) content[info.kind] = value;
+      else if (content[info.kind] !== value) continue;
+      members.push({ frame, id: field.id, value });
+    }
+    const anchor = group.category === "education" ? "school" : group.category === "experience" ? "company" : "name";
+    if (!content[anchor] || !Object.entries(content).some(([key, value]) => key !== anchor && value)) {
+      // A lone basic education field remains useful even when this page has
+      // no complete education block. Other experiences need their name.
+      if (group.category === "education") for (const { field, info, snapshot, frame } of candidates) {
+        const candidate = memoryCandidate(snapshot, filledList, onlyUserEdited);
+        const key = fieldMemoryKey(field);
+        if (candidate && snapshot.userEdited && info.row === 0 && !info.degreeHint && ["学校", "专业", "学历"].includes(key)) { answers.push({ questionLabel: key, answer: candidate.value, kind: "field" }); savedFields.push({ frame, id: field.id, value: candidate.value }); }
+      }
+      continue;
+    }
+    records.push({ category: group.category, content, captureKey: group.captureKey });
+    savedFields.push(...members);
+  }
+  if (adapter.url() !== pageUrl || adapter.stillOnPage?.(pageUrl) === false) return { saved: 0 };
+  if (!answers.length && !records.length) {
+    for (const frame of new Set(emptyEdits.map((field) => field.frame))) await adapter.run(frame, clearSavedUserEdits, [emptyEdits.filter((entry) => entry.frame === frame)]).catch(() => {});
+    return { saved: 0 };
+  }
+  savedFields.push(...emptyEdits);
 
   const res = await adapter.api("save-corrections", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ resumeVersionId, contextKey: adapter.jobId?.() ? `job:v1:${adapter.jobId()}` : portalContext(pageUrl), answers }),
+    body: JSON.stringify({ resumeVersionId, sourceUrl: pageUrl, contextKey: adapter.jobId?.() ? `job:v1:${adapter.jobId()}` : portalContext(pageUrl), answers, records }),
   });
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "保存回答失败");
   const body = await res.json();
-  if (body.saved === answers.length) {
+  if ((body.processed ?? body.saved) === answers.length + records.length) {
     for (const frame of new Set(savedFields.map((field) => field.frame))) {
       const entries = savedFields.filter((field) => field.frame === frame).map(({ id, value }) => ({ id, value }));
       await adapter.run(frame, clearSavedUserEdits, [entries]).catch(() => {});
@@ -1770,7 +2034,7 @@ async function saveCorrectionsCore(adapter, resumeVersionId, onlyUserEdited = fa
     const confirmedIds = new Set(answers.map((answer) => answer.answerId).filter(Boolean));
     adapter.setDrafts(filledList.filter((entry) => !confirmedIds.has(entry.answerId)));
   }
-  return { saved: body.saved ?? 0 };
+  return { saved: body.saved ?? 0, recordsSaved: body.recordsSaved ?? 0, answersSaved: body.answersSaved ?? body.saved ?? 0, unchanged: body.unchanged ?? 0, conflicts: body.conflicts ?? 0 };
 }
 
 // Values are referenced from the saved profile, never reconstructed by the model.
@@ -1778,9 +2042,11 @@ function profileChoices(profile) {
   const choices = [];
   const labels = { name: "姓名", phone: "手机", email: "邮箱", gender: "性别", birthDate: "出生日期", currentCity: "现居地", targetRole: "期望岗位", selfIntro: "自我评价", politics: "政治面貌", hometown: "籍贯", ethnicity: "民族", english: "英语水平" };
   for (const [ref, label] of Object.entries(labels)) if (profile[ref]) choices.push({ ref, label, value: String(profile[ref]) });
-  const columns = { school: "学校", major: "专业", degree: "学历", gpa: "GPA", start: "开始时间", end: "结束时间", company: "公司", role: "角色/职位", name: "名称", description: "描述", responsibilities: "职责" };
-  for (const [list, label] of [["education", "教育"], ["experiences", "工作/实习"], ["projects", "项目"]]) {
-    (profile[list] || []).forEach((row, index) => { for (const [key, text] of Object.entries(columns)) if (row[key]) choices.push({ ref: `${list}.${index}.${key}`, label: `${label} ${index + 1}（${row.school || row.company || row.name || row.degree || ""}）· ${text}`, value: String(row[key]) }); });
+  const columns = { school: "学校", major: "专业", degree: "学历", gpa: "GPA", start: "开始时间", end: "结束时间", company: "公司", role: "角色/职位", name: "名称", description: "描述", responsibilities: "职责", issuer: "颁发单位", level: "奖项等级", date: "获奖日期" };
+  for (const [group, label] of [["education", "教育"], ["experience", "工作/实习"], ["project", "项目"], ["award", "获奖"]]) {
+    rowsForGroup(profile, group, true).forEach((row, index) => { for (const [key, text] of Object.entries(columns)) if (row[key]) choices.push({ ref: `${recordReference(group, row)}:${key}`, label: `${label} ${index + 1}（${row.school || row.company || row.name || row.degree || ""}）· ${text}`, value: String(row[key]) }); });
+    const text = (profile.library || []).find((entry) => entry.category === group && entry.enabled && entry.content.text)?.content.text || profile.summaries?.[group];
+    if (text) choices.push({ ref: `summary:${group}`, label: `${label} · 整段原文`, value: String(text) });
   }
   return choices;
 }
@@ -1874,14 +2140,16 @@ async function applyAutofillPlan(adapter, input) {
       if (!field || field.hasValue || isNeverGuessField(field) || selected.has(row.id)) continue;
       const current = liveByOldId.get(row.id);
       if (!current) throw new Error("网页表单已变化，请重新扫描预览");
-      if (current.hasValue) { selected.add(row.id); continue; }
+      if (current.hasValue || current.userEdited) { selected.add(row.id); continue; }
       const original = plan.pairs.find((p) => p.id === row.id);
       const choice = row.ref && choices.find((c) => c.ref === row.ref);
-      const value = String(choice ? choice.value : row.value || "").trim();
+      // A reference selects a source; editing the suggested text afterwards
+      // must not be discarded when the user clicks Confirm.
+      const value = String(row.value || "").trim();
       if (!value || value.length > 20000) continue;
       if (field.maxLength && value.length > field.maxLength) throw new Error(`「${field.label || field.name}」超过 ${field.maxLength} 字，请缩短后再填`);
       if (!plan.options.modules?.includes((field.module || fieldModule(field))) && plan.options.modules) continue;
-      pairs.push({ ...original, id: current.id, label: field.label, tag: field.tag, value, source: choice || value !== original?.value ? "profile" : original?.source || "profile" });
+      pairs.push({ ...original, id: current.id, label: field.label, tag: field.tag, value, manualConfirmed: !choice && value !== original?.value, source: choice || value !== original?.value ? "profile" : original?.source || "profile" });
       selected.add(row.id);
     }
     if (!pairs.length && !selected.size && !(input.uploadResume && plan.resumeVersionId)) throw new Error("请至少勾选一个有内容的字段或简历附件");
@@ -1897,7 +2165,7 @@ async function applyAutofillPlan(adapter, input) {
     const details = plan.fields.map((field) => {
       const current = liveByOldId.get(field.id) || field;
       const issue = issues.find((i) => i.id === current.id);
-      return { id: current.id, label: field.section ? `${field.section} · ${field.label || field.name}` : field.label || field.name || "字段", source: issue || result.failed.includes(current.id) ? "manual" : filledSet.has(current.id) ? "profile" : current.hasValue || result.skipped.includes(current.id) ? "prefilled" : "excluded", state: issue?.message || (filledSet.has(current.id) ? "已写入；提交前核对网页" : result.failed.includes(current.id) ? "写入未通过，需要手填" : current.hasValue || result.skipped.includes(current.id) ? "已有或手改内容，已保留" : "本次未选择") };
+      return { id: current.id, label: field.section ? `${field.section} · ${field.label || field.name}` : field.label || field.name || "字段", source: issue || result.failed.includes(current.id) ? "manual" : filledSet.has(current.id) ? "profile" : current.hasValue || current.userEdited || result.skipped.includes(current.id) ? "prefilled" : "excluded", state: issue?.message || (filledSet.has(current.id) ? "已写入；提交前核对网页" : result.failed.includes(current.id) ? "写入未通过，需要手填" : current.hasValue || current.userEdited || result.skipped.includes(current.id) ? "已有或手改内容，已保留" : "本次未选择") };
     });
     const status = { phase: "done", message: `已写入 ${result.filled.length} 项，网页校验发现 ${issues.length} 项需处理；未替你保存或提交`, details, summary: { filled: result.filled.length, manual: details.filter((d) => d.source === "manual").length, preserved: details.filter((d) => d.source === "prefilled").length, excluded: details.filter((d) => d.source === "excluded").length, uploaded } };
     await adapter.setPlan(null); if (adapter.onFilled) await adapter.onFilled(); adapter.status(status); return status;
@@ -1905,6 +2173,7 @@ async function applyAutofillPlan(adapter, input) {
 }
 
 module.exports = {
+  classifyRepeatBlocks, previewRecordBlocks, rowsForGroup, recordReference, awardFieldKind,
   profileChoices, applyAutofillPlan, validatePageFields, focusFormField, collectApplicationFields, readCurrentApplicationFields, watchApplicationFields,
   AUTOFILL_MODULES,
   fieldModule,

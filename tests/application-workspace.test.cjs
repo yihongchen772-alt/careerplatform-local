@@ -25,7 +25,8 @@ test('preview makes no writes; AI needs selection; explicit row mapping still pr
   const f = fillFixture(); const preview = await core.runAutofillCore(f.adapter, 'resume', { mode: 'preview', positionId: 'job', modules: ['education', 'questions', 'resume'] });
   assert.equal(preview.phase, 'preview'); assert.equal(f.writes.length, 0); assert.equal(f.uploads(), 0);
   assert.equal(preview.plan.proposals.find((p) => p.id === 'f1').selected, false); assert.equal(preview.plan.proposals.find((p) => p.id === 'f2').eligible, false);
-  const result = await core.applyAutofillPlan(f.adapter, { planId: preview.plan.id, approved: [{ id: 'f0', ref: 'education.1.school', value: '' }, { id: 'f1', value: '改成我的回答' }, { id: 'f2', value: 'cannot overwrite' }], uploadResume: false });
+  const secondSchool = preview.plan.choices.find((choice) => choice.value === '大学乙');
+  const result = await core.applyAutofillPlan(f.adapter, { planId: preview.plan.id, approved: [{ id: 'f0', ref: secondSchool.ref, value: secondSchool.value }, { id: 'f1', value: '改成我的回答' }, { id: 'f2', value: 'cannot overwrite' }], uploadResume: false });
   assert.equal(result.phase, 'done'); assert.equal(result.summary.preserved, 2); assert.equal(result.summary.filled, 1);
   assert.equal(f.writes.find((p) => p.id === 'f0').value, '大学乙'); assert.equal(f.writes.some((p) => p.id === 'f2'), false); assert.equal(f.uploads(), 0);
 });

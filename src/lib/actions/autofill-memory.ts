@@ -5,6 +5,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { toActionResult, UserFacingError } from "@/lib/action-result";
+import { normalizeMemoryText } from "@/lib/application-memory";
 
 const editSchema = z.object({
   questionLabel: z.string().trim().min(2).max(500),
@@ -43,5 +44,22 @@ export async function deleteAutofillMemory(id: string) {
     await db.autofillAnswer.delete({ where: { id } });
     revalidatePath("/settings");
     return null;
+  });
+}
+
+export async function tidyAutofillMemories() {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const removed = await db.$transaction(async (tx) => {
+      const rows = await tx.autofillAnswer.findMany({ where: { userId: user.id, confirmed: true }, orderBy: [{ updatedAt: "desc" }, { id: "asc" }] });
+      const seen = new Set<string>(), duplicates: string[] = [];
+      for (const row of rows) {
+        const key = JSON.stringify([row.kind, row.contextKey, normalizeMemoryText(row.questionLabel), normalizeMemoryText(row.answer)]);
+        if (seen.has(key)) duplicates.push(row.id); else seen.add(key);
+      }
+      if (duplicates.length) await tx.autofillAnswer.deleteMany({ where: { id: { in: duplicates }, userId: user.id } });
+      return duplicates;
+    });
+    revalidatePath("/settings"); return removed;
   });
 }

@@ -18,13 +18,15 @@ import { getDataFreshness } from "@/lib/actions/backup";
 import { UpdateCard } from "@/components/settings/update-card";
 import { ApplicationProfileCard } from "@/components/settings/application-profile-card";
 import { AutofillMemoryCard } from "@/components/settings/autofill-memory-card";
+import { ApplicationMemoryCard } from "@/components/settings/application-memory-card";
+import { toMemoryView, type MemoryView } from "@/lib/application-memory";
 import { parseApplicationProfile } from "@/lib/application-profile";
 import { db } from "@/lib/db";
 import packageInfo from "../../../../package.json";
 
 export default async function SettingsPage() {
   const user = await requireUser();
-  const [aiKeys, appSettings, mailAccounts, freshnessResult, resumeVersions, rememberedAnswers, autoBackup, extensionPairing] = await Promise.all([
+  const [aiKeys, appSettings, mailAccounts, freshnessResult, resumeVersions, rememberedAnswers, autoBackup, extensionPairing, memories] = await Promise.all([
     getAiKeysOverview(user.id),
     getAppSettings(),
     listMailAccounts(user.id),
@@ -41,6 +43,7 @@ export default async function SettingsPage() {
     }),
     getAutoBackupSettings(),
     getExtensionPairing(),
+    db.applicationMemory.findMany({ where: { userId: user.id }, orderBy: { updatedAt: "desc" } }),
   ]);
   const freshness = freshnessResult.ok ? freshnessResult.data : null;
 
@@ -64,6 +67,7 @@ export default async function SettingsPage() {
           }}
         />
         <ApplicationProfileCard initial={parseApplicationProfile(user.applicationProfile)} resumeVersions={resumeVersions} />
+        <ApplicationMemoryCard initial={memories.map(toMemoryView).filter((row): row is MemoryView => row !== null)} />
         <ExtensionCard initial={extensionPairing} />
         <AutofillMemoryCard initial={rememberedAnswers.map((answer) => ({ ...answer, updatedAt: answer.updatedAt.toISOString() }))} />
         <AppearanceForm />

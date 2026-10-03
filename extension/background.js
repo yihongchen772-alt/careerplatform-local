@@ -10,9 +10,10 @@ const drafts = new Map(); // tabId -> AI drafts filled there (for 记住本页)
 const tasks = new Map();
 const plans = new Map();
 const running = new Set(); // tabIds with an autofill in progress
+const remembering = new Set();
 
 async function settings() {
-  const stored = await chrome.storage.local.get(["token", "appBase", "resumeVersionId", "variantId", "expandBlocks", "fillModules", "positionId"]);
+  const stored = await chrome.storage.local.get(["token", "appBase", "resumeVersionId", "variantId", "expandBlocks", "fillModules", "positionId", "autoRemember"]);
   return { base: stored.appBase || DEFAULT_BASE, ...stored };
 }
 
@@ -131,7 +132,7 @@ async function adapterFor(tabId, task) {
         return attached;
       },
       jobId: () => task?.positionId ?? boundJob,
-      archiveScope: () => task?.positionId ? `job:v1:${task.positionId}` : core.portalContext(liveUrl),
+      archiveScope: () => (task?.positionId ?? boundJob) ? `job:v1:${task?.positionId ?? boundJob}` : core.portalContext(liveUrl),
       getPlan: () => plans.get(tabId),
       setPlan: async (plan) => { if (plan) { plans.set(tabId, plan); await chrome.storage.session.set({ [`plan:${tabId}`]: { ...plan, frameById: [...plan.frameById] } }); } else { plans.delete(tabId); await chrome.storage.session.remove(`plan:${tabId}`); } },
       getDrafts: () => drafts.get(tabId) || [],
@@ -190,13 +191,70 @@ function cancelFill(tabId, reason = "已停止填写，已填入的内容保留"
   tabFrames(tabId).then((frames) => Promise.all(frames.map((frameId) => runInFrame(tabId, frameId, () => document.documentElement.removeAttribute("data-cp-task")).catch(() => {})))).catch(() => {});
 }
 
-async function saveTab(tabId) {
+async function saveTab(tabId, onlyUserEdited = false) {
+  if (remembering.has(tabId) || running.has(tabId)) return { saved: 0 };
+  remembering.add(tabId);
+  let dispose;
+  try {
+    const context = await adapterFor(tabId); dispose = context.dispose;
+    const { resumeVersionId } = await settings();
+    return await core.saveCorrectionsCore(context.adapter, resumeVersionId || undefined, onlyUserEdited);
+  } finally {
+    dispose?.(); remembering.delete(tabId);
+  }
+}
+
+// This listener lives in Chrome's isolated world. It only requests a reread
+// by our engine; the website cannot send personal data into the library.
+function installMemoryWatcher(enabled) {
+  window.__cpAutoMemoryEnabled = enabled;
+  if (window.__cpAutoMemoryInstalled) return;
+  window.__cpAutoMemoryInstalled = true;
+  let timer;
+  const queue = (event) => {
+    if (!window.__cpAutoMemoryEnabled || !event.isTrusted) return;
+    if (!event.target?.closest?.("input, textarea, select, .ant-select, .el-select, [role='option'], [role='combobox']")) return;
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      if (window.__cpAutoMemoryEnabled) chrome.runtime.sendMessage({ type: "auto-memory", url: location.href }).catch(() => {});
+    }, 2800);
+  };
+  for (const event of ["input", "change", "focusout", "click"]) document.addEventListener(event, queue, true);
+}
+
+async function watchMemory(tabId, enabled) {
+  const tab = await chrome.tabs.get(tabId);
+  if (!/^https?:/.test(tab.url || "")) return { enabled: false };
+  const origin = new URL(tab.url).origin;
+  await chrome.storage.session.set({ [`memory:${tabId}`]: { enabled, origin } });
   const { adapter, dispose } = await adapterFor(tabId);
   try {
-    const { resumeVersionId } = await settings();
-    return await core.saveCorrectionsCore(adapter, resumeVersionId || undefined, false);
-  } finally {
-    dispose();
+    // Register field ids and tracking before the first handwritten value,
+    // including pages where the applicant never clicks Autofill.
+    await core.scanFrames(adapter);
+    for (const frame of await tabFrames(tabId)) await runInFrame(tabId, frame, installMemoryWatcher, [enabled]).catch(() => {});
+  } finally { dispose(); }
+  return { enabled };
+}
+
+async function rememberAutomatically(sender, message) {
+  const tabId = sender.tab.id;
+  const state = (await chrome.storage.session.get(`memory:${tabId}`))[`memory:${tabId}`];
+  const tab = await chrome.tabs.get(tabId);
+  if (!state?.enabled || new URL(tab.url).origin !== state.origin || sender.url !== message.url) return { saved: 0 };
+  try {
+    const result = await saveTab(tabId, true);
+    if (result.saved) {
+      const status = { saved: result.saved, conflicts: result.conflicts, at: Date.now() };
+      await chrome.storage.session.set({ [`memory-status:${tabId}`]: status });
+      chrome.runtime.sendMessage({ type: "memory-status", tabId, status }).catch(() => {});
+    }
+    return result;
+  } catch (error) {
+    const status = { error: error.message, at: Date.now() };
+    await chrome.storage.session.set({ [`memory-status:${tabId}`]: status });
+    chrome.runtime.sendMessage({ type: "memory-status", tabId, status }).catch(() => {});
+    throw error;
   }
 }
 
@@ -208,6 +266,8 @@ async function pageInfo(tabId) {
 }
 
 const handlers = {
+  async watchMemory({ tabId, enabled }) { return watchMemory(tabId, enabled === true); },
+  async memoryStatus({ tabId }) { return (await chrome.storage.session.get(`memory-status:${tabId}`))[`memory-status:${tabId}`] || null; },
   async saveDraft({ draft }) { return jsonOrThrow(await api("application-draft", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(draft) })); },
   async context({ tabId }) { const data = await jsonOrThrow(await api("application-context")); const session = await chrome.storage.session.get(`job:${tabId}`); return { ...data, positionId: session[`job:${tabId}`] || "" }; },
   async bind({ tabId, positionId }) { await chrome.storage.session.set({ [`job:${tabId}`]: positionId || "" }); plans.delete(tabId); await chrome.storage.session.remove(`plan:${tabId}`); },
@@ -262,8 +322,11 @@ const handlers = {
 };
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  // Only the extension's own pages (the popup) talk to the worker; a web page
-  // has no channel here — the extension injects functions, never listeners.
+  if (sender.id === chrome.runtime.id && sender.tab?.id && /^https?:/.test(sender.url || "") && message?.type === "auto-memory") {
+    rememberAutomatically(sender, message).then((data) => sendResponse({ ok: true, data })).catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+  // All other operations are restricted to our own extension UI.
   if (sender.id !== chrome.runtime.id || !(sender.url || "").startsWith(chrome.runtime.getURL(""))) return false;
   const handler = handlers[message && message.type];
   if (!handler) return false;
@@ -279,11 +342,18 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
 });
 
 chrome.webNavigation.onHistoryStateUpdated.addListener(({ tabId }) => { plans.delete(tabId); chrome.storage.session.remove(`plan:${tabId}`).catch(() => {}); cancelFill(tabId, "页面已变化，填写已停止"); });
-chrome.tabs.onUpdated.addListener((tabId, info) => { if (info.url || info.status === "loading") { plans.delete(tabId); chrome.storage.session.remove(`plan:${tabId}`).catch(() => {}); } });
+chrome.tabs.onUpdated.addListener((tabId, info) => {
+  if (info.url || info.status === "loading") { plans.delete(tabId); chrome.storage.session.remove(`plan:${tabId}`).catch(() => {}); }
+  if (info.status === "complete") chrome.storage.session.get(`memory:${tabId}`).then(async (stored) => {
+    const state = stored[`memory:${tabId}`]; if (!state?.enabled) return;
+    const tab = await chrome.tabs.get(tabId);
+    if (/^https?:/.test(tab.url || "") && new URL(tab.url).origin === state.origin) await watchMemory(tabId, true);
+  }).catch(() => {});
+});
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   cancelFill(tabId, "标签页已关闭，填写已停止");
   drafts.delete(tabId);
   plans.delete(tabId);
-  chrome.storage.session.remove([`status:${tabId}`, `drafts:${tabId}`, `plan:${tabId}`, `job:${tabId}`, `archive:${tabId}`]).catch(() => {});
+  chrome.storage.session.remove([`status:${tabId}`, `drafts:${tabId}`, `plan:${tabId}`, `job:${tabId}`, `archive:${tabId}`, `memory:${tabId}`, `memory-status:${tabId}`]).catch(() => {});
 });

@@ -50,6 +50,7 @@ export const TABLES = [
   "resumeDrill",
   "skillGapAnalysis",
   "autofillAnswer",
+  "applicationMemory",
   "interviewPrep",
   "groupInterviewPrep",
   "coverLetter",

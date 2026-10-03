@@ -13,10 +13,11 @@ export type DesktopBridgeTabsState = { tabs: DesktopBridgeTab[]; activeId: numbe
 /** Where an autofilled value came from — matches the outline colour on the page. */
 export type DesktopBridgeFillSource = "profile" | "memory" | "ai" | "manual" | "prefilled" | "excluded";
 
-export type DesktopBridgeAutofillModule = "basic" | "education" | "experience" | "project" | "questions" | "other" | "resume";
+export type DesktopBridgeAutofillModule = "basic" | "education" | "experience" | "project" | "award" | "questions" | "other" | "resume";
 
 export type FillProposal = { id: string; fieldKey: string; label: string; section?: string; value: string; selected: boolean; eligible: boolean; source: string; ref: string; required?: boolean; maxLength?: number | null; note: string; edited?: boolean; remember?: boolean };
-export type FillPlan = { id: string; url: string; proposals: FillProposal[]; choices: { ref: string; label: string; value: string }[]; uploadResume: boolean; contextKey: string; positionId?: string; resumeVersionId?: string; variantId?: string };
+export type FillRecordBlock = { id: string; label: string; note: string; fieldIds: string[]; choices: { ref: string; label: string; values: Record<string, { value: string; ref: string }> }[] };
+export type FillPlan = { id: string; url: string; proposals: FillProposal[]; choices: { ref: string; label: string; value: string }[]; blocks?: FillRecordBlock[]; uploadResume: boolean; contextKey: string; positionId?: string; resumeVersionId?: string; variantId?: string };
 export type ApplicationSnapshot = { fields: { label: string; value: string }[]; url: string; positionId?: string; resumeVersionId?: string; variantId?: string; contextKey?: string };
 export type DesktopBridgeAutofillOptions = {
   mode?: "preview" | "apply";
@@ -69,7 +70,7 @@ export type DesktopBridge = {
   applicationSnapshot(): Promise<ApplicationSnapshot | null>;
   autofill(resumeVersionId?: string, options?: DesktopBridgeAutofillOptions): Promise<void>;
   cancelAutofill(tabId?: number): Promise<void>;
-  saveCorrections(resumeVersionId?: string, onlyUserEdited?: boolean): Promise<{ saved: number }>;
+  saveCorrections(resumeVersionId?: string, onlyUserEdited?: boolean, positionId?: string): Promise<{ saved: number; recordsSaved?: number; answersSaved?: number; unchanged?: number; conflicts?: number }>;
   clearMarks(): Promise<void>;
   capturePage(): Promise<DesktopBridgeCapturedPage>;
   exportFormStructure(): Promise<{ path: string; fields: number; frames: number }>;

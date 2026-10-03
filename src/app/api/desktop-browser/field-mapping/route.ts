@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
-const schema = z.object({ contextKey: z.string().min(1).max(16384), mappings: z.array(z.object({ fieldKey: z.string().min(1).max(2000), ref: z.string().regex(/^(?:name|phone|email|gender|birthDate|currentCity|targetRole|selfIntro|politics|hometown|ethnicity|english|(?:education|experiences|projects)\.\d+\.(?:school|major|degree|gpa|start|end|company|role|name|description|responsibilities))$/) })).max(500) });
+const schema = z.object({ contextKey: z.string().min(1).max(16384), mappings: z.array(z.object({ fieldKey: z.string().min(1).max(2000), ref: z.string().max(3000).regex(/^(?:name|phone|email|gender|birthDate|currentCity|targetRole|selfIntro|politics|hometown|ethnicity|english|summary:(?:education|experience|project|award)|row:(?:education|experience|project|award):[^:]+:(?:school|major|degree|gpa|start|end|company|role|name|description|responsibilities|issuer|level|date|range|summary))$/) })).max(500) });
 export async function POST(request: Request) {
   const user = await requireUser();
   const input = schema.safeParse(await request.json().catch(() => null));

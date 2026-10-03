@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/session";
 import { describeApplicationProfile, parseApplicationProfile, resolveProfileVariant } from "@/lib/application-profile";
 import { db } from "@/lib/db";
+import { profileWithMemories, toMemoryView, type MemoryView } from "@/lib/application-memory";
 
 // Consumed by electron/browser-view.js's autofill handler (plain HTTP —
 // the Electron main process isn't part of the Next app, see
@@ -21,11 +22,16 @@ export async function GET(request: Request) {
   });
   // 资料方案: explicit choice from the browser, else the one linked to the
   // selected resume, else the default profile.
-  const { profile: structured, variant } = resolveProfileVariant(
+  const { profile: base, variant } = resolveProfileVariant(
     parseApplicationProfile(user.applicationProfile),
     params.get("variantId"),
     params.get("resumeVersionId")
   );
+  const memories = (await db.applicationMemory.findMany({ where: { userId: user.id, enabled: true }, orderBy: { createdAt: "asc" }, select: { id: true, category: true, content: true, enabled: true, revision: true, updatedAt: true } }))
+    .map((row) => ({ ...row, sources: [], alternatives: [] }))
+    .map(toMemoryView).filter((row): row is MemoryView => row !== null);
+  const structured = profileWithMemories(base, memories, !!variant);
+  const summaries = Object.fromEntries(memories.filter((row) => row.content.text && !(variant && ["experience", "project"].includes(row.category))).map((row) => [row.category, row.content.text]));
   const edu = structured.education[0];
   const exp = structured.experiences[0];
   return NextResponse.json({
@@ -60,6 +66,11 @@ export async function GET(request: Request) {
     education: structured.education,
     experiences: structured.experiences,
     projects: structured.projects,
+    awards: structured.awards,
+    // In a direction variant the library remains available in the preview
+    // selector, while automatic filling follows the variant's own order.
+    library: memories,
+    summaries,
     politics: structured.extras.politics || null,
     hometown: structured.extras.hometown || null,
     ethnicity: structured.extras.ethnicity || null,
@@ -67,6 +78,6 @@ export async function GET(request: Request) {
     currentCity: structured.extras.currentCity || null,
     targetRole: structured.extras.targetRole || null,
     selfIntro: structured.extras.selfIntro || null,
-    extra: describeApplicationProfile(structured) || null,
+    extra: [describeApplicationProfile(structured), ...Object.entries(summaries).map(([category, text]) => `${category === "experience" ? "实习/工作" : category === "project" ? "项目" : category === "award" ? "获奖" : "教育"}整段原文：${text}`)].filter(Boolean).join("\n") || null,
   });
 }

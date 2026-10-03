@@ -8,7 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ConfirmDeleteButton } from "@/components/ui/confirm-delete-button";
-import { deleteAutofillMemory, updateAutofillMemory } from "@/lib/actions/autofill-memory";
+import { deleteAutofillMemory, updateAutofillMemory, tidyAutofillMemories } from "@/lib/actions/autofill-memory";
+import { normalizeMemoryText } from "@/lib/application-memory";
 import { cn } from "@/lib/utils";
 
 export type MemoryAnswer = {
@@ -22,6 +23,7 @@ export type MemoryAnswer = {
 
 function scopeName(contextKey: string | null) {
   if (!contextKey) return "跨企业复用";
+  if (contextKey.startsWith("job:v1:")) return "绑定的投递岗位";
   const current = /^(?:page|tenant):v2:/.test(contextKey);
   try {
     const url = new URL(contextKey.replace(/^(?:page|tenant):v2:/, ""));
@@ -37,12 +39,28 @@ export function AutofillMemoryCard({ initial }: { initial: MemoryAnswer[] }) {
   const [selectedId, setSelectedId] = useState<string | null>(initial[0]?.id ?? null);
   const [draft, setDraft] = useState({ questionLabel: initial[0]?.questionLabel ?? "", answer: initial[0]?.answer ?? "", shareAcrossCompanies: !initial[0]?.contextKey });
   const [saving, setSaving] = useState(false);
+  const [drafts, setDrafts] = useState<Record<string, typeof draft>>({});
   const selected = rows.find((row) => row.id === selectedId) ?? null;
   const filtered = useMemo(() => rows.filter((row) => (category === "all" || (category === "field") === (row.kind === "field")) && `${row.questionLabel} ${row.answer}`.toLowerCase().includes(query.toLowerCase())), [rows, query, category]);
 
   function select(row: MemoryAnswer) {
+    if (selectedId) setDrafts((current) => ({ ...current, [selectedId]: draft }));
     setSelectedId(row.id);
-    setDraft({ questionLabel: row.questionLabel, answer: row.answer, shareAcrossCompanies: !row.contextKey });
+    setDraft(drafts[row.id] ?? { questionLabel: row.questionLabel, answer: row.answer, shareAcrossCompanies: !row.contextKey });
+  }
+
+  const duplicateCount = rows.length - new Set(rows.map((row) => JSON.stringify([row.kind, row.contextKey, normalizeMemoryText(row.questionLabel), normalizeMemoryText(row.answer)]))).size;
+  async function tidy() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const res = await tidyAutofillMemories();
+      if (!res.ok) return void toast.error(res.message);
+      const next = rows.filter((row) => !res.data.includes(row.id));
+      setRows(next);
+      if (selectedId && res.data.includes(selectedId)) { setSelectedId(null); setDraft({ questionLabel: "", answer: "", shareAcrossCompanies: true }); }
+      toast.success(res.data.length ? `已整理 ${res.data.length} 条完全重复的记忆` : "没有重复内容");
+    } finally { setSaving(false); }
   }
 
   async function save() {
@@ -55,6 +73,7 @@ export function AutofillMemoryCard({ initial }: { initial: MemoryAnswer[] }) {
       setRows((previous) => previous.map((row) => row.id === selected.id
         ? { ...row, questionLabel: draft.questionLabel.trim(), answer: draft.answer.trim(), contextKey, updatedAt: new Date().toISOString() }
         : row));
+      setDrafts((current) => { const next = { ...current }; delete next[selected.id]; return next; });
       toast.success("记忆已更新，下次填充会使用新版");
     } finally {
       setSaving(false);
@@ -76,8 +95,8 @@ export function AutofillMemoryCard({ initial }: { initial: MemoryAnswer[] }) {
   return (
     <Card id="answer-memory" className="scroll-mt-6 md:col-span-2">
       <CardHeader>
-        <CardTitle className="text-lg font-semibold">网申记忆库</CardTitle>
-        <p className="text-sm text-muted-foreground">你手填的基础资料与开放题会分别保存，可在这里查看、修改或删除。姓名、学校等通用字段跨企业复用；不保存密码、证件号、银行卡或验证码。</p>
+        <div className="flex flex-wrap items-center justify-between gap-2"><CardTitle className="text-lg font-semibold">字段与问答记忆</CardTitle><Button size="sm" variant="outline" disabled={saving || !duplicateCount} onClick={tidy}>整理重复记忆{duplicateCount ? `（${duplicateCount}）` : ""}</Button></div>
+        <p className="text-sm text-muted-foreground">基础字段与开放题在这里管理，项目、实习和获奖在经历记忆库管理。整理功能合并同一适用范围内完全相同的内容；不同企业和不同回答分别保留。</p>
       </CardHeader>
       <CardContent>
         {rows.length === 0 ? (

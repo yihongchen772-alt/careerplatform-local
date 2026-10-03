@@ -19,19 +19,21 @@ import { AiProgress } from "@/components/ui/ai-progress";
 import { extractApplicationProfile, updateApplicationProfile } from "@/lib/actions/account";
 import {
   EXTRA_FIELDS,
-  mergeProjectRows,
   type ApplicationProfile,
   type EducationRow,
   type ExperienceRow,
   type ProjectRow,
+  type AwardRow,
   type ProfileVariant,
 } from "@/lib/application-profile";
+import { mergeFactRows } from "@/lib/application-memory";
 
 type ResumeOption = { id: string; name: string };
 
 const emptyEducation: EducationRow = { school: "", major: "", degree: "", gpa: "", start: "", end: "" };
 const emptyExperience: ExperienceRow = { company: "", role: "", start: "", end: "", description: "" };
 const emptyProject: ProjectRow = { name: "", role: "", start: "", end: "", description: "", responsibilities: "" };
+const emptyAward: AwardRow = { name: "", issuer: "", level: "", date: "", description: "" };
 
 /**
  * The 网申 facts the account profile above doesn't hold and the resume
@@ -110,10 +112,10 @@ export function ApplicationProfileCard({
       const res = await extractApplicationProfile(resumeId);
       if (!res.ok) return void toast.error(res.message);
       // Keep hand-typed rows when the resume does not contain that section.
-      setProfile((p) => ({ ...p, education: res.data.education.length ? res.data.education : p.education }));
+      setProfile((p) => ({ ...p, education: mergeFactRows("education", p.education, res.data.education, 10), awards: mergeFactRows("award", p.awards, res.data.awards, 30) }));
       setView((v) => ({
-        experiences: res.data.experiences.length ? res.data.experiences : v.experiences,
-        projects: mergeProjectRows(v.projects, res.data.projects),
+        experiences: mergeFactRows("experience", v.experiences, res.data.experiences, 20),
+        projects: mergeFactRows("project", v.projects, res.data.projects, 20),
         extras: { ...res.data.extras, ...Object.fromEntries(Object.entries(v.extras).filter(([, value]) => value)) },
       }));
       toast.success("已从简历里提取，检查一下再保存");
@@ -127,7 +129,7 @@ export function ApplicationProfileCard({
       <CardHeader>
         <CardTitle>网申资料</CardTitle>
         <p className="text-sm text-muted-foreground">
-          学校、实习、项目经历和其他常问信息都可以在这里维护。一键填充会优先使用已保存的事实；教育经历把最高学历、项目经历把最常投递的项目放在第一行。
+          学校、实习、项目、获奖和其他常问信息都可以在这里维护。一键填充优先使用这些事实，再补充经历记忆库。把最常使用的经历放在前面。
         </p>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -280,6 +282,15 @@ export function ApplicationProfileCard({
               </div>
             </div>
           ))}
+        </section>
+
+        <section className="space-y-3">
+          <div className="flex items-center justify-between"><p className="text-sm font-medium">获奖情况（所有方案共用）</p><Button size="sm" variant="outline" disabled={profile.awards.length >= 30} onClick={() => setProfile((p) => ({ ...p, awards: [...p.awards, { ...emptyAward }] }))}><Plus className="size-4" />添加奖项</Button></div>
+          {profile.awards.map((award, i) => <div key={i} className="grid gap-2 rounded-md border p-3 sm:grid-cols-2">
+            {([["name", "奖项名称"], ["issuer", "颁发单位"], ["level", "等级"], ["date", "获奖时间"]] as const).map(([key, label]) => <Field key={key} label={label}><Input value={award[key]} onChange={(event) => setProfile((p) => ({ ...p, awards: p.awards.map((item, j) => j === i ? { ...item, [key]: event.target.value } : item) }))} /></Field>)}
+            <Field label="补充说明" className="sm:col-span-2"><Textarea value={award.description} onChange={(event) => setProfile((p) => ({ ...p, awards: p.awards.map((item, j) => j === i ? { ...item, description: event.target.value } : item) }))} /></Field>
+            <Button size="sm" variant="ghost" className="sm:col-span-2 justify-self-end" onClick={() => setProfile((p) => ({ ...p, awards: p.awards.filter((_, j) => j !== i) }))}><Trash2 className="size-4" />删除</Button>
+          </div>)}
         </section>
 
         <section className="space-y-3">

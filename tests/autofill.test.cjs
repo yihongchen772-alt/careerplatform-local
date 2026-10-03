@@ -54,7 +54,7 @@ test("saved projects fill matching portal fields in order without using the appl
   const field = (label) => ({ label, placeholder: "", name: "", tag: "input", type: "text" });
   assert.equal(matchBasicField(field("Project Name"), savedProfile, indexes), "招聘数据看板");
   assert.equal(matchBasicField(field("项目名称"), savedProfile, indexes), "课程推荐系统");
-  assert.equal(matchBasicField(field("项目职责"), savedProfile, indexes), "负责数据建模");
+  assert.equal(matchBasicField(field("项目职责"), savedProfile, indexes), "负责模型评估");
   assert.equal(matchBasicField(field("项目经历"), savedProfile, indexes), "招聘数据看板；负责人；搭建可视化看板；负责数据建模");
   assert.equal(matchBasicField(field("项目名称"), savedProfile, new Map([["project:name:out", 1]])), "课程推荐系统");
   assert.equal(matchBasicField(field("Project Name"), profile, new Map()), null);
@@ -170,7 +170,9 @@ test("prefilled blocks, loose fields and unrelated labels keep rows aligned", ()
   assert.equal(matchBasicField(field("预计毕业时间", "基本信息"), savedProfile, rows), "2026-12");
   resolveRepeatField(field("学校", "教育经历"), rows); // row one already filled by the site
   assert.equal(matchBasicField(field("学校", "教育经历"), savedProfile, rows), "华东师范大学");
-  assert.equal(matchBasicField(field("毕业时间", "教育经历"), savedProfile, rows), "2026-12");
+  // A date below the second school belongs to that school even if the
+  // first block did not expose its own date field.
+  assert.equal(matchBasicField(field("毕业时间", "教育经历"), savedProfile, rows), "2025-06");
   for (const label of ["专业排名", "学校所在城市", "英语成绩", "专业技能", "期望工作城市", "专业课程", "GPA排名", "离职原因", "入职部门"]) {
     assert.equal(resolveRepeatField(field(label), new Map()), null, label);
   }
@@ -194,7 +196,7 @@ test("internship blocks fill each saved experience; unknown rows are not invente
   assert.equal(repeatFieldGoesToAi(thirdRow, savedProfile), false);
   const emptyDescription = resolveRepeatField(field("工作内容", "textarea"), new Map([["experience:description:in", 1]]));
   assert.equal(repeatFieldValue(field("工作内容", "textarea"), emptyDescription, savedProfile), null);
-  assert.equal(repeatFieldGoesToAi(emptyDescription, savedProfile), true);
+  assert.equal(repeatFieldGoesToAi(emptyDescription, savedProfile), false);
   assert.equal(repeatFieldGoesToAi(resolveRepeatField(field("学校"), new Map()), profile), true);
   assert.equal(repeatFieldGoesToAi(resolveRepeatField(field("学校"), new Map([["education:school:out", 1]])), profile), false);
 });

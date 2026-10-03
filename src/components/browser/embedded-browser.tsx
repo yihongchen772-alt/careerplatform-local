@@ -108,6 +108,7 @@ const FILL_MODULES: { id: DesktopBridgeAutofillModule; label: string }[] = [
   { id: "education", label: "教育经历" },
   { id: "experience", label: "实习 / 工作经历" },
   { id: "project", label: "项目经历" },
+  { id: "award", label: "获奖情况" },
   { id: "questions", label: "开放题 / 自我评价" },
   { id: "other", label: "其他字段" },
   { id: "resume", label: "简历附件" },
@@ -227,14 +228,19 @@ export function EmbeddedBrowser({
   const [variantMenuOpen, setVariantMenuOpen] = useState(false);
   const [scopeMenuOpen, setScopeMenuOpen] = useState(false);
   const scopePreference = useSyncExternalStore(noop, () => {
-    try { return localStorage.getItem("careerplatform.browser.fillModules") ?? ALL_FILL_MODULES.join(","); }
+    try {
+      const saved = localStorage.getItem("careerplatform.browser.fillModules.v2");
+      if (saved !== null) return saved;
+      const old = localStorage.getItem("careerplatform.browser.fillModules");
+      return old === null || ALL_FILL_MODULES.filter((id) => id !== "award").every((id) => old.split(",").includes(id)) ? ALL_FILL_MODULES.join(",") : old;
+    }
     catch { return ALL_FILL_MODULES.join(","); }
   }, () => ALL_FILL_MODULES.join(","));
   const [scopeOverride, setScopeOverride] = useState<DesktopBridgeAutofillModule[] | null>(null);
   const fillModules = useMemo(() => scopeOverride ?? ALL_FILL_MODULES.filter((id) => scopePreference.split(",").includes(id)), [scopeOverride, scopePreference]);
   function setFillModules(modules: DesktopBridgeAutofillModule[]) {
     setScopeOverride(modules);
-    try { localStorage.setItem("careerplatform.browser.fillModules", modules.join(",")); }
+    try { localStorage.setItem("careerplatform.browser.fillModules.v2", modules.join(",")); }
     catch { /* Keep the current selection even if local storage is unavailable. */ }
   }
   const [resumeVersionId, setResumeVersionId] = useState(
@@ -424,8 +430,9 @@ export function EmbeddedBrowser({
       if (autoSavingRef.current) return;
       autoSavingRef.current = true;
       try {
-        const { saved } = await bridge.saveCorrections(resumeVersionId || undefined, true);
+        const { saved, conflicts } = await bridge.saveCorrections(resumeVersionId || undefined, true, positionId || "");
         if (saved > 0) setRememberedCount((count) => count + saved);
+        if (conflicts) toast.info("经历描述有不同版本，已保留在经历记忆库，可选择下次使用的版本");
         autoSaveErrorRef.current = false;
       } catch {
         if (!autoSaveErrorRef.current) toast.error("自动记住手填内容失败；可点「记住本页」重试");
@@ -435,7 +442,7 @@ export function EmbeddedBrowser({
       }
     }, 2500);
     return () => window.clearInterval(timer);
-  }, [bridge, autoRemember, currentUrl, autofilling, savingCorrections, resumeVersionId]);
+  }, [bridge, autoRemember, currentUrl, autofilling, savingCorrections, resumeVersionId, positionId]);
 
   // Keyboard shortcuts while focus is in our own chrome (the guest page's
   // shortcuts are forwarded by the main process and arrive via onShortcut).
@@ -527,11 +534,11 @@ export function EmbeddedBrowser({
     if (!bridge || savingCorrections) return;
     setSavingCorrections(true);
     try {
-      const { saved } = await bridge.saveCorrections(resumeVersionId || undefined);
+      const { saved, recordsSaved, answersSaved, unchanged, conflicts } = await bridge.saveCorrections(resumeVersionId || undefined, false, positionId || "");
       if (saved > 0) {
-        toast.success(`已记住 ${saved} 项你手填的内容，下次网申会优先复用`);
+        toast.success(`已记住 ${recordsSaved || 0} 条经历、${answersSaved ?? saved} 项字段或回答${conflicts ? "；差异描述已保留为版本" : ""}`);
       } else {
-        toast.info("这页没有可记住的新内容");
+        toast.info(unchanged ? "这些内容已经记住，重复保存不会增加记录" : "没有可收录的新内容；经历需有名称及其他内容，未修改的 AI 草稿不收录");
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "保存修改失败");
@@ -836,6 +843,7 @@ export function EmbeddedBrowser({
         </Button>
         {autofilling && <Button type="button" size="sm" variant="outline" onClick={() => void bridge.cancelAutofill(tabsState.activeId ?? undefined)}>停止填写</Button>}
         <span className="hidden text-xs text-muted-foreground xl:inline">只补空白，已填内容保留</span>
+        <Button type="button" size="sm" variant="outline" disabled={savingCorrections || autofilling || !currentUrl} onClick={handleSaveCorrections}>记住本页经历</Button>
         <Button type="button" size="sm" variant={toolsOpen ? "secondary" : "ghost"} className="ml-auto" onClick={() => setToolsOpen((value) => !value)}>{toolsOpen ? "收起设置" : "填写设置"}</Button>
       </div>
       {toolsOpen && <div className="flex max-h-44 min-h-0 flex-wrap items-center gap-x-4 gap-y-3 overflow-auto rounded-lg border bg-muted/30 p-3">
@@ -868,7 +876,7 @@ export function EmbeddedBrowser({
         </label>
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground" title="记住你手填或修改的基础资料与开放题；密码、证件、银行卡、验证码不保存">
           <input type="checkbox" checked={autoRemember} onChange={(e) => setAutoRememberAnswers(e.target.checked)} />
-          自动记住手填内容
+          自动记住经历与回答
         </label>
         {!expanded && <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span className="font-medium">网页视区</span>
@@ -881,7 +889,7 @@ export function EmbeddedBrowser({
             <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setBrowserHeight(650)}>还原</Button>
           </>}
         </div>}
-        <p className="w-full text-xs text-muted-foreground">{autoRemember ? `手填内容会自动记住${rememberedCount > 0 ? ` · 本次已记住 ${rememberedCount} 项` : ""}` : "手填内容自动记忆已关闭"} · 记忆库、收藏岗位和进度同步在右上角「更多」中。</p>
+        <p className="w-full text-xs text-muted-foreground">{autoRemember ? `离开输入框后，完整经历与手填回答会自动记住${rememberedCount > 0 ? ` · 本次新增或更新 ${rememberedCount} 条` : ""}` : "手填内容自动记忆已关闭"} · 经历记忆库在账号设置中。</p>
       </div>}
 
 

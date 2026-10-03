@@ -58,6 +58,7 @@ test('incomplete, malformed or unsafe backup previews and restores cannot wipe e
 
 test('restore transaction failure preserves original rows and attachment bytes; successful restore uses fresh paths', async (t) => {
   const { load, db, uploads } = await fixture(t);
+  await db.applicationMemory.create({ data: { userId: 'local-user', category: 'project', identity: '["fixture-project",""]', content: { name: '虚构项目', description: '需要保护的经历' }, sources: [{ url: 'https://fixture.example/apply', captureKey: '' }], alternatives: [] } });
   const core = load('src/lib/backup-core.ts'), actions = load('src/lib/actions/backup.ts');
   const incoming = JSON.parse((await core.buildBackupPayload()).payload);
   incoming.files['fixture.pdf'] = Buffer.from('REPLACED').toString('base64');
@@ -75,6 +76,8 @@ test('restore transaction failure preserves original rows and attachment bytes; 
   assert.equal(fs.readFileSync(path.join(uploads, 'fixture.pdf'), 'utf8'), 'ORIGINAL');
   assert.ok(!fs.readdirSync(uploads).some((f) => f.startsWith('.restore-')));
   assert.equal((await core.buildBackupPayload()).files, 1, 'retained old files must not inflate new backups');
+  assert.equal(await db.applicationMemory.count(), 1);
+  assert.equal((await db.applicationMemory.findFirst()).content.description, '需要保护的经历');
 });
 
 test('JSON backup uses one SQLite snapshot even when another writer commits between table reads', async (t) => {

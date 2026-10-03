@@ -20,7 +20,7 @@ function updateScope() {
 
 function saveScope() {
   updateScope();
-  return chrome.storage.local.set({ fillModules: fillModules() });
+  return chrome.storage.local.set({ fillModules: fillModules(), fillModulesVersion: 2 });
 }
 
 function send(type, payload = {}) {
@@ -139,9 +139,11 @@ async function load() {
   }
   setConn(`已连接 · v${statusInfo.appVersion}`, "ok");
   show("main");
-  const prefs = await chrome.storage.local.get(["resumeVersionId", "variantId", "expandBlocks", "fillModules"]);
+  const prefs = await chrome.storage.local.get(["resumeVersionId", "variantId", "expandBlocks", "fillModules", "fillModulesVersion", "autoRemember"]);
   if (Array.isArray(prefs.fillModules)) {
+    if (prefs.fillModulesVersion !== 2 && ["basic", "education", "experience", "project", "questions", "other", "resume"].every((id) => prefs.fillModules.includes(id))) prefs.fillModules.push("award");
     for (const input of document.querySelectorAll("[data-module]")) input.checked = prefs.fillModules.includes(input.dataset.module);
+    await saveScope();
   }
   updateScope();
   const resume = $("resume");
@@ -166,8 +168,24 @@ async function load() {
     updateScope();
   }
   await loadAssistant();
+  $("auto-remember").checked = prefs.autoRemember !== false;
+  await send("watchMemory", { enabled: $("auto-remember").checked }).catch((error) => { $("memory-state").textContent = `自动记忆未启动：${error.message}`; });
+  const memory = await send("memoryStatus").catch(() => null); if (memory) renderMemoryStatus(memory);
   renderSite();
 }
+
+function renderMemoryStatus(status) {
+  $("memory-state").textContent = status.error ? `记忆保存失败：${status.error}，可点「记住本页经历」重试` : `已新增或更新 ${status.saved} 条记忆${status.conflicts ? "；差异描述已保留为版本" : ""}`;
+}
+$("auto-remember").addEventListener("change", async () => {
+  const enabled = $("auto-remember").checked;
+  try {
+    if (enabled && tab?.url) await chrome.permissions.request({ origins: [`${new URL(tab.url).origin}/*`] });
+    await chrome.storage.local.set({ autoRemember: enabled });
+    await send("watchMemory", { enabled });
+    $("memory-state").textContent = enabled ? "已开启本网站自动记忆，离开输入框后保存" : "自动记忆已关闭";
+  } catch (error) { $("memory-state").textContent = `自动记忆设置失败：${error.message}`; }
+});
 
 $("pair-btn").addEventListener("click", async () => {
   const token = $("pair-token").value.trim();
@@ -222,8 +240,8 @@ $("cancel").addEventListener("click", () => send("cancel").catch((err) => messag
 
 $("save").addEventListener("click", async () => {
   try {
-    const { saved } = await send("save");
-    message(saved > 0 ? `已记住 ${saved} 项你手填的内容，下次网申会优先复用` : "这页没有可记住的新内容");
+    const { saved, recordsSaved, answersSaved, unchanged, conflicts } = await send("save");
+    message(saved > 0 ? `已记住 ${recordsSaved || 0} 条经历、${answersSaved ?? saved} 项字段或回答${conflicts ? "；差异描述已保留为版本" : ""}` : unchanged ? "这些内容已经记住，重复保存不会增加记录" : "没有可收录的新内容，经历需要名称及其他内容，未修改的 AI 草稿不收录");
   } catch (err) {
     message(err.message, "error");
   }
@@ -265,6 +283,7 @@ $("record").addEventListener("submit", async (event) => {
 });
 
 chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type === "memory-status" && tab && msg.tabId === tab.id) { renderMemoryStatus(msg.status); return; }
   if (msg.type !== "status" || !tab || msg.tabId !== tab.id) return;
   renderDetails(msg.status.details || []);
   if (["done", "error", "preview"].includes(msg.status.phase)) renderPlan(msg.status.plan);
@@ -304,6 +323,29 @@ function renderPlan(plan) {
   $("plan").hidden = !plan; $("plan").textContent = ""; if (!plan) return;
   previewRows = plan.proposals.map((p) => ({ ...p, remember: p.remember || false }));
   const title = document.createElement("strong"); title.textContent = "填写前预览 · AI 草稿需勾选"; $("plan").appendChild(title);
+  const uiById = new Map();
+  for (const block of plan.blocks || []) {
+    if (!block.fieldIds.some((id) => previewRows.some((row) => row.id === id && row.eligible))) continue;
+    const box = document.createElement("div"); box.className = "banner";
+    const label = document.createElement("label"); label.textContent = `${block.label} · 整段来源`;
+    const select = document.createElement("select"); select.append(option("", "保持原建议 / 手动填写"));
+    for (const choice of block.choices) select.append(option(choice.ref, choice.label));
+    select.value = block.choices.find((choice) => {
+      const sources = previewRows.filter((row) => block.fieldIds.includes(row.id) && row.eligible && row.ref);
+      return sources.length > 0 && sources.every((row) => row.ref === choice.ref || row.ref.startsWith(choice.ref + ":"));
+    })?.ref || "";
+    select.disabled = !block.choices.length;
+    select.onchange = () => {
+      const choice = block.choices.find((entry) => entry.ref === select.value); if (!choice) return;
+      for (const row of previewRows) if (block.fieldIds.includes(row.id) && row.eligible) {
+        Object.assign(row, choice.values[row.id] || { value: "", ref: "" }, { selected: !!choice.values[row.id]?.value, remember: true, edited: true });
+        const ui = uiById.get(row.id); if (ui) { ui.value.value = row.value; ui.select.value = row.ref; ui.check.checked = row.selected; ui.remember.checked = true; }
+      }
+      savePreviewDraft();
+    };
+    const note = document.createElement("p"); note.className = "hint"; note.textContent = block.note + "。选择后记住本页整段对应关系。";
+    label.append(select); box.append(label, note); $("plan").append(box);
+  }
   for (const p of previewRows) {
     const box = document.createElement("fieldset"); box.disabled = !p.eligible;
     const label = document.createElement("label"); label.className = "check";
@@ -317,6 +359,7 @@ function renderPlan(plan) {
       select.onchange = () => { p.edited = true; p.ref = select.value; const c = plan.choices.find((c) => c.ref === p.ref); if (c) { p.value = c.value; value.value = c.value; check.checked = p.selected = true; } savePreviewDraft(); };
       value.oninput = () => { p.edited = true; p.value = value.value; p.ref = ""; select.value = ""; savePreviewDraft(); };
       const rememberLabel = document.createElement("label"); rememberLabel.className = "check"; const remember = document.createElement("input"); remember.type = "checkbox"; remember.checked = p.remember; remember.onchange = () => { p.edited = true; p.remember = remember.checked; savePreviewDraft(); }; rememberLabel.append(remember, document.createTextNode("记住对应资料（需先选择资料项）")); box.append(select, value, rememberLabel);
+      uiById.set(p.id, { value, select, check, remember });
       if (p.source === "ai") { const rewrite = document.createElement("button"); rewrite.textContent = "只重写这道题"; rewrite.onclick = () => startPreview({ questionIds: [p.id], regenerate: true, previewEdits: previewRows }); box.appendChild(rewrite); }
     }
     $("plan").appendChild(box);

@@ -43,11 +43,14 @@
       <label class="check"><input type="checkbox" data-module="education" checked> 教育经历</label>
       <label class="check"><input type="checkbox" data-module="experience" checked> 实习 / 工作经历</label>
       <label class="check"><input type="checkbox" data-module="project" checked> 项目经历</label>
+      <label class="check"><input type="checkbox" data-module="award" checked> 获奖情况</label>
       <label class="check"><input type="checkbox" data-module="questions" checked> 开放题 / 自我评价</label>
       <label class="check"><input type="checkbox" data-module="other" checked> 其他字段</label>
       <label class="check"><input type="checkbox" data-module="resume" checked> 简历附件</label>
     </details>
     <label class="check"><input type="checkbox" id="expand"> 自动补齐所选栏目（资料段数多于页面时点「添加」）</label>
+    <label class="check"><input type="checkbox" id="auto-remember" checked> 自动记住本网站手填的经历与回答</label>
+    <p id="memory-state" class="hint">离开输入框后自动保存；重复内容不会新增。</p>
     <label>开放题长度<select id="answer-length"><option value="100">100 字</option><option value="200" selected>200 字</option><option value="300">300 字</option><option value="500">500 字</option></select></label>
     <button id="preview" type="button">扫描并逐字段预览</button>
     <div id="plan" hidden></div>
@@ -55,7 +58,7 @@
     <button id="fill" class="primary">一键填写这一页</button>
     <button id="cancel" hidden>停止填写</button>
     <div class="row">
-      <button id="save" title="把这页你手填或改过的内容存进记忆库">记住本页</button>
+      <button id="save" title="把这页完整的项目、实习、获奖和手填回答存进记忆库">记住本页经历</button>
       <button id="capture" title="用 AI 解析这页岗位信息，加进候选岗位池">收藏岗位</button>
       <button id="record-toggle">记为已投递</button>
     </div>
