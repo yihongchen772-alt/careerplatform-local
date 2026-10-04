@@ -30,11 +30,21 @@ async function fixture(t) {
   t.after(async () => { await db.$disconnect(); fs.rmSync(dir, { recursive: true, force: true }); });
   const route = load('src/app/api/desktop-browser/save-corrections/route.ts');
   const post = (records, extra = {}) => route.POST({ json: async () => ({ resumeVersionId: null, contextKey: 'page:v2:https://company-one.example/apply', sourceUrl: 'https://company-one.example/apply?token=private', records, ...extra }) });
-  return { db, load, post };
+  // Existing storage tests exercise the legacy merge helper directly. The
+  // browser route below is separately tested through explicit review.
+  const remember = async (records, extra = {}) => {
+    const { memoryCaptureSchema, memorySourceUrl } = load('src/lib/application-memory.ts');
+    const captures = records.map((record) => memoryCaptureSchema.parse(record));
+    const result = await db.$transaction((tx) => load('src/lib/application-memory-store.ts').storeApplicationMemories(tx, 'fixture', captures, memorySourceUrl(extra.sourceUrl || 'https://company-one.example/apply?token=private')));
+    return { data: { saved: result.changed, recordsSaved: result.changed, processed: records.length, unchanged: records.length - result.changed } };
+  };
+  const actions = load('src/lib/actions/pending-application-change.ts');
+  const review = async (row, choice = {}) => actions.acceptPendingApplicationChange(row.id, { revision: row.revision, ...choice });
+  return { db, load, post, remember, review, actions };
 }
 
 test('capture is idempotent, cross-site sources are compact, and date typography does not create another project/version', async (t) => {
-  const { db, post, load } = await fixture(t);
+  const { db, remember: post, load } = await fixture(t);
   const item = { category: 'project', content: { name: '招聘数据看板', role: '负责人', start: '2025.01', description: '整理数据并制作看板' } };
   assert.equal((await post([item])).data.recordsSaved, 1);
   const first = await db.applicationMemory.findFirst();
@@ -50,7 +60,7 @@ test('capture is idempotent, cross-site sources are compact, and date typography
 });
 
 test('different descriptions keep one entity and selectable versions; different dated internships remain separate', async (t) => {
-  const { db, post, load } = await fixture(t);
+  const { db, remember: post, load } = await fixture(t);
   const item = { category: 'experience', content: { company: '虚构企业', role: '数据实习生', start: '2025-06', description: '原始描述' } };
   await post([item]); await post([{ ...item, content: { ...item.content, description: '针对其他岗位的描述' } }]);
   await post([{ ...item, content: { ...item.content, description: '针对其他岗位的描述' } }]);
@@ -67,7 +77,7 @@ test('different descriptions keep one entity and selectable versions; different 
 });
 
 test('completing a partial identity does not later attach an undated capture to an arbitrary dated experience', async (t) => {
-  const { db, post } = await fixture(t);
+  const { db, remember: post } = await fixture(t);
   const item = { category: 'project', content: { name: '同名项目', description: '已写的描述' } };
   await post([item]); await post([{ ...item, content: { ...item.content, start: '2025-06' } }]);
   assert.equal(await db.applicationMemory.count(), 1);
@@ -79,7 +89,7 @@ test('completing a partial identity does not later attach an undated capture to 
 });
 
 test('manual profile facts win; direction variants retain selected projects; disabling a memory prevents automatic reuse', async (t) => {
-  const { db, post, load } = await fixture(t);
+  const { db, remember: post, load } = await fixture(t);
   await post([{ category: 'project', content: { name: '手动项目', description: '网站描述', responsibilities: '明确职责' } }, { category: 'award', content: { name: '省级竞赛一等奖', level: '省级', date: '2025-09' } }]);
   await db.user.update({ where: { id: 'fixture' }, data: { applicationProfile: { projects: [{ name: '手动项目', description: '资料中手动维护的描述' }], variants: [{ id: 'direction', name: '产品', projects: [{ name: '方向项目' }] }] } } });
   const route = load('src/app/api/desktop-browser/profile/route.ts');
@@ -93,12 +103,15 @@ test('manual profile facts win; direction variants retain selected projects; dis
 });
 
 test('flat answers deduplicate without merging opposite questions or company scopes; tidy removes only identical confirmed rows', async (t) => {
-  const { db, post, load } = await fixture(t);
+  const { db, post, load, review } = await fixture(t);
   const answers = [{ questionLabel: '姓名', answer: '虚构姓名', kind: 'field' }];
-  assert.equal((await post([], { answers })).data.answersSaved, 1);
+  assert.equal((await post([], { answers })).data.pending, 1);
+  assert.equal((await review(await db.pendingApplicationChange.findFirst(), { shareAcrossCompanies: true })).ok, true);
   assert.equal((await post([], { answers })).data.saved, 0);
   await post([], { answers: [{ questionLabel: '是否接受调剂？', answer: '接受', kind: 'short' }, { questionLabel: '是否不接受调剂？', answer: '不接受', kind: 'short' }] });
+  for (const row of await db.pendingApplicationChange.findMany({ where: { status: 'pending' } })) assert.equal((await review(row)).ok, true);
   await post([], { contextKey: 'page:v2:https://company-two.example/apply', answers: [{ questionLabel: '姓名', answer: '其他名字', kind: 'field' }] });
+  assert.equal((await review(await db.pendingApplicationChange.findFirst({ where: { status: 'pending' } }))).ok, true);
   assert.equal(await db.autofillAnswer.count(), 4);
   const global = await db.autofillAnswer.findFirst({ where: { contextKey: null, questionLabel: '姓名' } }); assert.equal(global.answer, '虚构姓名');
   const { id: _id, createdAt: _created, updatedAt: _updated, ...copy } = global;
@@ -120,17 +133,19 @@ test('browser discoveries stay pending until reviewed, then use the chosen reuse
   const pending = await db.pendingApplicationChange.findMany({ orderBy: { kind: 'asc' } });
   const pendingAnswer = pending.find((row) => row.kind === 'answer');
   const pendingRecord = pending.find((row) => row.kind === 'record');
-  assert.equal((await actions.acceptPendingApplicationChange(pendingAnswer.id, { shareAcrossCompanies: false })).ok, true);
+  assert.equal((await actions.acceptPendingApplicationChange(pendingAnswer.id, { revision: pendingAnswer.revision, shareAcrossCompanies: false })).ok, true);
   const savedAnswer = await db.autofillAnswer.findFirst();
   assert.equal(savedAnswer.contextKey, 'page:v2:https://company-one.example/apply');
   assert.equal(savedAnswer.confirmed, true);
-  assert.equal((await actions.acceptPendingApplicationChange(pendingRecord.id, { shareAcrossCompanies: false })).ok, true);
+  assert.equal((await actions.acceptPendingApplicationChange(pendingRecord.id, { revision: pendingRecord.revision, shareAcrossCompanies: false })).ok, true);
   assert.equal(await db.applicationMemory.count(), 1);
-  assert.equal(await db.pendingApplicationChange.count(), 0);
+  assert.equal(await db.pendingApplicationChange.count({ where: { status: 'pending' } }), 0);
+  assert.equal((await db.applicationMemory.findFirst()).enabled, false, 'newly reviewed records are manual choices until automatic reuse is explicitly selected');
 
   await post([{ ...record, content: { ...record.content, description: '准备设为默认的新描述' } }], { mode: 'stage' });
-  const replacement = await db.pendingApplicationChange.findFirst();
-  assert.equal((await actions.acceptPendingApplicationChange(replacement.id, { shareAcrossCompanies: false, recordPreference: 'replace' })).ok, true);
+  const replacement = await db.pendingApplicationChange.findFirst({ where: { status: 'pending' } });
+  const target = await db.applicationMemory.findFirst();
+  assert.equal((await actions.acceptPendingApplicationChange(replacement.id, { revision: replacement.revision, target: { id: target.id, revision: target.revision }, shareAcrossCompanies: false, recordPreference: 'replace' })).ok, true);
   const updated = await db.applicationMemory.findFirst();
   assert.equal(updated.content.description, '准备设为默认的新描述');
   assert.equal(updated.alternatives[0].content.description, '这是本次申请中补写的描述');
@@ -172,7 +187,7 @@ test('capture batches frame reads, keeps second projects and awards, and separat
 });
 
 test('whole-module text is remembered across sites, kept as versions, and never becomes a structured name', async (t) => {
-  const { db, post, load } = await fixture(t);
+  const { db, remember: post, load } = await fixture(t);
   const text = '招聘看板：整理数据并完成仪表盘。校园服务：负责用户研究。';
   const capture = { category: 'project', content: { text } };
   await post([capture]); assert.equal((await post([capture])).data.saved, 0);
@@ -209,7 +224,7 @@ test('manual summary capture uses record memory rather than generic essay memory
 });
 
 test('manual merge deduplicates versions and refuses to discard versions beyond the limit', async (t) => {
-  const { db, post, load } = await fixture(t);
+  const { db, remember: post, load } = await fixture(t);
   await post([{ category: 'project', content: { name: '项目甲', description: '主版本' } }, { category: 'project', content: { name: '项目乙', description: '另一个版本' } }]);
   const rows = await db.applicationMemory.findMany();
   await db.applicationMemory.update({ where: { id: rows[0].id }, data: { alternatives: Array.from({ length: 5 }, (_, i) => ({ content: { ...rows[0].content, description: `其他版本 ${i}` }, source: '手填' })) } });
@@ -219,4 +234,153 @@ test('manual merge deduplicates versions and refuses to discard versions beyond 
   await db.applicationMemory.update({ where: { id: rows[0].id }, data: { alternatives: [{ content: rows[1].content, source: '其他页面' }] } });
   const merged = await actions.mergeApplicationMemories(rows.map(({ id, revision }) => ({ id, revision })));
   assert.equal(merged.ok, true); assert.equal(await db.applicationMemory.count(), 1); assert.equal(merged.data.alternatives.length, 1);
+});
+
+test('old clients cannot bypass review; latest edits replace a candidate and stale review is rejected', async (t) => {
+  const { db, post, review } = await fixture(t);
+  const answers = [{ fieldKey: 'why-1', questionLabel: '为什么申请？', answer: '第一版', kind: 'essay' }];
+  assert.equal((await post([], { mode: 'commit', answers })).status, 400);
+  assert.equal((await post([], { answers })).data.pending, 1, 'omitting mode must still stage');
+  const first = await db.pendingApplicationChange.findFirst();
+  await post([], { answers: [{ ...answers[0], answer: '最终版' }] });
+  const latest = await db.pendingApplicationChange.findFirst();
+  assert.equal(await db.pendingApplicationChange.count(), 1);
+  assert.equal(latest.id, first.id); assert.equal(latest.revision, first.revision + 1);
+  assert.equal(latest.payload.answer, '最终版');
+  assert.equal((await review(first)).ok, false);
+  assert.equal(await db.autofillAnswer.count(), 0);
+  assert.equal((await review(latest, { answer: '核对时进一步改过的版本' })).ok, true);
+  assert.equal((await db.autofillAnswer.findFirst()).answer, '核对时进一步改过的版本');
+  assert.equal((await post([], { answers: [{ ...answers[0], answer: '最终版' }] })).data.pending, 0, 'the original capture must not reappear after review editing');
+});
+
+test('ignored content stays ignored on revisit, while material changes reopen and clearing withdraws stale candidates', async (t) => {
+  const { db, post, actions, review } = await fixture(t);
+  const answer = { fieldKey: 'why-1', questionLabel: '为什么申请？', answer: '先写的答案', kind: 'essay' };
+  await post([], { answers: [answer] });
+  let row = await db.pendingApplicationChange.findFirst();
+  assert.equal((await actions.ignorePendingApplicationChange(row.id, row.revision)).ok, true);
+  await post([], { answers: [answer] });
+  assert.equal(await db.pendingApplicationChange.count({ where: { status: 'pending' } }), 0);
+  await post([], { answers: [{ ...answer, answer: '修改后的答案' }] });
+  row = await db.pendingApplicationChange.findFirst(); assert.equal(row.status, 'pending');
+  const oldRevision = row.revision;
+  await post([], { withdrawals: [{ kind: 'answer', fieldKey: 'why-1' }] });
+  assert.equal((await db.pendingApplicationChange.findFirst()).status, 'withdrawn');
+  assert.equal((await review(row)).ok, false);
+  await post([], { answers: [{ ...answer, answer: '修改后的答案' }] });
+  row = await db.pendingApplicationChange.findFirst(); assert.equal(row.status, 'pending'); assert.ok(row.revision > oldRevision);
+  assert.equal(await db.autofillAnswer.count(), 0);
+});
+
+test('unchanged facts and equivalent date typography are not new discoveries', async (t) => {
+  const { db, post } = await fixture(t);
+  await db.user.update({ where: { id: 'fixture' }, data: { phone: '13800000000', birthDate: '2001-01', applicationProfile: { projects: [{ name: '已有项目', start: '2025-01', description: '既有成果' }] } } });
+  const result = await post([{ category: 'project', content: { name: '已有项目', start: '2025.01', description: '既有成果' } }], { answers: [{ questionLabel: '手机', answer: '13800000000', kind: 'field' }, { questionLabel: '出生日期', answer: '2001年1月', kind: 'field' }] });
+  assert.equal(result.status, 200); assert.equal(result.data.pending, 0);
+  assert.equal(await db.pendingApplicationChange.count(), 0);
+});
+
+test('another version leaves the default byte-for-byte intact; partial replacement preserves unexposed fields; stale targets cannot overwrite', async (t) => {
+  const { db, post, remember, review } = await fixture(t);
+  const initial = { category: 'experience', content: { company: '测试公司', role: '实习生', start: '2025-01', end: '2025-03', description: '' } };
+  await remember([initial]);
+  let target = await db.applicationMemory.findFirst(); const original = JSON.stringify(target.content);
+  await post([{ category: 'experience', captureKey: 'exp1', content: { company: '测试公司', role: '实习生', description: '新增成果' } }]);
+  let row = await db.pendingApplicationChange.findFirst({ where: { status: 'pending' } });
+  assert.equal((await review(row, { target: { id: target.id, revision: target.revision }, recordPreference: 'version' })).ok, true);
+  target = await db.applicationMemory.findFirst();
+  assert.equal(JSON.stringify(target.content), original, 'another version must not even fill empty default fields');
+  assert.equal(target.alternatives[0].content.description, '新增成果'); assert.equal(target.alternatives[0].content.end, '2025-03');
+  await post([{ category: 'experience', captureKey: 'exp1', content: { company: '测试公司', role: '实习生', description: '新默认成果' } }]);
+  row = await db.pendingApplicationChange.findFirst({ where: { status: 'pending' } });
+  const stale = target;
+  await db.applicationMemory.update({ where: { id: target.id }, data: { revision: { increment: 1 } } });
+  assert.equal((await review(row, { target: { id: stale.id, revision: stale.revision }, recordPreference: 'replace' })).ok, false);
+  target = await db.applicationMemory.findFirst();
+  assert.equal((await review(row, { target: { id: target.id, revision: target.revision }, recordPreference: 'replace' })).ok, true);
+  target = await db.applicationMemory.findFirst();
+  assert.equal(target.content.description, '新默认成果'); assert.equal(target.content.end, '2025-03');
+  assert.ok(target.alternatives.some((item) => JSON.stringify(item.content) === original));
+});
+
+test('version limit never silently discards history and new records require a separate automatic-fill choice', async (t) => {
+  const { db, post, remember, review, load } = await fixture(t);
+  await remember([{ category: 'project', content: { name: '五版项目', description: '默认' } }]);
+  let target = await db.applicationMemory.findFirst();
+  const alternatives = Array.from({ length: 5 }, (_, index) => ({ content: { ...target.content, description: `历史 ${index}` }, source: '旧页' }));
+  target = await db.applicationMemory.update({ where: { id: target.id }, data: { alternatives } });
+  await post([{ category: 'project', captureKey: 'p1', content: { name: '五版项目', description: '第六版' } }]);
+  const row = await db.pendingApplicationChange.findFirst({ where: { status: 'pending' } });
+  assert.equal((await review(row, { target: { id: target.id, revision: target.revision } })).ok, false);
+  assert.equal(JSON.stringify((await db.applicationMemory.findFirst()).alternatives), JSON.stringify(alternatives));
+  assert.equal((await db.pendingApplicationChange.findUnique({ where: { id: row.id } })).status, 'pending');
+  await post([{ category: 'project', captureKey: 'p2', content: { name: '手动选择项目', description: '核对内容' } }]);
+  const fresh = await db.pendingApplicationChange.findFirst({ where: { status: 'pending', label: { contains: '手动选择项目' } } });
+  assert.equal((await review(fresh)).ok, true);
+  let profile = (await load('src/app/api/desktop-browser/profile/route.ts').GET({ url: 'http://localhost/profile' })).data;
+  assert.equal(profile.projects.some((item) => item.name === '手动选择项目'), false);
+  assert.ok(core.profileChoices(profile).some((item) => item.value === '手动选择项目'));
+  const libraryRecord = profile.library.find((item) => item.content.name === '五版项目');
+  assert.equal(libraryRecord.alternatives.length, 5);
+  const refs = core.profileChoices(profile).filter((item) => item.value.startsWith('历史 '));
+  assert.equal(new Set(refs.map((item) => item.ref)).size, 5, 'different descriptions need distinct stable selectable refs');
+  await post([{ category: 'project', captureKey: 'p3', content: { name: '自动项目', description: '明确启用自动填写' } }]);
+  assert.equal((await review(await db.pendingApplicationChange.findFirst({ where: { status: 'pending', label: { contains: '自动项目' } } }), { enableAutomatic: true })).ok, true);
+  profile = (await load('src/app/api/desktop-browser/profile/route.ts').GET({ url: 'http://localhost/profile' })).data;
+  assert.ok(profile.projects.some((item) => item.name === '自动项目'));
+});
+
+test('webpage drafts keep page/resume/variant contexts separate and preserve unapplied preview edits', async (t) => {
+  const { db, load, post } = await fixture(t);
+  const route = load('src/app/api/desktop-browser/application-draft/route.ts');
+  const base = { contextKey: 'page:v2:https://company-one.example/apply', url: 'https://company-one.example/apply?token=private', fields: [{ label: '姓名', fieldKey: 'name', value: '预览名字', selected: true, edited: true }] };
+  assert.equal((await route.POST({ json: async () => base })).status, 200);
+  const fetchDraft = (draft) => route.GET({ url: `http://localhost/draft?${new URLSearchParams({ contextKey: draft.contextKey, url: draft.url, resumeVersionId: draft.resumeVersionId || '', variantId: draft.variantId || '' })}` });
+  assert.equal((await post([], { draft: { ...base, fields: [{ label: '姓名', fieldKey: 'name', value: '', captured: true, edited: false }] } })).data.draftSaved, true);
+  assert.equal((await fetchDraft(base)).data.content.fields[0].value, '预览名字');
+  await post([], { draft: { ...base, fields: [{ label: '姓名', fieldKey: 'name', value: '网页手填名字', captured: true, edited: true }] } });
+  await route.POST({ json: async () => ({ ...base, fields: [{ ...base.fields[0], value: '后来的预览' }] }) });
+  assert.equal((await fetchDraft(base)).data.content.fields[0].value, '网页手填名字');
+  await post([], { draft: { ...base, fields: [{ label: '姓名', fieldKey: 'name', value: '', captured: true, edited: false }] } });
+  assert.equal((await fetchDraft(base)).data.content.fields[0].value, '网页手填名字', 'reloading an untouched blank form must not erase the last webpage draft');
+  const variants = [{ ...base, url: 'https://company-one.example/apply?page=2' }, { ...base, variantId: 'product' }];
+  for (const draft of variants) await route.POST({ json: async () => draft });
+  await db.resumeVersion.create({ data: { id: 'resume1', userId: 'fixture', name: '测试简历' } });
+  await route.POST({ json: async () => ({ ...base, resumeVersionId: 'resume1' }) });
+  assert.equal(await db.applicationDraft.count(), 4);
+  assert.equal((await fetchDraft({ ...base, variantId: 'other' })).data, null);
+  await post([], { draft: { ...base, fields: [{ label: '姓名', fieldKey: 'name', value: '', captured: true, edited: true }] }, withdrawals: [{ kind: 'answer', fieldKey: 'name' }] });
+  assert.equal((await fetchDraft(base)).data.content.fields[0].value, '', 'intentional clears must survive restore');
+  assert.equal(await db.autofillAnswer.count(), 0); assert.equal(await db.applicationMemory.count(), 0);
+});
+
+test('capture scans an untouched page to install tracking and saves drafts even with discovery disabled', async () => {
+  const fields = [{ id: 'c0-f0', mappingKey: 'essay', label: '为什么申请？', tag: 'textarea' }, { id: 'c0-f1', mappingKey: 'password', label: '密码', tag: 'input', type: 'password' }];
+  let posted, reads = 0, signature;
+  const adapter = { url: () => 'https://fixture.example/apply', stillOnPage: () => true, frames: async () => [0], getDrafts: () => [], getDraftSignature: () => signature, setDraftSignature: (value) => { signature = value; }, run: async (_, fn, args) => {
+    if (fn === core.hasUserEditedFields) throw new Error('must not exit before installing trackers');
+    if (fn === core.scanPageFields) return fields;
+    if (fn === core.readFieldValues) { reads++; return Object.fromEntries(args[0].map((id) => [id, { value: '只保留本次的手填内容', userEdited: true, editedAt: 1 }])); }
+  }, api: async (_, init) => { posted = JSON.parse(init.body); return { ok: true, json: async () => ({ draftSaved: true, processed: 0, pendingTotal: 0 }) }; } };
+  const result = await core.saveCorrectionsCore(adapter, undefined, true, 'product', false);
+  assert.equal(reads, 1); assert.equal(result.draftSaved, true);
+  assert.equal(posted.draft.fields.length, 1); assert.equal(posted.draft.variantId, 'product');
+  assert.equal(posted.draft.fields[0].value, '只保留本次的手填内容');
+  assert.equal(posted.answers.length, 0); assert.equal(posted.records.length, 0);
+  posted = undefined;
+  await core.saveCorrectionsCore(adapter, undefined, true, 'product', false);
+  assert.equal(posted, undefined, 'unchanged draft must not be written on every poll');
+});
+
+test('whole-module alternative versions stay individually selectable without enabling automatic reuse', () => {
+  const profile = { projects: [], library: [{ id: 'summary1', category: 'project', enabled: false, content: { text: '默认原文' }, alternatives: [{ content: { text: '其他方向原文' }, source: '页面' }] }] };
+  const field = { id: 'summary', mappingKey: 'summary-field', label: '项目经历', tag: 'textarea' };
+  const { repeats, blocks } = core.classifyRepeatBlocks([field], profile);
+  assert.equal(core.repeatFieldValue(field, repeats.get(field.id), profile), null);
+  const choices = core.previewRecordBlocks(blocks, repeats, profile)[0].choices;
+  const alternative = choices.find((choice) => choice.values.summary.value === '其他方向原文');
+  assert.ok(alternative);
+  const mapped = { ...profile, mappings: [{ fieldKey: field.mappingKey, ref: alternative.ref }] };
+  assert.equal(core.repeatFieldValue(field, core.classifyRepeatBlocks([field], mapped).repeats.get(field.id), mapped), '其他方向原文');
 });

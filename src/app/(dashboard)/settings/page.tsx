@@ -46,7 +46,7 @@ export default async function SettingsPage() {
     getAutoBackupSettings(),
     getExtensionPairing(),
     db.applicationMemory.findMany({ where: { userId: user.id }, orderBy: { updatedAt: "desc" } }),
-    db.pendingApplicationChange.findMany({ where: { userId: user.id }, orderBy: { updatedAt: "desc" }, take: 100 }),
+    db.pendingApplicationChange.findMany({ where: { userId: user.id, status: "pending" }, orderBy: { updatedAt: "desc" } }),
   ]);
   const freshness = freshnessResult.ok ? freshnessResult.data : null;
   const memoryViews = memories.map(toMemoryView).filter((row): row is MemoryView => row !== null);
@@ -71,7 +71,7 @@ export default async function SettingsPage() {
           }}
         />
         <ApplicationProfileCard initial={parseApplicationProfile(user.applicationProfile)} resumeVersions={resumeVersions} />
-        <PendingApplicationChangesCard initial={pendingChanges.map(toPendingApplicationChangeView)} currentMemories={memoryViews} />
+        <PendingApplicationChangesCard initial={pendingChanges.map(toPendingApplicationChangeView)} currentMemories={memoryViews} currentAnswers={rememberedAnswers.map((answer) => ({ ...answer, updatedAt: answer.updatedAt.toISOString() }))} currentFacts={{ 姓名: user.name, 手机: user.phone, 邮箱: user.contactEmail, 学校: user.school, 性别: user.gender, 出生日期: user.birthDate }} />
         <ApplicationMemoryCard initial={memoryViews} />
         <ExtensionCard initial={extensionPairing} />
         <AutofillMemoryCard initial={rememberedAnswers.map((answer) => ({ ...answer, updatedAt: answer.updatedAt.toISOString() }))} />

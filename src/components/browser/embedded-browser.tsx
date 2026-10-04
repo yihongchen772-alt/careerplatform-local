@@ -191,6 +191,7 @@ export function EmbeddedBrowser({
   const [autofilling, setAutofilling] = useState(false);
   const [savingCorrections, setSavingCorrections] = useState(false);
   const [pendingChangeCount, setPendingChangeCount] = useState(0);
+  const [pageDraftStatus, setPageDraftStatus] = useState({ context: "", message: "" });
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [jobBindings, setJobBindings] = useState<Record<number, string>>({});
   const [expanded, setExpanded] = useState(false);
@@ -300,6 +301,8 @@ export function EmbeddedBrowser({
   const bridge = useDesktopBridge();
   const activeTab = tabsState.tabs.find((t) => t.id === tabsState.activeId) ?? null;
   const currentUrl = activeTab?.url && activeTab.url !== "about:blank" ? activeTab.url : null;
+  const draftContext = JSON.stringify([tabsState.activeId, currentUrl, positionId, resumeVersionId, variantChoice]);
+  const pageDraftState = pageDraftStatus.context === draftContext ? pageDraftStatus.message : "网页填写草稿等待保存";
   const overlayOpen =
     captureOpen || portalOpen || quickOpen || markOpen || shotOpen || resumeMenuOpen || moreOpen || variantMenuOpen || scopeMenuOpen || resultOpen;
   const linkedVariant = profileVariants.find((v) => v.resumeVersionId && v.resumeVersionId === resumeVersionId);
@@ -425,15 +428,17 @@ export function EmbeddedBrowser({
   }, [expanded]);
 
   useEffect(() => {
-    if (!bridge || !autoRemember || !currentUrl || autofilling || savingCorrections) return;
+    if (!bridge || !currentUrl || autofilling || savingCorrections) return;
     const timer = window.setInterval(async () => {
       if (autoSavingRef.current) return;
       autoSavingRef.current = true;
       try {
-        const { pending = 0 } = await bridge.saveCorrections(resumeVersionId || undefined, true, positionId || "");
-        if (pending > 0) setPendingChangeCount((count) => count + pending);
+        const { pendingTotal, draftSaved } = await bridge.saveCorrections(resumeVersionId || undefined, true, positionId || "", variantChoice, autoRemember);
+        if (pendingTotal !== undefined) setPendingChangeCount(pendingTotal);
+        if (draftSaved) setPageDraftStatus({ context: draftContext, message: `${new Date().toLocaleTimeString("zh-CN")} 扫描的网页内容已保存到 App` });
         autoSaveErrorRef.current = false;
       } catch {
+        setPageDraftStatus({ context: draftContext, message: "网页草稿保存失败，请保留当前页面并重试" });
         if (!autoSaveErrorRef.current) toast.error("自动检测手填变化失败；可点「核对本页变化」重试");
         autoSaveErrorRef.current = true;
       } finally {
@@ -441,7 +446,7 @@ export function EmbeddedBrowser({
       }
     }, 2500);
     return () => window.clearInterval(timer);
-  }, [bridge, autoRemember, currentUrl, autofilling, savingCorrections, resumeVersionId, positionId]);
+  }, [bridge, autoRemember, currentUrl, autofilling, savingCorrections, resumeVersionId, positionId, variantChoice, draftContext]);
 
   // Keyboard shortcuts while focus is in our own chrome (the guest page's
   // shortcuts are forwarded by the main process and arrive via onShortcut).
@@ -533,9 +538,10 @@ export function EmbeddedBrowser({
     if (!bridge || savingCorrections) return;
     setSavingCorrections(true);
     try {
-      const { pending = 0, unchanged } = await bridge.saveCorrections(resumeVersionId || undefined, false, positionId || "");
+      const { pending = 0, pendingTotal, draftSaved, unchanged } = await bridge.saveCorrections(resumeVersionId || undefined, false, positionId || "", variantChoice);
+      if (pendingTotal !== undefined) setPendingChangeCount(pendingTotal);
+      if (draftSaved) setPageDraftStatus({ context: draftContext, message: `${new Date().toLocaleTimeString("zh-CN")} 扫描的网页内容已保存到 App` });
       if (pending > 0) {
-        setPendingChangeCount((count) => count + pending);
         toast.success(`发现 ${pending} 项可保存内容，已放入账号设置的「待核对变化」`);
       } else {
         toast.info(unchanged ? "这些变化已经在待核对列表中" : "没有发现完整的新内容；未修改的 AI 草稿不会进入待核对列表");
@@ -844,8 +850,10 @@ export function EmbeddedBrowser({
         {autofilling && <Button type="button" size="sm" variant="outline" onClick={() => void bridge.cancelAutofill(tabsState.activeId ?? undefined)}>停止填写</Button>}
         <span className="hidden text-xs text-muted-foreground xl:inline">只补空白，已填内容保留</span>
         <Button type="button" size="sm" variant="outline" disabled={savingCorrections || autofilling || !currentUrl} onClick={handleSaveCorrections}>核对本页变化</Button>
+        <Button type="button" size="sm" variant="ghost" onClick={() => router.push("/settings#pending-application-changes")}>待核对变化{pendingChangeCount ? `（${pendingChangeCount}）` : ""}</Button>
         <Button type="button" size="sm" variant={toolsOpen ? "secondary" : "ghost"} className="ml-auto" onClick={() => setToolsOpen((value) => !value)}>{toolsOpen ? "收起设置" : "填写设置"}</Button>
       </div>
+      {currentUrl && <p className="text-xs text-muted-foreground">{pageDraftState} · 离开前请等待保存状态，提交前请核对网页。</p>}
       {toolsOpen && <div className="flex max-h-44 min-h-0 flex-wrap items-center gap-x-4 gap-y-3 overflow-auto rounded-lg border bg-muted/30 p-3">
         {profileVariants.length > 0 && (
           <Select value={variantChoice || "auto"} onValueChange={(v) => setVariantChoice(!v || v === "auto" ? "" : v)} onOpenChange={setVariantMenuOpen}>
@@ -889,7 +897,7 @@ export function EmbeddedBrowser({
             <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setBrowserHeight(650)}>还原</Button>
           </>}
         </div>}
-        <p className="w-full text-xs text-muted-foreground">{autoRemember ? `离开输入框后检测完整变化，确认前不会用于自动填写${pendingChangeCount > 0 ? ` · 本次发现 ${pendingChangeCount} 项` : ""}` : "自动发现已关闭"} · 可在账号设置的「待核对变化」处理。</p>
+        <p className="w-full text-xs text-muted-foreground">{pageDraftState} · {autoRemember ? "自动检测完整变化，确认前不会用于以后填写" : "自动发现已关闭，草稿仍自动保存"} · 返回时扫描预览恢复同一页面、简历和资料方案。</p>
       </div>}
 
 

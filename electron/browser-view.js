@@ -838,6 +838,8 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       getPlan: () => { const plan = pendingPlans.get(tab.id); return plan?.revision === tab.revision ? plan : null; },
       setPlan: (plan) => plan ? pendingPlans.set(tab.id, { ...plan, revision: tab.revision }) : pendingPlans.delete(tab.id),
       getDrafts: () => lastAiFilled.get(tab.id) || [],
+      getDraftSignature: () => tab.draftSignature,
+      setDraftSignature: (signature) => { tab.draftSignature = signature; },
       setDrafts: (list) => lastAiFilled.set(tab.id, list),
       // Whatever this page looked like, it's handled — don't re-prompt for it.
       onFilled: async () => {
@@ -883,14 +885,14 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
   handle("browser:cancel-autofill", (_e, tabId) => stopFillTask(tabId ?? activeId));
 
   // Remember manually entered facts and essays; never save untouched drafts.
-  handle("browser:save-corrections", async (_e, resumeVersionId, onlyUserEdited = false, positionId) => {
+  handle("browser:save-corrections", async (_e, resumeVersionId, onlyUserEdited = false, positionId, variantId, discover = true) => {
     const tab = activeTab();
     if (!tab) return { saved: 0 };
     if (typeof positionId === "string") tab.positionId = positionId || undefined;
     if (savingAnswersForTabs.has(tab.id)) return { saved: 0 };
     savingAnswersForTabs.add(tab.id);
     try {
-      return await saveCorrectionsCore(electronAdapter(tab), resumeVersionId, onlyUserEdited);
+      return await saveCorrectionsCore(electronAdapter(tab), resumeVersionId, onlyUserEdited, variantId ?? tab.variantId, discover !== false);
     } finally {
       savingAnswersForTabs.delete(tab.id);
     }

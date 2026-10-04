@@ -175,7 +175,7 @@ async function load() {
 }
 
 function renderMemoryStatus(status) {
-  $("memory-state").textContent = status.error ? `变化检测失败：${status.error}，可点「核对本页变化」重试` : `发现 ${status.pending || 0} 项待核对变化；确认前不会用于以后填写`;
+  $("memory-state").textContent = status.error ? `草稿或变化保存失败：${status.error}，可点「核对本页变化」重试` : `${status.draftSaved ? "网页草稿已保存到 App；" : ""}${status.pending || 0} 项待核对变化，确认前不会用于以后填写`;
 }
 $("auto-remember").addEventListener("change", async () => {
   const enabled = $("auto-remember").checked;
@@ -183,7 +183,7 @@ $("auto-remember").addEventListener("change", async () => {
     if (enabled && tab?.url) await chrome.permissions.request({ origins: [`${new URL(tab.url).origin}/*`] });
     await chrome.storage.local.set({ autoRemember: enabled });
     await send("watchMemory", { enabled });
-    $("memory-state").textContent = enabled ? "已开启变化检测；确认前不会用于以后填写" : "自动发现已关闭";
+    $("memory-state").textContent = enabled ? "已开启变化检测；网页草稿同时自动保存" : "自动发现已关闭；网页草稿仍自动保存";
   } catch (error) { $("memory-state").textContent = `自动记忆设置失败：${error.message}`; }
 });
 

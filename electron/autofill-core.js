@@ -1247,16 +1247,29 @@ function repeatFieldValue(field, info, profile) {
   return info.kind === "degree" ? matchDegreeOption(field, row.degree) : matchFieldOption(field, rowDateValue(field, info.kind, row));
 }
 
+function stableMemoryHash(value) {
+  let hash = 14695981039346656037n;
+  for (const char of value) hash = BigInt.asUintN(64, (hash ^ BigInt(char.codePointAt(0))) * 1099511628211n);
+  return hash.toString(16);
+}
+
 function rowsForGroup(profile, group, includeLibrary = false) {
   const list = group === "experience" ? "experiences" : group === "project" ? "projects" : group === "award" ? "awards" : "education";
   const rows = group === "education" ? educationRows(profile) : [...(profile[list] || [])];
   if (includeLibrary) for (const entry of profile.library || []) {
-    if (entry.category === group && entry.enabled && !entry.content.text && !rows.some((row) => recordReference(group, row) === recordReference(group, entry.content))) rows.push(entry.content);
+    if (entry.category !== group || entry.content.text) continue;
+    for (const [index, content] of [entry.content, ...(entry.alternatives || []).map((item) => item.content)].entries()) {
+      const row = { ...content };
+      Object.defineProperty(row, "__memoryRef", { value: `row:${group}:memory:${entry.id}:${stableMemoryHash(JSON.stringify(Object.entries(content).sort(([a], [b]) => a.localeCompare(b))))}` });
+      Object.defineProperty(row, "__memoryLabel", { value: index ? `资料库 · 其他版本 ${index}` : "资料库 · 默认版" });
+      rows.push(row);
+    }
   }
   return rows;
 }
 
 function recordReference(group, row) {
+  if (row.__memoryRef) return row.__memoryRef;
   return `row:${group}:${encodeURIComponent(JSON.stringify([row.school || row.company || row.name || "", row.role || row.degree || row.level || "", row.start || row.date || "", row.end || row.issuer || ""]))}`;
 }
 
@@ -1303,8 +1316,10 @@ function classifyRepeatBlocks(fields, profile) {
       const info = repeats.get(field.id);
       info.row = block.row; info.unmatched = block.unmatched;
       info.all = groupBlocks.length === 1 && block.fields.length === 1 && info.kind === "summary";
-      if (info.all && (profile.mappings || []).some((item) => item.fieldKey === field.mappingKey && item.ref === `summary:${block.group}`)) {
-        info.summaryText = profileChoices(profile).find((choice) => choice.ref === `summary:${block.group}`)?.value;
+      const summaryMapping = info.all && (profile.mappings || []).find((item) => item.fieldKey === field.mappingKey && (item.ref === `summary:${block.group}` || item.ref?.startsWith(`summary:${block.group}:`)));
+      if (summaryMapping) {
+        info.summaryText = profileChoices(profile).find((choice) => choice.ref === summaryMapping.ref)?.value;
+        info.summaryRef = summaryMapping.ref;
       }
     }
     if (!block.anchored) {
@@ -1327,12 +1342,12 @@ function previewRecordBlocks(blocks, repeats, profile) {
     choices: rowsForGroup(profile, block.group, true).map((row, rowIndex) => {
       const ref = recordReference(block.group, row);
       const one = { ...profile, [block.group === "experience" ? "experiences" : block.group === "project" ? "projects" : block.group === "award" ? "awards" : "education"]: [row] };
-      return { ref, label: [row.school || row.company || row.name || `经历 ${rowIndex + 1}`, row.role || row.degree || row.level, row.start || row.date].filter(Boolean).join(" · "),
+      return { ref, label: [row.school || row.company || row.name || `经历 ${rowIndex + 1}`, row.role || row.degree || row.level, row.start || row.date, row.__memoryLabel].filter(Boolean).join(" · "),
         values: Object.fromEntries(block.fields.map((field) => [field.id, { value: repeatFieldValue(field, { ...repeats.get(field.id), record: null, summaryText: null, row: 0, degreeHint: 0, unmatched: false, all: false }, one) || "", ref: `${ref}:${repeats.get(field.id).kind}` }])) };
     }).filter((choice) => block.fields.filter((field) => field.hasValue && field.currentValue && ["name", "company", "school", "role", "degree", "start", "end", "date"].includes(repeats.get(field.id).kind)).every((field) => {
       const normalize = (value) => String(value || "").normalize("NFKC").replace(/\s+/g, "").toLowerCase();
       return normalize(choice.values[field.id]?.value) === normalize(field.currentValue);
-    })).concat(block.fields.length === 1 && repeats.get(block.fields[0].id).all ? profileChoices(profile).filter((choice) => choice.ref === `summary:${block.group}`).map((choice) => ({ ref: choice.ref, label: "保存的整段原文", values: { [block.fields[0].id]: { value: choice.value, ref: choice.ref } } })) : []),
+    })).concat(block.fields.length === 1 && repeats.get(block.fields[0].id).all ? profileChoices(profile).filter((choice) => choice.ref === `summary:${block.group}` || choice.ref.startsWith(`summary:${block.group}:`)).map((choice) => ({ ref: choice.ref, label: choice.label, values: { [block.fields[0].id]: { value: choice.value, ref: choice.ref } } })) : []),
   }));
 }
 
@@ -1683,7 +1698,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       const structured = repeat ? repeatFieldValue(field, repeat, profile) : null;
       if (structured) {
         const row = repeat.record || (repeat.degreeHint ? educationRows(profile).find((item) => degreeLevel(item.degree) === repeat.degreeHint) : rowsForGroup(profile, repeat.group)[repeat.row]);
-        pairs.push({ id: field.id, value: structured, source: "profile", label: field.label, tag: field.tag, ref: repeat.all && (repeat.summaryText || !rowsForGroup(profile, repeat.group).length) ? `summary:${repeat.group}` : row && !repeat.all ? `${recordReference(repeat.group, row)}:${repeat.kind}` : "", alternatives: degreeAlternatives(field, structured) });
+        pairs.push({ id: field.id, value: structured, source: "profile", label: field.label, tag: field.tag, ref: repeat.all && (repeat.summaryText || !rowsForGroup(profile, repeat.group).length) ? repeat.summaryRef || `summary:${repeat.group}` : row && !repeat.all ? `${recordReference(repeat.group, row)}:${repeat.kind}` : "", alternatives: degreeAlternatives(field, structured) });
         continue;
       }
       const rememberedValue = repeat && (repeat.group !== "education" || repeat.row > 0 || repeat.degreeHint || repeat.unmatched) ? null : matchRememberedField(field, profile.fieldMemories, pageContext);
@@ -1771,7 +1786,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     if (!adapter.stillOnPage(initialUrl)) throw new Error("页面或标签已切换，已停止写入；请在当前页面重新填充");
     if (options.mode === "preview") {
       const choices = profileChoices(profile);
-      const restored = await adapter.api(`application-draft?contextKey=${encodeURIComponent(pageContext)}`).then((r) => r.ok ? r.json() : null).catch(() => null);
+      const restored = await adapter.api(`application-draft?${new URLSearchParams({ contextKey: pageContext, url: initialUrl, resumeVersionId: resumeVersionId || "", variantId: options.variantId || "" })}`).then((r) => r.ok ? r.json() : null).catch(() => null);
       const plan = { id: adapter.taskId || String(Date.now()), url: initialUrl, at: Date.now(), fields, pairs, frameById, profile, options, resumeVersionId };
       const proposals = fields.map((field) => {
         const pair = pairs.find((p) => p.id === field.id);
@@ -1783,7 +1798,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
         const edit = stored || (sameContext && !questionKeys.has(field.mappingKey) && (!options.regenerate || questionKeys.size || candidateEdit?.edited) && candidateEdit);
         return { ...(edit || {}), id: field.id, fieldKey: field.mappingKey, label: field.label || field.placeholder || field.name || "未命名字段", section: field.section, value: edit ? edit.value : pair?.value || "", selected: eligible && (edit ? edit.selected : !!pair && pair.source !== "ai"), eligible,
           source: pair?.source || "manual", ref: edit?.ref || pair?.ref || "", required: field.required, maxLength: field.maxLength,
-          note: field.userEdited ? "手动修改过，保持不动" : field.hasValue ? "已有内容，保持不动" : excluded.has(field.id) ? "未选择此模块" : !eligible ? "需在网页上手动填写" : pair?.source === "ai" ? "AI 草稿，请核对后勾选" : pair ? "来自已保存资料或回答" : (aiError || "请选择资料或输入内容") };
+          note: field.userEdited ? "手动修改过，保持不动" : field.hasValue ? "已有内容，保持不动" : excluded.has(field.id) ? "未选择此模块" : !eligible ? "需在网页上手动填写" : stored?.captured ? "来自本次申请的网页草稿，请核对后选择填写" : pair?.source === "ai" ? "AI 草稿，请核对后勾选" : pair ? "来自已保存资料或回答" : (aiError || "请选择资料或输入内容") };
       });
       const result = { phase: "preview", message: "填写建议已准备好，勾选并核对后再写入；网页内容尚未改动", plan: { id: plan.id, url: initialUrl, proposals, choices, blocks: previewRecordBlocks(blocks, repeats, profile), resumeVersionId, positionId: options.positionId, uploadResume: modules.has("resume") && !!resumeVersionId, contextKey: pageContext, variantId: options.variantId } };
       plan.preview = result.plan; await adapter.setPlan(plan);
@@ -1924,12 +1939,12 @@ async function frameHasUserEdits(adapter) {
 }
 
 // Remember manually entered facts and essays; never save untouched drafts.
-async function saveCorrectionsCore(adapter, resumeVersionId, onlyUserEdited = false) {
+async function saveCorrectionsCore(adapter, resumeVersionId, onlyUserEdited = false, variantId, discover = true) {
   const pageUrl = adapter.url();
-  if (onlyUserEdited && !(await frameHasUserEdits(adapter))) return { saved: 0 };
   const filledList = adapter.getDrafts();
   const answers = [];
   const records = [];
+  const withdrawals = [];
   const savedFields = [];
   const emptyEdits = [];
   // A fresh scan also includes answers the user wrote entirely by hand.
@@ -1950,7 +1965,10 @@ async function saveCorrectionsCore(adapter, resumeVersionId, onlyUserEdited = fa
     const frame = frameById.get(field.id);
     if (frame === undefined) continue;
     const snapshot = snapshots[field.id] || {};
-    if (snapshot.userEdited && !String(snapshot.value || "").trim() && !snapshot.active && Date.now() - snapshot.editedAt >= 2500) emptyEdits.push({ frame, id: field.id, value: "" });
+    if (snapshot.userEdited && snapshot.memorySaved !== "" && !String(snapshot.value || "").trim() && !snapshot.active && Date.now() - snapshot.editedAt >= 2500) {
+      emptyEdits.push({ frame, id: field.id, value: "" });
+      if (!repeat && field.mappingKey) withdrawals.push({ kind: "answer", fieldKey: field.mappingKey });
+    }
     if (repeat) {
       // Structured descriptions never enter the generic essay library.
       const key = `${field.id.split("-")[0]}:${repeat.blockKey}`;
@@ -1970,20 +1988,23 @@ async function saveCorrectionsCore(adapter, resumeVersionId, onlyUserEdited = fa
     if (!openEnded && !snapshot.userEdited) continue;
     const key = openEnded ? label : fieldMemoryKey(field);
     if (!key) continue;
-    answers.push({ questionLabel: key, answer: candidate.value, answerId: openEnded ? candidate.answerId : undefined, kind: openEnded ? field.tag === "textarea" ? "essay" : "short" : "field" });
+    answers.push({ questionLabel: key, fieldKey: field.mappingKey, answer: candidate.value, answerId: openEnded ? candidate.answerId : undefined, kind: openEnded ? field.tag === "textarea" ? "essay" : "short" : "field" });
     savedFields.push({ frame, id: field.id, value: candidate.value });
   }
   for (const group of groups.values()) {
     const content = {}, members = [];
+    const captureKey = group.fields[0].field.mappingKey ? `field:${stableMemoryHash(group.fields[0].field.mappingKey)}` : group.captureKey;
     const candidates = group.fields.filter(({ snapshot }) => memoryCandidate(snapshot, filledList, onlyUserEdited) && (!snapshot.answerId || snapshot.userEdited));
-    if (!candidates.length || (onlyUserEdited && group.fields.some(({ snapshot }) => snapshot.active || (snapshot.userEdited && Date.now() - snapshot.editedAt < 2500)))) continue;
+    const cleared = group.fields.some(({ snapshot }) => snapshot.userEdited && snapshot.memorySaved !== "" && !String(snapshot.value || "").trim() && Date.now() - snapshot.editedAt >= 2500);
+    if ((!candidates.length && !cleared) || (onlyUserEdited && group.fields.some(({ snapshot }) => snapshot.active || (snapshot.userEdited && Date.now() - snapshot.editedAt < 2500)))) continue;
     // A portal may expose the whole module as one textarea. Preserve its
     // original text, without interpreting it as a project name or an essay.
     if (group.fields.length === 1 && group.fields[0].info.kind === "summary") {
+      if (!candidates.length) { withdrawals.push({ kind: "record", category: group.category, captureKey }); continue; }
       const { field, snapshot, frame } = candidates[0];
       const candidate = memoryCandidate(snapshot, filledList, onlyUserEdited);
       if (candidate.value.length >= 2 && candidate.value.length <= 10000) {
-        records.push({ category: group.category, content: { text: candidate.value }, captureKey: group.captureKey });
+        records.push({ category: group.category, content: { text: candidate.value }, captureKey });
         savedFields.push({ frame, id: field.id, value: candidate.value });
       }
       continue;
@@ -2000,41 +2021,46 @@ async function saveCorrectionsCore(adapter, resumeVersionId, onlyUserEdited = fa
     }
     const anchor = group.category === "education" ? "school" : group.category === "experience" ? "company" : "name";
     if (!content[anchor] || !Object.entries(content).some(([key, value]) => key !== anchor && value)) {
+      withdrawals.push({ kind: "record", category: group.category, captureKey });
+      savedFields.push(...members);
       // A lone basic education field remains useful even when this page has
       // no complete education block. Other experiences need their name.
       if (group.category === "education") for (const { field, info, snapshot, frame } of candidates) {
         const candidate = memoryCandidate(snapshot, filledList, onlyUserEdited);
         const key = fieldMemoryKey(field);
-        if (candidate && snapshot.userEdited && info.row === 0 && !info.degreeHint && ["学校", "专业", "学历"].includes(key)) { answers.push({ questionLabel: key, answer: candidate.value, kind: "field" }); savedFields.push({ frame, id: field.id, value: candidate.value }); }
+        if (candidate && snapshot.userEdited && info.row === 0 && !info.degreeHint && ["学校", "专业", "学历"].includes(key)) { answers.push({ questionLabel: key, fieldKey: field.mappingKey, answer: candidate.value, kind: "field" }); savedFields.push({ frame, id: field.id, value: candidate.value }); }
       }
       continue;
     }
-    records.push({ category: group.category, content, captureKey: group.captureKey });
+    records.push({ category: group.category, content, captureKey });
     savedFields.push(...members);
   }
   if (adapter.url() !== pageUrl || adapter.stillOnPage?.(pageUrl) === false) return { saved: 0 };
-  if (!answers.length && !records.length) {
-    for (const frame of new Set(emptyEdits.map((field) => field.frame))) await adapter.run(frame, clearSavedUserEdits, [emptyEdits.filter((entry) => entry.frame === frame)]).catch(() => {});
-    return { saved: 0 };
-  }
+  const contextKey = adapter.jobId?.() ? `job:v1:${adapter.jobId()}` : portalContext(pageUrl);
+  const draft = { contextKey, url: pageUrl, positionId: adapter.jobId?.(), resumeVersionId, variantId,
+    fields: fields.filter((field) => !isForbiddenMemoryField(field) && snapshots[field.id] && String(snapshots[field.id].value || "").length <= 20000).map((field) => ({ label: field.label || field.placeholder || field.name || "字段", fieldKey: field.mappingKey, section: field.section, value: String(snapshots[field.id].value || ""), selected: false, remember: false, edited: !!snapshots[field.id].userEdited, captured: true })) };
+  const signature = JSON.stringify(draft);
+  if (!discover) { answers.length = 0; records.length = 0; withdrawals.length = 0; savedFields.length = 0; emptyEdits.length = 0; }
+  if (!answers.length && !records.length && !withdrawals.length && (!draft.fields.length || adapter.getDraftSignature?.() === signature)) return { saved: 0, draftSaved: draft.fields.length > 0 && adapter.getDraftSignature?.() === signature };
   savedFields.push(...emptyEdits);
 
   const res = await adapter.api("save-corrections", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ mode: "stage", resumeVersionId, sourceUrl: pageUrl, contextKey: adapter.jobId?.() ? `job:v1:${adapter.jobId()}` : portalContext(pageUrl), answers, records }),
+    body: JSON.stringify({ mode: "stage", resumeVersionId, variantId, sourceUrl: pageUrl, contextKey, draft, answers, records, withdrawals }),
   });
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "保存回答失败");
   const body = await res.json();
-  if ((body.processed ?? body.saved) === answers.length + records.length) {
+  if (body.draftSaved) adapter.setDraftSignature?.(signature);
+  if (discover && (body.processed ?? body.saved) === answers.length + records.length) {
     for (const frame of new Set(savedFields.map((field) => field.frame))) {
       const entries = savedFields.filter((field) => field.frame === frame).map(({ id, value }) => ({ id, value }));
       await adapter.run(frame, clearSavedUserEdits, [entries]).catch(() => {});
     }
-    const confirmedIds = new Set(answers.map((answer) => answer.answerId).filter(Boolean));
-    adapter.setDrafts(filledList.filter((entry) => !confirmedIds.has(entry.answerId)));
+    // Staging is not confirmation. Retain AI draft provenance so a later
+    // capture cannot mistake an untouched generated value for a user answer.
   }
-  return { saved: body.saved ?? 0, pending: body.pending ?? 0, recordsSaved: body.recordsSaved ?? 0, answersSaved: body.answersSaved ?? body.saved ?? 0, unchanged: body.unchanged ?? 0, conflicts: body.conflicts ?? 0 };
+  return { saved: body.saved ?? 0, pending: body.pending ?? 0, pendingTotal: body.pendingTotal, draftSaved: body.draftSaved, unchanged: body.unchanged ?? 0 };
 }
 
 // Values are referenced from the saved profile, never reconstructed by the model.
@@ -2044,9 +2070,16 @@ function profileChoices(profile) {
   for (const [ref, label] of Object.entries(labels)) if (profile[ref]) choices.push({ ref, label, value: String(profile[ref]) });
   const columns = { school: "学校", major: "专业", degree: "学历", gpa: "GPA", start: "开始时间", end: "结束时间", company: "公司", role: "角色/职位", name: "名称", description: "描述", responsibilities: "职责", issuer: "颁发单位", level: "奖项等级", date: "获奖日期" };
   for (const [group, label] of [["education", "教育"], ["experience", "工作/实习"], ["project", "项目"], ["award", "获奖"]]) {
-    rowsForGroup(profile, group, true).forEach((row, index) => { for (const [key, text] of Object.entries(columns)) if (row[key]) choices.push({ ref: `${recordReference(group, row)}:${key}`, label: `${label} ${index + 1}（${row.school || row.company || row.name || row.degree || ""}）· ${text}`, value: String(row[key]) }); });
-    const text = (profile.library || []).find((entry) => entry.category === group && entry.enabled && entry.content.text)?.content.text || profile.summaries?.[group];
+    rowsForGroup(profile, group, true).forEach((row, index) => { for (const [key, text] of Object.entries(columns)) if (row[key]) choices.push({ ref: `${recordReference(group, row)}:${key}`, label: `${label} ${index + 1}（${row.school || row.company || row.name || row.degree || ""}）${row.__memoryLabel ? ` · ${row.__memoryLabel}` : ""} · ${text}`, value: String(row[key]) }); });
+    const text = (profile.library || []).find((entry) => entry.category === group && entry.content.text)?.content.text || profile.summaries?.[group];
     if (text) choices.push({ ref: `summary:${group}`, label: `${label} · 整段原文`, value: String(text) });
+    for (const entry of profile.library || []) {
+      if (entry.category !== group || !entry.content.text) continue;
+      for (const [index, content] of [entry.content, ...(entry.alternatives || []).map((item) => item.content)].entries()) {
+        if (!content.text) continue;
+        choices.push({ ref: `summary:${group}:memory:${entry.id}:${stableMemoryHash(content.text)}`, label: `${label} · 整段原文 · ${index ? `其他版本 ${index}` : "资料库默认版"}`, value: String(content.text) });
+      }
+    }
   }
   return choices;
 }

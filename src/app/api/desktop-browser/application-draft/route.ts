@@ -1,20 +1,40 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
-const schema = z.object({ contextKey: z.string().min(1).max(16384), url: z.string().url().max(16384).refine((v) => /^https?:\/\//i.test(v)), name: z.string().max(200).default("网申填写草稿"), fields: z.array(z.object({ label: z.string().max(200), fieldKey: z.string().max(2000).optional(), section: z.string().max(200).optional(), value: z.string().max(20000), ref: z.string().max(3000).optional(), selected: z.boolean().optional(), remember: z.boolean().optional(), edited: z.boolean().optional() })).max(250), resumeVersionId: z.string().max(100).optional(), variantId: z.string().max(100).optional(), positionId: z.string().max(100).optional() });
+import { applicationDraftKey, applicationDraftSchema, storeApplicationDraft } from "@/lib/application-draft-store";
+
 export async function GET(request: Request) {
-  const user = await requireUser(); const key = new URL(request.url).searchParams.get("contextKey");
-  if (key) return NextResponse.json(await db.applicationDraft.findUnique({ where: { userId_contextKey: { userId: user.id, contextKey: key } } }));
-  return NextResponse.json(await db.applicationDraft.findMany({ where: { userId: user.id }, select: { id: true, name: true, url: true, updatedAt: true, contextKey: true }, orderBy: { updatedAt: "desc" }, take: 50 }));
+  const user = await requireUser();
+  const params = new URL(request.url).searchParams;
+  const contextKey = params.get("contextKey");
+  if (contextKey) {
+    const input = { contextKey, url: params.get("url") || "", resumeVersionId: params.get("resumeVersionId"), variantId: params.get("variantId") };
+    const key = input.url ? applicationDraftKey(input) : contextKey;
+    let row = await db.applicationDraft.findUnique({ where: { userId_contextKey: { userId: user.id, contextKey: key } } });
+    // Read old v1 drafts only if every material context field matches.
+    if (!row && input.url) {
+      const legacy = await db.applicationDraft.findUnique({ where: { userId_contextKey: { userId: user.id, contextKey } } });
+      const content = legacy?.content as { url?: string; resumeVersionId?: string; variantId?: string } | undefined;
+      if (content?.url === input.url && (content?.resumeVersionId || "") === (input.resumeVersionId || "") && (content?.variantId || "") === (input.variantId || "")) row = legacy;
+    }
+    return NextResponse.json(row);
+  }
+  const rows = await db.applicationDraft.findMany({ where: { userId: user.id }, orderBy: { updatedAt: "desc" }, take: 50 });
+  return NextResponse.json(rows.map((row) => ({ id: row.id, name: row.name, url: row.url, updatedAt: row.updatedAt, contextKey: (row.content as { contextKey?: string }).contextKey || row.contextKey })));
 }
 export async function POST(request: Request) {
-  const user = await requireUser(); const result = schema.safeParse(await request.json().catch(() => null));
+  const user = await requireUser();
+  const result = applicationDraftSchema.safeParse(await request.json().catch(() => null));
   if (!result.success) return NextResponse.json({ error: "草稿格式无效" }, { status: 400 });
-  const data = result.data;
-  if (data.positionId && !await db.position.findFirst({ where: { id: data.positionId, userId: user.id } })) return NextResponse.json({ error: "岗位不存在" }, { status: 400 });
-  const fields = data.fields.filter((f) => !/密码|验证码|身份证|证件|银行卡|护照|password|captcha|passport/i.test(f.label));
-  await db.applicationDraft.upsert({ where: { userId_contextKey: { userId: user.id, contextKey: data.contextKey } }, create: { userId: user.id, contextKey: data.contextKey, url: data.url, name: data.name, content: { ...data, fields } }, update: { url: data.url, name: data.name, content: { ...data, fields } } });
+  const input = result.data;
+  if (input.positionId && !await db.position.findFirst({ where: { id: input.positionId, userId: user.id } })) return NextResponse.json({ error: "岗位不存在" }, { status: 400 });
+  if (input.resumeVersionId && !await db.resumeVersion.findFirst({ where: { id: input.resumeVersionId, userId: user.id } })) return NextResponse.json({ error: "简历不存在" }, { status: 400 });
+  await db.$transaction((tx) => storeApplicationDraft(tx, user.id, input));
   return NextResponse.json({ ok: true });
 }
-export async function DELETE(request: Request) { const user = await requireUser(); const id = new URL(request.url).searchParams.get("id"); if (id) await db.applicationDraft.deleteMany({ where: { id, userId: user.id } }); return NextResponse.json({ ok: true }); }
+export async function DELETE(request: Request) {
+  const user = await requireUser();
+  const id = new URL(request.url).searchParams.get("id");
+  if (id) await db.applicationDraft.deleteMany({ where: { id, userId: user.id } });
+  return NextResponse.json({ ok: true });
+}

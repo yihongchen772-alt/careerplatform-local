@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 
 const columns: Record<string, string> = { name: "名称", company: "公司 / 单位", school: "学校", role: "职位 / 角色", major: "专业", degree: "学历", gpa: "GPA", start: "开始时间", end: "结束时间", date: "获奖时间", issuer: "颁发单位", level: "奖项等级", description: "描述 / 成果", responsibilities: "个人职责与成果", text: "整段原文" };
 const memoryTitle = (row: MemoryView) => row.content.name || row.content.company || row.content.school || `${MEMORY_CATEGORIES[row.category]}（整段原文）`;
-type Draft = { content: MemoryContent; enabled: boolean };
+type Draft = { content: MemoryContent; enabled: boolean; revision: number };
 
 export function ApplicationMemoryCard({ initial }: { initial: MemoryView[] }) {
   const [rows, setRows] = useState(initial);
@@ -24,8 +24,13 @@ export function ApplicationMemoryCard({ initial }: { initial: MemoryView[] }) {
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [checked, setChecked] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [lastInitial, setLastInitial] = useState(initial);
+  if (initial !== lastInitial) {
+    setLastInitial(initial);
+    setRows(initial);
+  }
   const selected = rows.find((row) => row.id === selectedId);
-  const draft = selected ? drafts[selected.id] ?? { content: selected.content, enabled: selected.enabled } : null;
+  const draft = selected ? drafts[selected.id] ?? { content: selected.content, enabled: selected.enabled, revision: selected.revision } : null;
   const filtered = rows.filter((row) => (category === "all" || row.category === category) && Object.values(row.content).join(" ").toLowerCase().includes(query.toLowerCase()));
   const patch = (changes: Partial<Draft>) => { if (selected && draft) setDrafts((current) => ({ ...current, [selected.id]: { ...draft, ...changes } })); };
 
@@ -33,7 +38,7 @@ export function ApplicationMemoryCard({ initial }: { initial: MemoryView[] }) {
     if (!selected || !draft || busy) return;
     setBusy(true);
     try {
-      const res = await updateApplicationMemory(selected.id, selected.revision, draft);
+      const res = await updateApplicationMemory(selected.id, draft.revision, draft);
       if (!res.ok) return void toast.error(res.message);
       setRows((current) => current.map((row) => row.id === res.data.id ? res.data : row));
       setDrafts((current) => { const next = { ...current }; delete next[selected.id]; return next; });
@@ -65,7 +70,7 @@ export function ApplicationMemoryCard({ initial }: { initial: MemoryView[] }) {
   return <Card id="experience-memory" className="md:col-span-2 scroll-mt-6">
     <CardHeader>
       <CardTitle>经历记忆库</CardTitle>
-      <p className="text-sm text-muted-foreground">你确认加入的项目、实习、教育和获奖按整条保存，可在其他官网选择使用。重复记录自动合并，每条最多保留 5 个其他版本；网申资料里手动维护的内容优先。</p>
+      <p className="text-sm text-muted-foreground">你确认加入的项目、实习、教育和获奖按整条保存，可在其他官网选择使用。归属和版本由你核对，每条最多保留 5 个其他版本；网申资料里手动维护的内容优先。</p>
     </CardHeader>
     <CardContent className="space-y-4">
       <div className="flex flex-wrap gap-2" role="group" aria-label="经历类型">
@@ -84,7 +89,7 @@ export function ApplicationMemoryCard({ initial }: { initial: MemoryView[] }) {
               <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setSelectedId(row.id)}>
                 <span className="block truncate text-sm font-medium">{memoryTitle(row)}</span>
                 <span className="block truncate text-xs text-muted-foreground">{[MEMORY_CATEGORIES[row.category], row.content.role || row.content.level || row.content.degree, row.content.start || row.content.date].filter(Boolean).join(" · ")}</span>
-                <span className="mt-2 block text-xs text-muted-foreground">{row.enabled ? "可用于填充" : "已暂停复用"}{row.alternatives.length ? ` · ${row.alternatives.length} 个其他版本` : ""}{drafts[row.id] ? " · 未保存" : ""}</span>
+                <span className="mt-2 block text-xs text-muted-foreground">{row.enabled ? "参与默认自动填写" : "仅在预览中手动选择"}{row.alternatives.length ? ` · ${row.alternatives.length} 个其他版本` : ""}{drafts[row.id] ? " · 未保存" : ""}</span>
               </button>
             </div>)}
             {!filtered.length && <p className="p-5 text-sm text-muted-foreground">没有匹配的经历</p>}
@@ -95,7 +100,7 @@ export function ApplicationMemoryCard({ initial }: { initial: MemoryView[] }) {
         {selected && draft && <div className="space-y-4 rounded-xl border p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-sm font-medium">{MEMORY_CATEGORIES[selected.category]}</span>
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.enabled} onChange={(event) => patch({ enabled: event.target.checked })} />用于填充</label>
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.enabled} onChange={(event) => patch({ enabled: event.target.checked })} />参与默认自动填写</label>
           </div>
           {!!selected.alternatives.length && <details className="rounded-lg bg-muted/50 p-3">
             <summary className="cursor-pointer text-sm">其他版本（{selected.alternatives.length}）</summary>

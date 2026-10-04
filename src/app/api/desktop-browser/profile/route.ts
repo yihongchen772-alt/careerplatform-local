@@ -27,11 +27,10 @@ export async function GET(request: Request) {
     params.get("variantId"),
     params.get("resumeVersionId")
   );
-  const memories = (await db.applicationMemory.findMany({ where: { userId: user.id, enabled: true }, orderBy: { createdAt: "asc" }, select: { id: true, category: true, content: true, enabled: true, revision: true, updatedAt: true } }))
-    .map((row) => ({ ...row, sources: [], alternatives: [] }))
+  const memories = (await db.applicationMemory.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } }))
     .map(toMemoryView).filter((row): row is MemoryView => row !== null);
   const structured = profileWithMemories(base, memories, !!variant);
-  const summaries = Object.fromEntries(memories.filter((row) => row.content.text && !(variant && ["experience", "project"].includes(row.category))).map((row) => [row.category, row.content.text]));
+  const summaries = Object.fromEntries(memories.filter((row) => row.enabled && row.content.text && !(variant && ["experience", "project"].includes(row.category))).map((row) => [row.category, row.content.text]));
   const edu = structured.education[0];
   const exp = structured.experiences[0];
   return NextResponse.json({

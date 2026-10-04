@@ -40,6 +40,11 @@ export function AutofillMemoryCard({ initial }: { initial: MemoryAnswer[] }) {
   const [draft, setDraft] = useState({ questionLabel: initial[0]?.questionLabel ?? "", answer: initial[0]?.answer ?? "", shareAcrossCompanies: !initial[0]?.contextKey });
   const [saving, setSaving] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, typeof draft>>({});
+  const [lastInitial, setLastInitial] = useState(initial);
+  if (initial !== lastInitial) {
+    setLastInitial(initial);
+    setRows(initial);
+  }
   const selected = rows.find((row) => row.id === selectedId) ?? null;
   const filtered = useMemo(() => rows.filter((row) => (category === "all" || (category === "field") === (row.kind === "field")) && `${row.questionLabel} ${row.answer}`.toLowerCase().includes(query.toLowerCase())), [rows, query, category]);
 

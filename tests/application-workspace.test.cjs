@@ -56,6 +56,16 @@ test('job AI prompt includes saved JD and length; JD/profile changes invalidate 
   await request({ regenerate: true }); assert.equal(calls, 4);
   assert.equal((await request({ questions: [{ ...body.questions[0], maxLength: 2 }], regenerate: true })).answers.length, 0);
 });
+test('confirmed local answers beat newer global answers; other employers only receive the global version', async () => {
+  const cached = [
+    { id: 'global', questionLabel: '为什么申请？', answer: '最新通用回答', kind: 'essay', confirmed: true, contextKey: null },
+    { id: 'local', questionLabel: '为什么申请？', answer: '这个岗位专用回答', kind: 'essay', confirmed: true, contextKey: 'page:v2:https://one.example/apply' },
+  ];
+  const route = load('src/app/api/desktop-browser/answer-questions/route.ts', { 'next/server': { NextResponse: { json: (data) => ({ json: async () => data }) } }, '@/lib/session': { requireUser: async () => ({ id: 'fixture' }) }, '@/lib/db': { db: { resumeVersion: { findFirst: async () => ({ fileUrl: '/fixture.pdf' }) }, autofillAnswer: { findMany: async () => cached } } }, '@/lib/gemini': {}, '@/lib/ai-file-search': {}, '@/lib/ai-providers': {}, '@/lib/resume-extract': {} });
+  const request = (contextKey) => route.POST({ json: async () => ({ resumeVersionId: 'resume', contextKey, questions: [{ id: 'q', label: '为什么申请？', kind: 'essay' }] }) });
+  assert.equal((await (await request('page:v2:https://one.example/apply')).json()).answers[0].answer, '这个岗位专用回答');
+  assert.equal((await (await request('page:v2:https://two.example/apply')).json()).answers[0].answer, '最新通用回答');
+});
 test('malformed imported material and checklist JSON fall back safely', () => {
   assert.equal(load('src/lib/submission-package.ts').parseSubmissionPackage({ fields: 'invalid' }), null);
   assert.equal(load('src/lib/application-workflow.ts').parseWorkflowChecklist({ APPLIED: ['invalid'] }), null);

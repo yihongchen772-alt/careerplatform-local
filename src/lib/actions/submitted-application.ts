@@ -39,7 +39,7 @@ export async function recordSubmittedApplication(input: z.input<typeof schema>) 
       await tx.stageHistory.create({ data: { applicationId: app.id, stage: "APPLIED", enteredAt: data.appliedDate } });
       if (position) await tx.position.update({ where: { id: position.id }, data: { status: "APPLIED" } });
       if (app.portalId) await tx.applicationPortal.update({ where: { id: app.portalId }, data: { contentHash: null } });
-      if (position) await tx.applicationDraft.deleteMany({ where: { userId: user.id, contextKey: `job:v1:${position.id}` } });
+      if (position) await tx.applicationDraft.deleteMany({ where: { userId: user.id, OR: [{ contextKey: `job:v1:${position.id}` }, { contextKey: { startsWith: `job:v1:${position.id}|draft:v2:` } }] } });
       else await tx.applicationDraft.deleteMany({ where: { userId: user.id, url: { in: [data.applyUrl, ...(data.snapshot ? [data.snapshot.url] : [])] } } });
       return { id: app.id };
     });

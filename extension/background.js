@@ -96,6 +96,7 @@ async function adapterFor(tabId, task) {
   await loadDrafts(tabId);
   const tab = await chrome.tabs.get(tabId);
   const boundJob = (await chrome.storage.session.get(`job:${tabId}`))[`job:${tabId}`];
+  let draftSignature = (await chrome.storage.session.get(`draft-signature:${tabId}`))[`draft-signature:${tabId}`];
   let liveUrl = tab.url;
   const onUpdated = (id, info) => {
     if (id !== tabId) return;
@@ -136,6 +137,8 @@ async function adapterFor(tabId, task) {
       getPlan: () => plans.get(tabId),
       setPlan: async (plan) => { if (plan) { plans.set(tabId, plan); await chrome.storage.session.set({ [`plan:${tabId}`]: { ...plan, frameById: [...plan.frameById] } }); } else { plans.delete(tabId); await chrome.storage.session.remove(`plan:${tabId}`); } },
       getDrafts: () => drafts.get(tabId) || [],
+      getDraftSignature: () => draftSignature,
+      setDraftSignature: (signature) => { draftSignature = signature; chrome.storage.session.set({ [`draft-signature:${tabId}`]: signature }).catch(() => {}); },
       setDrafts: (list) => storeDrafts(tabId, list),
     },
   };
@@ -197,8 +200,8 @@ async function saveTab(tabId, onlyUserEdited = false) {
   let dispose;
   try {
     const context = await adapterFor(tabId); dispose = context.dispose;
-    const { resumeVersionId } = await settings();
-    return await core.saveCorrectionsCore(context.adapter, resumeVersionId || undefined, onlyUserEdited);
+    const { resumeVersionId, variantId, autoRemember } = await settings();
+    return await core.saveCorrectionsCore(context.adapter, resumeVersionId || undefined, onlyUserEdited, variantId || undefined, !onlyUserEdited || autoRemember !== false);
   } finally {
     dispose?.(); remembering.delete(tabId);
   }
@@ -226,13 +229,13 @@ async function watchMemory(tabId, enabled) {
   const tab = await chrome.tabs.get(tabId);
   if (!/^https?:/.test(tab.url || "")) return { enabled: false };
   const origin = new URL(tab.url).origin;
-  await chrome.storage.session.set({ [`memory:${tabId}`]: { enabled, origin } });
+  await chrome.storage.session.set({ [`memory:${tabId}`]: { enabled: true, discover: enabled, origin } });
   const { adapter, dispose } = await adapterFor(tabId);
   try {
     // Register field ids and tracking before the first handwritten value,
     // including pages where the applicant never clicks Autofill.
     await core.scanFrames(adapter);
-    for (const frame of await tabFrames(tabId)) await runInFrame(tabId, frame, installMemoryWatcher, [enabled]).catch(() => {});
+    for (const frame of await tabFrames(tabId)) await runInFrame(tabId, frame, installMemoryWatcher, [true]).catch(() => {});
   } finally { dispose(); }
   return { enabled };
 }
@@ -244,8 +247,8 @@ async function rememberAutomatically(sender, message) {
   if (!state?.enabled || new URL(tab.url).origin !== state.origin || sender.url !== message.url) return { saved: 0 };
   try {
     const result = await saveTab(tabId, true);
-    if (result.pending) {
-      const status = { pending: result.pending, at: Date.now() };
+    if (result.draftSaved || result.pendingTotal !== undefined) {
+      const status = { pending: result.pendingTotal || 0, draftSaved: result.draftSaved, url: tab.url, at: Date.now() };
       await chrome.storage.session.set({ [`memory-status:${tabId}`]: status });
       chrome.runtime.sendMessage({ type: "memory-status", tabId, status }).catch(() => {});
     }
@@ -267,7 +270,7 @@ async function pageInfo(tabId) {
 
 const handlers = {
   async watchMemory({ tabId, enabled }) { return watchMemory(tabId, enabled === true); },
-  async memoryStatus({ tabId }) { return (await chrome.storage.session.get(`memory-status:${tabId}`))[`memory-status:${tabId}`] || null; },
+  async memoryStatus({ tabId }) { const status = (await chrome.storage.session.get(`memory-status:${tabId}`))[`memory-status:${tabId}`]; const tab = await chrome.tabs.get(tabId); return status?.url === tab.url ? status : null; },
   async saveDraft({ draft }) { return jsonOrThrow(await api("application-draft", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(draft) })); },
   async context({ tabId }) { const data = await jsonOrThrow(await api("application-context")); const session = await chrome.storage.session.get(`job:${tabId}`); return { ...data, positionId: session[`job:${tabId}`] || "" }; },
   async bind({ tabId, positionId }) { await chrome.storage.session.set({ [`job:${tabId}`]: positionId || "" }); plans.delete(tabId); await chrome.storage.session.remove(`plan:${tabId}`); },
@@ -343,7 +346,7 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
 
 chrome.webNavigation.onHistoryStateUpdated.addListener(({ tabId }) => { plans.delete(tabId); chrome.storage.session.remove(`plan:${tabId}`).catch(() => {}); cancelFill(tabId, "页面已变化，填写已停止"); });
 chrome.tabs.onUpdated.addListener((tabId, info) => {
-  if (info.url || info.status === "loading") { plans.delete(tabId); chrome.storage.session.remove(`plan:${tabId}`).catch(() => {}); }
+  if (info.url || info.status === "loading") { plans.delete(tabId); chrome.storage.session.remove([`plan:${tabId}`, `memory-status:${tabId}`, `draft-signature:${tabId}`]).catch(() => {}); }
   if (info.status === "complete") chrome.storage.session.get(`memory:${tabId}`).then(async (stored) => {
     const state = stored[`memory:${tabId}`]; if (!state?.enabled) return;
     const tab = await chrome.tabs.get(tabId);

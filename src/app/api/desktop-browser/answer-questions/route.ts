@@ -135,7 +135,7 @@ export async function POST(request: Request) {
       if (q.kind === "choice" && (!q.options?.includes(c.answer))) continue;
       const score = questionKey(q.label) === questionKey(c.questionLabel) ? 1 : 0;
       const threshold = 1;
-      const rank = score + (c.confirmed ? 1 : 0);
+      const rank = score + (c.confirmed ? 2 : 0) + (c.contextKey && c.contextKey === contextKey ? 1 : 0);
       if (score >= threshold && (!best || rank > best.score)) {
         best = { answer: c.answer, score: rank, id: c.id, confirmed: c.confirmed };
       }
