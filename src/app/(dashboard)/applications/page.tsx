@@ -5,11 +5,13 @@ import { getAppSettings } from "@/lib/actions/app-settings";
 import { AddApplicationDialog } from "@/components/applications/add-application-dialog";
 import { ApplicationsView } from "@/components/applications/applications-view";
 import { PortalSyncButton } from "@/components/applications/portal-sync-button";
+import { AutoProgressBanner } from "@/components/applications/auto-progress-banner";
+import { loadAutoProgressItems } from "@/lib/auto-progress";
 
 export default async function ApplicationsPage() {
   const user = await requireUser();
 
-  const [applications, resumeVersions, portals, settings] = await Promise.all([
+  const [applications, resumeVersions, portals, settings, autoUpdates] = await Promise.all([
     db.application.findMany({
       where: { userId: user.id },
       include: {
@@ -39,6 +41,7 @@ export default async function ApplicationsPage() {
       orderBy: { createdAt: "asc" },
     }),
     getAppSettings(),
+    loadAutoProgressItems(user.id),
   ]);
 
   const portalCompanies = new Set(portals.map((portal) => portal.companyId));
@@ -83,6 +86,8 @@ export default async function ApplicationsPage() {
           {portal.lastError && <p className="mt-1 text-destructive">上次失败：{portal.lastError}</p>}
         </div>)}</div>
       </section>}
+
+      <AutoProgressBanner items={autoUpdates} />
 
       <ApplicationsView
         applications={applications.map((a) => {

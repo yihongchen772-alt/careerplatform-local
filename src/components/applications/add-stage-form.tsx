@@ -72,7 +72,7 @@ export function AddStageForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3 rounded-md border p-4">
+    <form id="add-stage" onSubmit={handleSubmit} className="scroll-mt-24 space-y-3 rounded-md border p-4">
       <p className="text-sm font-medium">记录企业进展</p>
       <p className="text-xs text-muted-foreground">企业流程不固定。先选宽泛类别，再写官网或邮件里的实际阶段；可跳步、重复或直接记录未通过。</p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

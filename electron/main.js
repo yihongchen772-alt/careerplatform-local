@@ -555,6 +555,15 @@ async function maybeScanInbox(force = false) {
     if (!res.ok) throw new Error(`inbox endpoint returned ${res.status}`);
     const outcome = await res.json();
     healthy = outcome.ok !== false && !outcome.errors?.length && !outcome.error;
+    if (Number(outcome.progressUpdated) > 0 && !signal.aborted) {
+      const { Notification } = require("electron");
+      if (Notification.isSupported()) {
+        new Notification({
+          title: `邮件里有新进度，已自动更新 ${outcome.progressUpdated} 条投递`,
+          body: "打开「投递记录」可以查看，认错了点「撤销」即可",
+        }).on("click", showWindow).show();
+      }
+    }
   } catch { /* Retry within 15 minutes; do not wait a full successful interval. */ }
   finally { if (backgroundRequests.get("inbox") === controller) backgroundRequests.delete("inbox"); inboxSchedule.finish(intervalMs, healthy); }
 }
@@ -631,11 +640,11 @@ async function maybeSyncApplications(force = false) {
     if (Array.isArray(changed) && changed.length > 0) {
       const first = changed[0];
       new Notification({
-        title: changed.length === 1 ? "网申进度有更新" : `网申进度有更新（${changed.length} 条）`,
+        title: changed.length === 1 ? "网申进度已自动更新" : `网申进度已自动更新（${changed.length} 条）`,
         body:
           changed.length === 1
-            ? `${first.companyName} · ${first.title}：官网显示「${first.portalStatus}」`
-            : `${first.companyName} 等 ${changed.length} 条投递的官网状态变了，去看板看看`,
+            ? `${first.companyName} · ${first.title}：官网显示「${first.portalStatus}」，认错了可在投递记录里撤销`
+            : `${first.companyName} 等 ${changed.length} 条投递按官网状态更新了，打开投递记录可查看或撤销`,
       })
         .on("click", showWindow)
         .show();

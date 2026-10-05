@@ -28,6 +28,7 @@ import { toast } from "sonner";
 import { ConfirmDeleteButton } from "@/components/ui/confirm-delete-button";
 import { deleteApplication } from "@/lib/actions/applications";
 import { applicationStageStyle } from "@/lib/application-stage-style";
+import { QuickStageMenu } from "@/components/applications/quick-stage-menu";
 import { cn } from "@/lib/utils";
 import type { ApplicationStage } from "@prisma/client";
 
@@ -169,7 +170,8 @@ export function ApplicationsTable({
                   {app.referrer && <span>内推：{app.referrer}</span>}
                 </div>
               </Link>
-              <div className="mt-1 flex justify-end">
+              <div className="mt-1 flex items-center justify-end gap-1">
+                <QuickStageMenu applicationId={app.id} companyName={app.company.name} currentStage={app.currentStage} />
                 <ConfirmDeleteButton
                   trigger={
                     <Button size="sm" variant="ghost">
@@ -240,6 +242,8 @@ export function ApplicationsTable({
                 <TableCell className="text-muted-foreground">{app.source ?? "—"}</TableCell>
                 <TableCell className="text-muted-foreground">{app.referrer ?? "—"}</TableCell>
                 <TableCell className="text-right">
+                  <div className="flex items-center justify-end gap-1">
+                  <QuickStageMenu applicationId={app.id} companyName={app.company.name} currentStage={app.currentStage} />
                   <ConfirmDeleteButton
                     trigger={
                       <Button size="sm" variant="ghost">
@@ -250,6 +254,7 @@ export function ApplicationsTable({
                     description="这条投递的进展记录和附件也会一并删除，无法撤销。"
                     onConfirm={() => handleDelete(app.id)}
                   />
+                  </div>
                 </TableCell>
               </TableRow>
             );

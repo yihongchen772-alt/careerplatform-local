@@ -16,6 +16,8 @@ import { InterviewQaCard } from "@/components/applications/interview-qa-card";
 import { STAGE_LABELS } from "@/lib/stage-labels";
 import { applicationStageStyle } from "@/lib/application-stage-style";
 import { PortalReviewBanner } from "@/components/applications/portal-review-banner";
+import { AutoProgressBanner } from "@/components/applications/auto-progress-banner";
+import { loadAutoProgressItems } from "@/lib/auto-progress";
 import { PortalAssignmentCard } from "@/components/applications/portal-assignment-card";
 import { cn } from "@/lib/utils";
 import type { InterviewQa } from "@/lib/validation";
@@ -50,11 +52,14 @@ export default async function ApplicationDetailPage({
   ]);
 
   if (!application) notFound();
-  const portals = await db.applicationPortal.findMany({
-    where: { companyId: application.companyId },
-    select: { id: true, label: true, url: true },
-    orderBy: { createdAt: "asc" },
-  });
+  const [portals, autoUpdates] = await Promise.all([
+    db.applicationPortal.findMany({
+      where: { companyId: application.companyId },
+      select: { id: true, label: true, url: true },
+      orderBy: { createdAt: "asc" },
+    }),
+    loadAutoProgressItems(user.id, application.id),
+  ]);
 
   return (
     <div className="mx-auto max-w-[96rem] space-y-6">
@@ -90,6 +95,8 @@ export default async function ApplicationDetailPage({
         {application.portalStatus && <p className="mt-4 rounded-xl border border-border/60 bg-background/50 px-3 py-2 text-xs text-muted-foreground">官网最近显示：<span className="font-medium text-foreground">{application.portalStatus}</span>{application.portalStatusAt && <span> · {application.portalStatusAt.toLocaleString("zh-CN")}</span>}</p>}
         </div>
       </div>
+
+      <AutoProgressBanner items={autoUpdates} showApplication={false} />
 
       {application.portalSuggestedStage && (
         <PortalReviewBanner items={[{

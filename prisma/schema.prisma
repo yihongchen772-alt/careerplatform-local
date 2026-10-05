@@ -70,6 +70,9 @@ model User {
   smtpPasswordEncrypted String?
   smtpFrom              String?
   emailReminderEnabled  Boolean   @default(true)
+  /// Recognised email/portal progress updates the timeline directly (with
+  /// an undo banner) instead of waiting for a manual 确认更新.
+  autoApplyProgress     Boolean   @default(true)
   emailReminderTime     String    @default("09:00")
   emailReminderTimeZone String    @default("Asia/Shanghai")
   emailReminderLastDay  String?
@@ -645,6 +648,9 @@ model Application {
   /// browser recognise "you already applied here" on a later visit.
   applyUrl         String?
   portalSuggestedAt DateTime?
+  /// Portal status text whose automatic update the user undid; the same
+  /// text is not applied again until the portal shows something else.
+  autoUndoneStatus  String?
   salaryMin        Int?
   salaryMax        Int?
   offerNote        String?
@@ -697,6 +703,12 @@ model StageHistory {
   /// (an interview slot, a fixed deadline); set means [nextDeadline,
   /// nextDeadlineEnd] is the window.
   nextDeadlineEnd DateTime?
+  /// "portal" | "email" when written by recognition rather than by hand.
+  autoSource      String?
+  /// Short description of what was recognised (official status / subject).
+  autoEvidence    String?
+  /// Set once the user dismissed the 自动更新 banner entry.
+  autoSeenAt      DateTime?
 
   application Application           @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   attachments Attachment[]

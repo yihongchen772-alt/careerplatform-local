@@ -19,3 +19,14 @@ export function classifyPortalTransition(current: ApplicationStage, next: Applic
   if (from < 0 || to < 0) return "none";
   return to > from ? "apply" : "review";
 }
+
+/**
+ * With 自动更新进度 on, a recognised stage is written straight to the
+ * timeline (the user can undo it from the banner). Only the user's own
+ * decisions stay out of reach, and closed applications are never reopened.
+ */
+export function classifyAutoTransition(current: ApplicationStage, next: ApplicationStage | null): Exclude<PortalTransition, "review"> {
+  if (!next || current === next || TERMINAL.has(current)) return "none";
+  if (next === "ACCEPTED" || next === "DECLINED" || next === "WITHDRAWN") return "none";
+  return "apply";
+}

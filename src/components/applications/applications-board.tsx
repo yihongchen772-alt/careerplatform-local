@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowUpRight, CalendarClock, Clock3, Send } from "lucide-react";
+import { CalendarClock, Clock3, Send } from "lucide-react";
 import type { ApplicationStage } from "@prisma/client";
 import { STAGE_LABELS } from "@/lib/stage-labels";
 import { windowStatus } from "@/lib/todos";
 import { applicationStageStyle } from "@/lib/application-stage-style";
 import { cn } from "@/lib/utils";
+import { QuickStageMenu } from "@/components/applications/quick-stage-menu";
 
 export type BoardApplication = {
   id: string;
@@ -42,6 +43,9 @@ function ApplicationCard({ app, closed = false }: { app: BoardApplication; close
   const detail = app.currentStageLabel?.trim();
   const portalDiffers = app.portalStatus && app.portalStatus !== detail;
   return (
+    // The menu sits beside the Link, not inside it: a button nested in an
+    // anchor is invalid and the click would race the navigation.
+    <div className="relative">
     <Link
       href={`/applications/${app.id}`}
       className={cn(
@@ -52,11 +56,10 @@ function ApplicationCard({ app, closed = false }: { app: BoardApplication; close
       <div className="flex items-start gap-2.5">
         <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-xl text-sm font-semibold ring-1", tone.pill, tone.border)}>{app.companyName.slice(0, 1)}</span>
         <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-1 text-sm font-semibold leading-5">
-            <span className="truncate group-hover:text-primary">{app.companyName}</span>
-            <ArrowUpRight className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/50" />
+          <div className="pr-20 text-sm font-semibold leading-5">
+            <span className="block truncate group-hover:text-primary">{app.companyName}</span>
           </div>
-          <p className="mt-0.5 truncate text-xs text-muted-foreground">{app.title}</p>
+          <p className="mt-0.5 truncate pr-20 text-xs text-muted-foreground">{app.title}</p>
         </div>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-border/50 pt-2.5 text-[11px]">
@@ -72,6 +75,8 @@ function ApplicationCard({ app, closed = false }: { app: BoardApplication; close
       {app.terminatedAtStage && <p className="mt-2 text-xs text-muted-foreground">结束于：{app.terminatedAtStageLabel || STAGE_LABELS[app.terminatedAtStage as ApplicationStage]}</p>}
       {!closed && app.nextDeadline && <p className="mt-2 flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400"><CalendarClock className="mt-0.5 size-3.5 shrink-0" />{windowStatus(new Date(app.nextDeadline), app.nextDeadlineEnd ? new Date(app.nextDeadlineEnd) : null).note}</p>}
     </Link>
+    <QuickStageMenu applicationId={app.id} companyName={app.companyName} currentStage={app.currentStage} className="absolute right-3 top-3 bg-card/95" />
+    </div>
   );
 }
 
@@ -89,7 +94,7 @@ export function ApplicationsBoard({ applications }: { applications: BoardApplica
   ];
 
   return <div className="space-y-6">
-    <p className="text-xs leading-5 text-muted-foreground">这里按大类整理，不规定企业的先后顺序。点开任意投递，可以填写企业自己的阶段名称、跳过或重复某一步，也可以记录未通过。</p>
+    <p className="text-xs leading-5 text-muted-foreground">这里按大类整理，不规定企业的先后顺序。卡片右上角「改进度」一键切换阶段；需要写企业自己的阶段名称、日期或复盘时再点开投递。</p>
     <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
       {LANES.map((lane) => {
         const items = applications.filter((app) => lane.stages.includes(app.currentStage));

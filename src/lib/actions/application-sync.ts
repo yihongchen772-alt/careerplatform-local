@@ -10,7 +10,8 @@ import { LOCAL_USER_ID, requireUser } from "@/lib/session";
 import { getUserAiConfig, callTextAi } from "@/lib/ai-providers";
 import { renderPageText } from "@/lib/render-bridge-client";
 import { STAGE_LABELS, STAGE_ORDER } from "@/lib/stage-labels";
-import { classifyPortalTransition, isExplicitRejectionStatus } from "@/lib/application-flow";
+import { classifyAutoTransition, classifyPortalTransition, isExplicitRejectionStatus } from "@/lib/application-flow";
+import { writeAutoStage } from "@/lib/auto-progress";
 import { portalOwnsApplication } from "@/lib/application-portal-scope";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
 
@@ -19,8 +20,9 @@ import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action
 // forward on the board. Same shape as job-radar: render → hash-gate → one
 // AI extraction → diff → persist; the differences are that the page is
 // behind a login (hence the borrowed session) and the output is a stage
-// change on the user's own records rather than a new lead, so it only ever
-// moves *forward* and never touches a stage the user has already closed.
+// change on the user's own records rather than a new lead. It never touches
+// a stage the user has already closed; with 自动更新进度 off it only moves
+// forward on its own and asks about everything else.
 
 const TERMINAL_STAGES: ApplicationStage[] = ["REJECTED", "ACCEPTED", "DECLINED", "WITHDRAWN", "CANCELLED"];
 // Stages the portal is allowed to put an application into. ACCEPTED/DECLINED
@@ -207,7 +209,7 @@ async function syncOne(portal: {
   url: string;
   contentHash: string | null;
   company: { id: string; name: string };
-}, force = false): Promise<{
+}, force = false, autoApply = false): Promise<{
   status: "changed" | "unchanged" | "skipped";
   changes: PortalSyncChange[];
   review: PortalSyncReview[];
@@ -218,7 +220,7 @@ async function syncOne(portal: {
 
   const companyApplications = await db.application.findMany({
     where: { companyId: company.id, userId: LOCAL_USER_ID, currentStage: { notIn: TERMINAL_STAGES } },
-    select: { id: true, title: true, currentStage: true, portalId: true },
+    select: { id: true, title: true, currentStage: true, currentStageLabel: true, portalId: true, autoUndoneStatus: true },
   });
   const applications = companyApplications.filter((app) => portalOwnsApplication(portal.id, app.portalId));
   // Nothing in flight at this company — no point loading the page.
@@ -278,10 +280,12 @@ async function syncOne(portal: {
       : SYNCABLE_STAGES.find((s) => s === entry.stage) ?? null;
 
     await db.$transaction(async (tx) => {
-      // Terminal outcomes and non-standard ordering always require a human
-      // check. A company may run HR first or add an OA after interviews;
-      // silently treating that as a regression would be wrong.
-      const transition = classifyPortalTransition(app.currentStage, next);
+      // Without 自动更新进度, terminal outcomes and non-standard ordering need
+      // a human check: a company may run HR first or add an OA after
+      // interviews. With it on, everything is written and can be undone.
+      // A status the user already undid once is never re-applied.
+      const undone = app.autoUndoneStatus === portalStatus;
+      const transition = undone ? "none" : autoApply ? classifyAutoTransition(app.currentStage, next) : classifyPortalTransition(app.currentStage, next);
       const requiresReview = transition === "review";
       await tx.application.update({
         where: { id: app.id },
@@ -297,18 +301,16 @@ async function syncOne(portal: {
         return;
       }
       if (!next || transition !== "apply") return;
-      await tx.stageHistory.create({
-        data: {
-          applicationId: app.id,
-          stage: next,
-          stageLabel: portalStatus,
-          enteredAt: now,
-          note: `${PORTAL_SYNC_NOTE_PREFIX}：官网显示「${portalStatus}」`,
-        },
-      });
-      await tx.application.update({
-        where: { id: app.id },
-        data: { currentStage: next, currentStageLabel: portalStatus, currentStageDate: now },
+      await writeAutoStage(tx, {
+        applicationId: app.id,
+        stage: next,
+        stageLabel: portalStatus,
+        enteredAt: now,
+        note: `${PORTAL_SYNC_NOTE_PREFIX}：官网显示「${portalStatus}」`,
+        source: "portal",
+        evidence: `官网显示「${portalStatus}」`,
+        previousStage: app.currentStage,
+        previousLabel: app.currentStageLabel,
       });
       changes.push({
         companyName: company.name,
@@ -353,6 +355,7 @@ async function runSync(portalIds?: string[], force = false): Promise<PortalSyncR
     unchanged: [],
     errors: [],
   };
+  const autoApply = (await db.user.findUnique({ where: { id: LOCAL_USER_ID }, select: { autoApplyProgress: true } }))?.autoApplyProgress ?? false;
   const portalCompanyIds = [...new Set(portals.map((portal) => portal.company.id))];
   if (portalCompanyIds.length > 0) {
     const unassigned = await db.application.findMany({
@@ -365,7 +368,7 @@ async function runSync(portalIds?: string[], force = false): Promise<PortalSyncR
   // AI call, and the render bridge already caps concurrency at 2.
   for (const portal of portals) {
     try {
-      const outcome = await syncOne(portal, force);
+      const outcome = await syncOne(portal, force, autoApply);
       if (outcome.status === "skipped") result.skipped++;
       else {
         result.checked++;

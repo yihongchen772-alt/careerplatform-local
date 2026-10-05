@@ -104,7 +104,7 @@ export function PortalSyncDialog({
       setSyncSummary({ matched: matched.length, unmatched: unmatched.length, unchanged: unchanged.length });
       if (changed.length > 0) {
         toast.success(
-          `${changed.length} 条投递阶段已更新：` +
+          `${changed.length} 条投递阶段已自动更新（可在投递记录撤销）：` +
             changed
               .map((c) => `${c.companyName} ${c.title} ${STAGE_LABELS[c.from]}→${STAGE_LABELS[c.to]}`)
               .join("；")
@@ -134,7 +134,7 @@ export function PortalSyncDialog({
           <DialogTitle>网申进度同步</DialogTitle>
           <DialogDescription>
             登录某家公司的招聘系统、打开「我的投递」页面后，把它设为这家公司的进度页。之后 App
-            会用同一个登录态重开这页，读取每条投递的官网状态。常见阶段自动更新；未通过、Offer 或不同于常规顺序的阶段会先请你核对。
+            会用同一个登录态重开这页，读取每条投递的官网状态。识别到的阶段默认直接更新（可在投递记录撤销）；在设置里关闭「直接更新」后，未通过、Offer 或不同于常规顺序的阶段会先请你核对。
           </DialogDescription>
         </DialogHeader>
 

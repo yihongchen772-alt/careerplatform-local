@@ -27,7 +27,7 @@ export function PortalSyncButton({ configuredCount }: { configuredCount: number 
       const { changed, review, errors, checked, unassigned } = res.data;
       if (changed.length > 0) {
         toast.success(
-          `${changed.length} 条投递阶段已更新：` +
+          `${changed.length} 条投递阶段已自动更新（可在投递记录撤销）：` +
             changed.map((c) => `${c.companyName} ${c.title} ${STAGE_LABELS[c.from]}→${STAGE_LABELS[c.to]}`).join("；")
         );
       } else if (errors.length === 0 && review.length === 0 && unassigned.length === 0) {

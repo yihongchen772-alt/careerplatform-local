@@ -80,7 +80,7 @@ export default async function SettingsPage() {
         <ProxySettingsCard initial={appSettings} />
         <EmailSettingsForm currentUser={user.smtpUser} schedule={{ enabled: user.emailReminderEnabled, time: user.emailReminderTime, timeZone: user.emailReminderTimeZone, lastError: user.emailReminderLastError }} />
         <MailAccountsCard accounts={mailAccounts} />
-        <BackgroundReminderCard initial={appSettings} />
+        <BackgroundReminderCard initial={appSettings} autoApplyProgress={user.autoApplyProgress} />
         <BackupCard initialFreshness={freshness} />
         <AutoBackupCard initial={autoBackup} />
         <UpdateCard currentVersion={packageInfo.version} />

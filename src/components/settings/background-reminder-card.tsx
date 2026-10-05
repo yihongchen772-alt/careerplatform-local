@@ -12,15 +12,28 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getAppSettings, updateAppSettings } from "@/lib/actions/app-settings";
+import { setAutoApplyProgress } from "@/lib/actions/auto-progress";
 import {
   SCAN_INTERVAL_OPTIONS,
   RADAR_INTERVAL_OPTIONS,
   type AppSettings,
 } from "@/lib/app-settings-shared";
 
-export function BackgroundReminderCard({ initial }: { initial: AppSettings }) {
+export function BackgroundReminderCard({ initial, autoApplyProgress }: { initial: AppSettings; autoApplyProgress: boolean }) {
   const [settings, setSettings] = useState(initial);
   const [saving, setSaving] = useState(false);
+  const [autoApply, setAutoApply] = useState(autoApplyProgress);
+
+  async function toggleAutoApply(enabled: boolean) {
+    setAutoApply(enabled);
+    const res = await setAutoApplyProgress(enabled);
+    if (!res.ok) {
+      toast.error(res.message);
+      setAutoApply(!enabled);
+      return;
+    }
+    toast.success(enabled ? "识别到的进度会直接更新，可在投递页撤销" : "识别到的进度会先等你确认");
+  }
 
   async function set(next: Partial<AppSettings>) {
     const optimistic = { ...settings, ...next };
@@ -176,11 +189,21 @@ export function BackgroundReminderCard({ initial }: { initial: AppSettings }) {
           )}
         </div>
 
+        <label id="auto-progress" className="flex scroll-mt-24 items-start gap-2 rounded-md border p-3">
+          <Checkbox className="mt-0.5" checked={autoApply} onCheckedChange={(c) => toggleAutoApply(c === true)} />
+          <span className="text-sm">
+            <span className="font-medium">识别到的进度直接更新</span>
+            <span className="mt-0.5 block text-xs text-muted-foreground">
+              扫描邮件或同步官网时，认出面试邀请、笔试通知、Offer、未通过等进度，就直接改对应投递的阶段，不用你再手动确认。每次自动更新都会出现在「投递记录」顶部，点「撤销」即可退回；已结束的投递和接受/拒绝 Offer 这类你自己的决定不会被改动。关闭后，官网同步只自动前进，淘汰、Offer 等需要你确认，邮件只加入日程。
+            </span>
+          </span>
+        </label>
+
         <div className="space-y-1 rounded-md border p-3">
           <p className="text-sm font-medium">网申进度同步频率</p>
           <p className="text-xs text-muted-foreground">
             在网申浏览器里登录某家公司的招聘系统、打开「我的投递」页面后点「设为进度页」，这里就会按频率用那个
-            登录态重新打开该页面，让 AI 读取已关联投递的官网进度。明确的新阶段会更新看板；淘汰、Offer 和不常见的阶段顺序会先请你核对，已结束的投递不会改动。
+            登录态重新打开该页面，让 AI 读取已关联投递的官网进度，按上面的「直接更新」设置更新看板，已结束的投递不会改动。
             登录过期或读取失败会提醒你，失败后会较快重试。默认关闭；修改频率后 1 秒内生效。
           </p>
           <Select
