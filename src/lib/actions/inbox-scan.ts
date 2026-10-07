@@ -21,9 +21,11 @@ const TERMINAL_STAGES: ApplicationStage[] = ["REJECTED", "ACCEPTED", "DECLINED",
 const AUTO_STAGES: ApplicationStage[] = ["SCREENING", "ASSESSMENT", "OA", "INTERVIEW_1", "INTERVIEW_2", "INTERVIEW_3", "HR_INTERVIEW", "OFFER", "REJECTED", "CANCELLED"];
 
 /**
- * Moves the matched application to what the email says. Older mail than the
- * latest recorded stage is ignored: it must not override a newer update the
- * user (or the portal) already made.
+ * Moves the matched application to what the email says. Only forward steps
+ * and outcomes: a reminder or reschedule for an earlier round must not move
+ * the application back. Older mail than the latest recorded stage is
+ * ignored too: it must not override a newer update the user (or the
+ * portal) already made.
  */
 async function applyEmailStage(
   userId: string,

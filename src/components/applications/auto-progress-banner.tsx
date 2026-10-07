@@ -30,8 +30,11 @@ export function AutoProgressBanner({ items, showApplication = true }: { items: A
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [handled, setHandled] = useState<string[]>([]);
+  const [expanded, setExpanded] = useState(false);
   const visible = items.filter((item) => !handled.includes(item.id));
   if (visible.length === 0) return null;
+  // A busy inbox can produce many updates at once; keep the board in view.
+  const shown = expanded ? visible : visible.slice(0, 3);
 
   async function undo(item: AutoProgressItem) {
     if (busy) return;
@@ -69,7 +72,7 @@ export function AutoProgressBanner({ items, showApplication = true }: { items: A
         </div>
       </div>
       <div className="space-y-2">
-        {visible.map((item) => {
+        {shown.map((item) => {
           const Icon = item.source === "email" ? Mail : Radar;
           return (
             <div key={item.id} className="flex flex-col gap-2 rounded-xl border border-border/60 bg-card/80 p-3 sm:flex-row sm:items-center sm:justify-between">
@@ -94,6 +97,7 @@ export function AutoProgressBanner({ items, showApplication = true }: { items: A
           );
         })}
       </div>
+      {visible.length > shown.length && <button type="button" className="mt-2 text-xs font-medium text-primary hover:underline" onClick={() => setExpanded(true)}>还有 {visible.length - shown.length} 条，展开</button>}
     </section>
   );
 }

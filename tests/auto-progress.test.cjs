@@ -16,11 +16,16 @@ function load(file, mocks = {}) {
 
 const flow = load("src/lib/application-flow.ts");
 
-test("automatic updates may write outcomes and unusual orders, never the user's own decisions", () => {
+test("automatic updates write forward steps and outcomes, ask about moves back, never the user's own decisions", () => {
   const { classifyAutoTransition } = flow;
   assert.equal(classifyAutoTransition("APPLIED", "REJECTED"), "apply");
+  assert.equal(classifyAutoTransition("INTERVIEW_2", "REJECTED"), "apply");
   assert.equal(classifyAutoTransition("INTERVIEW_2", "OFFER"), "apply");
-  assert.equal(classifyAutoTransition("HR_INTERVIEW", "OA"), "apply");
+  assert.equal(classifyAutoTransition("OA", "CANCELLED"), "apply");
+  assert.equal(classifyAutoTransition("APPLIED", "INTERVIEW_1"), "apply");
+  // A lagging portal or a reminder about an earlier round must not undo progress.
+  assert.equal(classifyAutoTransition("HR_INTERVIEW", "OA"), "review");
+  assert.equal(classifyAutoTransition("INTERVIEW_2", "INTERVIEW_1"), "review");
   assert.equal(classifyAutoTransition("OFFER", "ACCEPTED"), "none");
   assert.equal(classifyAutoTransition("OFFER", "DECLINED"), "none");
   assert.equal(classifyAutoTransition("OA", "WITHDRAWN"), "none");
@@ -75,6 +80,7 @@ test("portal and email recognition update the timeline directly, and undo sticks
         { uid: 1, subject: "测试银行 一面邀请", from: "hr@bank.test", date: day(3), snippet: "邀请你参加一面" },
         { uid: 2, subject: "测试银行 笔试通知（旧邮件）", from: "hr@bank.test", date: day(2), snippet: "请完成笔试" },
         { uid: 3, subject: "测试银行 Offer", from: "hr@bank.test", date: day(4), snippet: "录用意向" },
+        { uid: 4, subject: "测试银行 一面时间变更", from: "hr@bank.test", date: day(6), snippet: "一面改期" },
       ],
     },
   };
@@ -116,6 +122,17 @@ test("portal and email recognition update the timeline directly, and undo sticks
   assert.equal(result.data.changed.length, 1);
   assert.equal((await db.application.findUnique({ where: { id: "portal-app" } })).currentStage, "INTERVIEW_1");
 
+  // A lagging portal (still "笔试" after the user recorded 一面) is only suggested.
+  aiResponse = { needsLogin: false, entries: [{ applicationId: "portal-app", portalStatus: "笔试进行中", stage: "OA", confident: true }] };
+  pageText = "示例科技 我的投递：笔试进行中";
+  result = await sync.syncPortalsNow(undefined, true);
+  assert.equal(result.data.changed.length, 0);
+  assert.equal(result.data.review.length, 1);
+  app = await db.application.findUnique({ where: { id: "portal-app" } });
+  assert.equal(app.currentStage, "INTERVIEW_1");
+  assert.equal(app.portalSuggestedStage, "OA");
+  assert.equal((await sync.resolvePortalStageSuggestion("portal-app", false)).ok, true);
+
   // With the switch off, outcomes go back to waiting for confirmation.
   assert.equal((await autoActions.setAutoApplyProgress(false)).ok, true);
   aiResponse = { needsLogin: false, entries: [{ applicationId: "portal-app", portalStatus: "已发 Offer", stage: "OFFER", confident: true }] };
@@ -135,11 +152,12 @@ test("portal and email recognition update the timeline directly, and undo sticks
       { index: 0, isJobRelated: true, type: "面试邀请", company: "测试银行", summary: "一面", applicationId: "mail-app", stage: "INTERVIEW_1", stageLabel: "业务一面" },
       { index: 1, isJobRelated: true, type: "笔试通知", company: "测试银行", summary: "笔试", applicationId: "old-mail-app", stage: "OA", stageLabel: null },
       { index: 2, isJobRelated: true, type: "offer", company: "测试银行", summary: "Offer", applicationId: "not-an-application", stage: "OFFER", stageLabel: null },
+      { index: 3, isJobRelated: true, type: "面试改期", company: "测试银行", summary: "一面改期", applicationId: "old-mail-app", stage: "INTERVIEW_1", stageLabel: null },
     ],
   };
   const scan = await inbox.scanInboxNow();
   assert.equal(scan.ok, true);
-  assert.equal(scan.data.found, 3);
+  assert.equal(scan.data.found, 4);
   assert.equal(scan.data.progressUpdated, 1);
   const mailApp = await db.application.findUnique({ where: { id: "mail-app" } });
   assert.equal(mailApp.currentStage, "INTERVIEW_1");

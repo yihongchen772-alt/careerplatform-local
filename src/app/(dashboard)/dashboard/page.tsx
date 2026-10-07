@@ -15,9 +15,12 @@ import { WeeklyReviewCard } from "@/components/dashboard/weekly-review-card";
 import { getWeeklyReview } from "@/lib/actions/weekly-review";
 import { OnboardingCard } from "@/components/dashboard/onboarding-card";
 import { duplicateImportedTaskIds } from "@/lib/inbox-identity";
+import { AutoProgressBanner } from "@/components/applications/auto-progress-banner";
+import { loadAutoProgressItems } from "@/lib/auto-progress";
 
 export default async function DashboardPage() {
   const user = await requireUser();
+  const autoUpdates = await loadAutoProgressItems(user.id);
 
   const [applications, positions, stageHistories, personalTasks, allPositions, contacts] =
     await Promise.all([
@@ -132,6 +135,8 @@ export default async function DashboardPage() {
           </Link>
         </div>
       </div>
+
+      <AutoProgressBanner items={autoUpdates} />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
         <StatCard label="总投递数" value={total} icon={Send} tone="brand" />

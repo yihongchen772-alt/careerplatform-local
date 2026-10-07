@@ -17,6 +17,7 @@ import { STAGE_LABELS } from "@/lib/stage-labels";
 import { applicationStageStyle } from "@/lib/application-stage-style";
 import { PortalReviewBanner } from "@/components/applications/portal-review-banner";
 import { AutoProgressBanner } from "@/components/applications/auto-progress-banner";
+import { QuickStageMenu } from "@/components/applications/quick-stage-menu";
 import { loadAutoProgressItems } from "@/lib/auto-progress";
 import { PortalAssignmentCard } from "@/components/applications/portal-assignment-card";
 import { cn } from "@/lib/utils";
@@ -78,6 +79,7 @@ export default async function ApplicationDetailPage({
             {STAGE_LABELS[application.currentStage]}
           </Badge>
           {application.currentStageLabel && <span className="text-sm font-medium text-muted-foreground">{application.currentStageLabel}</span>}
+          <QuickStageMenu applicationId={application.id} companyName={application.company.name} currentStage={application.currentStage} className="h-7" />
         </div>
         <div className="mt-6 grid grid-cols-2 gap-3 border-t border-border/55 pt-5 sm:grid-cols-4">
           {[
@@ -155,6 +157,9 @@ export default async function ApplicationDetailPage({
             resumeVersions={resumeVersions}
           />
           <AddStageForm
+            // Re-mount when the stage changes elsewhere (改进度 menu, undo,
+            // auto update) so the form never re-submits a stale stage.
+            key={`${application.currentStage}-${application.currentStageDate.getTime()}`}
             applicationId={application.id}
             currentStage={application.currentStage}
           />

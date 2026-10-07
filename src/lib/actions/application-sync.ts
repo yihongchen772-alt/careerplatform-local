@@ -282,7 +282,9 @@ async function syncOne(portal: {
     await db.$transaction(async (tx) => {
       // Without 自动更新进度, terminal outcomes and non-standard ordering need
       // a human check: a company may run HR first or add an OA after
-      // interviews. With it on, everything is written and can be undone.
+      // interviews. With it on, forward steps and outcomes are written (and
+      // can be undone); moves backwards are still asked about, since a
+      // portal often lags behind what the user already recorded.
       // A status the user already undid once is never re-applied.
       const undone = app.autoUndoneStatus === portalStatus;
       const transition = undone ? "none" : autoApply ? classifyAutoTransition(app.currentStage, next) : classifyPortalTransition(app.currentStage, next);

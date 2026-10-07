@@ -21,12 +21,19 @@ export function classifyPortalTransition(current: ApplicationStage, next: Applic
 }
 
 /**
- * With 自动更新进度 on, a recognised stage is written straight to the
- * timeline (the user can undo it from the banner). Only the user's own
- * decisions stay out of reach, and closed applications are never reopened.
+ * With 自动更新进度 on, a recognised forward step or outcome is written
+ * straight to the timeline (the user can undo it from the banner). A move
+ * *back* is still asked about: candidate portals lag behind real progress
+ * and reminder emails mention earlier rounds, so a stale "一面" must not
+ * undo the "二面" the user already recorded. The user's own decisions stay
+ * out of reach, and closed applications are never reopened.
  */
-export function classifyAutoTransition(current: ApplicationStage, next: ApplicationStage | null): Exclude<PortalTransition, "review"> {
+export function classifyAutoTransition(current: ApplicationStage, next: ApplicationStage | null): PortalTransition {
   if (!next || current === next || TERMINAL.has(current)) return "none";
   if (next === "ACCEPTED" || next === "DECLINED" || next === "WITHDRAWN") return "none";
-  return "apply";
+  if (next === "REJECTED" || next === "CANCELLED" || next === "OFFER") return "apply";
+  const from = ORDER.indexOf(current);
+  const to = ORDER.indexOf(next);
+  if (from < 0 || to < 0) return "none";
+  return to > from ? "apply" : "review";
 }
