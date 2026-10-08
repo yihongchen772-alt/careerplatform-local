@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Graduate Program 2026 – Apply</title>
+<style>body{font:14px system-ui,sans-serif;max-width:760px;margin:24px auto;color:#222}fieldset{border:1px solid #ddd;border-radius:8px;margin:16px 0;padding:12px 16px}legend{font-weight:600}.f{margin:10px 0;display:flex;flex-direction:column;gap:4px}.req{color:#c00}input,select,textarea{padding:6px;border:1px solid #bbb;border-radius:4px;font:inherit}.lb{position:relative}.lb ul{position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #bbb;margin:0;padding:4px 0;list-style:none;z-index:9}.lb li{padding:4px 10px;cursor:pointer}.lb li:hover{background:#eef}</style>
+</head>
+<body>
+<header style="display:flex;gap:12px;align-items:center;border-bottom:1px solid #ddd;padding:8px 0">
+  <strong>Careers</strong>
+  <input id="site-search" placeholder="Search jobs" aria-label="Search jobs">
+  <div class="lb"><span id="lang-label">Language</span>
+    <button type="button" id="lang" aria-haspopup="listbox" aria-labelledby="lang-label" aria-controls="lang-list">English</button>
+    <ul role="listbox" id="lang-list" hidden><li role="option">English</li><li role="option">中文</li></ul>
+  </div>
+</header>
+<h1>My Information</h1>
+<form>
+<fieldset>
+  <legend>Legal Name</legend>
+  <div class="f"><label for="fn">First Name <span class="req">*</span></label><input id="fn" name="legalName--firstName" autocomplete="given-name"></div>
+  <div class="f"><label for="ln">Last Name <span class="req">*</span></label><input id="ln" name="legalName--lastName" autocomplete="family-name"></div>
+  <div class="f"><label for="en">English Name (if any)</label><input id="en" name="englishName"></div>
+</fieldset>
+<fieldset>
+  <legend>Contact Information</legend>
+  <div class="f"><label for="em">Email Address <span class="req">*</span></label><input id="em" type="email" name="email"></div>
+  <div class="f"><label for="pdt">Phone Device Type</label><select id="pdt" name="phoneType"><option value="">Select One</option><option>Mobile</option><option>Home</option><option>Work</option></select></div>
+  <div class="f"><label for="cc">Country Phone Code</label><select id="cc" name="countryCode"><option value="">Select One</option><option>China (+86)</option><option>Singapore (+65)</option><option>United States (+1)</option></select></div>
+  <div class="f"><label for="ph">Phone Number <span class="req">*</span></label><input id="ph" type="tel" name="phoneNumber"></div>
+  <div class="f"><label for="ma">Mailing Address</label><input id="ma" name="addressLine1"></div>
+  <div class="f"><label for="city">City</label><input id="city" name="city"></div>
+  <div class="f"><label for="pob">Place of Birth</label><input id="pob" name="placeOfBirth"></div>
+  <div class="f"><label for="dob">Date of Birth</label><input id="dob" type="date" name="dob"></div>
+  <div class="f">
+    <span id="hear-label">How Did You Hear About Us? <span class="req">*</span></span>
+    <div class="lb">
+      <button type="button" id="hear" aria-haspopup="listbox" aria-labelledby="hear-label hear" aria-expanded="false">Select One</button>
+      <ul role="listbox" hidden id="hear-list"><li role="option">Campus Event</li><li role="option">LinkedIn</li><li role="option">Company Website</li><li role="option">Referral</li></ul>
+    </div>
+  </div>
+</fieldset>
+<fieldset>
+  <legend>Education</legend>
+  <div class="f"><label for="sch">School or University</label><input id="sch" name="school"></div>
+  <div class="f"><label for="deg">Degree</label><select id="deg" name="degree"><option value="">Select One</option><option>Bachelor's Degree</option><option>Master's Degree</option><option>Doctorate (PhD)</option></select></div>
+  <div class="f"><label for="fos">Field of Study</label><input id="fos" name="fieldOfStudy"></div>
+  <div class="f"><label for="ef">From</label><input id="ef" name="eduFrom" placeholder="MM/YYYY"></div>
+  <div class="f"><label for="et">To (Actual or Expected)</label><input id="et" name="eduTo" placeholder="MM/YYYY"></div>
+  <div class="f"><label for="gpa">Overall Result (GPA)</label><input id="gpa" name="gpa"></div>
+</fieldset>
+<fieldset>
+  <legend>Work Experience</legend>
+  <div class="f"><label for="jt">Job Title</label><input id="jt" name="jobTitle"></div>
+  <div class="f"><label for="co">Company</label><input id="co" name="company"></div>
+  <div class="f"><label for="loc">Location</label><input id="loc" name="location"></div>
+  <div class="f"><label><input type="checkbox" name="currentlyWorkHere"> I currently work here</label></div>
+  <div class="f"><label for="wf">From</label><input id="wf" name="workFrom" placeholder="MM/YYYY"></div>
+  <div class="f"><label for="wt">To</label><input id="wt" name="workTo" placeholder="MM/YYYY"></div>
+  <div class="f"><label for="rd">Role Description</label><textarea id="rd" name="roleDescription" rows="4"></textarea></div>
+</fieldset>
+<fieldset>
+  <legend>Application Questions</legend>
+  <div class="f"><label for="q1">Tell us why you are interested in this role.</label><textarea id="q1" name="q1" rows="4"></textarea></div>
+  <div class="f"><label for="q2">Are you legally authorized to work in the country of this role?</label><select id="q2" name="q2"><option value="">Select One</option><option>Yes</option><option>No</option></select></div>
+</fieldset>
+</form>
+<script>
+const btn = document.getElementById("hear");
+const list = document.getElementById("hear-list");
+btn.addEventListener("click", () => { list.hidden = !list.hidden; btn.setAttribute("aria-expanded", String(!list.hidden)); });
+list.addEventListener("click", (e) => { const li = e.target.closest("li"); if (!li) return; btn.textContent = li.textContent; list.hidden = true; btn.setAttribute("aria-expanded", "false"); });
+</script>
+</body>
+</html>

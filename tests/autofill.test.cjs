@@ -176,7 +176,9 @@ test("prefilled blocks, loose fields and unrelated labels keep rows aligned", ()
   for (const label of ["专业排名", "学校所在城市", "英语成绩", "专业技能", "期望工作城市", "专业课程", "GPA排名", "离职原因", "入职部门"]) {
     assert.equal(resolveRepeatField(field(label), new Map()), null, label);
   }
-  assert.equal(matchBasicField(field("英语成绩"), { ...savedProfile, english: "CET-6 580" }, new Map()), "CET-6 580");
+  // A score box gets the score, a level box the level.
+  assert.equal(matchBasicField(field("英语成绩"), { ...savedProfile, english: "CET-6 580" }, new Map()), "580");
+  assert.equal(matchBasicField(field("英语水平"), { ...savedProfile, english: "CET-6 580" }, new Map()), "CET-6 580");
 });
 
 test("internship blocks fill each saved experience; unknown rows are not invented", () => {
@@ -249,8 +251,9 @@ test("manually entered basic facts are reusable, company-specific fields stay lo
   const field = (label, options) => ({ label, placeholder: "", name: "", tag: "input", type: "text", options });
   assert.equal(fieldMemoryKey(field("毕业院校 *")), "学校");
   assert.equal(fieldMemoryKey(field("详细地址")), "地址");
-  assert.equal(fieldMemoryKey(field("学校推荐人")), "学校推荐人");
-  for (const label of ["密码", "身份证号码", "银行卡号", "验证码", "紧急联系人"]) {
+  assert.equal(fieldMemoryKey(field("内部岗位编号")), "内部岗位编号");
+  // Someone else's details are never remembered as the applicant's own.
+  for (const label of ["密码", "身份证号码", "银行卡号", "验证码", "紧急联系人", "学校推荐人", "父亲姓名"]) {
     assert.equal(isForbiddenMemoryField(field(label)), true, label);
     assert.equal(fieldMemoryKey(field(label)), null, label);
   }

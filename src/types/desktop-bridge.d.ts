@@ -6,6 +6,8 @@ export type DesktopBridgeTab = {
   canGoBack: boolean;
   canGoForward: boolean;
   zoomFactor: number;
+  /** The site's icon as a data URL, once the page reports one. */
+  favicon?: string | null;
 };
 
 export type DesktopBridgeTabsState = { tabs: DesktopBridgeTab[]; activeId: number | null };
@@ -78,6 +80,8 @@ export type DesktopBridge = {
   exportDocument(payload: { format: "pdf" | "doc"; html: string; fileName: string }): Promise<{ path: string }>;
   openExtensionFolder(): Promise<{ path: string }>;
   screenshot(): Promise<{ dataUrl: string; url: string; title: string }>;
+  /** A still of the visible page, shown while App menus cover it; null when unavailable. */
+  previewFrame(): Promise<string | null>;
   zoomIn(): Promise<void>;
   zoomOut(): Promise<void>;
   zoomReset(): Promise<void>;

@@ -8,62 +8,74 @@ import {
   Bookmark,
   Camera,
   Check,
-  Compass,
+  ChevronDown,
+  ChevronUp,
   Copy,
+  Eraser,
   ExternalLink,
   FileCode,
-  Eraser,
+  ListChecks,
+  Loader2,
+  LogOut,
   Maximize2,
-  Minimize2,
-  MoreHorizontal,
+  Minus,
+  MoreVertical,
   NotebookPen,
+  PanelRight,
+  PanelRightClose,
   Plus,
   Radar,
   RotateCw,
+  ScanSearch,
   Search,
   Send,
+  Settings2,
   Sparkles,
+  Trash2,
+  TriangleAlert,
   X,
-  ZoomIn,
-  ZoomOut,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AiProgress } from "@/components/ui/ai-progress";
 import {
   DropdownMenu,
-  DropdownMenuContent,
   DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { setToasterPosition } from "@/components/ui/sonner";
+import { cn } from "@/lib/utils";
 import { parseJd } from "@/lib/actions/jd-parse";
 import { PositionFormDialog, type PositionFormInitial } from "@/components/pool/position-form-dialog";
 import { PortalSyncDialog, type PortalCompany } from "@/components/browser/portal-sync-dialog";
-import { QuickOpenDialog, type QuickLinks } from "@/components/browser/quick-open-dialog";
 import { MarkAppliedFromBrowserDialog, type PoolPosition } from "@/components/browser/mark-applied-from-browser";
 import { ScreenshotDialog, type ApplicationOption } from "@/components/browser/screenshot-dialog";
-import { ApplicationAssistant } from "@/components/browser/application-assistant";
+import { ApplicationAssistant, panelSelect, type AssistantTab } from "@/components/browser/application-assistant";
 import { SiteBanner, type KnownSite } from "@/components/browser/site-banner";
+import { TabStrip, useModKey } from "@/components/browser/tab-strip";
+import { Omnibox, type QuickLinks } from "@/components/browser/omnibox";
+import { Infobar } from "@/components/browser/infobar";
+import { NewTabPage } from "@/components/browser/new-tab-page";
 import type {
-  DesktopBridgeAutofillOptions,
   DesktopBridgeAutofillModule,
+  DesktopBridgeAutofillOptions,
   DesktopBridgeAutofillStatus,
-  DesktopBridgeFillSource,
-  DesktopBridgeTab,
+  DesktopBridgeHistoryEntry,
   DesktopBridgeTabsState,
 } from "@/types/desktop-bridge";
 
+export type { QuickLinks };
 type ResumeOption = { id: string; name: string; isDefault: boolean };
 
 export { sourceFromUrl } from "@/lib/source-from-url";
@@ -82,26 +94,19 @@ function useDesktopBridge() {
   );
 }
 
-function shortTitle(tab: DesktopBridgeTab) {
-  if (tab.title) return tab.title;
-  if (!tab.url || tab.url === "about:blank") return "新标签页";
-  try {
-    return new URL(tab.url).hostname;
-  } catch {
-    return tab.url;
-  }
+// Per-device conveniences kept in localStorage; every read tolerates a
+// storage that is unavailable.
+function readPreference(key: string, fallback: string) {
+  try { return localStorage.getItem(key) ?? fallback; }
+  catch { return fallback; }
 }
-
-// Same colours as the outlines fillFields draws on the page, so a dot here
-// and a border there mean the same thing.
-const FILL_SOURCES: { source: DesktopBridgeFillSource; label: string; dot: string }[] = [
-  { source: "excluded", label: "未选择的模块", dot: "bg-muted-foreground/40" },
-  { source: "manual", label: "需要你手填", dot: "bg-red-500" },
-  { source: "ai", label: "AI 生成（紫红框）", dot: "bg-fuchsia-500" },
-  { source: "memory", label: "记忆库 / 你的回答（绿框）", dot: "bg-green-600" },
-  { source: "profile", label: "网申资料（紫框）", dot: "bg-violet-500" },
-  { source: "prefilled", label: "页面原有内容", dot: "bg-muted-foreground/40" },
-];
+function writePreference(key: string, value: string) {
+  try { localStorage.setItem(key, value); }
+  catch { /* per-device preference only */ }
+}
+function usePreference(key: string, fallback: string) {
+  return useSyncExternalStore(noop, () => readPreference(key, fallback), () => fallback);
+}
 
 const FILL_MODULES: { id: DesktopBridgeAutofillModule; label: string }[] = [
   { id: "basic", label: "基本信息 / 求职意向" },
@@ -115,49 +120,15 @@ const FILL_MODULES: { id: DesktopBridgeAutofillModule; label: string }[] = [
 ];
 const ALL_FILL_MODULES = FILL_MODULES.map(({ id }) => id);
 
-function FillDetails({ details }: { details: NonNullable<DesktopBridgeAutofillStatus["details"]> }) {
-  const [onlyManual, setOnlyManual] = useState(false);
-  const manual = details.filter((item) => item.source === "manual");
-  const visible = onlyManual ? manual : details;
+function ToolbarIcon({ label, shortcut, className, ...props }: React.ComponentProps<"button"> & { label: string; shortcut?: string }) {
   return (
-    <div className="mt-1 space-y-1">
-      <div className="flex gap-2">
-        <Button size="sm" variant={onlyManual ? "default" : "outline"} onClick={() => setOnlyManual(!onlyManual)}>{onlyManual ? "显示全部字段" : "只看未填 / 失败"}</Button>
-      </div>
-      {manual.length > 0 && (
-        <p className="text-foreground">
-          需要手填：{manual.slice(0, 8).map((item) => item.label).join("、")}
-          {manual.length > 8 ? ` 等 ${manual.length} 项` : ""}
-        </p>
-      )}
-      <details open>
-        <summary className="cursor-pointer">
-          逐字段来源（{FILL_SOURCES.map(({ source, label }) => {
-            const count = details.filter((item) => (item.source ?? "profile") === source).length;
-            return count ? `${label.replace(/（.*）/, "")} ${count}` : null;
-          }).filter(Boolean).join(" · ")}）
-        </summary>
-        <div className="mt-1 max-h-48 space-y-2 overflow-auto">
-          {FILL_SOURCES.map(({ source, label, dot }) => {
-            const rows = visible.filter((item) => (item.source ?? "profile") === source);
-            if (!rows.length) return null;
-            return (
-              <div key={source}>
-                <p className="flex items-center gap-1.5 font-medium text-foreground">
-                  <span className={`inline-block size-2 rounded-full ${dot}`} />
-                  {label}（{rows.length}）
-                </p>
-                <ul className="ml-3.5 space-y-0.5">
-                  {rows.map((item, index) => (
-                    <li key={`${item.label}-${index}`}>{item.label} · {item.state}</li>
-                  ))}
-                </ul>
-              </div>
-            );
-          })}
-        </div>
-      </details>
-    </div>
+    <button
+      type="button"
+      aria-label={label}
+      title={shortcut ? `${label} (${shortcut})` : label}
+      className={cn("grid size-8 shrink-0 place-items-center rounded-full text-foreground/75 transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-35 [&_svg]:size-4", className)}
+      {...props}
+    />
   );
 }
 
@@ -185,19 +156,13 @@ export function EmbeddedBrowser({
   const addressRef = useRef<HTMLInputElement>(null);
   const findRef = useRef<HTMLInputElement>(null);
   const [tabsState, setTabsState] = useState<DesktopBridgeTabsState>({ tabs: [], activeId: null });
-  // null = "show the active tab's URL"; a string = what the user is typing.
-  const [addressDraft, setAddressDraft] = useState<string | null>(null);
   const [status, setStatus] = useState<DesktopBridgeAutofillStatus | null>(null);
   const [autofilling, setAutofilling] = useState(false);
   const [savingCorrections, setSavingCorrections] = useState(false);
   const [pendingChangeCount, setPendingChangeCount] = useState(0);
   const [pageDraftStatus, setPageDraftStatus] = useState({ context: "", message: "" });
-  const [assistantOpen, setAssistantOpen] = useState(false);
   const [jobBindings, setJobBindings] = useState<Record<number, string>>({});
-  const [expanded, setExpanded] = useState(false);
-  const [toolsOpen, setToolsOpen] = useState(false);
-  const [autoHeight, setAutoHeight] = useState(true);
-  const [resultOpen, setResultOpen] = useState(false);
+  const [history, setHistory] = useState<DesktopBridgeHistoryEntry[]>([]);
   const activeIdRef = useRef<number | null>(null);
   const busyTabsRef = useRef(new Set<number>());
   const tabStatusRef = useRef(new Map<number, DesktopBridgeAutofillStatus>());
@@ -211,23 +176,21 @@ export function EmbeddedBrowser({
   // of showing stale form state from the previous page's parse.
   const [captureKey, setCaptureKey] = useState(0);
   const [portalOpen, setPortalOpen] = useState(false);
-  const [quickOpen, setQuickOpen] = useState(false);
   const [markOpen, setMarkOpen] = useState(false);
   const [shotOpen, setShotOpen] = useState(false);
   const [shot, setShot] = useState<{ dataUrl: string; title: string } | null>(null);
-  // Popovers (resume select, the ⋯ menu) render in the DOM, which the
-  // native WebContentsView is composited *above* — so while any of them
-  // is open the view is detached, same as for dialogs.
-  const [resumeMenuOpen, setResumeMenuOpen] = useState(false);
+  // App-drawn menus and the address suggestions render in the DOM, which
+  // the native page view is composited *above* — while any is open the
+  // view steps aside and a still of the page stands in for it.
   const [moreOpen, setMoreOpen] = useState(false);
+  const [fillMenuOpen, setFillMenuOpen] = useState(false);
+  const [omniboxOpen, setOmniboxOpen] = useState(false);
   const [findOpen, setFindOpen] = useState(false);
   const [findText, setFindText] = useState("");
   const [findResult, setFindResult] = useState<{ active: number; total: number } | null>(null);
   // 资料方案: "" = 跟随简历 (the variant bound to the chosen resume, else the
   // default profile), "default" = always the default, otherwise a variant id.
   const [variantChoice, setVariantChoice] = useState("");
-  const [variantMenuOpen, setVariantMenuOpen] = useState(false);
-  const [scopeMenuOpen, setScopeMenuOpen] = useState(false);
   const scopePreference = useSyncExternalStore(noop, () => {
     try {
       const saved = localStorage.getItem("careerplatform.browser.fillModules.v2");
@@ -240,9 +203,9 @@ export function EmbeddedBrowser({
   const [scopeOverride, setScopeOverride] = useState<DesktopBridgeAutofillModule[] | null>(null);
   const fillModules = useMemo(() => scopeOverride ?? ALL_FILL_MODULES.filter((id) => scopePreference.split(",").includes(id)), [scopeOverride, scopePreference]);
   function setFillModules(modules: DesktopBridgeAutofillModule[]) {
-    setScopeOverride(modules);
-    try { localStorage.setItem("careerplatform.browser.fillModules.v2", modules.join(",")); }
-    catch { /* Keep the current selection even if local storage is unavailable. */ }
+    const ordered = ALL_FILL_MODULES.filter((id) => modules.includes(id));
+    setScopeOverride(ordered);
+    writePreference("careerplatform.browser.fillModules.v2", ordered.join(","));
   }
   const [resumeVersionId, setResumeVersionId] = useState(
     resumeVersions.find((r) => r.isDefault)?.id ?? resumeVersions[0]?.id ?? ""
@@ -257,39 +220,25 @@ export function EmbeddedBrowser({
     title: string;
     evidence: string;
   } | null>(null);
-  const autoFillEveryPage = useSyncExternalStore(
-    noop,
-    () => {
-      try {
-        return localStorage.getItem("careerplatform.browser.autofillEveryPage") === "1";
-      } catch {
-        return false;
-      }
-    },
-    () => false
-  );
+  const autoFillPreference = usePreference("careerplatform.browser.autofillEveryPage", "0") === "1";
   const [autoFillOverride, setAutoFillOverride] = useState<boolean | null>(null);
-  const autoFill = autoFillOverride ?? autoFillEveryPage;
-  const rememberedPreference = useSyncExternalStore(
-    noop,
-    () => {
-      try { return localStorage.getItem("careerplatform.browser.autoRememberAnswers") !== "0"; }
-      catch { return true; }
-    },
-    () => true
-  );
-  const expandPreference = useSyncExternalStore(
-    noop,
-    () => {
-      try { return localStorage.getItem("careerplatform.browser.expandBlocks") === "1"; }
-      catch { return false; }
-    },
-    () => false
-  );
+  const autoFill = autoFillOverride ?? autoFillPreference;
+  const rememberPreference = usePreference("careerplatform.browser.autoRememberAnswers", "1") !== "0";
+  const [rememberOverride, setRememberOverride] = useState<boolean | null>(null);
+  const autoRemember = rememberOverride ?? rememberPreference;
+  const expandPreference = usePreference("careerplatform.browser.expandBlocks", "0") === "1";
   const [expandOverride, setExpandOverride] = useState<boolean | null>(null);
   const expandBlocks = expandOverride ?? expandPreference;
-  const [rememberOverride, setRememberOverride] = useState<boolean | null>(null);
-  const autoRemember = rememberOverride ?? rememberedPreference;
+  const fullWindowPreference = usePreference("careerplatform.browser.expanded", "0") === "1";
+  const [fullWindowOverride, setFullWindowOverride] = useState<boolean | null>(null);
+  const expanded = fullWindowOverride ?? fullWindowPreference;
+  const heightPreference = usePreference("careerplatform.browser.autoHeight", "1") !== "0";
+  const [heightOverride, setHeightOverride] = useState<boolean | null>(null);
+  const autoHeight = heightOverride ?? heightPreference;
+  const panelPreference = usePreference("careerplatform.browser.sidePanel", "0") === "1";
+  const [panelOverride, setPanelOverride] = useState<boolean | null>(null);
+  const assistantOpen = panelOverride ?? panelPreference;
+  const [assistantTab, setAssistantTab] = useState<AssistantTab>("preview");
   // Latest values for the long-lived IPC listener below, updated in an
   // effect (the lint rule forbids touching refs during render).
   const positionId = tabsState.activeId === null ? "" : jobBindings[tabsState.activeId] || "";
@@ -299,13 +248,53 @@ export function EmbeddedBrowser({
   }, [positionId, resumeVersionId, autoFill, autofilling, expandBlocks, variantChoice, fillModules]);
 
   const bridge = useDesktopBridge();
+  const mod = useModKey();
   const activeTab = tabsState.tabs.find((t) => t.id === tabsState.activeId) ?? null;
   const currentUrl = activeTab?.url && activeTab.url !== "about:blank" ? activeTab.url : null;
   const draftContext = JSON.stringify([tabsState.activeId, currentUrl, positionId, resumeVersionId, variantChoice]);
   const pageDraftState = pageDraftStatus.context === draftContext ? pageDraftStatus.message : "网页填写草稿等待保存";
-  const overlayOpen =
-    captureOpen || portalOpen || quickOpen || markOpen || shotOpen || resumeMenuOpen || moreOpen || variantMenuOpen || scopeMenuOpen || resultOpen;
+  // Overlays from elsewhere in the App (⌘K search, the 小欧 chat panel, any
+  // dialog) would also end up hidden behind the page.
+  const [appOverlay, setAppOverlay] = useState(false);
+  const overlayOpen = captureOpen || portalOpen || markOpen || shotOpen || moreOpen || fillMenuOpen || omniboxOpen || appOverlay;
   const linkedVariant = profileVariants.find((v) => v.resumeVersionId && v.resumeVersionId === resumeVersionId);
+  const variantLabel = variantChoice === "" ? `跟随简历（${linkedVariant ? linkedVariant.name : "默认资料"}）` : variantChoice === "default" ? "默认资料" : profileVariants.find((v) => v.id === variantChoice)?.name ?? "默认资料";
+  const scopeLabel = fillModules.length === ALL_FILL_MODULES.length ? "全部模块" : fillModules.length === 0 ? "未选择" : fillModules.length === 1 ? FILL_MODULES.find(({ id }) => id === fillModules[0])?.label : `${fillModules.length} 个模块`;
+  const resumeName = resumeVersionId ? resumeVersions.find((r) => r.id === resumeVersionId)?.name ?? "简历" : "不用简历";
+
+  function setExpanded(next: boolean) {
+    setFullWindowOverride(next);
+    writePreference("careerplatform.browser.expanded", next ? "1" : "0");
+  }
+  function setAutoHeight(next: boolean) {
+    setHeightOverride(next);
+    writePreference("careerplatform.browser.autoHeight", next ? "1" : "0");
+  }
+  function openPanel(tab?: AssistantTab) {
+    if (tab) setAssistantTab(tab);
+    setPanelOverride(true);
+    writePreference("careerplatform.browser.sidePanel", "1");
+  }
+  function closePanel() {
+    setPanelOverride(false);
+    writePreference("careerplatform.browser.sidePanel", "0");
+  }
+  function setAutoFillEveryPage(next: boolean) {
+    setAutoFillOverride(next);
+    writePreference("careerplatform.browser.autofillEveryPage", next ? "1" : "0");
+  }
+  function setExpandBlocks(next: boolean) {
+    setExpandOverride(next);
+    writePreference("careerplatform.browser.expandBlocks", next ? "1" : "0");
+  }
+  function setAutoRememberAnswers(next: boolean) {
+    setRememberOverride(next);
+    writePreference("careerplatform.browser.autoRememberAnswers", next ? "1" : "0");
+  }
+
+  const loadHistory = useCallback(() => {
+    window.desktopBridge?.history().then(setHistory).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!bridge) return;
@@ -329,13 +318,16 @@ export function EmbeddedBrowser({
       if (tabId === activeIdRef.current) {
         setStatus(s);
         setAutofilling(s.phase !== "done" && s.phase !== "error" && s.phase !== "preview");
-        if (s.phase === "preview") setAssistantOpen(true);
+        if (s.phase === "preview") {
+          setAssistantTab("preview");
+          setPanelOverride(true);
+        }
       }
     });
     const offShortcut = bridge.onShortcut(({ action, tabId }) => {
       if (action === "new-tab") void bridge.newTab();
       else if (action === "close-tab") void bridge.closeTab(tabId);
-      else if (action === "focus-address") addressRef.current?.select();
+      else if (action === "focus-address") addressRef.current?.focus();
       else if (action === "find") {
         setFindOpen(true);
         setTimeout(() => findRef.current?.select(), 50);
@@ -357,7 +349,7 @@ export function EmbeddedBrowser({
       if (live.autoFill && live.fillModules.length > 0) {
         setDetected(null);
         setAutofilling(true);
-        setStatus({ phase: "scanning", message: `检测到新一页表单（${payload.count} 个字段），自动填充中…` });
+        setStatus({ phase: "scanning", message: `检测到新一页表单（${payload.count} 个字段），自动填写中…` });
         void bridge.autofill(live.resumeVersionId || undefined, { expandBlocks: live.expandBlocks, variantId: live.variantChoice || undefined, modules: live.fillModules, positionId: live.positionId || undefined });
       } else {
         setDetected(payload);
@@ -368,6 +360,7 @@ export function EmbeddedBrowser({
       toast.success(`检测到“${payload.evidence}”，确认后可以记入投递看板`);
     });
     bridge.getTabs().then((state) => { activeIdRef.current = state.activeId; setTabsState(state); if (state.activeId !== null && initialPositionId) setJobBindings((bindings) => ({ ...bindings, [state.activeId!]: initialPositionId })); }).catch(() => {});
+    bridge.history().then(setHistory).catch(() => {});
     if (initialUrl) bridge.navigate(initialUrl);
     return () => {
       offTabs();
@@ -383,17 +376,70 @@ export function EmbeddedBrowser({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bridge]);
 
-  // Address bar follows the active tab unless the user is typing in it.
-  const addressInput = addressDraft ?? currentUrl ?? "";
+  useEffect(() => {
+    let frame = 0;
+    const check = () => {
+      frame = 0;
+      const open = Array.from(document.querySelectorAll('[role="dialog"], [role="alertdialog"], [role="menu"]')).some((el) => {
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0 && getComputedStyle(el).visibility !== "hidden";
+      });
+      setAppOverlay(open);
+    };
+    const observer = new MutationObserver(() => { if (!frame) frame = requestAnimationFrame(check); });
+    observer.observe(document.body, { childList: true, subtree: true });
+    check();
+    // Toasts go to the top, where the browser's own controls are, not behind the page.
+    setToasterPosition("top-center");
+    return () => {
+      observer.disconnect();
+      if (frame) cancelAnimationFrame(frame);
+      setToasterPosition(null);
+    };
+  }, []);
+
+  // A still of the page, taken whenever the pointer comes up to the browser
+  // controls, so a menu opened next has a current picture to stand on.
+  const [frozen, setFrozen] = useState<{ tabId: number; url: string; src: string } | null>(null);
+  const frozenRef = useRef<{ tabId: number; url: string; at: number } | null>(null);
+  const framingRef = useRef(false);
+  const currentUrlRef = useRef(currentUrl);
+  useEffect(() => { currentUrlRef.current = currentUrl; }, [currentUrl]);
+  const captureFrame = useCallback(async () => {
+    const tabId = activeIdRef.current;
+    const url = currentUrlRef.current;
+    if (!bridge || tabId === null || !url || framingRef.current) return;
+    framingRef.current = true;
+    try {
+      const src = await bridge.previewFrame();
+      if (src) {
+        frozenRef.current = { tabId, url, at: Date.now() };
+        setFrozen({ tabId, url, src });
+      }
+    } catch {
+      // Without a still the placeholder text shows instead.
+    } finally {
+      framingRef.current = false;
+    }
+  }, [bridge]);
+  const refreshFrame = useCallback(() => {
+    const last = frozenRef.current;
+    if (last && last.tabId === activeIdRef.current && last.url === currentUrlRef.current && Date.now() - last.at < 1200) return;
+    void captureFrame();
+  }, [captureFrame]);
 
   useEffect(() => {
     if (!bridge || !panelRef.current) return;
     const el = panelRef.current;
+    if (overlayOpen) {
+      let cancelled = false;
+      const last = frozenRef.current;
+      const fresh = last && last.tabId === activeIdRef.current && last.url === currentUrlRef.current && Date.now() - last.at < 3000;
+      if (fresh || !currentUrlRef.current) bridge.setBounds(null);
+      else void captureFrame().finally(() => { if (!cancelled) bridge.setBounds(null); });
+      return () => { cancelled = true; };
+    }
     const report = () => {
-      if (overlayOpen) {
-        bridge.setBounds(null);
-        return;
-      }
       const rect = el.getBoundingClientRect();
       const x = Math.max(0, rect.left);
       const y = Math.max(0, rect.top);
@@ -412,7 +458,7 @@ export function EmbeddedBrowser({
       window.removeEventListener("scroll", report, true);
       bridge.setBounds(null);
     };
-  }, [bridge, overlayOpen]);
+  }, [bridge, overlayOpen, captureFrame]);
 
   useEffect(() => {
     if (!expanded) return;
@@ -439,7 +485,7 @@ export function EmbeddedBrowser({
         autoSaveErrorRef.current = false;
       } catch {
         setPageDraftStatus({ context: draftContext, message: "网页草稿保存失败，请保留当前页面并重试" });
-        if (!autoSaveErrorRef.current) toast.error("自动检测手填变化失败；可点「核对本页变化」重试");
+        if (!autoSaveErrorRef.current) toast.error("自动检测手填变化失败；可在「⋮」菜单里点「核对本页变化」重试");
         autoSaveErrorRef.current = true;
       } finally {
         autoSavingRef.current = false;
@@ -462,15 +508,13 @@ export function EmbeddedBrowser({
         e.preventDefault();
         void bridge.closeTab(activeTab.id);
       } else if (key === "l") {
+        // ⌘K stays the App's global search; ⌘L is the browser's address bar.
         e.preventDefault();
-        addressRef.current?.select();
+        addressRef.current?.focus();
       } else if (key === "f") {
         e.preventDefault();
         setFindOpen(true);
         setTimeout(() => findRef.current?.select(), 50);
-      } else if (key === "k") {
-        e.preventDefault();
-        setQuickOpen(true);
       }
     };
     window.addEventListener("keydown", handler);
@@ -497,32 +541,10 @@ export function EmbeddedBrowser({
     void bridge?.findStop();
   }
 
-  function handleNavigate(e: React.FormEvent) {
-    e.preventDefault();
-    bridge?.navigate(addressInput);
-    setAddressDraft(null);
-    addressRef.current?.blur();
-  }
-
-  function setAutoFillEveryPage(next: boolean) {
-    setAutoFillOverride(next);
-    try {
-      localStorage.setItem("careerplatform.browser.autofillEveryPage", next ? "1" : "0");
-    } catch {
-      // per-device convenience only
-    }
-  }
-
-  function setExpandBlocks(next: boolean) {
-    setExpandOverride(next);
-    try { localStorage.setItem("careerplatform.browser.expandBlocks", next ? "1" : "0"); }
-    catch { /* per-device preference only */ }
-  }
-
-  function setAutoRememberAnswers(next: boolean) {
-    setRememberOverride(next);
-    try { localStorage.setItem("careerplatform.browser.autoRememberAnswers", next ? "1" : "0"); }
-    catch { /* per-device preference only */ }
+  function openUrl(url: string, inNewTab: boolean) {
+    if (!bridge) return;
+    if (inNewTab || !activeTab) void bridge.newTab(url);
+    else void bridge.navigate(url);
   }
 
   function handleAutofill(extra: DesktopBridgeAutofillOptions = {}) {
@@ -532,6 +554,11 @@ export function EmbeddedBrowser({
     setAutofilling(true);
     setStatus((old) => ({ phase: "scanning", message: "正在读取页面…", plan: old?.plan }));
     bridge.autofill(resumeVersionId || undefined, { expandBlocks, variantId: variantChoice || undefined, modules: fillModules, positionId: positionId || undefined, ...extra });
+  }
+
+  function dismissStatus() {
+    if (activeIdRef.current !== null) tabStatusRef.current.delete(activeIdRef.current);
+    setStatus(null);
   }
 
   async function handleSaveCorrections() {
@@ -609,400 +636,436 @@ export function EmbeddedBrowser({
 
   if (!bridge) {
     return (
-      <div className="flex h-full items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
+      <div className="flex h-[calc(100dvh-6rem)] items-center justify-center rounded-xl border border-dashed text-sm text-muted-foreground">
         网申浏览器只在桌面版里可用
       </div>
     );
   }
 
   const zoomPercent = Math.round((activeTab?.zoomFactor ?? 1) * 100);
+  const busy = autofilling;
+  const fillLabel = fillModules.length === ALL_FILL_MODULES.length ? "一键填写" : "填写所选模块";
+  const showFrozen = overlayOpen && !!frozen && frozen.tabId === tabsState.activeId && frozen.url === currentUrl;
+
+  const settingsPanel = (
+    <div className="space-y-5 text-xs">
+      <section className="space-y-2">
+        <h3 className="font-medium text-foreground">简历与资料</h3>
+        {resumeVersions.length > 0 ? (
+          <label className="block space-y-1">
+            <span className="text-muted-foreground">使用简历（AI 答题依据、上传的附件）</span>
+            <select aria-label="使用简历" disabled={busy} value={resumeVersionId || "none"} onChange={(e) => setResumeVersionId(e.target.value === "none" ? "" : e.target.value)} className={panelSelect}>
+              {resumeVersions.map((r) => <option key={r.id} value={r.id}>{r.name}{r.isDefault ? "（默认）" : ""}</option>)}
+              <option value="none">不用简历，只填资料</option>
+            </select>
+          </label>
+        ) : (
+          <p className="rounded-md bg-muted/60 p-2 leading-relaxed">还没有可上传的简历。<button type="button" className="text-primary hover:underline" onClick={() => router.push("/resumes")}>去添加简历</button>后，AI 才能回答开放题、自动上传简历附件。</p>
+        )}
+        {profileVariants.length > 0 && (
+          <label className="block space-y-1">
+            <span className="text-muted-foreground">资料方案（不同方向的实习/项目顺序和常问字段）</span>
+            <select aria-label="资料方案" disabled={busy} value={variantChoice || "auto"} onChange={(e) => setVariantChoice(e.target.value === "auto" ? "" : e.target.value)} className={panelSelect}>
+              <option value="auto">跟随简历（{linkedVariant ? linkedVariant.name : "默认资料"}）</option>
+              <option value="default">默认资料</option>
+              {profileVariants.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+            </select>
+          </label>
+        )}
+        <button type="button" className="text-primary hover:underline" onClick={() => router.push("/settings")}>编辑网申资料 →</button>
+      </section>
+      <section className="space-y-2">
+        <div className="flex items-baseline justify-between">
+          <h3 className="font-medium text-foreground">填写范围</h3>
+          <span className="space-x-2">
+            <button type="button" className="text-primary hover:underline" onClick={() => setFillModules([...ALL_FILL_MODULES])}>全选</button>
+            <button type="button" className="text-primary hover:underline" onClick={() => setFillModules([])}>清空</button>
+          </span>
+        </div>
+        <p className="text-muted-foreground">只补所选模块的空白，已填内容保留；「每页自动填」也按这个范围。</p>
+        <div className="grid grid-cols-2 gap-1.5">
+          {FILL_MODULES.map(({ id, label }) => (
+            <label key={id} className={cn("flex items-center gap-1.5 rounded-md border px-2 py-1.5 transition-colors", fillModules.includes(id) ? "border-primary/40 bg-primary/5" : "hover:bg-muted")}>
+              <input type="checkbox" disabled={busy} checked={fillModules.includes(id)} onChange={(e) => setFillModules(e.target.checked ? [...fillModules, id] : fillModules.filter((item) => item !== id))} />
+              <span className="truncate">{label}</span>
+            </label>
+          ))}
+        </div>
+      </section>
+      <section className="space-y-2">
+        <h3 className="font-medium text-foreground">自动化</h3>
+        {[
+          { checked: autoFill, set: setAutoFillEveryPage, title: "每页自动填", hint: "网申分好几页时，每翻到一页有空表单就自动填，不用每页点一次。" },
+          { checked: expandBlocks, set: setExpandBlocks, title: "自动补齐栏目", hint: "资料里的教育 / 实习 / 项目比页面栏目多时，自动点页面上的「添加」再接着填；只点文字明确的添加按钮，不会点提交。" },
+          { checked: autoRemember, set: setAutoRememberAnswers, title: "自动发现待核对变化", hint: "发现你手填或修改的经历与回答，先放进待核对列表；确认前不会用于以后填写。" },
+        ].map((item) => (
+          <label key={item.title} className="flex items-start gap-2 rounded-md p-1.5 hover:bg-muted">
+            <input type="checkbox" className="mt-0.5" checked={item.checked} onChange={(e) => item.set(e.target.checked)} />
+            <span><span className="font-medium text-foreground">{item.title}</span><span className="mt-0.5 block leading-relaxed text-muted-foreground">{item.hint}</span></span>
+          </label>
+        ))}
+      </section>
+      {!expanded && (
+        <section className="space-y-2">
+          <h3 className="font-medium text-foreground">网页高度</h3>
+          <div className="flex gap-1.5">
+            <Button size="xs" variant={autoHeight ? "secondary" : "ghost"} onClick={() => setAutoHeight(true)}>适应窗口</Button>
+            <Button size="xs" variant={!autoHeight ? "secondary" : "ghost"} onClick={() => setAutoHeight(false)}>自定义高度</Button>
+          </div>
+          {!autoHeight && (
+            <div className="flex items-center gap-2">
+              <input aria-label="网页高度" type="range" min={420} max={1400} step={10} value={browserHeight} onChange={(event) => setBrowserHeight(Number(event.target.value))} className="h-5 flex-1 cursor-pointer accent-primary" aria-valuetext={`${browserHeight} 像素`} />
+              <span className="w-14 text-right tabular-nums">{browserHeight} px</span>
+              <Button size="xs" variant="ghost" onClick={() => setBrowserHeight(650)}>还原</Button>
+            </div>
+          )}
+        </section>
+      )}
+      <section className="space-y-2">
+        <h3 className="font-medium text-foreground">本页记录</h3>
+        <p className="leading-relaxed text-muted-foreground">{currentUrl ? pageDraftState : "打开网申页面后，填写内容会自动保存为草稿。"}{autoRemember ? "" : " · 自动发现已关闭，草稿仍自动保存"}</p>
+        <div className="flex flex-wrap gap-1.5">
+          <Button size="xs" variant="outline" disabled={savingCorrections || busy || !currentUrl} onClick={handleSaveCorrections}><Check />{savingCorrections ? "检测中…" : "核对本页变化"}</Button>
+          <Button size="xs" variant="ghost" onClick={() => router.push("/settings#pending-application-changes")}><NotebookPen />待核对变化{pendingChangeCount ? `（${pendingChangeCount}）` : ""}</Button>
+        </div>
+      </section>
+    </div>
+  );
 
   return (
-    <div className={expanded ? "fixed inset-0 z-[45] flex flex-col gap-2 overflow-hidden bg-background p-3" : autoHeight ? "flex h-[calc(100dvh-10rem)] min-h-[24rem] flex-col gap-2" : "flex flex-col gap-2"}>
-      {/* tab strip */}
-      <div className="flex shrink-0 items-end gap-1 overflow-x-auto border-b">
-        {tabsState.tabs.map((tab) => {
-          const active = tab.id === tabsState.activeId;
-          return (
-            <div
-              key={tab.id}
-              className={`group flex max-w-56 min-w-28 shrink-0 items-center gap-1 rounded-t-lg border border-b-0 px-2.5 py-1.5 text-xs ${
-                active ? "bg-card font-medium" : "bg-muted/40 text-muted-foreground hover:bg-muted"
-              }`}
-            >
-              <button
-                type="button"
-                className="min-w-0 flex-1 truncate text-left"
-                title={tab.url}
-                onClick={() => bridge.switchTab(tab.id)}
-              >
-                {tab.loading && <RotateCw className="mr-1 inline size-3 animate-spin" />}
-                {shortTitle(tab)}
-              </button>
-              <button
-                type="button"
-                aria-label="关闭标签页"
-                className="rounded p-0.5 opacity-60 hover:bg-muted-foreground/20 hover:opacity-100"
-                onClick={() => bridge.closeTab(tab.id)}
-              >
-                <X className="size-3" />
-              </button>
-            </div>
-          );
-        })}
-        <Button type="button" variant="ghost" size="icon" className="size-7 shrink-0" aria-label="新标签页" title="新标签页 (⌘T)" onClick={() => bridge.newTab()}>
-          <Plus className="size-4" />
-        </Button>
-      </div>
+    <div
+      className={cn(
+        "flex flex-col overflow-hidden bg-muted dark:bg-background",
+        expanded ? "fixed inset-0 z-[45]" : "rounded-xl border shadow-[0_1px_3px_rgb(0_0_0/0.06),0_8px_24px_-12px_rgb(0_0_0/0.18)]",
+        !expanded && autoHeight && "h-[calc(100dvh-6rem)] min-h-[26rem]"
+      )}
+    >
+      <div className="flex shrink-0 flex-col" onPointerEnter={refreshFrame}>
+        <TabStrip
+          tabs={tabsState.tabs}
+          activeId={tabsState.activeId}
+          expanded={expanded}
+          onSwitch={(id) => void bridge.switchTab(id)}
+          onClose={(id) => void bridge.closeTab(id)}
+          onNew={() => void bridge.newTab().then(() => setTimeout(() => addressRef.current?.focus(), 80))}
+          onToggleExpanded={() => setExpanded(!expanded)}
+        />
 
-      {/* navigation row */}
-      <div className="flex shrink-0 items-center gap-1 rounded-lg border bg-card p-1.5">
-        <Button type="button" variant="ghost" size="icon" disabled={!activeTab?.canGoBack} onClick={() => bridge.back()} aria-label="后退" title="后退 (⌘[)">
-          <ArrowLeft className="size-4" />
-        </Button>
-        <Button type="button" variant="ghost" size="icon" disabled={!activeTab?.canGoForward} onClick={() => bridge.forward()} aria-label="前进" title="前进 (⌘])">
-          <ArrowRight className="size-4" />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onClick={() => (activeTab?.loading ? bridge.stop() : bridge.reload())}
-          aria-label={activeTab?.loading ? "停止" : "刷新"}
-          title={activeTab?.loading ? "停止加载" : "刷新 (⌘R)"}
-        >
-          {activeTab?.loading ? <X className="size-4" /> : <RotateCw className="size-4" />}
-        </Button>
-        <form onSubmit={handleNavigate} className="min-w-0 flex-1">
-          <Input
-            ref={addressRef}
-            value={addressInput}
-            onChange={(e) => setAddressDraft(e.target.value)}
-            onBlur={() => setAddressDraft(null)}
-            placeholder="输入网址，或直接输入关键词搜索…  (⌘L)"
-            className="h-9"
-          />
-        </form>
-        <Button type="button" variant="outline" size="sm" onClick={() => setQuickOpen(true)} title="企业官网 / 候选岗位 JD / 进度页 / 最近访问 (⌘K)">
-          <Compass className="size-4" />
-          常用入口
-        </Button>
-        <Button type="button" variant={findOpen ? "secondary" : "ghost"} size="icon" aria-label="页内查找" title="页内查找 (⌘F)" onClick={() => (findOpen ? closeFind() : (setFindOpen(true), setTimeout(() => findRef.current?.select(), 50)))}>
-          <Search className="size-4" />
-        </Button>
-        <Button type="button" variant={expanded ? "secondary" : "outline"} size="sm" onClick={() => { setExpanded((value) => !value); setToolsOpen(false); }} title={expanded ? "退出专注模式" : "让网申页面占满工作区"}>
-          {expanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
-          {expanded ? "退出专注" : "专注展开"}
-        </Button>
-        <DropdownMenu open={moreOpen} onOpenChange={setMoreOpen}>
-          <DropdownMenuTrigger
-            render={<Button type="button" variant="ghost" size="icon" aria-label="更多" />}
+        {/* toolbar */}
+        <div className="flex h-11 shrink-0 items-center gap-1 border-b bg-card px-2">
+          <ToolbarIcon label="后退" shortcut={`${mod}[`} disabled={!activeTab?.canGoBack} onClick={() => bridge.back()}><ArrowLeft /></ToolbarIcon>
+          <ToolbarIcon label="前进" shortcut={`${mod}]`} disabled={!activeTab?.canGoForward} onClick={() => bridge.forward()}><ArrowRight /></ToolbarIcon>
+          <ToolbarIcon label={activeTab?.loading ? "停止加载" : "重新加载"} shortcut={activeTab?.loading ? undefined : `${mod}R`} disabled={!currentUrl} onClick={() => (activeTab?.loading ? bridge.stop() : bridge.reload())}>
+            {activeTab?.loading ? <X /> : <RotateCw />}
+          </ToolbarIcon>
+          <div className="mx-1 min-w-0 flex-1">
+            <Omnibox
+              url={currentUrl}
+              links={quickLinks}
+              history={history}
+              zoomPercent={zoomPercent}
+              capturing={capturing}
+              inputRef={addressRef}
+              onNavigate={openUrl}
+              onOpenChange={setOmniboxOpen}
+              onZoomReset={() => bridge.zoomReset()}
+              onBookmark={handleCapture}
+              onFocusRequestHistory={loadHistory}
+            />
+          </div>
+
+          {pendingChangeCount > 0 && (
+            <button type="button" onClick={() => router.push("/settings#pending-application-changes")} title="你在网页上手填或修改的内容，确认后才会用于以后填写" className="flex h-7 shrink-0 items-center gap-1 rounded-full bg-amber-500/12 px-2.5 text-xs font-medium text-amber-700 hover:bg-amber-500/20 dark:text-amber-400">
+              <NotebookPen className="size-3.5" />待核对 {pendingChangeCount}
+            </button>
+          )}
+
+          {busy ? (
+            <Button size="sm" variant="outline" className="shrink-0" onClick={() => void bridge.cancelAutofill(tabsState.activeId ?? undefined)} title="停止填写，已填入的内容保留">
+              <Loader2 className="animate-spin" />填写中 · 停止
+            </Button>
+          ) : (
+            <div className="flex shrink-0 items-center">
+              <Button
+                size="sm"
+                className="rounded-r-none pr-2.5"
+                disabled={!currentUrl || !fillModules.length}
+                onClick={() => handleAutofill()}
+                title={`仅补空白字段，已填内容保留\n简历：${resumeName} · 范围：${scopeLabel}`}
+              >
+                <Sparkles />
+                {fillLabel}
+              </Button>
+              <DropdownMenu open={fillMenuOpen} onOpenChange={setFillMenuOpen}>
+                <DropdownMenuTrigger render={<Button size="sm" className="rounded-l-none border-l border-l-white/25 px-1.5" aria-label="填写选项" title="简历、填写范围和自动化选项" />}>
+                  <ChevronDown />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64">
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel>使用简历</DropdownMenuLabel>
+                    {resumeVersions.length > 0 ? (
+                      <DropdownMenuRadioGroup value={resumeVersionId || "none"} onValueChange={(value) => setResumeVersionId(value === "none" ? "" : String(value))}>
+                        {resumeVersions.map((r) => <DropdownMenuRadioItem key={r.id} value={r.id}>{r.name}{r.isDefault ? "（默认）" : ""}</DropdownMenuRadioItem>)}
+                        <DropdownMenuRadioItem value="none">不用简历，只填资料</DropdownMenuRadioItem>
+                      </DropdownMenuRadioGroup>
+                    ) : (
+                      <DropdownMenuItem onClick={() => router.push("/resumes")}><Plus />添加简历…</DropdownMenuItem>
+                    )}
+                  </DropdownMenuGroup>
+                  <DropdownMenuSeparator />
+                  {profileVariants.length > 0 && (
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger><span className="truncate">资料方案：{variantLabel}</span></DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent className="w-56">
+                        <DropdownMenuRadioGroup value={variantChoice || "auto"} onValueChange={(value) => setVariantChoice(value === "auto" ? "" : String(value))}>
+                          <DropdownMenuRadioItem value="auto">跟随简历</DropdownMenuRadioItem>
+                          <DropdownMenuRadioItem value="default">默认资料</DropdownMenuRadioItem>
+                          {profileVariants.map((v) => <DropdownMenuRadioItem key={v.id} value={v.id}>{v.name}</DropdownMenuRadioItem>)}
+                        </DropdownMenuRadioGroup>
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                  )}
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger><span className="truncate">填写范围：{scopeLabel}</span></DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="w-56">
+                      <DropdownMenuItem closeOnClick={false} onClick={() => setFillModules([...ALL_FILL_MODULES])}>全选</DropdownMenuItem>
+                      <DropdownMenuItem closeOnClick={false} onClick={() => setFillModules([])}>清空</DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      {FILL_MODULES.map(({ id, label }) => (
+                        <DropdownMenuCheckboxItem key={id} closeOnClick={false} checked={fillModules.includes(id)} onCheckedChange={(checked) => setFillModules(checked ? [...fillModules, id] : fillModules.filter((item) => item !== id))}>
+                          {label}
+                        </DropdownMenuCheckboxItem>
+                      ))}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuCheckboxItem closeOnClick={false} checked={autoFill} onCheckedChange={(checked) => setAutoFillEveryPage(!!checked)}>每页自动填</DropdownMenuCheckboxItem>
+                  <DropdownMenuCheckboxItem closeOnClick={false} checked={expandBlocks} onCheckedChange={(checked) => setExpandBlocks(!!checked)}>自动补齐栏目</DropdownMenuCheckboxItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem disabled={!currentUrl} onClick={() => { openPanel("preview"); handleAutofill({ mode: "preview", answerLength: 200 }); }}><ScanSearch />逐字段预览后再填…</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => openPanel("settings")}><Settings2 />全部填写设置…</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          )}
+
+          <ToolbarIcon
+            label={assistantOpen ? "关闭填写助手" : "打开填写助手（侧边栏）"}
+            onClick={() => (assistantOpen ? closePanel() : openPanel())}
+            className={cn(assistantOpen && "bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary")}
           >
-            <MoreHorizontal className="size-4" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem disabled={capturing || !currentUrl} onClick={handleCapture}><Bookmark className="size-4" />收藏当前岗位</DropdownMenuItem>
-            <DropdownMenuItem disabled={!currentUrl} onClick={() => setMarkOpen(true)}><Send className="size-4" />记为已投递</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setPortalOpen(true)}><Radar className="size-4" />设置进度同步</DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem disabled={savingCorrections || !currentUrl} onClick={handleSaveCorrections}><Check className="size-4" />{savingCorrections ? "检测中…" : "核对本页变化"}</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => router.push("/settings#pending-application-changes")}><NotebookPen className="size-4" />打开待核对变化</DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => bridge.zoomOut()}><ZoomOut className="size-4" />缩小网页</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => bridge.zoomReset()}>还原缩放（当前 {zoomPercent}%）</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => bridge.zoomIn()}><ZoomIn className="size-4" />放大网页</DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem disabled={!currentUrl} onClick={() => bridge.openExternal()}>
-              <ExternalLink className="size-4" />
-              在系统浏览器里打开
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={!currentUrl}
-              onClick={() => {
-                void bridge.copyUrl();
-                toast.success("链接已复制");
+            {assistantOpen ? <PanelRightClose /> : <PanelRight />}
+          </ToolbarIcon>
+
+          <DropdownMenu open={moreOpen} onOpenChange={setMoreOpen}>
+            <DropdownMenuTrigger render={<ToolbarIcon label="更多" />}>
+              <MoreVertical />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuItem onClick={() => void bridge.newTab().then(() => setTimeout(() => addressRef.current?.focus(), 80))}><Plus />新建标签页<DropdownMenuShortcut>{mod}T</DropdownMenuShortcut></DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <div className="flex items-center gap-1 px-1.5 py-1 text-sm">
+                <span className="flex-1">缩放</span>
+                <button type="button" aria-label="缩小网页" disabled={!currentUrl} onClick={() => bridge.zoomOut()} className="grid size-7 place-items-center rounded-md hover:bg-muted disabled:opacity-40"><Minus className="size-4" /></button>
+                <button type="button" title="还原为 100%" disabled={!currentUrl} onClick={() => bridge.zoomReset()} className="h-7 w-12 rounded-md text-center text-xs tabular-nums hover:bg-muted disabled:opacity-40">{zoomPercent}%</button>
+                <button type="button" aria-label="放大网页" disabled={!currentUrl} onClick={() => bridge.zoomIn()} className="grid size-7 place-items-center rounded-md hover:bg-muted disabled:opacity-40"><Plus className="size-4" /></button>
+                <button type="button" aria-label="全屏浏览" title={expanded ? "退出全屏浏览" : "全屏浏览"} onClick={() => { setMoreOpen(false); setExpanded(!expanded); }} className="ml-1 grid size-7 place-items-center rounded-md border hover:bg-muted"><Maximize2 className="size-3.5" /></button>
+              </div>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem disabled={!currentUrl} onClick={() => { setFindOpen(true); setTimeout(() => findRef.current?.select(), 50); }}><Search />在页面中查找…<DropdownMenuShortcut>{mod}F</DropdownMenuShortcut></DropdownMenuItem>
+              <DropdownMenuItem disabled={capturing || !currentUrl} onClick={handleCapture}><Bookmark />收藏为候选岗位</DropdownMenuItem>
+              <DropdownMenuItem disabled={!currentUrl} onClick={() => setMarkOpen(true)}><Send />记为已投递…</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setPortalOpen(true)}><Radar />设置进度同步…</DropdownMenuItem>
+              <DropdownMenuItem disabled={!currentUrl} onClick={handleScreenshot}><Camera />截图存到投递附件…</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem disabled={savingCorrections || busy || !currentUrl} onClick={handleSaveCorrections}><Check />{savingCorrections ? "检测中…" : "核对本页变化"}</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => router.push("/settings#pending-application-changes")}><NotebookPen />打开待核对变化{pendingChangeCount ? `（${pendingChangeCount}）` : ""}</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => bridge.clearMarks()}><Eraser />清除填写标记</DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={!currentUrl}
+                onClick={async () => {
+                  try {
+                    const result = await bridge.exportFormStructure();
+                    toast.success(`已导出表单结构（${result.fields} 个字段），文件在「下载」文件夹；已去掉填写内容和个人资料，可发给开发者排查`);
+                  } catch (err) {
+                    toast.error(err instanceof Error ? err.message : "导出失败");
+                  }
+                }}
+              >
+                <FileCode />导出表单结构（反馈填错用）
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem disabled={!currentUrl} onClick={() => bridge.openExternal()}><ExternalLink />在系统浏览器中打开</DropdownMenuItem>
+              <DropdownMenuItem disabled={!currentUrl} onClick={() => { void bridge.copyUrl(); toast.success("链接已复制"); }}><Copy />复制链接</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={async () => { await bridge.clearHistory(); setHistory([]); toast.success("最近访问已清空"); }}><Trash2 />清空最近访问</DropdownMenuItem>
+              <DropdownMenuItem
+                variant="destructive"
+                onClick={async () => {
+                  if (!window.confirm("会清掉网申浏览器里所有网站的登录状态和缓存（不影响 App 自己的数据），确定？")) return;
+                  await bridge.clearSiteData();
+                  toast.success("已退出所有网站登录");
+                }}
+              >
+                <LogOut />退出所有网站登录
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        {findOpen && (
+          <div className="flex h-9 shrink-0 items-center justify-end gap-1.5 border-b bg-card px-3">
+            <Search className="size-3.5 text-muted-foreground" />
+            <input
+              ref={findRef}
+              value={findText}
+              aria-label="在页面中查找"
+              onChange={(e) => {
+                setFindText(e.target.value);
+                runFind(e.target.value);
               }}
-            >
-              <Copy className="size-4" />
-              复制链接
-            </DropdownMenuItem>
-            <DropdownMenuItem disabled={!currentUrl} onClick={handleScreenshot}>
-              <Camera className="size-4" />
-              截图存到投递附件
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={!currentUrl}
-              onClick={async () => {
-                try {
-                  const result = await bridge.exportFormStructure();
-                  toast.success(`已导出表单结构（${result.fields} 个字段），文件在「下载」文件夹；已去掉填写内容和个人资料，可发给开发者排查`);
-                } catch (err) {
-                  toast.error(err instanceof Error ? err.message : "导出失败");
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  runFind(findText, !e.shiftKey, true);
+                } else if (e.key === "Escape") {
+                  closeFind();
                 }
               }}
-            >
-              <FileCode className="size-4" />
-              导出表单结构（反馈填错用）
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => bridge.clearMarks()}>
-              <Eraser className="size-4" />
-              清除填充标记
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={async () => {
-                await bridge.clearHistory();
-                toast.success("最近访问已清空");
-              }}
-            >
-              清空最近访问
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={async () => {
-                if (!window.confirm("会清掉网申浏览器里所有网站的登录状态和缓存（不影响 App 自己的数据），确定？")) return;
-                await bridge.clearSiteData();
-                toast.success("已退出所有网站登录");
-              }}
-            >
-              退出所有网站登录
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-
-      {findOpen && (
-        <div className="flex items-center gap-2 rounded-lg border bg-card px-2 py-1.5">
-          <Search className="size-4 text-muted-foreground" />
-          <Input
-            ref={findRef}
-            value={findText}
-            onChange={(e) => {
-              setFindText(e.target.value);
-              runFind(e.target.value);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                runFind(findText, !e.shiftKey, true);
-              } else if (e.key === "Escape") {
-                closeFind();
-              }
-            }}
-            placeholder="在页面里查找…"
-            className="h-8 max-w-72"
-          />
-          <span className="text-xs text-muted-foreground">
-            {findText ? (findResult ? `${findResult.active} / ${findResult.total}` : "…") : ""}
-          </span>
-          <Button type="button" variant="ghost" size="sm" disabled={!findText} onClick={() => runFind(findText, false, true)}>
-            上一个
-          </Button>
-          <Button type="button" variant="ghost" size="sm" disabled={!findText} onClick={() => runFind(findText, true, true)}>
-            下一个
-          </Button>
-          <Button type="button" variant="ghost" size="icon" aria-label="关闭查找" onClick={closeFind}>
-            <X className="size-4" />
-          </Button>
-        </div>
-      )}
-
-      {/* Frequent filling controls stay visible in focus mode. */}
-      <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-lg border bg-card p-2">
-        {resumeVersions.length > 0 && (
-          <Select disabled={autofilling} value={resumeVersionId || "none"} onValueChange={(v) => setResumeVersionId(v === "none" || !v ? "" : v)} onOpenChange={setResumeMenuOpen}>
-            <SelectTrigger className="h-9 w-40 shrink-0">
-              <SelectValue placeholder="选简历">
-                {(value: string) => value === "none" ? "不用简历，只填资料" : resumeVersions.find((r) => r.id === value)?.name ?? "选简历"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">不用简历，只填资料</SelectItem>
-              {resumeVersions.map((r) => (
-                <SelectItem key={r.id} value={r.id}>
-                  {r.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+              placeholder="在页面中查找"
+              className="h-7 w-56 rounded-md border bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            />
+            <span className="w-14 text-center text-xs text-muted-foreground tabular-nums">
+              {findText ? (findResult ? `${findResult.active}/${findResult.total}` : "…") : ""}
+            </span>
+            <ToolbarIcon label="上一个" className="size-7" disabled={!findText} onClick={() => runFind(findText, false, true)}><ChevronUp /></ToolbarIcon>
+            <ToolbarIcon label="下一个" className="size-7" disabled={!findText} onClick={() => runFind(findText, true, true)}><ChevronDown /></ToolbarIcon>
+            <ToolbarIcon label="关闭查找" className="size-7" onClick={closeFind}><X /></ToolbarIcon>
+          </div>
         )}
-        {resumeVersions.length === 0 && <Button type="button" variant="outline" size="sm" title="添加简历后可用 AI 填写开放题和上传简历附件" onClick={() => router.push("/resumes")}>添加简历</Button>}
-        <DropdownMenu open={scopeMenuOpen} onOpenChange={setScopeMenuOpen}>
-          <DropdownMenuTrigger render={<Button type="button" size="sm" variant="outline" className="max-w-48" disabled={autofilling} />}>
-            <span className="truncate">填写范围：{fillModules.length === ALL_FILL_MODULES.length ? "全部模块" : fillModules.length === 1 ? FILL_MODULES.find(({ id }) => id === fillModules[0])?.label : `${fillModules.length} 个模块`}</span>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-64">
-            <p className="px-2 py-1.5 text-xs text-muted-foreground">只补所选模块的空白，已填内容保留。<br />选择会记住，「每页自动填」也使用此范围。</p>
-            <DropdownMenuItem onClick={() => setFillModules([...ALL_FILL_MODULES])}>全选</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setFillModules([])}>取消全选</DropdownMenuItem>
-            <DropdownMenuSeparator />
-            {FILL_MODULES.map(({ id, label }) => (
-              <DropdownMenuCheckboxItem key={id} checked={fillModules.includes(id)} closeOnClick={false} onCheckedChange={(checked) => setFillModules(checked ? [...fillModules, id] : fillModules.filter((item) => item !== id))}>
-                {label}
-              </DropdownMenuCheckboxItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <Button type="button" size="sm" variant="outline" onClick={() => setAssistantOpen((open) => !open)}>{assistantOpen ? "收起填写助手" : "填写助手 / 逐字段预览"}</Button>
-        <Button type="button" size="sm" disabled={autofilling || !currentUrl || !fillModules.length} onClick={() => handleAutofill()} title="仅补填写范围内的空白字段，已填内容保留">
-          <Sparkles className="size-4" />
-          {autofilling ? "填充中..." : fillModules.length === ALL_FILL_MODULES.length ? "AI 一键填充" : "填写所选模块"}
-        </Button>
-        {autofilling && <Button type="button" size="sm" variant="outline" onClick={() => void bridge.cancelAutofill(tabsState.activeId ?? undefined)}>停止填写</Button>}
-        <span className="hidden text-xs text-muted-foreground xl:inline">只补空白，已填内容保留</span>
-        <Button type="button" size="sm" variant="outline" disabled={savingCorrections || autofilling || !currentUrl} onClick={handleSaveCorrections}>核对本页变化</Button>
-        <Button type="button" size="sm" variant="ghost" onClick={() => router.push("/settings#pending-application-changes")}>待核对变化{pendingChangeCount ? `（${pendingChangeCount}）` : ""}</Button>
-        <Button type="button" size="sm" variant={toolsOpen ? "secondary" : "ghost"} className="ml-auto" onClick={() => setToolsOpen((value) => !value)}>{toolsOpen ? "收起设置" : "填写设置"}</Button>
-      </div>
-      {currentUrl && <p className="text-xs text-muted-foreground">{pageDraftState} · 离开前请等待保存状态，提交前请核对网页。</p>}
-      {toolsOpen && <div className="flex max-h-44 min-h-0 flex-wrap items-center gap-x-4 gap-y-3 overflow-auto rounded-lg border bg-muted/30 p-3">
-        {profileVariants.length > 0 && (
-          <Select value={variantChoice || "auto"} onValueChange={(v) => setVariantChoice(!v || v === "auto" ? "" : v)} onOpenChange={setVariantMenuOpen}>
-            <SelectTrigger className="h-9 w-44 shrink-0" title="网申资料方案：不同求职方向的实习/项目顺序和常问字段">
-              <SelectValue>
-                {(value: string) =>
-                  value === "auto"
-                    ? `方案：${linkedVariant ? linkedVariant.name : "默认资料"}（跟随简历）`
-                    : `方案：${value === "default" ? "默认资料" : profileVariants.find((v) => v.id === value)?.name ?? "默认资料"}`}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="auto">跟随简历</SelectItem>
-              <SelectItem value="default">默认资料</SelectItem>
-              {profileVariants.map((v) => (
-                <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+
+        {status && (status.phase === "scanning" || status.phase === "ai") && busy && (
+          <Infobar
+            tone="info"
+            icon={<Loader2 className="animate-spin" />}
+            actions={<Button size="xs" variant="outline" onClick={() => void bridge.cancelAutofill(tabsState.activeId ?? undefined)}>停止填写</Button>}
+          >
+            {status.phase === "ai" ? (
+              <AiProgress active expectedSeconds={30} stages={["基础资料已填，AI 正在生成回答…", "正在从简历中核对信息…", "AI 仍在生成，请稍候…"]} />
+            ) : (
+              <span className="text-muted-foreground">{status.message}</span>
+            )}
+          </Infobar>
         )}
-        <label className="flex items-center gap-1.5 text-xs text-muted-foreground" title="网申分好几页时（基本信息→教育→实习→开放题），每翻到一页有空表单就自动填，不用每页点一次">
-          <input type="checkbox" checked={autoFill} onChange={(e) => setAutoFillEveryPage(e.target.checked)} />
-          每页自动填
-        </label>
-        <label className="flex items-center gap-1.5 text-xs text-muted-foreground" title="网申资料里的教育/实习/项目经历比页面上的栏目多时，自动点页面上的「添加教育经历」等按钮再接着填；只点文字明确的添加按钮，不会点提交">
-          <input type="checkbox" checked={expandBlocks} onChange={(e) => setExpandBlocks(e.target.checked)} />
-          自动补齐栏目
-        </label>
-        <label className="flex items-center gap-1.5 text-xs text-muted-foreground" title="发现你手填或修改的经历与回答，先放入待核对列表；确认前不会影响以后填写">
-          <input type="checkbox" checked={autoRemember} onChange={(e) => setAutoRememberAnswers(e.target.checked)} />
-          自动发现待核对变化
-        </label>
-        {!expanded && <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span className="font-medium">网页视区</span>
-          <Button type="button" variant={autoHeight ? "secondary" : "ghost"} size="sm" className="h-7 text-xs" onClick={() => setAutoHeight(true)}>适应窗口</Button>
-          <Button type="button" variant={!autoHeight ? "secondary" : "ghost"} size="sm" className="h-7 text-xs" onClick={() => setAutoHeight(false)}>自定义高度</Button>
-          {!autoHeight && <>
-            <label htmlFor="browser-height">网页高度</label>
-            <input id="browser-height" type="range" min={420} max={1400} step={10} value={browserHeight} onChange={(event) => setBrowserHeight(Number(event.target.value))} className="h-5 w-36 cursor-pointer accent-primary" aria-valuetext={`${browserHeight} 像素`} />
-            <span className="w-14 tabular-nums">{browserHeight} px</span>
-            <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setBrowserHeight(650)}>还原</Button>
-          </>}
-        </div>}
-        <p className="w-full text-xs text-muted-foreground">{pageDraftState} · {autoRemember ? "自动检测完整变化，确认前不会用于以后填写" : "自动发现已关闭，草稿仍自动保存"} · 返回时扫描预览恢复同一页面、简历和资料方案。</p>
-      </div>}
-
-
-      {detected && !autofilling && detected.tabId === tabsState.activeId && (
-        <div className="flex flex-wrap items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs">
-          <span>这页有 {detected.count} 个可填字段。</span>
-          <Button type="button" size="sm" className="h-7" onClick={() => handleAutofill()}>
-            <Sparkles className="size-3.5" />
-            填这页
-          </Button>
-          <label className="flex items-center gap-1.5">
-            <input type="checkbox" checked={autoFill} onChange={(e) => setAutoFillEveryPage(e.target.checked)} />
-            以后每一页自动填
-          </label>
-          <button
-            type="button"
-            className="ml-auto text-muted-foreground hover:text-foreground"
-            onClick={() => {
+        {status && (status.phase === "done" || status.phase === "error") && (
+          <Infobar
+            tone={status.phase === "error" ? "danger" : status.summary?.manual ? "warning" : "success"}
+            icon={status.phase === "error" ? <TriangleAlert /> : status.summary?.manual ? <ListChecks /> : <Check />}
+            onClose={dismissStatus}
+            closeLabel="收起填写结果"
+            actions={status.details?.length ? <Button size="xs" variant="outline" onClick={() => openPanel("result")}>{status.summary?.manual ? "查看待手填" : "查看结果"}</Button> : undefined}
+          >
+            <span title={status.message}>
+              {status.summary
+                ? `已填 ${status.summary.filled} 项 · 保留原有 ${status.summary.preserved} 项 · 待手填 ${status.summary.manual} 项${status.summary.excluded ? ` · 范围外 ${status.summary.excluded} 项` : ""}${status.summary.uploaded ? ` · 上传 ${status.summary.uploaded} 份简历` : ""}。提交前请核对网页上的紫色框。`
+                : status.message}
+            </span>
+          </Infobar>
+        )}
+        {capturing && (
+          <Infobar tone="info" icon={<Loader2 className="animate-spin" />}>
+            <AiProgress active expectedSeconds={15} stages={["正在读页面正文…", "AI 正在解析岗位…"]} />
+          </Infobar>
+        )}
+        {detected && !busy && detected.tabId === tabsState.activeId && (
+          <Infobar
+            tone="info"
+            icon={<Sparkles />}
+            onClose={() => {
               void bridge.dismissForm({ tabId: detected.tabId, signature: detected.signature });
               setDetected(null);
             }}
+            closeLabel="这页不用填"
+            actions={<>
+              <label className="mr-1 flex items-center gap-1.5 text-muted-foreground">
+                <input type="checkbox" checked={autoFill} onChange={(e) => setAutoFillEveryPage(e.target.checked)} />
+                以后每一页自动填
+              </label>
+              <Button size="xs" onClick={() => handleAutofill()}><Sparkles />填这页</Button>
+            </>}
           >
-            这页不用
-          </button>
-        </div>
-      )}
-      {submitted && submitted.tabId === tabsState.activeId && (
-        <div className="flex flex-wrap items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-1.5 text-xs">
-          <Check className="size-3.5 text-emerald-600" />
-          <span>官网显示“{submitted.evidence}”。如果确实提交完成，把它记进投递看板。</span>
-          <Button
-            type="button"
-            size="sm"
-            className="h-7"
-            onClick={() => {
-              setMarkOpen(true);
-              setSubmitted(null);
-            }}
-          >
-            <Send className="size-3.5" />
-            确认并建档
-          </Button>
-          <button type="button" className="ml-auto text-muted-foreground hover:text-foreground" onClick={() => setSubmitted(null)}>
-            不是投递成功
-          </button>
-        </div>
-      )}
-      <SiteBanner
-        bridge={bridge}
-        url={currentUrl}
-        title={activeTab?.title ?? ""}
-        loading={!!activeTab?.loading}
-        sites={knownSites}
-        onPickPortalCompany={() => setPortalOpen(true)}
-      />
-      <div className="flex min-h-48 flex-1 gap-3 overflow-hidden">
-      <div ref={panelRef} role="region" aria-label="网页内容" style={expanded || autoHeight ? undefined : { height: browserHeight }} className={expanded || autoHeight ? "relative min-h-48 flex-1 overflow-hidden rounded-lg border bg-card" : "relative min-h-[26rem] min-w-0 flex-1 overflow-hidden rounded-lg border bg-card"}>
-        {overlayOpen && (
-          <p className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">
-            页面暂时隐藏，关掉弹窗后恢复
-          </p>
+            这页有 {detected.count} 个可以自动填写的字段。
+          </Infobar>
         )}
-        {!overlayOpen && !currentUrl && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
-            <p>在上面输入网址，或从「常用入口」打开企业官网 / 候选岗位</p>
-            <Button type="button" variant="outline" size="sm" onClick={() => setQuickOpen(true)}>
-              <Compass className="size-4" />
-              常用入口
-            </Button>
+        {submitted && submitted.tabId === tabsState.activeId && (
+          <Infobar
+            tone="success"
+            icon={<Check />}
+            onClose={() => setSubmitted(null)}
+            closeLabel="不是投递成功"
+            actions={<Button size="xs" onClick={() => { setMarkOpen(true); setSubmitted(null); }}><Send />确认并建档</Button>}
+          >
+            官网显示“{submitted.evidence}”。如果确实提交完成了，把它记进投递看板。
+          </Infobar>
+        )}
+        <SiteBanner
+          bridge={bridge}
+          url={currentUrl}
+          title={activeTab?.title ?? ""}
+          loading={!!activeTab?.loading}
+          sites={knownSites}
+          onPickPortalCompany={() => setPortalOpen(true)}
+        />
+      </div>
+
+      <div className={cn("flex min-h-0 overflow-hidden", (expanded || autoHeight) && "flex-1")}>
+        <div
+          ref={panelRef}
+          role="region"
+          aria-label="网页内容"
+          style={expanded || autoHeight ? undefined : { height: browserHeight }}
+          className={cn("relative min-w-0 flex-1 overflow-hidden bg-white", !(expanded || autoHeight) && "min-h-[26rem]")}
+        >
+          {!currentUrl && !overlayOpen && (
+            <NewTabPage
+              links={quickLinks}
+              history={history}
+              onOpen={openUrl}
+              onFocusAddress={() => addressRef.current?.focus()}
+            />
+          )}
+          {showFrozen && (
+            // The page's own pixels, a moment old, while App menus cover it.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={frozen.src} alt="" aria-hidden="true" className="absolute inset-0 size-full object-cover object-left-top" />
+          )}
+          {overlayOpen && currentUrl && !showFrozen && (
+            <p className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">关掉菜单或弹窗后网页就会回来</p>
+          )}
+        </div>
+
+        {assistantOpen && (
+          <div className="flex shrink-0" onPointerEnter={refreshFrame}>
+            <ApplicationAssistant
+              key={activeTab?.id ?? "none"}
+              bridge={bridge}
+              status={status}
+              busy={busy}
+              resumeId={resumeVersionId}
+              variantId={variantChoice}
+              positionId={positionId}
+              tab={assistantTab}
+              onTab={setAssistantTab}
+              onClose={closePanel}
+              onPosition={(id) => { if (activeTab) setJobBindings((bindings) => ({ ...bindings, [activeTab.id]: id })); setStatus(null); }}
+              onPreview={(extra) => handleAutofill({ mode: "preview", ...extra })}
+              onApply={(options) => handleAutofill(options)}
+              settings={settingsPanel}
+              onOpenProfile={() => router.push("/settings")}
+            />
           </div>
         )}
       </div>
-
-      {assistantOpen && <ApplicationAssistant key={activeTab?.id ?? "none"} bridge={bridge} status={status} busy={autofilling} resumeId={resumeVersionId} variantId={variantChoice} positionId={positionId} onPosition={(id) => { if (activeTab) setJobBindings((bindings) => ({ ...bindings, [activeTab.id]: id })); setStatus(null); }} onPreview={(extra) => handleAutofill({ mode: "preview", ...extra })} onApply={(options) => handleAutofill(options)} />}
-      </div>
-      {(status || capturing) && <div className="shrink-0 rounded-lg border bg-card px-3 py-2 text-xs" role="status">
-        {autofilling && status?.phase === "ai" ? <AiProgress active expectedSeconds={30} stages={["基础资料已填，AI 正在生成回答…", "正在从简历中核对信息…", "AI 仍在生成，请稍候…"]} /> : status && <div className="flex items-center gap-2">
-          {status.phase === "scanning" && <RotateCw className="size-3.5 shrink-0 animate-spin" />}
-          <p className={`min-w-0 flex-1 truncate ${status.phase === "error" ? "text-destructive" : "text-muted-foreground"}`} title={status.message}>
-            {status.summary ? `已填 ${status.summary.filled} 项 · 保留 ${status.summary.preserved} 项 · 待手填 ${status.summary.manual} 项${status.summary.excluded ? ` · 范围外 ${status.summary.excluded} 项` : ""}${status.summary.uploaded ? ` · 上传 ${status.summary.uploaded} 份简历` : ""}` : status.message}
-          </p>
-          {(status.phase === "done" || status.phase === "error") && <Button type="button" size="sm" variant="ghost" className="h-7 shrink-0 text-xs" onClick={() => setResultOpen(true)}>查看结果</Button>}
-          {!autofilling && <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0" aria-label="收起填写结果" onClick={() => { if (activeIdRef.current !== null) tabStatusRef.current.delete(activeIdRef.current); setStatus(null); }}><X className="size-3.5" /></Button>}
-        </div>}
-        <AiProgress active={capturing} expectedSeconds={15} stages={["正在读页面正文…", "AI 正在解析岗位…"]} />
-      </div>}
-      <Dialog open={resultOpen} onOpenChange={setResultOpen}>
-        <DialogContent className="max-h-[80dvh] overflow-auto sm:max-w-xl">
-          <DialogHeader><DialogTitle>填写结果</DialogTitle><DialogDescription>核对已填内容，查看哪些字段需要手填或补充资料。</DialogDescription></DialogHeader>
-          <p className="text-sm leading-relaxed">{status?.message}</p>
-          {status?.details && <FillDetails details={status.details} />}
-          <Button type="button" variant="outline" onClick={() => { setResultOpen(false); router.push("/settings"); }}>补充网申资料</Button>
-        </DialogContent>
-      </Dialog>
-
-      <QuickOpenDialog
-        open={quickOpen}
-        onOpenChange={setQuickOpen}
-        links={quickLinks}
-        onOpen={(url, inNewTab) => {
-          if (inNewTab || !activeTab) void bridge.newTab(url);
-          else void bridge.navigate(url);
-          setQuickOpen(false);
-        }}
-      />
 
       {portalOpen && (
         <PortalSyncDialog

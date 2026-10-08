@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>星海科技 2026 校园招聘 · 填写简历</title>
+<link rel="stylesheet" href="/vendor/antd-reset.css">
+<style>body{background:#f5f6f8;margin:0;font-family:-apple-system,"PingFang SC",sans-serif}.wrap{max-width:820px;margin:24px auto;background:#fff;padding:24px 32px;border-radius:8px}.sec-title{font-size:16px;font-weight:600;margin:24px 0 12px;border-left:3px solid #1677ff;padding-left:8px}.block{border:1px dashed #d9d9d9;padding:12px 16px;border-radius:6px;margin-bottom:12px}</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="/vendor/react.js"></script>
+<script src="/vendor/react-dom.js"></script>
+<script src="/vendor/dayjs.js"></script>
+<script src="/vendor/antd.js"></script>
+<script>
+const h = React.createElement;
+const { Form, Input, Select, Radio, DatePicker, Cascader, Checkbox, Button, Upload, Row, Col } = antd;
+const { RangePicker } = DatePicker;
+const cities = [
+  { value: "shanghai", label: "上海", children: [{ value: "sh", label: "上海市" }] },
+  { value: "jiangsu", label: "江苏", children: [{ value: "nj", label: "南京" }, { value: "sz", label: "苏州" }] },
+  { value: "guangdong", label: "广东", children: [{ value: "gz", label: "广州" }, { value: "shenzhen", label: "深圳" }] },
+];
+const PREFILL = new URLSearchParams(location.search).has("prefill");
+function App() {
+  const [form] = Form.useForm();
+  const [eduCount, setEduCount] = React.useState(1);
+  const [expCount, setExpCount] = React.useState(1);
+  window.__form = form;
+  const edu = (i) => h("div", { className: "block", key: "edu" + i },
+    h("div", { style: { color: "#888", marginBottom: 8 } }, "教育经历 " + (i + 1)),
+    h(Row, { gutter: 16 },
+      h(Col, { span: 12 }, h(Form.Item, { label: "学校名称", name: ["edu", i, "school"], rules: [{ required: true }] }, h(Input, { placeholder: "请输入学校名称" }))),
+      h(Col, { span: 12 }, h(Form.Item, { label: "专业", name: ["edu", i, "major"], rules: [{ required: true }] }, h(Input, { placeholder: "请输入专业" })))),
+    h(Row, { gutter: 16 },
+      h(Col, { span: 12 }, h(Form.Item, { label: "学历", name: ["edu", i, "degree"], rules: [{ required: true }] }, h(Select, { placeholder: "请选择", options: ["大专", "本科", "硕士研究生", "博士研究生"].map((v) => ({ value: v, label: v })) }))),
+      h(Col, { span: 12 }, h(Form.Item, { label: "在校时间", name: ["edu", i, "range"], rules: [{ required: true }] }, h(RangePicker, { picker: "month", placeholder: ["开始月份", "结束月份"] })))));
+  const exp = (i) => h("div", { className: "block", key: "exp" + i },
+    h(Row, { gutter: 16 },
+      h(Col, { span: 12 }, h(Form.Item, { label: "公司名称", name: ["exp", i, "company"] }, h(Input, { placeholder: "请输入" }))),
+      h(Col, { span: 12 }, h(Form.Item, { label: "职位名称", name: ["exp", i, "role"] }, h(Input, { placeholder: "请输入" })))),
+    h(Form.Item, { label: "实习时间", name: ["exp", i, "range"] }, h(RangePicker, { picker: "month" })),
+    h(Form.Item, { label: "工作内容", name: ["exp", i, "desc"] }, h(Input.TextArea, { rows: 3, placeholder: "请描述你的主要工作内容" })));
+  return h("div", { className: "wrap" },
+    h("h2", null, "填写简历 · 数据分析师（校招）"),
+    h(Form, { form, layout: "vertical", requiredMark: true, initialValues: PREFILL ? { name: "张三", gender: "M", politics: "群众", city: ["guangdong", "shenzhen"], edu: [{ school: "南京大学" }] } : {} },
+      h("div", { className: "sec-title" }, "基本信息"),
+      h(Row, { gutter: 16 },
+        h(Col, { span: 12 }, h(Form.Item, { label: "姓名", name: "name", rules: [{ required: true }] }, h(Input, { placeholder: "请输入姓名" }))),
+        h(Col, { span: 12 }, h(Form.Item, { label: "手机号", name: "phone", rules: [{ required: true }] }, h(Input, { placeholder: "请输入手机号", maxLength: 11, addonBefore: h(Select, { defaultValue: "+86", style: { width: 80 }, options: [{ value: "+86", label: "+86" }, { value: "+852", label: "+852" }] }) })))),
+      h(Row, { gutter: 16 },
+        h(Col, { span: 12 }, h(Form.Item, { label: "邮箱", name: "email", rules: [{ required: true }] }, h(Input, { placeholder: "请输入邮箱" }))),
+        h(Col, { span: 12 }, h(Form.Item, { label: "性别", name: "gender", rules: [{ required: true }] }, h(Radio.Group, null, h(Radio, { value: "M" }, "男"), h(Radio, { value: "F" }, "女"))))),
+      h(Row, { gutter: 16 },
+        h(Col, { span: 12 }, h(Form.Item, { label: "出生日期", name: "birth" }, h(DatePicker, { style: { width: "100%" }, placeholder: "请选择日期" }))),
+        h(Col, { span: 12 }, h(Form.Item, { label: "政治面貌", name: "politics" }, h(Select, { placeholder: "请选择", options: ["中共党员", "中共预备党员", "共青团员", "群众"].map((v) => ({ value: v, label: v })) })))),
+      h(Row, { gutter: 16 },
+        h(Col, { span: 12 }, h(Form.Item, { label: "现居城市", name: "city" }, h(Cascader, { options: cities, placeholder: "请选择省/市" }))),
+        h(Col, { span: 12 }, h(Form.Item, { label: "最高学历", name: "topDegree" }, h(Select, { placeholder: "请选择", options: ["本科", "硕士", "博士"].map((v) => ({ value: v, label: v })) })))),
+      h("div", { className: "sec-title" }, "教育经历"),
+      Array.from({ length: eduCount }, (_, i) => edu(i)),
+      h(Button, { type: "dashed", onClick: () => setEduCount((n) => n + 1) }, "+ 添加教育经历"),
+      h("div", { className: "sec-title" }, "实习经历"),
+      Array.from({ length: expCount }, (_, i) => exp(i)),
+      h(Button, { type: "dashed", onClick: () => setExpCount((n) => n + 1) }, "+ 添加实习经历"),
+      h("div", { className: "sec-title" }, "附加信息"),
+      h(Form.Item, { label: "是否服从调剂", name: "adjust" }, h(Radio.Group, null, h(Radio, { value: 1 }, "是"), h(Radio, { value: 0 }, "否"))),
+      h(Form.Item, { label: "你为什么选择星海科技？", name: "why" }, h(Input.TextArea, { rows: 4, maxLength: 500, showCount: true })),
+      h(Form.Item, { label: "期望工作城市（可多选）", name: "cities" }, h(Select, { mode: "multiple", placeholder: "请选择", options: ["上海", "北京", "深圳"].map((v) => ({ value: v, label: v })) })),
+      h(Form.Item, { label: "简历附件", name: "resume" }, h(Upload, { beforeUpload: () => false }, h(Button, null, "上传简历"))),
+      h(Form.Item, { name: "agree", valuePropName: "checked" }, h(Checkbox, null, "我已阅读并同意《隐私政策》")),
+      h(Button, { type: "primary" }, "提交申请")));
+}
+ReactDOM.createRoot(document.getElementById("root")).render(h(antd.ConfigProvider, null, h(App)));
+</script>
+</body>
+</html>

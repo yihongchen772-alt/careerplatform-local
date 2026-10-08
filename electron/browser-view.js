@@ -233,7 +233,43 @@ function tabState(t) {
     canGoBack: wc.navigationHistory.canGoBack(),
     canGoForward: wc.navigationHistory.canGoForward(),
     zoomFactor: wc.getZoomFactor(),
+    favicon: t.favicon || null,
   };
+}
+
+// Tab icons are fetched through the 网申浏览器's own session (the page has
+// already loaded them there), never from the App window, and handed to the
+// renderer as small data URLs.
+const faviconCache = new Map();
+async function loadFavicon(tab, url) {
+  tab.faviconUrl = url || null;
+  if (!url) return;
+  const show = (dataUrl) => {
+    if (tab.faviconUrl !== url || tab.view.webContents.isDestroyed()) return;
+    tab.favicon = dataUrl;
+    sendTabsState();
+  };
+  if (url.startsWith("data:image/")) return show(url.length < 200000 ? url : null);
+  if (!/^https?:\/\//i.test(url)) return;
+  if (faviconCache.has(url)) return show(faviconCache.get(url));
+  let dataUrl = null;
+  try {
+    const res = await session.fromPartition(PARTITION).fetch(url, { signal: AbortSignal.timeout(5000) });
+    const type = (res.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+    const bytes = res.ok && /^image\//.test(type) ? Buffer.from(await res.arrayBuffer()) : null;
+    if (bytes && bytes.length > 0 && bytes.length <= 100 * 1024) dataUrl = `data:${type};base64,${bytes.toString("base64")}`;
+  } catch {
+    // No icon: the tab shows a globe.
+  }
+  faviconCache.set(url, dataUrl);
+  if (faviconCache.size > 200) faviconCache.delete(faviconCache.keys().next().value);
+  show(dataUrl);
+}
+
+// A blank tab shows the App's own 新标签页 underneath instead of a white page.
+function hasPage(t) {
+  const url = t.view.webContents.getURL();
+  return !!url && url !== "about:blank";
 }
 
 function sendTabsState() {
@@ -242,10 +278,11 @@ function sendTabsState() {
 
 function attach(t) {
   if (!currentWindow || currentWindow.isDestroyed()) return;
-  if (attachedView && attachedView !== t.view) {
+  if (attachedView && (attachedView !== t.view || !hasPage(t))) {
     currentWindow.contentView.removeChildView(attachedView);
     attachedView = null;
   }
+  if (!hasPage(t)) return;
   if (lastBounds && attachedView !== t.view) {
     currentWindow.contentView.addChildView(t.view);
     attachedView = t.view;
@@ -279,7 +316,15 @@ function createTab(url, { activate = true } = {}) {
     pendingPlans.delete(tab.id);
     stopFillTask(tab.id, "页面已变化，已停止填写；请在当前页面重新填写");
   });
-  wc.on("did-navigate", () => { lastAiFilled.delete(tab.id); sendTabsState(); });
+  wc.on("did-navigate", () => {
+    lastAiFilled.delete(tab.id);
+    // A new document brings its own icon; keep none rather than the last site's.
+    tab.favicon = null;
+    tab.faviconUrl = null;
+    if (tab.id === activeId) attach(tab);
+    sendTabsState();
+  });
+  wc.on("page-favicon-updated", (_event, favicons) => { void loadFavicon(tab, Array.isArray(favicons) ? favicons[0] : null); });
   wc.on("did-navigate-in-page", () => {
     tab.revision++;
     pendingPlans.delete(tab.id);
@@ -307,7 +352,12 @@ function createTab(url, { activate = true } = {}) {
     if (map[key] === "reload") wc.reload();
     else if (map[key] === "back" && wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
     else if (map[key] === "forward" && wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward();
-    else send("browser:shortcut", { action: map[key], tabId: tab.id });
+    else {
+      // The address bar and find box live in the App window: give it the
+      // keyboard first, or the focus call there would land nowhere.
+      if ((map[key] === "focus-address" || map[key] === "find") && currentWindow && !currentWindow.isDestroyed()) currentWindow.webContents.focus();
+      send("browser:shortcut", { action: map[key], tabId: tab.id });
+    }
   });
   // target=_blank links (JD pages, 投递入口) become tabs. Actual popups
   // (window.open with a size — 微信/企业微信扫码登录 lives in these) stay
@@ -786,6 +836,17 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     const options = { title: "选择自动备份文件夹", properties: ["openDirectory", "createDirectory"] };
     const result = currentWindow && !currentWindow.isDestroyed() ? await dialog.showOpenDialog(currentWindow, options) : await dialog.showOpenDialog(options);
     return result.canceled ? null : result.filePaths[0] || null;
+  });
+
+  // A still of the page for the App to show while its own menus or dialogs
+  // are open: the page itself is a native layer drawn above the App and
+  // would cover them, so it steps aside and this picture stands in for it.
+  handle("browser:preview-frame", async () => {
+    const tab = activeTab();
+    if (!tab || !attachedView || attachedView !== tab.view || tab.view.webContents.isDestroyed()) return null;
+    const image = await tab.view.webContents.capturePage().catch(() => null);
+    if (!image || image.isEmpty()) return null;
+    return `data:image/jpeg;base64,${image.toJPEG(82).toString("base64")}`;
   });
 
   handle("browser:screenshot", async () => {

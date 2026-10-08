@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>极光科技 · 校招申请</title>
+<style>body{font:14px -apple-system,"PingFang SC",sans-serif;max-width:640px;margin:24px auto}.semi-form-field{margin:12px 0;display:flex;flex-direction:column;gap:4px}.semi-select{border:1px solid #ccc;border-radius:6px;padding:6px 10px;cursor:pointer;display:flex;justify-content:space-between}.semi-select-selection-placeholder{color:#aaa}.pop{position:absolute;background:#fff;border:1px solid #ccc;border-radius:6px;box-shadow:0 4px 12px #0002;z-index:10}.pop li{list-style:none;padding:6px 12px;cursor:pointer}.pop ul{margin:0;padding:4px 0}input{padding:6px;border:1px solid #ccc;border-radius:6px}</style></head>
+<body>
+<h2>个人信息</h2>
+<div class="semi-form-field"><label class="semi-form-field-label" for="nm">姓名</label><input id="nm"></div>
+<div class="semi-form-field"><label class="semi-form-field-label" id="l-deg">最高学历</label>
+  <div class="semi-select" id="s-deg" role="combobox" aria-haspopup="listbox" aria-labelledby="l-deg" tabindex="0" data-options="大专,本科,硕士,博士"><div class="semi-select-selection"><span class="semi-select-selection-placeholder">请选择</span></div><span aria-hidden="true">▾</span></div></div>
+<div class="semi-form-field"><label class="semi-form-field-label" id="l-pol">政治面貌</label>
+  <div class="semi-select" id="s-pol" role="combobox" aria-haspopup="listbox" aria-labelledby="l-pol" tabindex="0" data-options="中共党员,共青团员,群众"><div class="semi-select-selection"><span class="semi-select-selection-text">群众</span></div><span aria-hidden="true">▾</span></div></div>
+<div class="semi-form-field"><label class="semi-form-field-label" id="l-sch">毕业院校</label>
+  <div class="semi-select" id="s-sch" role="combobox" aria-haspopup="listbox" aria-labelledby="l-sch" tabindex="0" data-options="北京大学,复旦大学,复旦大学（医学院）,南京大学" data-search="1"><div class="semi-select-selection"><input class="semi-input" placeholder="搜索学校" style="border:0;padding:0;outline:none"></div></div></div>
+<div class="semi-form-field"><label class="semi-form-field-label" id="l-gen">性别</label>
+  <div class="semi-select" id="s-gen" role="combobox" aria-haspopup="listbox" aria-labelledby="l-gen" tabindex="0" data-options="男,女"><div class="semi-select-selection"><span class="semi-select-selection-placeholder">请选择性别</span></div></div></div>
+<script>
+let pop = null;
+function closePop() { if (pop) { pop.remove(); pop = null; } }
+document.querySelectorAll(".semi-select").forEach((sel) => {
+  const show = () => {
+    closePop();
+    const r = sel.getBoundingClientRect();
+    pop = document.createElement("div"); pop.className = "pop";
+    pop.style.left = r.left + "px"; pop.style.top = (r.bottom + window.scrollY + 2) + "px"; pop.style.width = r.width + "px";
+    const q = (sel.querySelector("input") || {}).value || "";
+    const opts = sel.dataset.options.split(",").filter((o) => !q || o.includes(q));
+    pop.innerHTML = `<ul role="listbox">${opts.map((o) => `<li role="option">${o}</li>`).join("")}</ul>`;
+    pop.addEventListener("click", (e) => { const li = e.target.closest("li"); if (!li) return; const box = sel.querySelector(".semi-select-selection"); box.innerHTML = `<span class="semi-select-selection-text">${li.textContent}</span>`; closePop(); });
+    document.body.appendChild(pop);
+  };
+  sel.addEventListener("click", (e) => { if (!pop || !pop.contains(e.target)) show(); });
+  sel.addEventListener("input", show);
+});
+document.addEventListener("mousedown", (e) => { if (pop && !pop.contains(e.target) && !e.target.closest(".semi-select")) closePop(); });
+</script>
+</body></html>

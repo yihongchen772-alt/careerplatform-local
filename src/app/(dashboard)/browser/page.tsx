@@ -58,14 +58,11 @@ export default async function BrowserPage({
   ]);
 
 
+  // The browser frame is the whole page, like a browser window: no page
+  // header above its tab strip.
   return (
-    <div className="flex min-h-[calc(100vh-8rem)] flex-col gap-3 md:min-h-[calc(100vh-5rem)]">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">网申浏览器</h1>
-        <p className="text-sm text-muted-foreground">
-          选择简历和填写范围，只补需要的空白。网页默认适应窗口，更多选项在「填写设置」中。
-        </p>
-      </div>
+    <div className="flex flex-col">
+      <h1 className="sr-only">网申浏览器</h1>
       <EmbeddedBrowser initialPositionId={positionId}
         initialUrl={url}
         knownSites={knownSites}

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Global Careers · 申请表（Web Components）</title>
+<style>body{font:14px system-ui,"PingFang SC",sans-serif;max-width:640px;margin:24px auto}</style>
+</head>
+<body>
+<h2>个人信息</h2>
+<cp-field label="姓名" id="s-name"></cp-field>
+<cp-field label="电子邮箱" id="s-email" type="email"></cp-field>
+<cp-field label="手机号码" id="s-phone" type="tel"></cp-field>
+<cp-choice label="最高学历" id="s-degree" options="本科,硕士,博士"></cp-choice>
+<cp-card>
+  <h3 slot="title">教育经历</h3>
+  <cp-field label="学校名称" id="s-school"></cp-field>
+  <cp-field label="专业" id="s-major"></cp-field>
+</cp-card>
+<script>
+class CpField extends HTMLElement {
+  connectedCallback() {
+    const root = this.attachShadow({ mode: "open" });
+    root.innerHTML = `<style>.form-item{display:flex;flex-direction:column;margin:10px 0}input{padding:6px}</style><div class="form-item"><label for="i">${this.getAttribute("label")}</label><input id="i" type="${this.getAttribute("type") || "text"}"></div>`;
+    root.querySelector("input").addEventListener("input", (e) => { this.value = e.target.value; });
+  }
+}
+class CpChoice extends HTMLElement {
+  connectedCallback() {
+    const root = this.attachShadow({ mode: "open" });
+    const opts = this.getAttribute("options").split(",").map((o) => `<option>${o}</option>`).join("");
+    root.innerHTML = `<div class="form-item"><label for="s">${this.getAttribute("label")}</label><select id="s"><option value="">请选择</option>${opts}</select></div>`;
+  }
+}
+class CpCard extends HTMLElement {
+  connectedCallback() {
+    const root = this.attachShadow({ mode: "open" });
+    root.innerHTML = `<section style="border:1px solid #ddd;padding:8px 12px;border-radius:8px"><slot name="title"></slot><slot></slot></section>`;
+  }
+}
+customElements.define("cp-field", CpField);
+customElements.define("cp-choice", CpChoice);
+customElements.define("cp-card", CpCard);
+</script>
+</body>
+</html>

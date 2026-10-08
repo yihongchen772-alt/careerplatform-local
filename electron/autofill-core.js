@@ -20,19 +20,74 @@ function scanPageFields(prefix, readOnly = false) {
     : /(^|\.)(dayee\.com|hotjob\.cn)$/.test(host) ? { name: "大易", wrapper: /form-group|resume-item|field|item-row/i, label: "[class*='title'], [class*='label'], label" } : null;
   let counter = 0;
   const seenRadioGroups = new Map();
+  const radioMembers = new Map();
   const customContainers = new Set();
+  // Web-component portals keep their inputs in open shadow roots; those are
+  // searched like the page itself, and `order` keeps every control in the
+  // order it appears on screen across them.
+  const roots = [document];
+  const order = new Map();
+  let seq = 0;
+  (function walk(root) {
+    for (const node of root.querySelectorAll("*")) {
+      order.set(node, seq++);
+      if (node.shadowRoot) { roots.push(node.shadowRoot); walk(node.shadowRoot); }
+    }
+  })(document);
+  const queryAll = (selector) => roots.flatMap((root) => Array.from(root.querySelectorAll(selector)));
+  const parentOf = (node) => node.parentElement || (node.parentNode && node.parentNode.host) || null;
+  const rootOf = (node) => (node.getRootNode ? node.getRootNode() : document);
+  const inside = (ancestor, node) => {
+    if (rootOf(ancestor) === rootOf(node) && typeof ancestor.contains === "function") return ancestor.contains(node);
+    for (let current = node; current; current = parentOf(current)) if (current === ancestor) return true;
+    return false;
+  };
+  // "姓　　名" (aligned with ideographic spaces on older portals) reads as 姓名.
+  const clean = (text) => String(text || "").replace(/[​-‍﻿]/g, "").replace(/\s+/g, " ").replace(/([㐀-鿿]) (?=[㐀-鿿])/g, "$1").trim();
+  const PICKER = ".ant-picker, .el-date-editor, .el-range-editor, .arco-picker, .ivu-date-picker, .t-date-picker";
+  const SITE_CHROME = "header, nav, footer, [role='banner'], [role='navigation'], [role='contentinfo'], [role='menubar'], [role='toolbar']";
+  const OPTION_HOLDER = "[role='radio'], [role='checkbox'], [role='option'], [role='listbox'], [role='radiogroup'], .el-radio-group, .ant-radio-group, .el-checkbox-group, .ant-checkbox-group, .el-select-dropdown, .ant-select-dropdown";
   // Wizard pages keep earlier steps in the DOM, hidden. Their ids from the
   // last scan would collide with this scan's and querySelector would hand
   // the value to the hidden old field — clear them first.
-  if (!readOnly) document.querySelectorAll("[data-cp-fill-id]").forEach((el) => el.removeAttribute("data-cp-fill-id"));
-  const elements = document.querySelectorAll(
-    'input[type="text"], input[type="tel"], input[type="email"], input[type="number"], input[type="date"], input[type="month"], input[type="url"], input[type="radio"], input:not([type]), textarea, select'
+  if (!readOnly) queryAll("[data-cp-fill-id]").forEach((el) => el.removeAttribute("data-cp-fill-id"));
+  const elements = queryAll(
+    'input[type="text"], input[type="tel"], input[type="email"], input[type="number"], input[type="date"], input[type="month"], input[type="url"], input[type="radio"], input:not([type]), .ant-select-auto-complete input[type="search"], textarea, select'
   );
 
   function isVisible(el) {
+    if (!el || !el.getBoundingClientRect) return false;
     const rect = el.getBoundingClientRect();
     const style = window.getComputedStyle(el);
     return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+  }
+
+  // Styled radio "pills" hide the native input and show its label instead.
+  function controlVisible(el) {
+    if (isVisible(el)) return true;
+    if (el.type !== "radio") return false;
+    const label = el.closest("label") || (el.id ? rootOf(el).querySelector('label[for="' + CSS.escape(el.id) + '"]') : null) || el.nextElementSibling;
+    return isVisible(label);
+  }
+
+  // A radio's own text: its wrapping label, a label[for], or the text right after it.
+  function optionLabel(radio) {
+    const wrap = radio.closest("label");
+    if (wrap && clean(wrap.textContent)) return clean(wrap.textContent);
+    const byFor = radio.id ? rootOf(radio).querySelector('label[for="' + CSS.escape(radio.id) + '"]') : null;
+    if (byFor && clean(byFor.textContent)) return clean(byFor.textContent);
+    for (let node = radio.nextSibling; node; node = node.nextSibling) {
+      if (node.nodeType === 1 && (node.matches("input, select, textarea") || node.querySelector("input, select, textarea"))) break;
+      const text = clean(node.textContent);
+      if (text) return text;
+    }
+    return clean(radio.value);
+  }
+
+  // Text that belongs to an option (a radio's "男", a dropdown item) is never
+  // the question's label.
+  function isOptionText(node) {
+    return !!node.closest(OPTION_HOLDER) || !!node.closest("label")?.querySelector("input, select, textarea");
   }
 
   // Component-library forms (Ant Design, Element, and most Chinese
@@ -42,7 +97,7 @@ function scanPageFields(prefix, readOnly = false) {
   // it. Walk up looking for that wrapper, then take the first text-bearing
   // node inside it that isn't the input itself.
   function labelFromFormItem(el) {
-    let container = el.parentElement;
+    let container = parentOf(el);
     let depth = 0;
     // 8, not fewer: an AntD date picker with a "至今" checkbox beside it sits
     // seven wrappers below its .ant-form-item-label.
@@ -51,21 +106,21 @@ function scanPageFields(prefix, readOnly = false) {
       if (/form-item|form-group|field|form-row|input-group|form-cell|form-control-wrap|el-form/.test(cls) || portal?.wrapper.test(cls)) {
         // A label wrapping its own checkbox ("至今") belongs to that checkbox.
         const explicit = Array.from(container.querySelectorAll(portal?.label || "label, .ant-form-item-label, .el-form-item__label, [class*='label']"))
-          .find((node) => !node.contains(el) && !node.querySelector("input, select, textarea"));
+          .find((node) => !node.contains(el) && !node.querySelector("input, select, textarea") && !isOptionText(node));
         if (explicit) {
-          const text = (explicit.textContent || "").trim();
+          const text = clean(explicit.textContent);
           if (text && text.length < 40) return text;
         }
         const candidates = container.querySelectorAll("label, span, div, p");
         for (const node of candidates) {
           if (node === el || node.contains(el) || el.contains(node)) continue;
           // Skip other controls' own text: a "至今" checkbox, a range "-".
-          if (node.querySelector("input, select, textarea") || node.closest("label")?.querySelector("input, select, textarea")) continue;
-          const text = (node.textContent || "").trim();
+          if (node.querySelector("input, select, textarea") || isOptionText(node)) continue;
+          const text = clean(node.textContent);
           if (text && text.length < 40 && /[\p{L}\p{N}]/u.test(text)) return text;
         }
       }
-      container = container.parentElement;
+      container = parentOf(container);
       depth++;
     }
     return "";
@@ -78,7 +133,7 @@ function scanPageFields(prefix, readOnly = false) {
     if (!cell) return "";
     let prev = cell.previousElementSibling;
     while (prev) {
-      const text = (prev.textContent || "").trim();
+      const text = clean(prev.textContent);
       if (text && text.length < 40) return text;
       prev = prev.previousElementSibling;
     }
@@ -88,31 +143,58 @@ function scanPageFields(prefix, readOnly = false) {
   function labelText(node) {
     const copy = node.cloneNode(true);
     copy.querySelectorAll("input, select, textarea, button, [role='combobox'], .ant-select, .el-select").forEach((control) => control.remove());
-    return (copy.textContent || "").trim();
+    return clean(copy.textContent);
+  }
+
+  // "<div class=row><div class=title>姓名</div><div class=content><input>":
+  // climb while the wrapper only holds this control (or a small 年/月 group)
+  // and take the short text right before it.
+  function labelFromSiblingRow(el) {
+    let node = el;
+    for (let depth = 0; node && depth < 4; depth++) {
+      for (let sibling = node.previousElementSibling, hops = 0; sibling && hops < 2; sibling = sibling.previousElementSibling, hops++) {
+        if (sibling.matches("input, select, textarea, button, script, style") || sibling.querySelector("input, select, textarea, button")) break;
+        const text = labelText(sibling);
+        // A block heading (<h3>教育经历</h3>) titles the section, not this box.
+        if (text && text.length <= 30 && /[\p{L}\p{N}]/u.test(text)) return /^(?:H[1-6]|LEGEND)$/.test(sibling.tagName) ? "" : text;
+        if (text) break;
+      }
+      const parent = parentOf(node);
+      if (!parent || parent === document.body) break;
+      if (parent.querySelectorAll("input:not([type='hidden']), select, textarea, [contenteditable='true'], [role='combobox'], [role='radiogroup']").length > 3) break;
+      node = parent;
+    }
+    return "";
   }
 
   function labelFor(el) {
     if (el.id) {
-      const byFor = document.querySelector('label[for="' + el.id + '"]');
+      const byFor = rootOf(el).querySelector('label[for="' + CSS.escape(el.id) + '"]');
       if (byFor && labelText(byFor)) return labelText(byFor);
     }
     const wrapping = el.closest("label");
     if (wrapping && labelText(wrapping)) return labelText(wrapping);
     const ariaLabel = el.getAttribute("aria-label");
-    if (ariaLabel) return ariaLabel;
+    if (ariaLabel) return clean(ariaLabel);
     const ariaLabelledby = el.getAttribute("aria-labelledby");
     if (ariaLabelledby) {
-      const text = ariaLabelledby.split(/\s+/).map((id) => document.getElementById(id)).filter(Boolean).map(labelText).filter(Boolean).join(" ");
+      const text = clean(ariaLabelledby.split(/\s+/).map((id) => rootOf(el).getElementById?.(id) || document.getElementById(id)).filter((node) => node && node !== el).map(labelText).filter(Boolean).join(" "));
       if (text) return text;
     }
     const fromFormItem = labelFromFormItem(el);
     if (fromFormItem) return fromFormItem;
     const fromTable = labelFromTable(el);
     if (fromTable) return fromTable;
+    const fromRow = labelFromSiblingRow(el);
+    // "基本信息" above a box whose placeholder says 姓名: the placeholder is the label.
+    const placeholder = clean(el.getAttribute("placeholder") || el.getAttribute("data-placeholder"));
+    if (fromRow && !(SECTION_HEADING.test(fromRow) && placeholder && !/^请(?:输入|选择|填写)?$/.test(placeholder))) return fromRow;
     let node = el.previousElementSibling;
     let hops = 0;
     while (node && hops < 3) {
-      const text = (node.textContent || "").trim();
+      // Another control's text (a 年 dropdown before a 月 one) is not this label.
+      if (node.matches("input, select, textarea, button") || node.querySelector("input, select, textarea")) break;
+      const text = clean(node.textContent);
       if (text) return text.slice(0, 60);
       node = node.previousElementSibling;
       hops++;
@@ -120,11 +202,27 @@ function scanPageFields(prefix, readOnly = false) {
     return "";
   }
 
+  // Text right after a control in its own cell or form item — where older
+  // portals print "格式：2026-07-01" or "如 2020.09" — for date formatting.
+  function hintFor(el) {
+    const bits = [];
+    for (let node = el.nextSibling; node && bits.join(" ").length < 60; node = node.nextSibling) {
+      if (node.nodeType === 1 && (node.matches("input, select, textarea, button") || node.querySelector("input, select, textarea"))) break;
+      const text = clean(node.textContent);
+      if (text) bits.push(text);
+    }
+    const extra = el.closest(".ant-form-item")?.querySelector(".ant-form-item-extra");
+    if (extra) bits.push(clean(extra.textContent));
+    return bits.join(" ").slice(0, 80);
+  }
+
   // Repeated blocks (教育经历 ×2, 实习经历 ×3…) reuse the same "学校"/"开始时间"
   // labels; the nearest block heading tells the matcher which list and, for
   // "本科阶段"/"硕士阶段" style headings, which row. Sibling blocks that contain
   // their own inputs are skipped so row two never inherits row one's heading.
-  const SECTION_HEADING = /基本信息|个人信息|联系方式|求职意向|开放题|问答|补充信息|自我评价|教育|学习经历|本科|硕士|研究生|博士|大专|专科|实习|工作经历|工作经验|实践经历|社会实践|项目|获奖|荣誉|奖项|第\s*[一二三四五六七八九十\d]+\s*段|personal information|contact information|questions|education|academic|internship|employment|work experience|project|award|honou?r/i;
+  // 家庭成员 / 紧急联系人 headings matter as much: those fields are about
+  // someone else and must never receive the applicant's own details.
+  const SECTION_HEADING = /基本信息|个人信息|联系方式|求职意向|开放题|问答|补充信息|其他信息|其它信息|附加信息|自我评价|教育|学习经历|本科|硕士|研究生|博士|大专|专科|实习|工作经历|工作经验|实践经历|社会实践|项目|获奖|荣誉|奖项|家庭成员|家庭情况|家庭信息|家庭关系|家庭主要成员|主要家庭成员|紧急联系人|联系人信息|推荐人|证明人|社会关系|亲属|第\s*[一二三四五六七八九十\d]+\s*段|personal information|contact information|questions|education|academic|internship|employment|work experience|project|award|honou?r|emergency contact|family members?|family information|referees?|references/i;
   function sectionFor(el) {
     let node = el;
     let depth = 0;
@@ -136,61 +234,96 @@ function scanPageFields(prefix, readOnly = false) {
       // sit above eight form items in the same block.
       while (sibling && textHops < 4 && scanned < 40) {
         if (!sibling.matches("input, select, textarea, button, label") && !sibling.querySelector("input, select, textarea")) {
-          const text = (sibling.textContent || "").replace(/\s+/g, " ").trim();
+          const text = clean(sibling.textContent);
           if (text && text.length <= 30 && SECTION_HEADING.test(text)) return text;
           if (text) textHops++;
         }
         sibling = sibling.previousElementSibling;
         scanned++;
       }
-      node = node.parentElement;
+      node = parentOf(node);
       depth++;
     }
     return "";
   }
 
+  function commonAncestor(list) {
+    let node = parentOf(list[0]);
+    while (node && !list.every((item) => inside(node, item))) node = parentOf(node);
+    return node || list[0];
+  }
+
   // 性别/政治面貌/是否服从调剂 are radio groups far more often than <select>s
-  // on Chinese 网申 forms. One entry per group (by name), options = each
-  // radio's own label, filled later by clicking the matching one.
+  // on Chinese 网申 forms. One entry per group, options = each radio's own
+  // label, filled later by clicking the matching one. Component libraries
+  // (Ant Design's Radio.Group) often leave the inputs without a name: those
+  // are grouped by their radio-group wrapper instead.
   function radioGroup(el) {
     const name = el.getAttribute("name");
-    const scope = el.form || document;
-    if (!name) return null;
+    const box = el.closest("[role='radiogroup'], .ant-radio-group, .el-radio-group, .ivu-radio-group, .arco-radio-group, .t-radio-group, [class*='radio-group'], [class*='radioGroup'], [class*='RadioGroup']");
+    const scope = name ? (el.form || rootOf(el)) : box;
+    if (!scope) return null;
     if (!seenRadioGroups.has(scope)) seenRadioGroups.set(scope, new Set());
-    if (seenRadioGroups.get(scope).has(name)) return null;
-    seenRadioGroups.get(scope).add(name);
-    const radios = Array.from(scope.querySelectorAll('input[type="radio"]')).filter((r) => r.getAttribute("name") === name);
-    const options = radios.map((r) => {
-      const wrapping = r.closest("label");
-      const text = wrapping ? wrapping.textContent : r.nextSibling && r.nextSibling.textContent;
-      return (text || r.value || "").trim();
-    });
+    if (seenRadioGroups.get(scope).has(name || "")) return null;
+    seenRadioGroups.get(scope).add(name || "");
+    const radios = Array.from(scope.querySelectorAll('input[type="radio"]')).filter((r) => (name ? r.getAttribute("name") === name : !r.getAttribute("name")) && controlVisible(r));
+    if (!radios.length) return null;
+    const options = radios.map(optionLabel);
     if (options.filter(Boolean).length < 2) return null;
+    let label = "";
+    const group = box || radios[0].closest("[role='radiogroup']");
+    const labelledBy = group?.getAttribute("aria-labelledby");
+    if (labelledBy) label = clean(labelledBy.split(/\s+/).map((id) => rootOf(group).getElementById?.(id) || document.getElementById(id)).filter((node) => node && !inside(group, node)).map(labelText).join(" "));
+    if (!label && group?.getAttribute("aria-label")) label = clean(group.getAttribute("aria-label"));
     // The group's own label: the shared form item, or the text before the first radio.
-    let label = labelFromFormItem(radios[0]) || labelFromTable(radios[0]);
+    if (!label) label = labelFromFormItem(radios[0]) || labelFromTable(radios[0]);
     if (!label) {
-      const container = radios[0].closest("div, fieldset, td, li");
-      const legend = container && container.querySelector("legend");
-      if (legend) label = legend.textContent.trim();
+      const legend = radios[0].closest("fieldset")?.querySelector("legend") || radios[0].closest("div, td, li")?.querySelector("legend");
+      if (legend) label = clean(legend.textContent);
     }
+    if (!label) label = labelFromSiblingRow(commonAncestor(radios));
     return { radios, options, label, hasValue: radios.some((r) => r.checked) };
   }
 
+  // What a component-library dropdown currently shows. Element Plus 2.x puts
+  // the chosen label in its (no longer transparent) placeholder; Element UI
+  // and cascaders in a read-only input; a plain listbox button in its text.
+  const PLACEHOLDER_TEXT = /^(?:请选择|请选取|请输入|select|choose|please (?:select|choose)|--|—)/i;
+  function ownText(node) {
+    if (typeof node.cloneNode !== "function") return "";
+    const copy = node.cloneNode(true);
+    copy.querySelectorAll("[role='listbox'], [role='option'], [hidden], [aria-hidden='true'], ul, ol, svg, i, style, [class*='placeholder']:not(.el-select__placeholder), .el-select__placeholder.is-transparent").forEach((child) => child.remove());
+    return clean(copy.textContent);
+  }
+  function selectedText(container) {
+    const shown = container.querySelector(".ant-select-selection-item, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text, .el-cascader__tags");
+    if (shown && clean(shown.textContent)) return clean(shown.textContent);
+    // Element UI and cascaders show the choice in a read-only input; Arco,
+    // Semi or Fusion keep the input for searching and show it as text.
+    const input = container.matches("input") ? container : container.querySelector("input:not([type='hidden'])");
+    if (input && clean(input.value)) return clean(input.value);
+    if (container.matches("input")) return "";
+    const text = ownText(container);
+    return !/[\p{L}\p{N}]/u.test(text) || PLACEHOLDER_TEXT.test(text) || text === clean(container.getAttribute("placeholder")) || text === clean(input?.getAttribute("placeholder")) ? "" : text;
+  }
+
   // Component-library dropdowns: a div that only becomes a list when
-  // clicked (Ant Design .ant-select, Element .el-select, and anything using
-  // the ARIA combobox pattern). No options are read here — the fill step
-  // opens each one and picks the closest match to the value it's given.
-  const customSelectors = ".ant-select, .el-select, [role='combobox']:not(input):not(select), input[role='combobox'][readonly], input[aria-haspopup='listbox']";
-  document.querySelectorAll(customSelectors).forEach((el) => {
-    const container = el.closest(".ant-select, .el-select") || el;
-    if (customContainers.has(container)) return;
+  // clicked (Ant Design .ant-select, Element .el-select, cascaders, and
+  // anything using the ARIA combobox/listbox pattern). No options are read
+  // here — the fill step opens each one and picks the closest match.
+  const customSelectors = ".ant-select, .el-select, .el-cascader, [role='combobox']:not(input):not(select), input[role='combobox'][readonly], input[aria-haspopup='listbox'], button[aria-haspopup='listbox'], [role='button'][aria-haspopup='listbox']";
+  queryAll(customSelectors).forEach((el) => {
+    // Element Plus date inputs are read-only comboboxes too; they're typed into.
+    // A language switcher or site search in the page header is not the form.
+    if (el.closest(PICKER) || el.closest(SITE_CHROME)) return;
+    const container = el.closest(".ant-select, .el-select, .el-cascader") || el;
+    // An AutoComplete accepts free text: its input is filled like any other.
+    if (customContainers.has(container) || container.classList.contains("ant-select-auto-complete")) return;
     if (!isVisible(container)) return;
-    if (container.classList.contains("ant-select-disabled") || container.classList.contains("is-disabled") || container.getAttribute("aria-disabled") === "true") return;
-    const multiple = container.classList.contains("ant-select-multiple") || container.getAttribute("aria-multiselectable") === "true";
+    if (container.classList.contains("ant-select-disabled") || container.classList.contains("is-disabled") || container.getAttribute("aria-disabled") === "true" || container.disabled) return;
+    const multiple = container.classList.contains("ant-select-multiple") || container.getAttribute("aria-multiselectable") === "true" || !!container.querySelector(".el-select__tags, .el-cascader__tags");
     if (multiple) return; // never guess multi-selects
-    const shown = container.querySelector(".ant-select-selection-item, .el-select__selected-item:not(.el-select__placeholder), .el-select__tags");
-    const innerInput = container.matches("input") ? container : container.querySelector("input");
-    const hasValue = !!(shown && shown.textContent.trim()) || !!(innerInput && innerInput.readOnly && innerInput.value && innerInput.value.trim());
+    const innerInput = container.matches("input") ? container : container.querySelector("input:not([type='hidden'])");
     const id = prefix + "s" + counter++;
     nodes.set(id, container);
     customContainers.add(container);
@@ -200,56 +333,101 @@ function scanPageFields(prefix, readOnly = false) {
       tag: "custom-select",
       type: "",
       label: labelFor(innerInput || container) || labelFor(container),
-      placeholder: (innerInput && innerInput.getAttribute("placeholder")) || (container.querySelector(".ant-select-selection-placeholder, .el-select__placeholder") || {}).textContent || "",
+      placeholder: clean((innerInput && innerInput.getAttribute("placeholder")) || (container.querySelector(".ant-select-selection-placeholder, .el-select__placeholder") || {}).textContent || ""),
       name: (innerInput && innerInput.getAttribute("name")) || container.id || "",
       section: sectionFor(container),
-      hasValue,
+      hasValue: !!selectedText(container),
+      cascader: container.classList.contains("ant-cascader") || container.classList.contains("el-cascader"),
     });
   });
 
+  // ARIA radio groups drawn without native inputs (role=radio divs).
+  queryAll("[role='radiogroup']").forEach((group) => {
+    if (group.querySelector('input[type="radio"]') || !isVisible(group)) return;
+    const choices = Array.from(group.querySelectorAll("[role='radio']")).filter(isVisible);
+    if (choices.length < 2) return;
+    const id = prefix + "g" + counter++;
+    nodes.set(id, group);
+    if (!readOnly) group.setAttribute("data-cp-fill-id", id);
+    results.push({ id, tag: "radio", type: "radio", label: labelFor(group) || labelFromSiblingRow(group), placeholder: "", name: group.getAttribute("name") || group.id || "", section: sectionFor(group), options: choices.map((choice) => clean(choice.textContent)), hasValue: choices.some((choice) => choice.getAttribute("aria-checked") === "true") });
+  });
+
+  // Rich-text boxes (Quill, wangEditor, CKEditor…) for 自我评价 and essays.
+  queryAll("[contenteditable='true'], [contenteditable='']").forEach((el) => {
+    if (!el.isContentEditable || parentOf(el)?.closest?.("[contenteditable='true'], [contenteditable='']") || !isVisible(el) || el.getBoundingClientRect().height < 20) return;
+    const id = prefix + "f" + counter++;
+    nodes.set(id, el);
+    if (!readOnly) el.setAttribute("data-cp-fill-id", id);
+    results.push({ id, tag: "richtext", type: "", label: labelFor(el), placeholder: clean(el.getAttribute("data-placeholder") || el.getAttribute("placeholder") || el.getAttribute("aria-placeholder") || ""), name: el.getAttribute("name") || "", section: sectionFor(el), hasValue: !!clean(el.innerText) });
+  });
+
   elements.forEach((el) => {
-    if (el.type === "password" || ((el.disabled || el.readOnly) && !String(el.value || "").trim()) || !isVisible(el)) return;
+    if (el.type === "password" || !controlVisible(el) || el.closest(SITE_CHROME)) return;
+    const hasValue = !!(el.value && String(el.value).trim());
+    if (el.disabled && !hasValue) return;
     // Inner inputs of custom selects were handled above.
-    if ([...customContainers].some((container) => container === el || container.contains(el))) return;
+    if ([...customContainers].some((container) => container === el || inside(container, el))) return;
     if (el.type === "radio") {
       const group = radioGroup(el);
       if (!group) return;
       const id = prefix + "r" + counter++;
       nodes.set(id, group.radios[0]);
+      radioMembers.set(id, group.radios);
       if (!readOnly) group.radios.forEach((r, i) => r.setAttribute("data-cp-fill-id", id + ":" + i));
       results.push({ id, tag: "radio", type: "radio", label: group.label, placeholder: "", name: el.getAttribute("name") || "", section: sectionFor(group.radios[0]), options: group.options, hasValue: group.hasValue });
       return;
     }
-    const id = prefix + "f" + counter++;
-    nodes.set(id, el);
-    if (!readOnly) el.setAttribute("data-cp-fill-id", id);
+    const pickerBox = el.tagName === "INPUT" ? el.closest(PICKER) : null;
     const entry = {
-      id,
+      id: "",
       tag: el.tagName.toLowerCase(),
       type: el.type || "",
       label: labelFor(el),
-      placeholder: el.getAttribute("placeholder") || "",
+      placeholder: clean(el.getAttribute("placeholder")),
       name: el.getAttribute("name") || "",
       section: sectionFor(el),
       // Already has something in it — the user (or the site) filled it; the
       // autofill leaves those alone rather than overwriting.
-      hasValue: !!(el.value && String(el.value).trim()),
+      hasValue,
     };
+    if (el.readOnly && !hasValue && !pickerBox) {
+      // A read-only box that opens the site's own calendar can't be typed
+      // into; it is still listed so the result says "pick it on the page".
+      if (!/日期|时间|年月|生日|date|birth|calendar/i.test(`${entry.label} ${entry.placeholder} ${entry.name}`)) return;
+      entry.readonlyPicker = true;
+    }
+    if (pickerBox) {
+      const kind = /(?:el-date-editor|ant-picker)--?(\w+)/.exec(pickerBox.className || "");
+      if (kind) entry.pickerType = kind[1];
+    }
+    entry.hint = hintFor(el);
+    const id = prefix + "f" + counter++;
+    entry.id = id;
+    nodes.set(id, el);
+    if (!readOnly) el.setAttribute("data-cp-fill-id", id);
     if (entry.tag === "select") {
       const selected = el.options[el.selectedIndex];
-      const placeholder = !selected?.value || /^(?:请(?:选择|选取)|please\s*(?:select|choose)|select\s*(?:one|an?\b)|choose\s*(?:one|an?\b)|[-—]+\s*(?:请选择|select))/i.test((selected?.textContent || "").trim());
+      const placeholder = !selected?.value || /^(?:请(?:选择|选取)|please\s*(?:select|choose)|select\s*(?:one|an?\b)|choose\s*(?:one|an?\b)|[-—]+\s*(?:请选择|select))/i.test(clean(selected?.textContent));
       entry.hasValue = !placeholder;
       entry.options = Array.from(el.options)
-        .filter((o) => !o.disabled && !!o.value && !/^(?:请选择|please\s*(?:select|choose))/i.test((o.textContent || "").trim()))
-        .map((o) => (o.textContent || "").trim())
+        .filter((o) => !o.disabled && !!o.value && !/^(?:[-—]+\s*)?(?:请选择|please\s*(?:select|choose))/i.test(clean(o.textContent)))
+        .map((o) => clean(o.textContent))
         .filter(Boolean);
+      // 出生年月 / 毕业时间 split into 年 / 月 / 日 dropdowns.
+      const numbers = entry.options.map((option) => /^(\d{1,4})\s*[年月日号]?$/.exec(option));
+      if (entry.options.length >= 2 && numbers.every(Boolean)) {
+        const values = numbers.map((match) => Number(match[1]));
+        if (values.every((v) => v >= 1900 && v <= 2100)) entry.datePart = "year";
+        else if (values.every((v) => v >= 1 && v <= 12) && values.length <= 13) entry.datePart = "month";
+        else if (values.every((v) => v >= 1 && v <= 31) && values.length >= 28) entry.datePart = "day";
+      }
     }
     results.push(entry);
   });
 
   // Dropdowns and text inputs must share DOM order. Per-kind counters were
   // previously mixing rows whenever a dropdown preceded ordinary inputs.
-  results.sort((a, b) => a === b || !nodes.get(a.id).compareDocumentPosition ? 0 : nodes.get(a.id).compareDocumentPosition(nodes.get(b.id)) & 4 ? -1 : 1);
+  results.sort((a, b) => (order.get(nodes.get(a.id)) ?? 0) - (order.get(nodes.get(b.id)) ?? 0));
   const groupFor = (field) => {
     const section = field.section || "";
     const text = section || field.label || "";
@@ -266,8 +444,8 @@ function scanPageFields(prefix, readOnly = false) {
     const group = groupFor(field), el = nodes.get(field.id);
     if (!group || !el) continue;
     let candidate = null;
-    for (let node = el.parentElement, depth = 0; node && node !== document.body && depth < 12; node = node.parentElement, depth++) {
-      const children = results.filter((item) => node.contains(nodes.get(item.id)));
+    for (let node = parentOf(el), depth = 0; node && node !== document.body && depth < 12; node = parentOf(node), depth++) {
+      const children = results.filter((item) => inside(node, nodes.get(item.id)));
       if (children.some((item) => groupFor(item) !== group)) break;
       const members = children;
       const anchors = members.filter((item) => isAnchor(item, group));
@@ -284,12 +462,18 @@ function scanPageFields(prefix, readOnly = false) {
   for (const field of results) {
     const el = nodes.get(field.id);
     if (el) {
-      field.required = !!el.required || el.getAttribute("aria-required") === "true" || !!el.closest(".ant-form-item-required, .is-required");
+      const members = radioMembers.get(field.id);
+      field.required = !!el.required || el.getAttribute("aria-required") === "true" || !!el.closest(".ant-form-item-required, .is-required") || !!el.closest(".ant-form-item")?.querySelector(".ant-form-item-required");
       field.maxLength = el.maxLength > 0 ? el.maxLength : null;
       field.pattern = el.getAttribute("pattern") || "";
       field.min = el.getAttribute("min"); field.max = el.getAttribute("max");
-      field.currentValue = field.hasValue ? (field.tag === "select" ? el.options[el.selectedIndex]?.textContent || "" : field.tag === "custom-select" ? el.querySelector(".ant-select-selection-item, .el-select__selected-item:not(.el-select__placeholder)")?.textContent || el.value || "" : field.tag === "radio" ? Array.from((el.form || document).querySelectorAll('input[type="radio"]')).find((item) => item.name === el.name && item.checked)?.closest("label")?.textContent || "" : el.value || "").trim().slice(0, 20000) : "";
-      field.userEdited = el.getAttribute("data-cp-user-edited") === "1" || !!el.querySelector('[data-cp-user-edited="1"]') || (field.tag === "radio" && Array.from((el.form || document).querySelectorAll('input[type="radio"]')).some((item) => item.name === el.name && item.getAttribute("data-cp-user-edited") === "1"));
+      const checkedAria = field.tag === "radio" && !members ? Array.from(el.querySelectorAll("[role='radio']")).find((choice) => choice.getAttribute("aria-checked") === "true") : null;
+      field.currentValue = field.hasValue ? (field.tag === "select" ? clean(el.options[el.selectedIndex]?.textContent)
+        : field.tag === "custom-select" ? selectedText(el)
+        : field.tag === "richtext" ? clean(el.innerText)
+        : field.tag === "radio" ? (members ? optionLabel(members.find((item) => item.checked) || members[0]) : clean(checkedAria?.textContent))
+        : String(el.value || "").trim()).slice(0, 20000) : "";
+      field.userEdited = members ? members.some((item) => item.getAttribute("data-cp-user-edited") === "1") : el.getAttribute("data-cp-user-edited") === "1" || !!el.querySelector('[data-cp-user-edited="1"]');
       field.portal = portal?.name || "通用表单";
       const key = [field.section, field.label || field.placeholder || field.name, field.tag, field.name].join("|");
       const count = occurrences.get(key) || 0; occurrences.set(key, count + 1);
@@ -444,6 +628,26 @@ async function fillFields(pairs) {
   // standard bypass (same trick browser automation tools use).
   const nativeInputSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
   const nativeTextareaSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  // Fields inside open shadow roots carry the same data-cp-fill-id markers.
+  const roots = [document];
+  for (let i = 0; i < roots.length; i++) Array.from(roots[i].querySelectorAll ? roots[i].querySelectorAll("*") : []).forEach((node) => { if (node.shadowRoot) roots.push(node.shadowRoot); });
+  const find = (selector) => { for (const root of roots) { const hit = root.querySelector(selector); if (hit) return hit; } return null; };
+  const findAll = (selector) => roots.flatMap((root) => Array.from(root.querySelectorAll ? root.querySelectorAll(selector) : []));
+  const clean = (text) => String(text || "").replace(/[​-‍﻿]/g, "").replace(/\s+/g, " ").replace(/([㐀-鿿]) (?=[㐀-鿿])/g, "$1").trim();
+  // Same reading as scanPageFields, so a matched option text compares equal.
+  function optionLabel(radio) {
+    const wrap = radio.closest("label");
+    if (wrap && clean(wrap.textContent)) return clean(wrap.textContent);
+    const byFor = radio.id ? radio.getRootNode().querySelector('label[for="' + CSS.escape(radio.id) + '"]') : null;
+    if (byFor && clean(byFor.textContent)) return clean(byFor.textContent);
+    for (let node = radio.nextSibling; node; node = node.nextSibling) {
+      if (node.nodeType === 1 && (node.matches("input, select, textarea") || node.querySelector("input, select, textarea"))) break;
+      const text = clean(node.textContent);
+      if (text) return text;
+    }
+    return clean(radio.value);
+  }
 
   // Date inputs only accept ISO; profiles and resumes write dates every
   // which way (2003/5/1, 2003.05.01, 2003年5月1日). Normalise, and cut to
@@ -467,25 +671,33 @@ async function fillFields(pairs) {
     el.style.setProperty("outline", (source === "ai" ? "2px solid #d946ef" : source === "remembered" ? "2px solid #16a34a" : "2px solid #8b5cf6"), "important");
     el.style.setProperty("outline-offset", "1px", "important");
   }
+  function confirmManual(el, p) {
+    if (!p.manualConfirmed) return;
+    el.setAttribute("data-cp-user-edited", "1");
+    el.setAttribute("data-cp-user-edited-at", String(Date.now()));
+    el.setAttribute("data-cp-memory-pending", "1");
+  }
 
   // Component-library date pickers keep the typed text only once they
   // commit it: Enter plus a real blur (React listens for focusout, which a
-  // synthetic "blur" event never produces).
+  // synthetic "blur" event never produces). Their inputs may be read-only
+  // (no free typing), yet still parse a value set through these events.
   const PICKER = ".ant-picker, .el-date-editor, .el-range-editor, .arco-picker, .ivu-date-picker, .t-date-picker, [class*='date-picker'], [class*='datepicker']";
+  const LIBRARY_PICKER = ".ant-picker, .el-date-editor, .el-range-editor, .arco-picker, .ivu-date-picker, .t-date-picker";
   const UNTIL_NOW_TEXT = /至今|目前|在读|在职|present|current|till now|to date/i;
   const pickerDone = new Set();
 
   // "至今" on an end date is almost always a checkbox/switch beside it, not
   // text the picker would accept. Nearest wrapper first, so a second block's
   // end date never ticks the first block's box.
-  function tickUntilNow(el, source) {
+  async function tickUntilNow(el, source) {
     let scope = el.parentElement;
     for (let depth = 0; scope && depth < 5; depth++, scope = scope.parentElement) {
       const toggles = Array.from(scope.querySelectorAll('input[type="checkbox"], [role="checkbox"], [role="switch"]'));
       const toggle = toggles.find((node) => UNTIL_NOW_TEXT.test(((node.closest("label") || node.parentElement || node).textContent || "") + " " + (node.getAttribute("aria-label") || "")));
       if (!toggle) continue;
       const isOn = () => toggle.checked === true || toggle.getAttribute("aria-checked") === "true";
-      if (!isOn()) (toggle.closest("label") || toggle).click();
+      if (!isOn()) { (toggle.closest("label") || toggle).click(); await sleep(50); }
       if (!isOn()) return false;
       mark(toggle.closest("label") || toggle, source);
       return true;
@@ -498,41 +710,94 @@ async function fillFields(pairs) {
     if (/-r\d+$/.test(p.id)) {
       // radio group (ids are "<frame>-r<n>", fields are "<frame>-f<n>"):
       // click the option whose label matches
-      const radios = Array.from(document.querySelectorAll('[data-cp-fill-id^="' + p.id + ':"]'));
+      const radios = findAll('[data-cp-fill-id^="' + p.id + ':"]');
       if (radios.some((r) => r.checked || r.getAttribute("data-cp-user-edited") === "1")) {
         skipped.push(p.id);
         continue;
       }
-      const target = radios.find((r) => {
-        const wrapping = r.closest("label");
-        const text = ((wrapping ? wrapping.textContent : r.nextSibling && r.nextSibling.textContent) || r.value || "").trim();
-        return text === p.value;
-      });
+      const target = radios.find((r) => optionLabel(r) === p.value);
       if (!target || target.disabled) { failed.push(p.label || p.id); continue; }
+      // Styled pills hide the input; clicking its label is what a person does.
+      const label = target.closest("label");
+      // Vue-based radios (Element Plus) reset `checked` and set it again on
+      // their next render, so the result is read a tick later.
       target.click();
+      await sleep(50);
+      if (!target.checked && label) { label.click(); await sleep(50); }
       if (!target.checked) { failed.push(p.label || p.id); continue; }
-      mark(target.closest("label") || target, p.source || "profile", p.answerId);
+      mark(label || target, p.source || "profile", p.answerId);
       if (p.answerId) target.setAttribute("data-cp-answer-id", p.answerId);
       if ((p.source || "profile") === "profile") target.setAttribute("data-cp-profile-filled", "1");
-      if (p.manualConfirmed) { target.setAttribute("data-cp-user-edited", "1"); target.setAttribute("data-cp-user-edited-at", String(Date.now())); target.setAttribute("data-cp-memory-pending", "1"); }
+      confirmManual(target, p);
       filled.push(p.id);
       continue;
     }
-    const el = document.querySelector('[data-cp-fill-id="' + p.id + '"]');
-    if (!el || (p.tag && el.tagName.toLowerCase() !== p.tag) || el.disabled || el.readOnly) {
+    if (/-g\d+$/.test(p.id)) {
+      // ARIA radio group: role=radio options, chosen state in aria-checked.
+      const group = find('[data-cp-fill-id="' + p.id + '"]');
+      if (!group) { failed.push(p.label || p.id); continue; }
+      const choices = Array.from(group.querySelectorAll("[role='radio']"));
+      const isOn = (choice) => choice.getAttribute("aria-checked") === "true";
+      if (choices.some(isOn) || group.getAttribute("data-cp-user-edited") === "1") { skipped.push(p.id); continue; }
+      const target = choices.find((choice) => clean(choice.textContent) === p.value);
+      if (!target || target.getAttribute("aria-disabled") === "true") { failed.push(p.label || p.id); continue; }
+      target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      target.click();
+      await sleep(60);
+      if (!isOn(target)) { failed.push(p.label || p.id); continue; }
+      mark(group, p.source || "profile", p.answerId);
+      confirmManual(group, p);
+      filled.push(p.id);
+      continue;
+    }
+    const el = find('[data-cp-fill-id="' + p.id + '"]');
+    const rich = !!el && el.isContentEditable && !/^(?:INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
+    if (!el || (p.tag && (rich ? p.tag !== "richtext" : el.tagName.toLowerCase() !== p.tag)) || el.disabled || (el.readOnly && !(el.tagName === "INPUT" && el.closest(LIBRARY_PICKER)))) {
       failed.push(p.label || p.id);
       continue;
     }
     const selected = el.tagName.toLowerCase() === "select" ? el.options[el.selectedIndex] : null;
-    const placeholder = selected && (!selected.value || /^(?:请(?:选择|选取)|please\s*(?:select|choose)|select\s*(?:one|an?\b)|choose\s*(?:one|an?\b)|[-—]+\s*(?:请选择|select))/i.test((selected.textContent || "").trim()));
-    if ((!placeholder && el.value && String(el.value).trim()) || el.getAttribute("data-cp-user-edited") === "1") {
+    const placeholder = selected && (!selected.value || /^(?:请(?:选择|选取)|please\s*(?:select|choose)|select\s*(?:one|an?\b)|choose\s*(?:one|an?\b)|[-—]+\s*(?:请选择|select))/i.test(clean(selected.textContent)));
+    const current = rich ? clean(el.innerText) : el.value && String(el.value).trim();
+    if ((!placeholder && current) || el.getAttribute("data-cp-user-edited") === "1") {
       skipped.push(p.id);
+      continue;
+    }
+    if (rich) {
+      // execCommand goes through the editor's own input handling (Quill,
+      // wangEditor, CKEditor); plain text is the fallback for simple boxes.
+      const flat = (text) => String(text || "").replace(/\s+/g, "");
+      el.setAttribute("data-cp-filling", "1");
+      try {
+        el.focus();
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        let inserted = false;
+        try { inserted = document.execCommand("insertText", false, p.value); } catch { inserted = false; }
+        if (!inserted || !flat(el.innerText).includes(flat(p.value).slice(0, 40))) {
+          el.textContent = p.value;
+          el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: p.value }));
+        }
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+        el.blur();
+        el.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+        await sleep(60);
+      } finally {
+        el.removeAttribute("data-cp-filling");
+      }
+      if (!flat(el.innerText).includes(flat(p.value).slice(0, 40))) { failed.push(p.label || p.id); continue; }
+      mark(el, p.source || "profile", p.answerId);
+      confirmManual(el, p);
+      filled.push(p.id);
       continue;
     }
     const tag = el.tagName.toLowerCase();
     const picker = tag === "input" ? el.closest(PICKER) : null;
     if (p.value === "至今" && (picker || el.type === "date" || el.type === "month")) {
-      if (tickUntilNow(el, p.source || "profile")) filled.push(p.id);
+      if (await tickUntilNow(el, p.source || "profile")) filled.push(p.id);
       else failed.push(p.label || p.id);
       continue;
     }
@@ -547,7 +812,7 @@ async function fillFields(pairs) {
           skipped.push(pair.id);
           return null;
         }
-        return pair && !input.disabled && !input.readOnly ? { input, pair } : null;
+        return pair && !input.disabled && (!input.readOnly || input.closest(LIBRARY_PICKER)) ? { input, pair } : null;
       }).filter(Boolean);
       for (const { input, pair } of group) {
         pickerDone.add(pair.id);
@@ -560,45 +825,48 @@ async function fillFields(pairs) {
         input.dispatchEvent(new Event("change", { bubbles: true }));
         input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, bubbles: true }));
         input.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", code: "Enter", keyCode: 13, bubbles: true }));
-        await new Promise((resolve) => setTimeout(resolve, 80));
+        await sleep(80);
       }
+      if (!group.length) continue;
       const last = group[group.length - 1].input;
       last.blur();
       last.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
       document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      await sleep(150);
       for (const { input, pair } of group) {
         if (input.value !== pair.value) { failed.push(pair.label || pair.id); continue; }
         mark(picker, pair.source || "profile", pair.answerId);
         // Memory reads the input itself, not the outlined wrapper.
         if ((pair.source || "profile") === "profile") input.setAttribute("data-cp-profile-filled", "1");
         if (pair.answerId) input.setAttribute("data-cp-answer-id", pair.answerId);
-        if (pair.manualConfirmed) { input.setAttribute("data-cp-user-edited", "1"); input.setAttribute("data-cp-user-edited-at", String(Date.now())); input.setAttribute("data-cp-memory-pending", "1"); }
+        confirmManual(input, pair);
         filled.push(pair.id);
       }
       continue;
     }
+    // A number box takes "3.8" from "3.8/4.0"; a date box only ISO.
+    const write = el.type === "number" ? (String(p.value).match(/-?\d+(?:\.\d+)?/) || [""])[0]
+      : el.type === "date" || el.type === "month" ? normalizeDate(p.value, el.type) : p.value;
+    if (!write) { failed.push(p.label || p.id); continue; }
     if (tag === "select") {
-      const match = Array.from(el.options).find((o) => !o.disabled && o.textContent.trim() === p.value);
+      const match = Array.from(el.options).find((o) => !o.disabled && clean(o.textContent) === p.value);
       if (!match) { failed.push(p.label || p.id); continue; }
       el.value = match.value;
     } else if (tag === "textarea") {
-      nativeTextareaSetter.call(el, p.value);
-    } else if (el.type === "date" || el.type === "month") {
-      nativeInputSetter.call(el, normalizeDate(p.value, el.type));
+      nativeTextareaSetter.call(el, write);
     } else {
-      nativeInputSetter.call(el, p.value);
+      nativeInputSetter.call(el, write);
     }
     el.dispatchEvent(new Event("input", { bubbles: true }));
     el.dispatchEvent(new Event("change", { bubbles: true }));
     el.dispatchEvent(new Event("blur", { bubbles: true }));
     // Controlled components can revert after input/change handlers run.
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    const actual = tag === "select" ? (el.options[el.selectedIndex]?.textContent || "").trim() : el.value;
-    const expected = el.type === "date" || el.type === "month" ? normalizeDate(p.value, el.type) : p.value;
+    await sleep(50);
+    const actual = tag === "select" ? clean(el.options[el.selectedIndex]?.textContent) : el.value;
+    const expected = tag === "select" ? p.value : write;
     if (actual !== expected) { failed.push(p.label || p.id); continue; }
     mark(el, p.source || "profile", p.answerId);
-    if (p.manualConfirmed) { el.setAttribute("data-cp-user-edited", "1"); el.setAttribute("data-cp-user-edited-at", String(Date.now())); el.setAttribute("data-cp-memory-pending", "1"); }
+    confirmManual(el, p);
     filled.push(p.id);
   }
   return { filled, failed, skipped };
@@ -615,29 +883,58 @@ async function fillCustomSelects(pairs, taskId) {
   const filled = [];
   const failed = [];
   const skipped = [];
-  function hasExistingValue(container) {
-    const shown = container.querySelector(".ant-select-selection-item, .el-select__selected-item:not(.el-select__placeholder), .el-select__tags");
-    const input = container.matches("input") ? container : container.querySelector("input[readonly]");
-    return !!((shown?.textContent || "").trim() || (input?.value || "").trim()) ||
-      container.getAttribute("data-cp-user-edited") === "1" || !!container.querySelector('[data-cp-user-edited="1"]');
+  const roots = [document];
+  for (let i = 0; i < roots.length; i++) Array.from(roots[i].querySelectorAll ? roots[i].querySelectorAll("*") : []).forEach((node) => { if (node.shadowRoot) roots.push(node.shadowRoot); });
+  const find = (selector) => { for (const root of roots) { const hit = root.querySelector(selector); if (hit) return hit; } return null; };
+  const clean = (text) => String(text || "").replace(/[​-‍﻿]/g, "").replace(/\s+/g, " ").replace(/([㐀-鿿]) (?=[㐀-鿿])/g, "$1").trim();
+  // Same reading as scanPageFields: what the dropdown currently shows.
+  const PLACEHOLDER_TEXT = /^(?:请选择|请选取|请输入|select|choose|please (?:select|choose)|--|—)/i;
+  function ownText(node) {
+    if (typeof node.cloneNode !== "function") return "";
+    const copy = node.cloneNode(true);
+    copy.querySelectorAll("[role='listbox'], [role='option'], [hidden], [aria-hidden='true'], ul, ol, svg, i, style, [class*='placeholder']:not(.el-select__placeholder), .el-select__placeholder.is-transparent").forEach((child) => child.remove());
+    return clean(copy.textContent);
   }
-  function visibleOptions() {
+  function selectedText(container) {
+    const shown = container.querySelector(".ant-select-selection-item, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text, .el-cascader__tags");
+    if (shown && clean(shown.textContent)) return clean(shown.textContent);
+    // Element UI and cascaders show the choice in a read-only input; Arco,
+    // Semi or Fusion keep the input for searching and show it as text.
+    const input = container.matches("input") ? container : container.querySelector("input:not([type='hidden'])");
+    if (input && clean(input.value)) return clean(input.value);
+    if (container.matches("input")) return "";
+    const text = ownText(container);
+    return !/[\p{L}\p{N}]/u.test(text) || PLACEHOLDER_TEXT.test(text) || text === clean(container.getAttribute("placeholder")) || text === clean(input?.getAttribute("placeholder")) ? "" : text;
+  }
+  function hasExistingValue(container) {
+    return !!selectedText(container) || container.getAttribute("data-cp-user-edited") === "1" || !!container.querySelector('[data-cp-user-edited="1"]');
+  }
+  function visible(n) {
+    const r = n.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  }
+  function visibleOptions(container) {
+    // An ARIA combobox names its own list; that one wins when it is showing.
+    const owned = container && !container.matches(".ant-select, .el-select") ? (container.getAttribute("aria-controls") || container.getAttribute("aria-owns") || container.querySelector("[aria-controls]")?.getAttribute("aria-controls")) : null;
+    const list = owned ? document.getElementById(owned) : null;
+    if (list && visible(list)) {
+      const own = Array.from(list.querySelectorAll("[role='option']:not([aria-disabled='true'])")).filter(visible);
+      if (own.length) return own;
+    }
     const nodes = document.querySelectorAll(
       ".ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option:not(.ant-select-item-option-disabled), " +
         ".el-select-dropdown:not([style*='display: none']) .el-select-dropdown__item:not(.is-disabled), " +
+        ".ivu-select-dropdown .ivu-select-item:not(.ivu-select-item-disabled), .arco-select-option:not(.arco-select-option-disabled), .t-select-option:not(.t-is-disabled), " +
         "[role='listbox'] [role='option']:not([aria-disabled='true'])"
     );
-    return Array.from(nodes).filter((n) => {
-      const r = n.getBoundingClientRect();
-      return r.width > 0 && r.height > 0;
-    });
+    return Array.from(nodes).filter(visible);
   }
   function optionText(n) {
     const inner = n.querySelector(".ant-select-item-option-content");
-    return ((inner || n).textContent || "").trim();
+    return clean((inner || n).textContent);
   }
   function pickOne(options, value) {
-    const v = String(value).trim();
+    const v = clean(value);
     const exact = options.find((o) => optionText(o) === v);
     if (exact) return exact;
     const fuzzy = options.filter((o) => optionText(o).includes(v) || (v.includes(optionText(o)) && optionText(o).length >= 2));
@@ -656,24 +953,107 @@ async function fillCustomSelects(pairs, taskId) {
     el.style.setProperty("outline", (source === "ai" ? "2px solid #d946ef" : source === "remembered" ? "2px solid #16a34a" : "2px solid #8b5cf6"), "important");
     el.style.setProperty("outline-offset", "1px", "important");
   }
+  function open(container) {
+    // Innermost first: a click on the inner input bubbles up through the
+    // wrapper/selector, so every library's own handler sees it.
+    const trigger = container.querySelector("input:not([type='hidden'])") || container.querySelector(".ant-select-selector, .el-select__wrapper, .el-input__wrapper") || container;
+    trigger.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    trigger.click();
+  }
+  function close() {
+    for (const target of [document.activeElement || document.body, document.body]) target.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
+    document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    document.body.click();
+  }
+  // Option lists can load from the network a moment after opening.
+  async function waitFor(read, ms) {
+    for (let waited = 0; ; waited += 150) {
+      const found = read();
+      if (found.length || waited >= ms) return found;
+      await sleep(150);
+      assertActive();
+    }
+  }
+
+  // 省 → 市 (→ 区) cascaders: walk the columns, matching each level against
+  // what's left of the wanted text ("江苏南京" → 江苏省 → 南京市). A value
+  // without its province ("深圳") is found by looking one level down.
+  async function fillCascader(container, value) {
+    const ant = !container.classList.contains("el-cascader");
+    const columns = () => Array.from(document.querySelectorAll(ant ? ".ant-cascader-dropdown:not(.ant-select-dropdown-hidden) .ant-cascader-menu" : ".el-cascader__dropdown .el-cascader-menu")).filter(visible);
+    const items = (column) => Array.from(column.querySelectorAll(ant ? ".ant-cascader-menu-item" : ".el-cascader-node")).filter((item) => visible(item) && !/disabled/.test(item.className));
+    const text = (item) => clean((item.querySelector(".ant-cascader-menu-item-content, .el-cascader-node__label") || item).textContent);
+    const SUFFIX = /(?:特别行政区|维吾尔自治区|壮族自治区|回族自治区|自治区|自治州|地区|省|市|盟|区|县)$/;
+    const base = (t) => t.replace(SUFFIX, "") || t;
+    const isLeaf = (item) => ant ? !item.querySelector(".ant-cascader-menu-item-expand-icon") : item.getAttribute("aria-haspopup") !== "true";
+    const matches = (item, rest) => { const t = text(item), b = base(t); return rest.startsWith(t) || (b.length >= 2 && rest.includes(b)); };
+    open(container);
+    await sleep(250);
+    assertActive();
+    if (!(await waitFor(columns, 1000)).length) return false;
+    let rest = clean(value).replace(/[\s/,，、|>\-]+/g, "");
+    let previous = "";
+    for (let level = 0; level < 5; level++) {
+      const column = columns()[level];
+      if (!column) return false;
+      const list = items(column);
+      let target = list.find((item) => matches(item, rest));
+      let expanded = false;
+      // 上海 → 上海市 → 浦东新区: a municipality repeats itself one level down.
+      if (!target && level > 0) target = list.length === 1 ? list[0] : list.find((item) => base(text(item)) === base(previous));
+      if (!target && level === 0) {
+        for (const item of list.slice(0, 40)) {
+          item.click();
+          await sleep(180);
+          assertActive();
+          const next = columns()[1];
+          if (next && items(next).some((child) => matches(child, rest))) { target = item; expanded = true; break; }
+        }
+      }
+      if (!target) return false;
+      if (!expanded) {
+        target.click();
+        await sleep(250);
+        assertActive();
+      }
+      const label = text(target);
+      const at = rest.startsWith(label) ? label.length : rest.indexOf(base(label)) >= 0 ? rest.indexOf(base(label)) + base(label).length : 0;
+      rest = rest.slice(at).replace(/^(?:特别行政区|自治区|省|市|区|县)/, "");
+      previous = label;
+      if (isLeaf(target)) return true;
+    }
+    return false;
+  }
+
   for (const p of pairs) {
     assertActive();
-    const container = document.querySelector('[data-cp-fill-id="' + p.id + '"]');
+    const container = find('[data-cp-fill-id="' + p.id + '"]');
     if (!container || !p.value) continue;
     if (container.classList.contains("ant-select-disabled") || container.classList.contains("is-disabled") || container.getAttribute("aria-disabled") === "true" || container.disabled) {
       failed.push(p.label || p.id);
       continue;
     }
     if (hasExistingValue(container)) { skipped.push(p.id); continue; }
-    // Innermost first: a click on the inner input bubbles up through the
-    // wrapper/selector, so every library's own handler sees it.
-    const trigger = container.querySelector("input:not([type='hidden'])") || container.querySelector(".ant-select-selector, .el-select__wrapper") || container;
-    trigger.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-    trigger.click();
-    await sleep(350);
+    if (container.classList.contains("ant-cascader") || container.classList.contains("el-cascader")) {
+      let ok = false;
+      try { ok = await fillCascader(container, p.value); } catch (error) { if (/填写已停止/.test(error.message)) throw error; }
+      await sleep(150);
+      assertActive();
+      if (ok && selectedText(container)) {
+        mark(container, p.source || "profile");
+        if ((p.source || "profile") === "profile") container.setAttribute("data-cp-profile-filled", "1");
+        filled.push(p.id);
+      } else {
+        close();
+        failed.push(p.label || p.id);
+      }
+      continue;
+    }
+    open(container);
+    await sleep(300);
     assertActive();
-    if (hasExistingValue(container)) { skipped.push(p.id); continue; }
-    let options = visibleOptions();
+    let options = await waitFor(() => visibleOptions(container), 600);
+    if (hasExistingValue(container)) { close(); skipped.push(p.id); continue; }
     let target = pick(options, p);
     // Searchable selects (and virtual lists that only render a screenful):
     // type the value to narrow the list, then look again.
@@ -684,8 +1064,7 @@ async function fillCustomSelects(pairs, taskId) {
       searchInput.dispatchEvent(new Event("input", { bubbles: true }));
       await sleep(450);
       assertActive();
-      if (hasExistingValue(container)) { skipped.push(p.id); continue; }
-      options = visibleOptions();
+      options = await waitFor(() => visibleOptions(container), 600);
       target = pick(options, p);
       if (!target) {
         setter.call(searchInput, "");
@@ -700,22 +1079,20 @@ async function fillCustomSelects(pairs, taskId) {
       target.click();
       await sleep(150);
       assertActive();
-      const shown = container.querySelector(".ant-select-selection-item, .el-select__selected-item:not(.el-select__placeholder), .el-select__tags");
-      const input = container.matches("input") ? container : container.querySelector("input[readonly]");
-      const visibleValue = (shown?.textContent || input?.value || "").trim();
-      if (visibleValue && (visibleValue === wanted || visibleValue.includes(wanted) || visibleValue.includes(String(p.value).trim()))) {
-    mark(container, p.source || "profile");
-    if (p.answerId) container.setAttribute("data-cp-answer-id", p.answerId);
-    if ((p.source || "profile") === "profile") container.setAttribute("data-cp-profile-filled", "1");
-    if (p.manualConfirmed) { container.setAttribute("data-cp-user-edited", "1"); container.setAttribute("data-cp-user-edited-at", String(Date.now())); container.setAttribute("data-cp-memory-pending", "1"); }
+      const visibleValue = selectedText(container);
+      if (visibleValue && (visibleValue === wanted || visibleValue.includes(wanted) || visibleValue.includes(clean(p.value)))) {
+        mark(container, p.source || "profile");
+        if (p.answerId) container.setAttribute("data-cp-answer-id", p.answerId);
+        if ((p.source || "profile") === "profile") container.setAttribute("data-cp-profile-filled", "1");
+        if (p.manualConfirmed) { container.setAttribute("data-cp-user-edited", "1"); container.setAttribute("data-cp-user-edited-at", String(Date.now())); container.setAttribute("data-cp-memory-pending", "1"); }
         filled.push(p.id);
       } else {
+        close();
         failed.push(p.label || p.id);
       }
     } else {
       failed.push(p.label || p.id);
-      document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-      document.body.click();
+      close();
       await sleep(100);
       assertActive();
     }
@@ -732,43 +1109,63 @@ function countFillableFields(scan = scanPageFields) {
 }
 
 function clearFillMarks() {
-  document.querySelectorAll("[data-cp-filled]").forEach((el) => {
+  const roots = [document];
+  for (let i = 0; i < roots.length; i++) Array.from(roots[i].querySelectorAll ? roots[i].querySelectorAll("*") : []).forEach((node) => { if (node.shadowRoot) roots.push(node.shadowRoot); });
+  roots.forEach((root) => root.querySelectorAll("[data-cp-filled]").forEach((el) => {
     el.style.removeProperty("outline");
     el.style.removeProperty("outline-offset");
     el.removeAttribute("data-cp-filled");
-  });
+  }));
 }
 
 // Installed inside each guest frame. Only real user input marks a field for
 // automatic memory; our own fillFields dispatches synthetic events and never
-// confirms an AI draft by accident.
+// confirms an AI draft by accident. composedPath() reaches inputs inside
+// open shadow roots, whose events are otherwise retargeted to the host.
 function trackUserEdits() {
   if (document.__cpUserEditTrackerInstalled) return;
   document.__cpUserEditTrackerInstalled = true;
-  const mark = (event) => {
-    if (!event.isTrusted) return;
-    const el = event.target;
-    if (!el || !el.matches || !el.matches('textarea, select, input[type="text"], input[type="email"], input[type="tel"], input[type="number"], input[type="date"], input[type="month"], input[type="url"], input[type="radio"], input:not([type])')) return;
-    if (el.disabled || el.readOnly) return;
+  const stamp = (el) => {
     el.setAttribute("data-cp-user-edited", "1");
     el.setAttribute("data-cp-user-edited-at", String(Date.now()));
     el.setAttribute("data-cp-memory-pending", "1");
   };
+  const origin = (event) => (event.composedPath ? event.composedPath()[0] : event.target);
+  const mark = (event) => {
+    if (!event.isTrusted) return;
+    const el = origin(event);
+    if (!el || !el.matches) return;
+    // Rich-text editors: the editable root carries the field id. Text our
+    // own fill inserts through execCommand is trusted too, hence the flag.
+    const editable = el.closest?.("[contenteditable='true'], [contenteditable='']");
+    if (editable && !el.matches("input, textarea, select")) {
+      if (!editable.hasAttribute("data-cp-filling")) stamp(editable);
+      return;
+    }
+    if (!el.matches('textarea, select, input[type="text"], input[type="email"], input[type="tel"], input[type="number"], input[type="date"], input[type="month"], input[type="url"], input[type="radio"], input[type="search"], input:not([type])')) return;
+    if (el.disabled || el.readOnly) return;
+    stamp(el);
+  };
   document.addEventListener("input", mark, true);
   document.addEventListener("change", mark, true);
   let selected = null;
+  const shownValue = (el) => (el.querySelector(".ant-select-selection-item, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent)")?.textContent || el.value || (el.matches("button, [role='combobox']") ? el.textContent : "") || "").trim();
   document.addEventListener("pointerdown", (event) => {
     if (!event.isTrusted) return;
-    const el = event.target?.closest?.(".ant-select, .el-select, [role='combobox']");
-    if (el) selected = { el, at: Date.now(), value: (el.querySelector(".ant-select-selection-item, .el-select__selected-item:not(.el-select__placeholder)")?.textContent || el.value || "").trim() };
+    const el = origin(event)?.closest?.(".ant-select, .el-select, .el-cascader, [role='combobox'], button[aria-haspopup='listbox']");
+    if (el) selected = { el, at: Date.now(), value: shownValue(el) };
   }, true);
   document.addEventListener("click", (event) => {
-    if (!event.isTrusted || !selected || Date.now() - selected.at > 30000) return;
+    if (!event.isTrusted) return;
+    // ARIA radio groups have no input events; a click on an option is the edit.
+    const choice = origin(event)?.closest?.("[role='radio']");
+    const group = choice?.closest("[role='radiogroup']");
+    if (group) setTimeout(() => { if (choice.getAttribute("aria-checked") === "true") stamp(group); }, 100);
+    if (!selected || Date.now() - selected.at > 30000) return;
     const candidate = selected;
     setTimeout(() => {
-      const value = (candidate.el.querySelector(".ant-select-selection-item, .el-select__selected-item:not(.el-select__placeholder)")?.textContent || candidate.el.value || "").trim();
-      if (value !== candidate.value) {
-        candidate.el.setAttribute("data-cp-user-edited", "1"); candidate.el.setAttribute("data-cp-user-edited-at", String(Date.now())); candidate.el.setAttribute("data-cp-memory-pending", "1");
+      if (shownValue(candidate.el) !== candidate.value) {
+        stamp(candidate.el);
         selected = null;
       }
     }, 150);
@@ -776,7 +1173,9 @@ function trackUserEdits() {
 }
 
 function hasUserEditedFields() {
-  return !!document.querySelector('[data-cp-memory-pending="1"], [data-cp-user-edited="1"]:not([data-cp-memory-saved])');
+  const roots = [document];
+  for (let i = 0; i < roots.length; i++) Array.from(roots[i].querySelectorAll ? roots[i].querySelectorAll("*") : []).forEach((node) => { if (node.shadowRoot) roots.push(node.shadowRoot); });
+  return roots.some((root) => !!root.querySelector('[data-cp-memory-pending="1"], [data-cp-user-edited="1"]:not([data-cp-memory-saved])'));
 }
 
 // Read side of fillFields — same element lookup and same "select reads by
@@ -784,36 +1183,103 @@ function hasUserEditedFields() {
 // against what fillFields originally wrote.
 function readFieldValues(ids) {
   const result = {};
+  const roots = [document];
+  for (let i = 0; i < roots.length; i++) Array.from(roots[i].querySelectorAll ? roots[i].querySelectorAll("*") : []).forEach((node) => { if (node.shadowRoot) roots.push(node.shadowRoot); });
+  const find = (selector) => { for (const root of roots) { const hit = root.querySelector(selector); if (hit) return hit; } return null; };
+  const findAll = (selector) => roots.flatMap((root) => Array.from(root.querySelectorAll ? root.querySelectorAll(selector) : []));
+  const clean = (text) => String(text || "").replace(/[​-‍﻿]/g, "").replace(/\s+/g, " ").replace(/([㐀-鿿]) (?=[㐀-鿿])/g, "$1").trim();
+  function optionLabel(radio) {
+    const wrap = radio.closest("label");
+    if (wrap && clean(wrap.textContent)) return clean(wrap.textContent);
+    const byFor = radio.id ? radio.getRootNode().querySelector('label[for="' + CSS.escape(radio.id) + '"]') : null;
+    if (byFor && clean(byFor.textContent)) return clean(byFor.textContent);
+    for (let node = radio.nextSibling; node; node = node.nextSibling) {
+      if (node.nodeType === 1 && (node.matches("input, select, textarea") || node.querySelector("input, select, textarea"))) break;
+      const text = clean(node.textContent);
+      if (text) return text;
+    }
+    return clean(radio.value);
+  }
+  const PLACEHOLDER_TEXT = /^(?:请选择|请选取|请输入|select|choose|please (?:select|choose)|--|—)/i;
+  function fieldValue(el) {
+    const tag = el.tagName.toLowerCase();
+    if (tag === "select") return clean(el.options[el.selectedIndex]?.textContent);
+    if (el.getAttribute("role") === "radiogroup") return clean(el.querySelector("[role='radio'][aria-checked='true']")?.textContent);
+    if (el.isContentEditable && tag !== "input" && tag !== "textarea") return String(el.innerText || "").trim();
+    if (tag === "input" || tag === "textarea") return String(el.value || "").trim();
+    const shown = el.querySelector(".ant-select-selection-item, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text");
+    if (shown && clean(shown.textContent)) return clean(shown.textContent);
+    const input = el.querySelector("input:not([type='hidden'])");
+    if (input && clean(input.value)) return clean(input.value);
+    const copy = el.cloneNode(true);
+    copy.querySelectorAll("[role='listbox'], [role='option'], [hidden], [aria-hidden='true'], ul, ol, svg, i, style, [class*='placeholder']:not(.el-select__placeholder), .el-select__placeholder.is-transparent").forEach((child) => child.remove());
+    const text = clean(copy.textContent);
+    return !/[\p{L}\p{N}]/u.test(text) || PLACEHOLDER_TEXT.test(text) || text === clean(input?.getAttribute("placeholder")) ? "" : text;
+  }
+  const active = (() => { let el = document.activeElement; while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement; return el; })();
   ids.forEach((id) => {
-    const radio = Array.from(document.querySelectorAll('[data-cp-fill-id^="' + id + ':"]'));
+    const radio = findAll('[data-cp-fill-id^="' + id + ':"]');
     if (radio.length) {
       const selected = radio.find((el) => el.checked);
-      const label = selected && (selected.closest("label")?.textContent || selected.nextSibling?.textContent || selected.value || "");
-      result[id] = { value: (label || "").trim(), answerId: selected?.getAttribute("data-cp-answer-id"), profileFilled: radio.some((el) => el.getAttribute("data-cp-profile-filled") === "1"), userEdited: radio.some((el) => el.getAttribute("data-cp-user-edited") === "1"), editedAt: Math.max(...radio.map((el) => Number(el.getAttribute("data-cp-user-edited-at")) || 0)), memorySaved: radio[0].getAttribute("data-cp-memory-saved") };
+      result[id] = { value: selected ? optionLabel(selected) : "", answerId: selected?.getAttribute("data-cp-answer-id"), profileFilled: radio.some((el) => el.getAttribute("data-cp-profile-filled") === "1"), userEdited: radio.some((el) => el.getAttribute("data-cp-user-edited") === "1"), editedAt: Math.max(...radio.map((el) => Number(el.getAttribute("data-cp-user-edited-at")) || 0)), memorySaved: radio[0].getAttribute("data-cp-memory-saved") };
       return;
     }
-    const el = document.querySelector('[data-cp-fill-id="' + id + '"]');
+    const el = find('[data-cp-fill-id="' + id + '"]');
     if (!el) return;
-    const value = el.tagName.toLowerCase() === "select" ? el.options[el.selectedIndex]?.textContent || "" : el.querySelector(".ant-select-selection-item, .el-select__selected-item:not(.el-select__placeholder)")?.textContent || el.value || "";
+    const value = fieldValue(el);
     const block = el.closest("[data-cp-block-key]");
-    const editing = document.activeElement?.matches?.('input:not([type="button"]):not([type="submit"]), textarea, select, [role="combobox"]') && document.hasFocus();
-    result[id] = { value: value.trim(), answerId: el.getAttribute("data-cp-answer-id"), profileFilled: el.getAttribute("data-cp-profile-filled") === "1", userEdited: el.getAttribute("data-cp-user-edited") === "1", editedAt: Number(el.getAttribute("data-cp-user-edited-at")) || 0, memorySaved: el.getAttribute("data-cp-memory-saved"), active: !!editing && (el === document.activeElement || !!block?.contains(document.activeElement)) };
+    const editing = active?.matches?.('input:not([type="button"]):not([type="submit"]), textarea, select, [role="combobox"], [contenteditable="true"], [contenteditable=""]') && document.hasFocus();
+    result[id] = { value, answerId: el.getAttribute("data-cp-answer-id"), profileFilled: el.getAttribute("data-cp-profile-filled") === "1", userEdited: el.getAttribute("data-cp-user-edited") === "1", editedAt: Number(el.getAttribute("data-cp-user-edited-at")) || 0, memorySaved: el.getAttribute("data-cp-memory-saved"), active: !!editing && (el === active || el.contains(active) || !!block?.contains(active)) };
   });
   return result;
 }
 
 function clearSavedUserEdits(saved) {
+  const roots = [document];
+  for (let i = 0; i < roots.length; i++) Array.from(roots[i].querySelectorAll ? roots[i].querySelectorAll("*") : []).forEach((node) => { if (node.shadowRoot) roots.push(node.shadowRoot); });
+  const find = (selector) => { for (const root of roots) { const hit = root.querySelector(selector); if (hit) return hit; } return null; };
+  const findAll = (selector) => roots.flatMap((root) => Array.from(root.querySelectorAll ? root.querySelectorAll(selector) : []));
+  const clean = (text) => String(text || "").replace(/[​-‍﻿]/g, "").replace(/\s+/g, " ").replace(/([㐀-鿿]) (?=[㐀-鿿])/g, "$1").trim();
+  function optionLabel(radio) {
+    const wrap = radio.closest("label");
+    if (wrap && clean(wrap.textContent)) return clean(wrap.textContent);
+    const byFor = radio.id ? radio.getRootNode().querySelector('label[for="' + CSS.escape(radio.id) + '"]') : null;
+    if (byFor && clean(byFor.textContent)) return clean(byFor.textContent);
+    for (let node = radio.nextSibling; node; node = node.nextSibling) {
+      if (node.nodeType === 1 && (node.matches("input, select, textarea") || node.querySelector("input, select, textarea"))) break;
+      const text = clean(node.textContent);
+      if (text) return text;
+    }
+    return clean(radio.value);
+  }
+  const PLACEHOLDER_TEXT = /^(?:请选择|请选取|请输入|select|choose|please (?:select|choose)|--|—)/i;
+  function fieldValue(el) {
+    const tag = el.tagName.toLowerCase();
+    if (tag === "select") return clean(el.options[el.selectedIndex]?.textContent);
+    if (el.getAttribute("role") === "radiogroup") return clean(el.querySelector("[role='radio'][aria-checked='true']")?.textContent);
+    if (el.isContentEditable && tag !== "input" && tag !== "textarea") return String(el.innerText || "").trim();
+    if (tag === "input" || tag === "textarea") return String(el.value || "").trim();
+    const shown = el.querySelector(".ant-select-selection-item, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text");
+    if (shown && clean(shown.textContent)) return clean(shown.textContent);
+    const input = el.querySelector("input:not([type='hidden'])");
+    if (input && clean(input.value)) return clean(input.value);
+    const copy = el.cloneNode(true);
+    copy.querySelectorAll("[role='listbox'], [role='option'], [hidden], [aria-hidden='true'], ul, ol, svg, i, style, [class*='placeholder']:not(.el-select__placeholder), .el-select__placeholder.is-transparent").forEach((child) => child.remove());
+    const text = clean(copy.textContent);
+    return !/[\p{L}\p{N}]/u.test(text) || PLACEHOLDER_TEXT.test(text) || text === clean(input?.getAttribute("placeholder")) ? "" : text;
+  }
   for (const item of saved) {
-    const radios = Array.from(document.querySelectorAll('[data-cp-fill-id^="' + item.id + ':"]'));
+    const radios = findAll('[data-cp-fill-id^="' + item.id + ':"]');
     if (radios.length) {
       const selected = radios.find((el) => el.checked);
-      const value = String(selected && (selected.closest("label")?.textContent || selected.nextSibling?.textContent || selected.value || "") || "").trim();
+      const value = selected ? optionLabel(selected) : "";
       if (value === item.value) radios.forEach((el) => { el.setAttribute("data-cp-memory-saved", value); el.removeAttribute("data-cp-memory-pending"); });
       continue;
     }
-    const el = document.querySelector('[data-cp-fill-id="' + item.id + '"]');
-    const value = el?.tagName.toLowerCase() === "select" ? el.options[el.selectedIndex]?.textContent.trim() : el?.querySelector(".ant-select-selection-item, .el-select__selected-item:not(.el-select__placeholder)")?.textContent || el?.value;
-    if (el && String(value || "").trim() === item.value) {
+    const el = find('[data-cp-fill-id="' + item.id + '"]');
+    if (!el) continue;
+    const value = fieldValue(el);
+    if (value === item.value) {
       el.setAttribute("data-cp-memory-saved", item.value);
       el.removeAttribute("data-cp-memory-pending");
     }
@@ -834,26 +1300,47 @@ function memoryCandidate(snapshot, filledList, onlyUserEdited = false) {
 // Runs in the main process, not injected — matches detected form fields to
 // the user's own saved profile by keyword. Intentionally conservative: a
 // field with no confident match is left for the AI pass (or manual entry)
-// rather than guessed at here.
+// rather than guessed at here. English keys match whole words only ("tel"
+// is not in "Tell us…"), and `not` rules out look-alikes: 姓名拼音, English
+// Name, Mailing Address, Place of Birth, a landline next to the mobile.
 const BASIC_FIELD_RULES = [
-  { keys: ["姓名", "真实姓名", "name"], get: (p) => p.name },
-  { keys: ["手机", "电话", "联系电话", "phone", "mobile", "tel"], get: (p) => p.phone },
-  { keys: ["邮箱", "email", "mail"], get: (p) => p.email },
-  { keys: ["性别", "gender"], get: (p) => p.gender },
-  { keys: ["出生日期", "出生年月", "生日", "birth"], get: (p) => p.birthDate },
+  { keys: ["姓名", "真实姓名", "name"], not: /拼音|英文|外文|曾用名|别名|昵称|用户名|账号|登录|签名|pinyin|english|romani[sz]|alias|nick|preferred|user ?name|login|account|school|university|college|company|employer|organi[sz]ation|project|award|course|program|position|job|file/i, get: (p) => p.name },
+  { keys: ["手机", "电话", "联系电话", "联系方式", "phone", "mobile", "tel", "telephone", "cell"], not: /固定电话|座机|固话|家庭电话|办公电话|单位电话|传真|区号|分机|国家|地区代码|类型|landline|home phone|work phone|office phone|fax|area code|country|dialing|extension|device|type/i, get: (p) => p.phone, phone: true },
+  { keys: ["邮箱", "电子邮件", "邮件地址", "email", "e-mail"], not: /mailing|postal|邮编|邮政/i, get: (p) => p.email },
+  { keys: ["性别", "gender", "sex"], get: (p) => p.gender },
+  // exactDay: a birthday is never padded to the 1st the way 入学时间 is.
+  { keys: ["出生日期", "出生年月", "生日", "birth", "birthday", "birthdate"], not: /地点|出生地|place|city|country|province|省份|籍贯/i, get: (p) => p.birthDate, date: true, exactDay: true },
   // School/major/degree/GPA/dates are per education row — see
   // resolveRepeatField below. Only the page-wide "最高学历" stays flat.
   { keys: ["最高学历", "highest degree", "highest education"], get: (p) => highestEducation(p)?.degree, degree: true },
-  { keys: ["英语", "外语", "cet", "english", "语言能力"], get: (p) => p.english },
-  { keys: ["政治面貌", "politic"], get: (p) => p.politics },
+  { keys: ["英语", "外语", "cet", "english", "语言能力"], not: /姓名|名字|name/i, get: (p) => p.english, english: true },
+  { keys: ["政治面貌", "politic", "political", "politics"], get: (p) => p.politics },
   { keys: ["籍贯", "户籍", "户口所在地", "hometown"], get: (p) => p.hometown },
-  { keys: ["民族", "ethnic"], get: (p) => p.ethnicity },
-  { keys: ["现居", "现住", "所在城市", "常住"], get: (p) => p.currentCity },
-  { keys: ["意向城市", "期望城市", "工作城市", "city"], get: (p) => p.preferredCities },
+  { keys: ["民族", "ethnic", "ethnicity"], get: (p) => p.ethnicity },
+  { keys: ["微信", "wechat", "weixin"], get: (p) => p.wechat },
+  { keys: ["期望薪资", "期望月薪", "期望年薪", "期望薪酬", "期望待遇", "薪资要求", "薪资期望", "expected salary", "salary expectation"], get: (p) => p.expectedSalary },
+  { keys: ["到岗时间", "到岗日期", "可入职", "最早入职", "available from", "availability date", "earliest start"], get: (p) => p.availableFrom, date: true },
+  { keys: ["实习时长", "实习周期", "可实习时长", "可实习时间", "每周实习", "每周可实习", "实习天数", "internship duration"], get: (p) => p.internshipDuration },
+  { keys: ["通讯地址", "联系地址", "家庭住址", "现住址", "居住地址", "详细地址", "邮寄地址", "mailing address", "home address", "street address", "address line"], not: /e-?mail|邮箱/i, get: (p) => p.address },
+  // Preferred cities first: a bare English "City" (address blocks) is where
+  // the applicant lives, not where they'd like to work.
+  { keys: ["意向城市", "期望城市", "工作城市", "意向工作地", "期望工作地", "工作地点", "意向地点", "期望地点", "工作地区", "preferred city", "preferred location", "desired location", "work location"], get: (p) => p.preferredCities },
+  { keys: ["现居", "现住", "所在城市", "常住", "居住城市", "current city", "current location", "city"], get: (p) => p.currentCity },
   // 资料方案 fields: the direction-specific target role and self-assessment.
   { keys: ["期望岗位", "期望职位", "意向岗位", "意向职位", "求职意向"], get: (p) => p.targetRole },
   { keys: ["自我评价", "个人评价", "自我描述"], get: (p) => p.selfIntro },
 ];
+
+function basicKeyMatches(key, haystack) {
+  if (!/^[\x20-\x7e]+$/.test(key)) return haystack.includes(key.toLowerCase());
+  const word = key.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/ /g, "[\\s_-]*");
+  return new RegExp(`(?:^|[^a-z])${word}(?:$|[^a-z])`).test(haystack);
+}
+
+function basicRuleMatches(rule, field) {
+  const haystack = fieldHaystack(field);
+  return rule.keys.some((key) => basicKeyMatches(key, haystack)) && !(rule.not && rule.not.test(haystack));
+}
 
 // Never sent to AI, never guessed, always left for the user — a resume
 // essentially never contains these, and getting one wrong (a fabricated ID
@@ -874,8 +1361,24 @@ const NEVER_GUESS_KEYWORDS = [
   "承诺",
 ];
 
+// label + placeholder + the name attribute split at camelCase/underscores,
+// so "phoneNumber" and "legalName--firstName" read as words.
 function fieldHaystack(field) {
-  return `${field.label} ${field.placeholder} ${field.name}`.toLowerCase();
+  const name = String(field.name || "").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[_\-.[\]]+/g, " ");
+  return `${field.label || ""} ${field.placeholder || ""} ${name}`.toLowerCase();
+}
+
+// 家庭成员 / 紧急联系人 / 推荐人 fields describe someone else: the applicant's
+// own name, phone or employer must never land there, and nothing typed
+// there is remembered as the applicant's own.
+const THIRD_PARTY = /紧急联系人|联系人|家庭成员|家庭情况|家庭信息|家庭关系|家庭主要成员|主要家庭成员|家属|亲属|亲友|父母|父亲|母亲|配偶|爱人|子女|兄弟|姐妹|监护人|推荐人|内推人|介绍人|证明人|担保人|导师|社会关系|与本人关系|emergency|guardian|spouse|parent|father|mother|sibling|relative|next of kin|referee|references?\b|referr/i;
+
+function isThirdPartyField(field) {
+  if (THIRD_PARTY.test(fieldHaystack(field))) return true;
+  // "个人及家庭信息" heads the applicant's own fields too; only a heading that
+  // is purely about others marks every field under it.
+  const section = String(field.section || "");
+  return THIRD_PARTY.test(section) && !/个人|本人|基本|申请人|applicant|personal/i.test(section);
 }
 
 function isSplitNameField(field) {
@@ -883,7 +1386,7 @@ function isSplitNameField(field) {
 }
 
 function isOpenEndedQuestionField(field) {
-  if (field.tag === "textarea") return true;
+  if (field.tag === "textarea" || field.tag === "richtext") return true;
   if (field.tag !== "input" || !["text", "", undefined].includes(field.type)) return false;
   const label = fieldHaystack(field);
   return /[?？]|为什么|为何|请描述|请介绍|请说明|谈谈|自我评价|个人优势|求职动机|职业规划|相关经历|why|describe|tell us|motivation|strength|experience|career plan|interested in/i.test(label);
@@ -894,9 +1397,10 @@ function isSensitiveMemoryField(field) {
 }
 
 // Ordinary contact/education details can be remembered, but credentials,
-// identity numbers and payment details never enter the reusable library.
+// identity numbers and payment details never enter the reusable library —
+// nor does anything about another person (a parent's name is not yours).
 function isForbiddenMemoryField(field) {
-  return /身份证|证件(?:号|号码)|护照|签名|密码|验证码|银行卡|银行账号|卡号|信用卡|支付|社保号|税号|紧急联系人|家庭成员|passport|password|captcha|bank.?account|credit.?card|social.?security|verification.?code|one.?time.?code/i.test(fieldHaystack(field));
+  return isThirdPartyField(field) || /身份证|证件(?:号|号码)|护照|签名|密码|验证码|银行卡|银行账号|卡号|信用卡|支付|社保号|税号|紧急联系人|家庭成员|passport|password|captcha|bank.?account|credit.?card|social.?security|verification.?code|one.?time.?code/i.test(fieldHaystack(field));
 }
 
 function fieldMemoryKey(field) {
@@ -963,6 +1467,7 @@ function sectionGroup(section) {
 const AUTOFILL_MODULES = ["basic", "education", "experience", "project", "award", "questions", "other", "resume"];
 
 function fieldModule(field, repeat) {
+  if (isThirdPartyField(field)) return "other";
   if (/自我评价|个人评价|自我描述|个人优势|求职动机|职业规划/i.test(field.label || "")) return "questions";
   if (repeat) return repeat.group;
   const group = sectionGroup(field.section || "");
@@ -972,10 +1477,7 @@ function fieldModule(field, repeat) {
   if (/基本信息|个人信息|联系方式|求职意向|personal information|contact information/i.test(section)) return "basic";
   if (repeat) return repeat.group;
   if (isOpenEndedQuestionField(field)) return "questions";
-  const text = fieldHaystack(field);
-  if (BASIC_FIELD_RULES.some((rule) => rule.keys.some((key) =>
-    key === "name" || key === "city" ? new RegExp(`(^|\\W)${key}($|\\W)`, "i").test(text) : text.includes(key.toLowerCase())
-  )) || isSplitNameField(field)) return "basic";
+  if (BASIC_FIELD_RULES.some((rule) => basicRuleMatches(rule, field)) || isSplitNameField(field)) return "basic";
   return "other";
 }
 
@@ -1056,7 +1558,8 @@ function projectFieldKind(haystack, bare = "", inSection = false) {
 // "group:kind" across the whole scan (prefilled fields included), so it must
 // be called once for every scanned field, in page order.
 function resolveRepeatField(field, rowIndexes) {
-  if (isSplitNameField(field)) return null;
+  // A family member's 工作单位 is not one of the applicant's internships.
+  if (isSplitNameField(field) || isThirdPartyField(field)) return null;
   if (/[?？]|为什么|为何|谈谈|你(?:的|在|如何)|如何|遇到|挑战|收获|\bwhy\b|\bhow\b|tell us/i.test(field.label || "")) return null;
   const haystack = fieldHaystack(field);
   const section = String(field.section || "");
@@ -1083,8 +1586,10 @@ function resolveRepeatField(field, rowIndexes) {
   // A stray "预计毕业时间" in 基本信息 must not push the education blocks
   // below it down a row, so in-block and loose fields count separately.
   const key = `${info.group}:${info.kind}:${group === info.group ? "in" : "out"}`;
-  const counted = rowIndexes?.get(key) || 0;
-  rowIndexes?.set(key, counted + 1);
+  // The 月 / 日 dropdown of a split date continues its 年 dropdown's row.
+  const continuesDate = field.datePart === "month" || field.datePart === "day";
+  const counted = continuesDate ? Math.max(0, (rowIndexes?.get(key) || 1) - 1) : rowIndexes?.get(key) || 0;
+  if (!continuesDate) rowIndexes?.set(key, counted + 1);
   const anchor = info.group === "experience" ? "company" : info.group === "education" ? "school" : "name";
   const anchorKey = `${info.group}:anchor:${group === info.group ? "in" : "out"}`;
   if (info.kind === anchor) rowIndexes?.set(anchorKey, counted);
@@ -1158,22 +1663,30 @@ function dateParts(raw) {
   return m ? { y: m[1], m: m[2] ? m[2].padStart(2, "0") : "", d: m[3] ? m[3].padStart(2, "0") : "" } : null;
 }
 
-// What a date field expects: its own example ("2020.09"), a format string
-// ("YYYY-MM-DD"), its input type, or its wording (选择日期 → day, 月份 → month,
+// What a date field expects: its own example ("2020.09", or "09/2024" on
+// English forms), a format string ("YYYY-MM-DD", "MM/YYYY"), the picker's
+// own type, its input type, or its wording (选择日期 → day, 月份 → month,
 // 毕业年份 → year). Unknown fields keep yyyy-MM, the profile's own format.
 function dateFormatFor(field) {
-  const hint = `${field.placeholder || ""} ${field.label || ""}`;
+  const hint = `${field.placeholder || ""} ${field.label || ""} ${field.hint || ""}`;
   // (?!\d): in "2020.09-2024.06" the "-20" is the next year, not a day.
   const sample = /\d{4}\s*([-./年])\s*\d{1,2}(?:\s*([-./月])\s*\d{1,2}(?!\d))?/.exec(hint);
-  if (sample) return { precision: sample[2] ? "day" : "month", sep: sample[1] };
+  if (sample) return { precision: sample[2] ? "day" : "month", sep: sample[1], order: "ymd" };
+  const monthFirst = /(?<!\d)(\d{1,2})\s*([-./])\s*(?:(\d{1,2})\s*\2\s*)?\d{4}(?!\d)/.exec(hint);
+  if (monthFirst) return { precision: monthFirst[3] ? "day" : "month", sep: monthFirst[2], order: monthFirst[3] ? (Number(monthFirst[1]) > 12 ? "dmy" : "mdy") : "my" };
   const pattern = /y{4}\s*([-./年])\s*m{2}(?:\s*[-./月]\s*d{2})?/i.exec(hint);
-  if (pattern) return { precision: /d{2}/i.test(pattern[0]) ? "day" : "month", sep: pattern[1] };
-  if (field.type === "date") return { precision: "day", sep: "-" };
-  if (field.type === "month") return { precision: "month", sep: "-" };
-  if (/年份|(?:^|\W)year(?:\W|$)/i.test(hint)) return { precision: "year", sep: "-" };
-  if (/月份|年月|month/i.test(hint)) return { precision: "month", sep: "-" };
-  if (/日期|date/i.test(hint)) return { precision: "day", sep: "-" };
-  return { precision: "month", sep: "-" };
+  if (pattern) return { precision: /d{2}/i.test(pattern[0]) ? "day" : "month", sep: pattern[1], order: "ymd" };
+  const reversed = /\b(mm|dd)\s*([-./])\s*(?:(mm|dd)\s*\2\s*)?y{4}\b/i.exec(hint);
+  if (reversed) return { precision: reversed[3] ? "day" : "month", sep: reversed[2], order: reversed[3] ? (reversed[1].toLowerCase() === "mm" ? "mdy" : "dmy") : "my" };
+  if (/^year/.test(field.pickerType || "")) return { precision: "year", sep: "-", order: "ymd" };
+  if (/^month/.test(field.pickerType || "")) return { precision: "month", sep: "-", order: "ymd" };
+  if (/^(?:date|week)/.test(field.pickerType || "")) return { precision: "day", sep: "-", order: "ymd" };
+  if (field.type === "date") return { precision: "day", sep: "-", order: "ymd" };
+  if (field.type === "month") return { precision: "month", sep: "-", order: "ymd" };
+  if (/年份|(?:^|\W)year(?:\W|$)/i.test(hint)) return { precision: "year", sep: "-", order: "ymd" };
+  if (/月份|年月|month/i.test(hint)) return { precision: "month", sep: "-", order: "ymd" };
+  if (/日期|date|生日|birthday/i.test(hint)) return { precision: "day", sep: "-", order: "ymd" };
+  return { precision: "month", sep: "-", order: "ymd" };
 }
 
 function formatDateForField(field, raw) {
@@ -1189,6 +1702,9 @@ function formatDateForField(field, raw) {
   // The profile keeps yyyy-MM; a field that wants a full date gets the 1st.
   const day = parts.d || "01";
   if (format.sep === "年") return `${parts.y}年${parts.m}月${format.precision === "day" ? `${day}日` : ""}`;
+  if (format.order === "my") return [parts.m, parts.y].join(format.sep);
+  if (format.order === "mdy") return [parts.m, day, parts.y].join(format.sep);
+  if (format.order === "dmy") return [day, parts.m, parts.y].join(format.sep);
   return [parts.y, parts.m, ...(format.precision === "day" ? [day] : [])].join(format.sep);
 }
 
@@ -1303,13 +1819,22 @@ function classifyRepeatBlocks(fields, profile) {
     }
     block.anchored = true;
   }
+  // Unanchored blocks keep their row unless an anchored block took it.
+  // Blocks sharing a nominal row share the record: one 教育 block whose
+  // fields straddle two table rows is still one block, not two.
+  const remapped = new Map();
   for (const block of blocks.values()) {
     if (!block.anchored) {
-      const used = reserved.get(block.group) || new Set();
-      const rows = rowsForGroup(profile, block.group);
-      let row = block.row;
-      if (used.has(row)) row = rows.findIndex((_, index) => !used.has(index));
-      if (row >= 0) { block.row = row; used.add(row); reserved.set(block.group, used); }
+      const key = `${block.group}:${block.row}`;
+      if (!remapped.has(key)) {
+        const used = reserved.get(block.group) || new Set();
+        const rows = rowsForGroup(profile, block.group);
+        let row = block.row;
+        if (used.has(row)) row = rows.findIndex((_, index) => !used.has(index));
+        if (row >= 0) { used.add(row); reserved.set(block.group, used); }
+        remapped.set(key, row >= 0 ? row : block.row);
+      }
+      block.row = remapped.get(key);
     }
     const groupBlocks = [...blocks.values()].filter((other) => other.group === block.group);
     for (const field of block.fields) {
@@ -1354,10 +1879,17 @@ function previewRecordBlocks(blocks, repeats, profile) {
 // One line per scanned field for the 逐字段结果 list: where the value came
 // from, so checking a filled form means reading the AI and 需手填 rows, not
 // every field. `source` drives the colour dot and grouping in the UI.
+// "*姓名：" reads as 姓名 in our own lists.
+function displayLabel(field) {
+  return String(field.label || field.placeholder || field.name || "").replace(/^[*＊\s]+|[*＊：:\s]+$/g, "") || "未命名字段";
+}
+
 function fillDetail(field, pair, filledSet, failedSet) {
-  const own = field.label || field.placeholder || field.name || "未命名字段";
-  const label = field.section && !own.includes(field.section) && sectionGroup(field.section) ? `${field.section} · ${own}` : own;
+  const own = displayLabel(field);
+  const label = field.section && !own.includes(field.section) && (sectionGroup(field.section) || THIRD_PARTY.test(field.section)) ? `${field.section} · ${own}` : own;
   if (field.hasValue || field.userEdited) return { label, state: field.userEdited ? "手动修改过，保持不动" : "页面已有内容，未改动", source: "prefilled" };
+  if (isThirdPartyField(field)) return { label, state: "家庭成员 / 联系人等他人信息，请手填", source: "manual" };
+  if (field.readonlyPicker) return { label, state: field.suggestion ? `日期需在网页上点选：${field.suggestion}` : "日期需在网页上点选", source: "manual" };
   if (pair && filledSet.has(field.id)) {
     if (pair.source === "profile") return { label, state: "来自网申资料", source: "profile" };
     if (pair.source === "remembered-field") return { label, state: "来自记忆库", source: "memory" };
@@ -1449,27 +1981,92 @@ function repeatFieldGoesToAi(info, profile) {
 function matchFieldOption(field, value) {
   if (!value) return null;
   if (!field.options) return value;
+  // 年 / 月 / 日 dropdowns of a split date take their own part of it.
+  if (field.datePart) {
+    const parts = dateParts(value);
+    const wanted = parts ? Number(field.datePart === "year" ? parts.y : field.datePart === "month" ? parts.m : parts.d) : 0;
+    return wanted ? field.options.find((option) => Number((/^\d{1,4}/.exec(option) || [])[0]) === wanted) || null : null;
+  }
   const exact = field.options.find((option) => option === value);
   if (exact) return exact;
   const fuzzy = field.options.filter((option) => option.includes(value) || value.includes(option));
   return fuzzy.length === 1 ? fuzzy[0] : null;
 }
 
+// A mainland mobile is wanted as its 11 digits by nearly every form;
+// anything else only loses its spacing when the box is too short for it.
+function normalizePhone(field, value) {
+  const raw = String(value).trim();
+  const compact = raw.replace(/[\s\-()（）]/g, "");
+  if (/^(?:\+?86)?1[3-9]\d{9}$/.test(compact)) return compact.replace(/^\+?86/, "");
+  return field.maxLength && raw.length > field.maxLength ? compact : raw;
+}
+
+// Most specific first: 专业八级 before 四级, CET-6 before CET-4.
+const ENGLISH_LEVELS = [
+  [/tem\s*-?\s*8|专业?(?:英语)?八级|专八/i, /八级|tem\s*-?\s*8|专八/i],
+  [/tem\s*-?\s*4|专业(?:英语)?四级|专四/i, /专业(?:英语)?四级|专四|tem\s*-?\s*4/i],
+  [/cet\s*-?\s*6|六级/i, /六级|cet\s*-?\s*6/i],
+  [/cet\s*-?\s*4|(?<!专业|专业英语)四级/i, /(?<!专业|专业英语)四级|cet\s*-?\s*4/i],
+  [/ielts|雅思/i, /ielts|雅思/i],
+  [/toefl|托福/i, /toefl|托福/i],
+];
+
+// "CET-6 560" against what the field actually asks: the level dropdown
+// (大学英语六级), the score box (560) or the language itself (英语).
+function englishValue(field, value) {
+  const text = fieldHaystack(field);
+  if (/成绩|分数|得分|score|marks?\b/i.test(text)) return field.options ? null : (/\d{2,3}(?:\.\d)?/.exec(String(value)) || [null])[0];
+  if (/语种|language/i.test(text) && !/水平|等级|能力|level|proficiency|skill/i.test(text)) {
+    if (field.options) return field.options.find((option) => /^(?:英语|english)$/i.test(option)) || null;
+    return /[㐀-鿿]/.test(field.label || "") ? "英语" : "English";
+  }
+  if (!field.options) return value;
+  for (const [has, option] of ENGLISH_LEVELS) {
+    if (!has.test(value)) continue;
+    const found = field.options.filter((item) => option.test(item));
+    if (found.length === 1) return found[0];
+  }
+  return matchFieldOption(field, value);
+}
+
+// Deterministic answers for the phone type and country-code choices that
+// sit next to a mainland mobile number on English forms.
+function matchPhoneChoice(field, profile) {
+  if (!/^(?:\+?86)?1[3-9]\d{9}$/.test(String(profile.phone || "").replace(/[\s\-()（）]/g, ""))) return null;
+  const text = fieldHaystack(field);
+  if (/country.{0,12}code|phone.{0,6}code|dialing code|国家.{0,4}代码|地区.{0,4}代码|国际区号|国家\/地区号码/.test(text)) {
+    if (field.options) return field.options.filter((option) => /\+\s*86(?!\d)|中国大陆|^中国|china/i.test(option) && !/香港|澳门|台湾|hong kong|macau|macao|taiwan/i.test(option)).sort((a, b) => a.length - b.length)[0] || null;
+    return field.tag === "custom-select" || field.tag === "input" ? "+86" : null;
+  }
+  if (field.options && /phone.{0,8}(?:device|type)|电话类型|号码类型/.test(text)) return field.options.find((option) => /^(?:mobile|cell|手机|移动电话)/i.test(option)) || null;
+  return null;
+}
+
 function matchFlatField(field, profile) {
+  if (isThirdPartyField(field)) return null;
   const haystack = fieldHaystack(field);
   // Broad English tokens often occur inside a different question's label.
   if (/company.?name|employer.?name|school.?name|岗位名称|公司名称|企业名称/.test(haystack)) return null;
+  const phoneChoice = matchPhoneChoice(field, profile);
+  if (phoneChoice) return phoneChoice;
   for (const rule of BASIC_FIELD_RULES) {
-    if (rule.keys.some((k) => {
-      if (k === "name" || k === "city") return new RegExp(`(^|\\W)${k}($|\\W)`, "i").test(haystack);
-      return haystack.includes(k.toLowerCase());
-    })) {
-      const value = rule.get(profile);
-      if (!value) continue;
-      // A choice field still has to hit one of its own options.
-      const matched = rule.degree ? matchDegreeOption(field, value) : matchFieldOption(field, value);
-      if (matched) return matched;
+    if (!basicRuleMatches(rule, field)) continue;
+    let value = rule.get(profile);
+    if (!value) continue;
+    if (rule.phone) value = normalizePhone(field, value);
+    if (rule.english) {
+      const english = englishValue(field, String(value));
+      if (english) return english;
+      continue;
     }
+    // Dates follow the field's own precision and format (出生年月 → 2002-03).
+    if (rule.exactDay && !dateParts(value)?.d && dateFormatFor(field).precision === "day" && !field.options) continue;
+    if (rule.date) value = formatDateForField(field, value) || (field.options ? value : "");
+    if (!value) continue;
+    // A choice field still has to hit one of its own options.
+    const matched = rule.degree ? matchDegreeOption(field, value) : matchFieldOption(field, value);
+    if (matched) return matched;
   }
   return null;
 }
@@ -1675,6 +2272,8 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     const pageContext = options.positionId ? `job:v1:${options.positionId}` : portalContext(initialUrl);
     let neverGuessCount = 0;
     let alreadyFilled = 0;
+    let thirdPartyCount = 0;
+    let pickOnPageCount = 0;
     const excluded = new Set();
     for (const field of fields) {
       // Classify before skipping prefilled fields: a filled first education
@@ -1690,6 +2289,15 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       }
       field.module = fieldModule(field, repeat);
       if (isNeverGuessField(field)) { neverGuessCount++; continue; }
+      // Someone else's details (家庭成员, 紧急联系人): never the applicant's, never AI.
+      if (isThirdPartyField(field)) { thirdPartyCount++; continue; }
+      // A read-only calendar box can't be typed into; say what to pick.
+      if (field.readonlyPicker) {
+        const suggestion = repeat ? repeatFieldValue(field, repeat, profile) : matchFlatField(field, profile);
+        if (suggestion) field.suggestion = suggestion;
+        pickOnPageCount++;
+        continue;
+      }
       const mapping = !repeat && (profile.mappings || []).find((m) => m.fieldKey === field.mappingKey);
       const mapped = mapping && profileChoices(profile).find((c) => c.ref === mapping.ref);
       if (mapped?.value) { pairs.push({ id: field.id, value: mapped.value, source: "profile", label: field.label, tag: field.tag, ref: mapped.ref }); continue; }
@@ -1718,7 +2326,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       }
       const label = field.label || field.placeholder || field.name;
       if (!label) continue; // nothing to even describe this field to the AI with
-      if (field.tag === "textarea") {
+      if (field.tag === "textarea" || field.tag === "richtext") {
         candidates.push({ id: field.id, label, kind: "essay" });
       } else if (field.tag === "select" || field.tag === "radio") {
         candidates.push({ id: field.id, label, kind: "choice", options: field.options || [] });
@@ -1790,15 +2398,17 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       const plan = { id: adapter.taskId || String(Date.now()), url: initialUrl, at: Date.now(), fields, pairs, frameById, profile, options, resumeVersionId };
       const proposals = fields.map((field) => {
         const pair = pairs.find((p) => p.id === field.id);
-        const eligible = !excluded.has(field.id) && !field.hasValue && !field.userEdited && !isNeverGuessField(field);
+        const eligible = !excluded.has(field.id) && !field.hasValue && !field.userEdited && !isNeverGuessField(field) && !isThirdPartyField(field) && !field.readonlyPicker;
         const oldField = priorPlan?.fields.find((f) => f.mappingKey === field.mappingKey);
-        const stored = !priorPlan && restored?.content?.url === initialUrl && (restored.content?.resumeVersionId || "") === (resumeVersionId || "") && (restored.content?.variantId || "") === (options.variantId || "") && (Array.isArray(restored.content?.fields) ? restored.content.fields.find((f) => f && typeof f.value === "string" && f.fieldKey === field.mappingKey) : null);
+        // A blank box the page auto-save captured is not an answer to restore;
+        // only typed content or an edit made in this preview comes back.
+        const stored = !priorPlan && restored?.content?.url === initialUrl && (restored.content?.resumeVersionId || "") === (resumeVersionId || "") && (restored.content?.variantId || "") === (options.variantId || "") && (Array.isArray(restored.content?.fields) ? restored.content.fields.find((f) => f && typeof f.value === "string" && f.fieldKey === field.mappingKey && (f.value.trim() || !f.captured || f.edited)) : null);
         const candidateEdit = options.previewEdits?.find((row) => row.id === oldField?.id);
         const sameContext = priorPlan?.url === initialUrl && priorPlan?.resumeVersionId === resumeVersionId && priorPlan?.options.variantId === options.variantId && priorPlan?.options.positionId === options.positionId;
         const edit = stored || (sameContext && !questionKeys.has(field.mappingKey) && (!options.regenerate || questionKeys.size || candidateEdit?.edited) && candidateEdit);
-        return { ...(edit || {}), id: field.id, fieldKey: field.mappingKey, label: field.label || field.placeholder || field.name || "未命名字段", section: field.section, value: edit ? edit.value : pair?.value || "", selected: eligible && (edit ? edit.selected : !!pair && pair.source !== "ai"), eligible,
+        return { ...(edit || {}), id: field.id, fieldKey: field.mappingKey, label: displayLabel(field), section: field.section, value: edit ? edit.value : pair?.value || "", selected: eligible && (edit ? edit.selected : !!pair && pair.source !== "ai"), eligible,
           source: pair?.source || "manual", ref: edit?.ref || pair?.ref || "", required: field.required, maxLength: field.maxLength,
-          note: field.userEdited ? "手动修改过，保持不动" : field.hasValue ? "已有内容，保持不动" : excluded.has(field.id) ? "未选择此模块" : !eligible ? "需在网页上手动填写" : stored?.captured ? "来自本次申请的网页草稿，请核对后选择填写" : pair?.source === "ai" ? "AI 草稿，请核对后勾选" : pair ? "来自已保存资料或回答" : (aiError || "请选择资料或输入内容") };
+          note: field.userEdited ? "手动修改过，保持不动" : field.hasValue ? "已有内容，保持不动" : excluded.has(field.id) ? "未选择此模块" : isThirdPartyField(field) ? "家庭成员 / 联系人等他人信息，请在网页上填写" : field.readonlyPicker ? `日期需在网页上点选${field.suggestion ? `：${field.suggestion}` : ""}` : !eligible ? "需在网页上手动填写" : stored?.captured ? "来自本次申请的网页草稿，请核对后选择填写" : pair?.source === "ai" ? "AI 草稿，请核对后勾选" : pair ? "来自已保存资料或回答" : (aiError || "请选择资料或输入内容") };
       });
       const result = { phase: "preview", message: "填写建议已准备好，勾选并核对后再写入；网页内容尚未改动", plan: { id: plan.id, url: initialUrl, proposals, choices, blocks: previewRecordBlocks(blocks, repeats, profile), resumeVersionId, positionId: options.positionId, uploadResume: modules.has("resume") && !!resumeVersionId, contextKey: pageContext, variantId: options.variantId } };
       plan.preview = result.plan; await adapter.setPlan(plan);
@@ -1816,17 +2426,18 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     const newIds = new Set(rememberedDrafts.map((draft) => draft.answerId));
     adapter.setDrafts([...adapter.getDrafts().filter((draft) => !newIds.has(draft.answerId)), ...rememberedDrafts]);
     const basicFilled = pairs.filter((p) => (p.source === "profile" || p.source === "remembered-field") && filledSet.has(p.id)).length;
-    const essayFilled = pairs.filter((p) => p.tag === "textarea" && p.source !== "profile" && p.source !== "remembered-field" && filledSet.has(p.id)).length;
+    const isEssay = (p) => p.tag === "textarea" || p.tag === "richtext";
+    const essayFilled = pairs.filter((p) => isEssay(p) && p.source !== "profile" && p.source !== "remembered-field" && filledSet.has(p.id)).length;
     const shortFilled = filled.length - basicFilled - essayFilled;
-    const rememberedFilled = pairs.filter((p) => p.tag === "textarea" && p.source !== "remembered-field" && p.remembered && filledSet.has(p.id)).length;
-    const essayReused = pairs.filter((p) => p.tag === "textarea" && p.reused && filledSet.has(p.id)).length;
+    const rememberedFilled = pairs.filter((p) => isEssay(p) && p.source !== "remembered-field" && p.remembered && filledSet.has(p.id)).length;
+    const essayReused = pairs.filter((p) => isEssay(p) && p.reused && filledSet.has(p.id)).length;
     const aiReused = essayReused - rememberedFilled;
     const failedSet = new Set(failed);
     const skippedSet = new Set(skipped);
     const details = fields.map((field) => excluded.has(field.id)
-      ? { label: field.section ? `${field.section} · ${field.label || field.placeholder || field.name || "未命名字段"}` : field.label || field.placeholder || field.name || "未命名字段", id: field.id, state: "未勾选此模块，已跳过", source: "excluded" }
+      ? { label: field.section ? `${field.section} · ${displayLabel(field)}` : displayLabel(field), id: field.id, state: "未勾选此模块，已跳过", source: "excluded" }
       : skippedSet.has(field.id)
-      ? { label: field.label || field.placeholder || field.name || "未命名字段", state: "填写期间已有修改，已保留", source: "prefilled" }
+      ? { label: displayLabel(field), state: "填写期间已有修改，已保留", source: "prefilled" }
       : { ...fillDetail(field, pairs.find((p) => p.id === field.id), filledSet, failedSet), id: field.id });
     const previous = options.accumulated || { filled: 0, uploaded: 0, details: [] };
     const earlier = new Map(previous.details.map((d) => [d.key, d]));
@@ -1877,7 +2488,9 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       parts.push(`${failed.length} 个字段未通过写入验证（${failed.slice(0, 3).join("、")}${failed.length > 3 ? "…" : ""}），需要手填`);
     }
     if (neverGuessCount > 0) parts.push(`${neverGuessCount} 个需核对的姓名拆分或敏感字段，没有自动填`);
-    const attempted = filled.length + neverGuessCount + alreadyFilled + failed.length + skipped.length;
+    if (thirdPartyCount > 0) parts.push(`${thirdPartyCount} 个家庭成员 / 联系人等他人信息字段留给你填`);
+    if (pickOnPageCount > 0) parts.push(`${pickOnPageCount} 个日期只能在网页上点选`);
+    const attempted = filled.length + neverGuessCount + thirdPartyCount + pickOnPageCount + alreadyFilled + failed.length + skipped.length;
     const stillManual = fields.length - excluded.size - attempted;
     if (stillManual > 0) {
       parts.push(aiError ? `${stillManual} 个字段没能自动填（${aiError}）` : `${stillManual} 个字段简历里没有对应信息，需要自己填`);
@@ -1988,7 +2601,7 @@ async function saveCorrectionsCore(adapter, resumeVersionId, onlyUserEdited = fa
     if (!openEnded && !snapshot.userEdited) continue;
     const key = openEnded ? label : fieldMemoryKey(field);
     if (!key) continue;
-    answers.push({ questionLabel: key, fieldKey: field.mappingKey, answer: candidate.value, answerId: openEnded ? candidate.answerId : undefined, kind: openEnded ? field.tag === "textarea" ? "essay" : "short" : "field" });
+    answers.push({ questionLabel: key, fieldKey: field.mappingKey, answer: candidate.value, answerId: openEnded ? candidate.answerId : undefined, kind: openEnded ? field.tag === "textarea" || field.tag === "richtext" ? "essay" : "short" : "field" });
     savedFields.push({ frame, id: field.id, value: candidate.value });
   }
   for (const group of groups.values()) {
@@ -2066,7 +2679,7 @@ async function saveCorrectionsCore(adapter, resumeVersionId, onlyUserEdited = fa
 // Values are referenced from the saved profile, never reconstructed by the model.
 function profileChoices(profile) {
   const choices = [];
-  const labels = { name: "姓名", phone: "手机", email: "邮箱", gender: "性别", birthDate: "出生日期", currentCity: "现居地", targetRole: "期望岗位", selfIntro: "自我评价", politics: "政治面貌", hometown: "籍贯", ethnicity: "民族", english: "英语水平" };
+  const labels = { name: "姓名", phone: "手机", email: "邮箱", gender: "性别", birthDate: "出生日期", currentCity: "现居地", targetRole: "期望岗位", selfIntro: "自我评价", politics: "政治面貌", hometown: "籍贯", ethnicity: "民族", english: "英语水平", wechat: "微信号", expectedSalary: "期望薪资", availableFrom: "最早到岗时间", internshipDuration: "可实习时长", address: "通讯地址" };
   for (const [ref, label] of Object.entries(labels)) if (profile[ref]) choices.push({ ref, label, value: String(profile[ref]) });
   const columns = { school: "学校", major: "专业", degree: "学历", gpa: "GPA", start: "开始时间", end: "结束时间", company: "公司", role: "角色/职位", name: "名称", description: "描述", responsibilities: "职责", issuer: "颁发单位", level: "奖项等级", date: "获奖日期" };
   for (const [group, label] of [["education", "教育"], ["experience", "工作/实习"], ["project", "项目"], ["award", "获奖"]]) {
@@ -2085,17 +2698,25 @@ function profileChoices(profile) {
 }
 
 function focusFormField(id) {
-  const el = document.querySelector('[data-cp-fill-id="' + CSS.escape(id) + '"]');
+  const roots = [document];
+  for (let i = 0; i < roots.length; i++) Array.from(roots[i].querySelectorAll ? roots[i].querySelectorAll("*") : []).forEach((node) => { if (node.shadowRoot) roots.push(node.shadowRoot); });
+  const selector = '[data-cp-fill-id="' + CSS.escape(id) + '"], [data-cp-fill-id^="' + CSS.escape(id) + ':"]';
+  let el = null;
+  for (const root of roots) { el = root.querySelector(selector); if (el) break; }
   if (!el) return false;
-  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  // A radio pill or hidden native input is shown by its label.
+  const target = el.type === "radio" && el.closest("label") ? el.closest("label") : el;
+  target.scrollIntoView({ behavior: "smooth", block: "center" });
   el.focus({ preventScroll: true });
-  el.style.outline = "3px solid #f59e0b";
+  target.style.outline = "3px solid #f59e0b";
   return true;
 }
 
 function validatePageFields() {
   const issues = [];
-  for (const el of document.querySelectorAll("[data-cp-fill-id]")) {
+  const roots = [document];
+  for (let i = 0; i < roots.length; i++) Array.from(roots[i].querySelectorAll ? roots[i].querySelectorAll("*") : []).forEach((node) => { if (node.shadowRoot) roots.push(node.shadowRoot); });
+  for (const el of roots.flatMap((root) => Array.from(root.querySelectorAll("[data-cp-fill-id]")))) {
     if (el.disabled || el.readOnly || !el.getBoundingClientRect().width) continue;
     const id = el.getAttribute("data-cp-fill-id");
     const row = el.closest(".ant-form-item, .el-form-item, .form-group, [class*='form-item']");
@@ -2119,16 +2740,24 @@ function readCurrentApplicationFields() {
   window.__cpReadApplicationFields = readCurrentApplicationFields;
   const fields = [];
   const seen = new Set();
-  for (const el of document.querySelectorAll("[data-cp-fill-id]")) {
-    if (!el.getBoundingClientRect().width || el.type === "password") continue;
-    const label = el.getAttribute("data-cp-fill-label") || el.getAttribute("aria-label") || (el.id && document.querySelector('label[for="' + CSS.escape(el.id) + '"]')?.textContent) || el.closest(".ant-form-item, .el-form-item, .form-group")?.querySelector("label, [class*='label']")?.textContent || el.name || el.placeholder || "字段";
+  const roots = [document];
+  for (let i = 0; i < roots.length; i++) Array.from(roots[i].querySelectorAll ? roots[i].querySelectorAll("*") : []).forEach((node) => { if (node.shadowRoot) roots.push(node.shadowRoot); });
+  for (const el of roots.flatMap((root) => Array.from(root.querySelectorAll("[data-cp-fill-id]")))) {
+    if (el.type === "password") continue;
+    const fillId = el.getAttribute("data-cp-fill-id");
+    const radios = el.type === "radio" ? roots.flatMap((root) => Array.from(root.querySelectorAll('[data-cp-fill-id^="' + fillId.split(":")[0] + ':"]'))) : null;
+    // One entry per radio group, read from its first (labelled) member.
+    if (radios && radios[0] !== el) continue;
+    if (!(radios ? radios.some((r) => (r.closest("label") || r).getBoundingClientRect().width) : el.getBoundingClientRect().width)) continue;
+    const label = el.getAttribute("data-cp-fill-label") || el.getAttribute("aria-label") || (el.id && el.getRootNode().querySelector('label[for="' + CSS.escape(el.id) + '"]')?.textContent) || el.closest(".ant-form-item, .el-form-item, .form-group")?.querySelector("label, [class*='label']")?.textContent || el.name || el.placeholder || "字段";
     if (/密码|验证码|证件|身份证|银行卡|护照|家庭住址|password|captcha|passport|social security|bank account/i.test(label)) continue;
-    let value = el.value || el.querySelector(".ant-select-selection-item, .el-select__selected-item")?.textContent || "";
-    if (el.type === "radio") {
-      const scope = el.form || document;
-      const checked = Array.from(scope.querySelectorAll('input[type="radio"]')).find((r) => r.name === el.name && r.checked);
+    let value = el.value || el.querySelector?.(".ant-select-selection-item, .el-select__selected-item:not(.el-select__input-wrapper)")?.textContent || "";
+    if (radios) {
+      const checked = radios.find((r) => r.checked);
       value = checked?.closest("label")?.textContent || checked?.value || "";
     } else if (el.tagName === "SELECT") value = el.options[el.selectedIndex]?.textContent || "";
+    else if (el.getAttribute("role") === "radiogroup") value = el.querySelector("[role='radio'][aria-checked='true']")?.textContent || "";
+    else if (el.isContentEditable && el.tagName !== "INPUT" && el.tagName !== "TEXTAREA") value = el.innerText || "";
     value = String(value).trim();
     if (!value || fields.length >= 250 || /\d{17}[\dXx]/.test(value)) continue;
     const key = `${label}:${value}`;
@@ -2170,7 +2799,7 @@ async function applyAutofillPlan(adapter, input) {
     const selected = new Set();
     for (const row of (input.approved || []).slice(0, 500)) {
       const field = plan.fields.find((f) => f.id === row.id);
-      if (!field || field.hasValue || isNeverGuessField(field) || selected.has(row.id)) continue;
+      if (!field || field.hasValue || isNeverGuessField(field) || isThirdPartyField(field) || field.readonlyPicker || selected.has(row.id)) continue;
       const current = liveByOldId.get(row.id);
       if (!current) throw new Error("网页表单已变化，请重新扫描预览");
       if (current.hasValue || current.userEdited) { selected.add(row.id); continue; }
@@ -2206,6 +2835,7 @@ async function applyAutofillPlan(adapter, input) {
 }
 
 module.exports = {
+  isThirdPartyField, displayLabel, basicRuleMatches, normalizePhone, englishValue, matchPhoneChoice,
   classifyRepeatBlocks, previewRecordBlocks, rowsForGroup, recordReference, awardFieldKind,
   profileChoices, applyAutofillPlan, validatePageFields, focusFormField, collectApplicationFields, readCurrentApplicationFields, watchApplicationFields,
   AUTOFILL_MODULES,

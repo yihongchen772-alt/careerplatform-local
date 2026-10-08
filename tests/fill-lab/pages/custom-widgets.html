@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>云帆互娱 校招投递</title>
+<style>
+body{font:14px -apple-system,"PingFang SC",sans-serif;background:#fafafa;margin:0}
+.page{max-width:780px;margin:20px auto;background:#fff;padding:20px 28px;border-radius:10px}
+.module-hd{font-size:17px;font-weight:600;margin:22px 0 10px}
+.row{display:flex;align-items:center;margin:12px 0}
+.row-title{width:130px;color:#555}
+.row-content{flex:1}
+.row-content input,.row-content textarea{width:100%;box-sizing:border-box;padding:8px;border:1px solid #ddd;border-radius:6px;font:inherit}
+.pill{display:inline-block;margin-right:8px}
+.pill input{display:none}
+.pill span{display:inline-block;padding:4px 14px;border:1px solid #ccc;border-radius:16px;cursor:pointer}
+.pill input:checked+span{background:#4f46e5;color:#fff;border-color:#4f46e5}
+[role=radio]{display:inline-block;padding:4px 14px;border:1px solid #ccc;border-radius:6px;margin-right:6px;cursor:pointer}
+[role=radio][aria-checked=true]{background:#0ea5e9;color:#fff}
+.editor{min-height:90px;border:1px solid #ddd;border-radius:6px;padding:8px}
+.editor:empty:before{content:attr(data-placeholder);color:#aaa}
+.cal{position:relative}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="module-hd">基本信息</div>
+  <div class="row"><div class="row-title">姓名</div><div class="row-content"><input id="w-name" autocomplete="off"></div></div>
+  <div class="row"><div class="row-title">手机</div><div class="row-content"><input id="w-phone" placeholder="请输入11位手机号" maxlength="11"></div></div>
+  <div class="row"><div class="row-content"><input id="w-email" placeholder="请输入常用邮箱"></div></div>
+  <div class="row"><div class="row-title">性别</div><div class="row-content">
+    <label class="pill"><input type="radio" name="sex" value="m"><span>男</span></label>
+    <label class="pill"><input type="radio" name="sex" value="f"><span>女</span></label>
+  </div></div>
+  <div class="row"><div class="row-title" id="t-abroad">是否接受海外派遣</div><div class="row-content">
+    <div role="radiogroup" aria-labelledby="t-abroad" id="w-abroad">
+      <div role="radio" aria-checked="false" tabindex="0">是</div><div role="radio" aria-checked="false" tabindex="-1">否</div>
+    </div>
+  </div></div>
+  <div class="row"><div class="row-title">出生日期</div><div class="row-content cal"><input id="w-birth" readonly placeholder="请选择出生日期"></div></div>
+  <div class="row"><div class="row-title">毕业年月</div><div class="row-content">
+    <select id="w-gy"><option value="">年</option><option>2024</option><option>2025</option><option>2026</option><option>2027</option></select>
+    <select id="w-gm"><option value="">月</option><option>01</option><option>02</option><option>03</option><option>04</option><option>05</option><option>06</option><option>07</option><option>08</option><option>09</option><option>10</option><option>11</option><option>12</option></select>
+  </div></div>
+  <div class="row"><div class="row-title">GPA</div><div class="row-content"><input id="w-gpa" type="number" step="0.01"></div></div>
+  <div class="row"><div class="row-title">意向工作地点</div><div class="row-content"><input id="w-loc"></div></div>
+  <div class="row"><div class="row-title">微信号</div><div class="row-content"><input id="w-wechat"></div></div>
+  <div class="module-hd">自我评价</div>
+  <div class="row"><div class="row-content"><div id="w-intro" class="editor" contenteditable="true" data-placeholder="请简要介绍自己（300字以内）" aria-label="自我评价"></div></div></div>
+  <div class="module-hd">问答</div>
+  <div class="row"><div class="row-title">你最有成就感的一件事？</div><div class="row-content"><textarea id="w-q1" rows="3"></textarea></div></div>
+</div>
+<script>
+document.querySelectorAll("#w-abroad [role=radio]").forEach((el) => el.addEventListener("click", () => {
+  document.querySelectorAll("#w-abroad [role=radio]").forEach((o) => o.setAttribute("aria-checked", String(o === el)));
+}));
+</script>
+</body>
+</html>

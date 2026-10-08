@@ -46,6 +46,12 @@ export const EXTRA_FIELDS = [
   { key: "english", label: "英语水平", hint: "CET-6 580 / 雅思 7.0" },
   { key: "currentCity", label: "现居城市", hint: "" },
   { key: "targetRole", label: "期望岗位", hint: "数据分析 / 产品经理" },
+  // Asked on most 国企 / 银行 forms; free text, filled as typed.
+  { key: "expectedSalary", label: "期望薪资", hint: "面议 / 15k-20k" },
+  { key: "availableFrom", label: "最早到岗时间", hint: "2026-07 / 随时" },
+  { key: "internshipDuration", label: "可实习时长", hint: "6 个月，每周 5 天" },
+  { key: "wechat", label: "微信号", hint: "" },
+  { key: "address", label: "通讯地址", hint: "省 市 区 街道" },
   // Long text: most forms ask for it, and each direction wants its own version.
   { key: "selfIntro", label: "自我评价", hint: "3-5 句，突出与目标岗位相关的能力", multiline: true },
 ] as const;

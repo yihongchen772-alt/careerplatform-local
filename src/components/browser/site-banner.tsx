@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { History, Radar, X } from "lucide-react";
+import { History, Radar } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Infobar } from "@/components/browser/infobar";
 import { setCompanyPortalUrl } from "@/lib/actions/application-sync";
 import { looksLikeCandidateCenter, matchKnownSite, siteKey, type KnownSite } from "@/lib/site-key";
 
@@ -83,49 +84,41 @@ export function SiteBanner({
 
   if (!showPortal && !showApplied) return null;
   return (
-    <div className="space-y-1.5">
+    <>
       {showPortal && (
-        <div className="flex flex-wrap items-center gap-2 rounded-md border border-sky-500/30 bg-sky-500/5 px-3 py-1.5 text-xs">
-          <Radar className="size-3.5 text-sky-600" />
-          <span>
-            这像是{match ? `「${match.companyName}」的` : ""}「我的投递」页面。设为进度页后，App 会定期读取它、自动推进投递阶段。
-          </span>
-          {match ? (
-            <Button type="button" size="sm" className="h-7" disabled={saving} onClick={savePortal}>
+        <Infobar
+          tone="info"
+          icon={<Radar />}
+          onClose={() => dismiss("portal")}
+          actions={match ? (
+            <Button type="button" size="xs" disabled={saving} onClick={savePortal}>
               {saving ? "设置中…" : `设为${match.companyName}的进度页`}
             </Button>
           ) : (
-            <Button type="button" size="sm" className="h-7" onClick={onPickPortalCompany}>
+            <Button type="button" size="xs" onClick={onPickPortalCompany}>
               选公司并设为进度页
             </Button>
           )}
-          <button type="button" aria-label="关闭提示" className="ml-auto text-muted-foreground hover:text-foreground" onClick={() => dismiss("portal")}>
-            <X className="size-3.5" />
-          </button>
-        </div>
+        >
+          这像是{match ? `「${match.companyName}」的` : ""}「我的投递」页面。设为进度页后，App 会定期读取它、自动推进投递阶段。
+        </Infobar>
       )}
       {showApplied && match && (
-        <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-1.5 text-xs">
-          <History className="size-3.5 text-amber-600" />
-          <span>
-            你已投过「{match.companyName}」：
-            {match.applications.slice(0, 3).map((application, index) => (
-              <span key={application.id}>
-                {index > 0 && "、"}
-                <Link href={`/applications/${application.id}`} className="underline underline-offset-2 hover:text-foreground">
-                  {application.title}
-                </Link>
-                （{application.stage}）
-              </span>
-            ))}
-            {match.applications.length > 3 && ` 等 ${match.applications.length} 个岗位`}
-            {active.length > 0 ? "。同一家公司通常限制投递数量，确认不是重复投递再提交。" : "。"}
-          </span>
-          <button type="button" aria-label="关闭提示" className="ml-auto text-muted-foreground hover:text-foreground" onClick={() => dismiss("applied")}>
-            <X className="size-3.5" />
-          </button>
-        </div>
+        <Infobar tone="warning" icon={<History />} onClose={() => dismiss("applied")}>
+          你已投过「{match.companyName}」：
+          {match.applications.slice(0, 3).map((application, index) => (
+            <span key={application.id}>
+              {index > 0 && "、"}
+              <Link href={`/applications/${application.id}`} className="underline underline-offset-2 hover:text-foreground">
+                {application.title}
+              </Link>
+              （{application.stage}）
+            </span>
+          ))}
+          {match.applications.length > 3 && ` 等 ${match.applications.length} 个岗位`}
+          {active.length > 0 ? "。同一家公司通常限制投递数量，确认不是重复投递再提交。" : "。"}
+        </Infobar>
       )}
-    </div>
+    </>
   );
 }

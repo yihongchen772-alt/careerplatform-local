@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>远洋银行 · 网申（分步）</title>
+<style>body{font:14px sans-serif;max-width:600px;margin:20px auto}.step{display:none}.step.on{display:block}.form-item{margin:10px 0;display:flex;gap:8px;align-items:center}.form-item label{width:110px}</style></head>
+<body>
+<div class="steps">第 <span id="no">1</span> / 2 步</div>
+<section class="step on" id="s1">
+  <h3>基本信息</h3>
+  <div class="form-item"><label for="a1">姓名</label><input id="a1"></div>
+  <div class="form-item"><label for="a2">手机号码</label><input id="a2"></div>
+  <div class="form-item"><label for="a3">电子邮箱</label><input id="a3"></div>
+  <div class="form-item"><label for="a4">性别</label><select id="a4"><option value="">请选择</option><option>男</option><option>女</option></select></div>
+  <button id="next" onclick="document.getElementById('s1').classList.remove('on');document.getElementById('s2').classList.add('on');document.getElementById('no').textContent='2'">下一步</button>
+</section>
+<section class="step" id="s2">
+  <h3>教育经历</h3>
+  <div class="form-item"><label for="b1">学校名称</label><input id="b1"></div>
+  <div class="form-item"><label for="b2">专业名称</label><input id="b2"></div>
+  <div class="form-item"><label for="b3">学历</label><select id="b3"><option value="">请选择</option><option>本科</option><option>硕士</option><option>博士</option></select></div>
+  <div class="form-item"><label for="b4">入学时间</label><input id="b4" type="month"></div>
+  <div class="form-item"><label for="b5">毕业时间</label><input id="b5" type="month"></div>
+</section>
+</body></html>

@@ -168,7 +168,7 @@ export function AssistantWidget() {
   return (
     <div className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-50 flex flex-col items-end gap-3">
       {open && (
-        <div className="flex h-[38rem] max-h-[calc(100vh-6rem)] w-[calc(100vw-2rem)] max-w-lg flex-col overflow-hidden rounded-2xl border bg-card shadow-xl">
+        <div role="dialog" aria-label="小欧求职助手" className="flex h-[38rem] max-h-[calc(100vh-6rem)] w-[calc(100vw-2rem)] max-w-lg flex-col overflow-hidden rounded-2xl border bg-card shadow-xl">
           <div className="flex items-center justify-between border-b px-3 py-2">
             <div className="flex-1"><p className="text-sm font-medium">小欧</p><p className="text-[11px] text-muted-foreground">你的求职小助手 · 岗位研究 · 投递记录</p></div>
             <Button type="button" variant="ghost" size="sm" disabled={sending || !!applying || !loaded} onClick={() => { setMessages([]); nextId.current = 0; }}>新对话</Button>

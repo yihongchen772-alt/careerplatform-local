@@ -77,6 +77,11 @@ export async function GET(request: Request) {
     currentCity: structured.extras.currentCity || null,
     targetRole: structured.extras.targetRole || null,
     selfIntro: structured.extras.selfIntro || null,
+    expectedSalary: structured.extras.expectedSalary || null,
+    availableFrom: structured.extras.availableFrom || null,
+    internshipDuration: structured.extras.internshipDuration || null,
+    wechat: structured.extras.wechat || null,
+    address: structured.extras.address || null,
     extra: [describeApplicationProfile(structured), ...Object.entries(summaries).map(([category, text]) => `${category === "experience" ? "实习/工作" : category === "project" ? "项目" : category === "award" ? "获奖" : "教育"}整段原文：${text}`)].filter(Boolean).join("\n") || null,
   });
 }

@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   clearMarks: () => ipcRenderer.invoke("browser:clear-marks"),
   capturePage: () => ipcRenderer.invoke("browser:capture-page"),
   screenshot: () => ipcRenderer.invoke("browser:screenshot"),
+  previewFrame: () => ipcRenderer.invoke("browser:preview-frame"),
   exportFormStructure: () => ipcRenderer.invoke("browser:export-form-structure"),
   chooseDirectory: () => ipcRenderer.invoke("browser:choose-directory"),
   exportDocument: (payload) => ipcRenderer.invoke("browser:export-document", payload),
