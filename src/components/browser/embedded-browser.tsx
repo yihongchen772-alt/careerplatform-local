@@ -951,7 +951,7 @@ export function EmbeddedBrowser({
             actions={<Button size="xs" variant="outline" onClick={() => void bridge.cancelAutofill(tabsState.activeId ?? undefined)}>停止填写</Button>}
           >
             {status.phase === "ai" ? (
-              <AiProgress active expectedSeconds={30} stages={["基础资料已填，AI 正在生成回答…", "正在从简历中核对信息…", "AI 仍在生成，请稍候…"]} />
+              <AiProgress active className="space-y-1" expectedSeconds={30} stages={["基础资料已填，AI 正在生成回答…", "正在从简历中核对信息…", "AI 仍在生成，请稍候…"]} />
             ) : (
               <span className="text-muted-foreground">{status.message}</span>
             )}
@@ -974,7 +974,7 @@ export function EmbeddedBrowser({
         )}
         {capturing && (
           <Infobar tone="info" icon={<Loader2 className="animate-spin" />}>
-            <AiProgress active expectedSeconds={15} stages={["正在读页面正文…", "AI 正在解析岗位…"]} />
+            <AiProgress active className="space-y-1" expectedSeconds={15} stages={["正在读页面正文…", "AI 正在解析岗位…"]} />
           </Infobar>
         )}
         {detected && !busy && detected.tabId === tabsState.activeId && (
@@ -1026,7 +1026,8 @@ export function EmbeddedBrowser({
           style={expanded || autoHeight ? undefined : { height: browserHeight }}
           className={cn("relative min-w-0 flex-1 overflow-hidden bg-white", !(expanded || autoHeight) && "min-h-[26rem]")}
         >
-          {!currentUrl && !overlayOpen && (
+          {/* App-drawn, not a page view: it can stay under an open menu. */}
+          {!currentUrl && (
             <NewTabPage
               links={quickLinks}
               history={history}
@@ -1051,6 +1052,7 @@ export function EmbeddedBrowser({
               bridge={bridge}
               status={status}
               busy={busy}
+              hasPage={!!currentUrl}
               resumeId={resumeVersionId}
               variantId={variantChoice}
               positionId={positionId}

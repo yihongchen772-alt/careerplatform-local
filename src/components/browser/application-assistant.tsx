@@ -50,8 +50,8 @@ const TABS: { id: AssistantTab; label: string; icon: typeof ScanSearch }[] = [
  * copying profile facts by hand, and the fill settings. It sits beside the
  * page, so the page stays visible and clickable while it is open.
  */
-export function ApplicationAssistant({ bridge, status, busy, resumeId, variantId, positionId, tab, onTab, onClose, onPosition, onPreview, onApply, settings, onOpenProfile }: {
-  bridge: DesktopBridge; status: DesktopBridgeAutofillStatus | null; busy: boolean; resumeId: string; variantId: string; positionId: string;
+export function ApplicationAssistant({ bridge, status, busy, hasPage, resumeId, variantId, positionId, tab, onTab, onClose, onPosition, onPreview, onApply, settings, onOpenProfile }: {
+  bridge: DesktopBridge; status: DesktopBridgeAutofillStatus | null; busy: boolean; hasPage: boolean; resumeId: string; variantId: string; positionId: string;
   tab: AssistantTab; onTab: (tab: AssistantTab) => void; onClose: () => void;
   onPosition: (id: string) => void; onPreview: (extra?: DesktopBridgeAutofillOptions) => void; onApply: (options: DesktopBridgeAutofillOptions) => void;
   settings: React.ReactNode; onOpenProfile: () => void;
@@ -105,8 +105,8 @@ export function ApplicationAssistant({ bridge, status, busy, resumeId, variantId
           <select value={length} onChange={(e) => setLength(Number(e.target.value))} className={cn(panelSelect, "w-24")}>{[100, 200, 300, 500].map((n) => <option key={n} value={n}>{n} 字</option>)}</select>
         </label>
         <div className="flex gap-2">
-          <Button size="sm" disabled={busy} onClick={() => onPreview({ answerLength: length, previewEdits: status?.plan ? edits.current : [] })}><ScanSearch />扫描并预览</Button>
-          <Button size="sm" variant="outline" disabled={busy || !resumeId} title={resumeId ? "重新生成还没填写的 AI 回答" : "先在设置里选择简历"} onClick={() => onPreview({ regenerate: true, answerLength: length, previewEdits: status?.plan ? edits.current : [] })}>重写未填回答</Button>
+          <Button size="sm" disabled={busy || !hasPage} title={hasPage ? undefined : "先打开网申页面"} onClick={() => onPreview({ answerLength: length, previewEdits: status?.plan ? edits.current : [] })}><ScanSearch />扫描并预览</Button>
+          <Button size="sm" variant="outline" disabled={busy || !hasPage || !resumeId} title={!hasPage ? "先打开网申页面" : resumeId ? "重新生成还没填写的 AI 回答" : "先在设置里选择简历"} onClick={() => onPreview({ regenerate: true, answerLength: length, previewEdits: status?.plan ? edits.current : [] })}>重写未填回答</Button>
         </div>
         {status?.plan ? (
           <PlanEditor key={status.plan.id} plan={status.plan} busy={busy} bridge={bridge} onApply={onApply} onRows={rememberEdits} onQuestion={(id, rows) => onPreview({ regenerate: true, answerLength: length, questionIds: [id], previewEdits: rows })} />
