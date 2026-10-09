@@ -156,3 +156,69 @@ test("desktop windows restore off-screen bounds safely; clipboard is read only b
   assert.equal(windows.length, count + 1); assert.match(windows.at(-1).webContents.mainFrame.url, /\/desktop\/notes/);
   assert.equal(windows.at(-1).options.width, 720); assert.equal(windows.at(-1).options.height, 820); login.shutdown();
 });
+
+test("note windows sit where the applicant chose: ordinary, on the desktop, or on top", (t) => {
+  const { EventEmitter } = require("events");
+  for (const platform of ["darwin", "win32"]) {
+    const base = path.resolve(__dirname, "../.local-run/window-tests"); fs.mkdirSync(base, { recursive: true });
+    const root = fs.mkdtempSync(path.join(base, "layer-"));
+    t.after(() => { if (path.dirname(fs.realpathSync(root)) !== fs.realpathSync(base)) throw new Error("unsafe cleanup"); fs.rmSync(root, { recursive: true, force: true }); });
+    const handlers = new Map(), windows = [];
+    class Window extends EventEmitter {
+      constructor(options) { super(); this.options = options; this.level = "normal"; this.workspaces = []; this.webContents = new EventEmitter(); this.webContents.id = windows.length + 10; this.webContents.mainFrame = { url: "" }; this.webContents.setWindowOpenHandler = () => {}; windows.push(this); }
+      loadURL(url) { this.webContents.mainFrame.url = url; }
+      getBounds() { return { x: 0, y: 0, width: 430, height: 520 }; }
+      setAlwaysOnTop(flag, level = "floating", relative = 0) { this.level = !flag ? "normal" : level === "normal" && relative === -1 ? "desktop" : "top"; }
+      setVisibleOnAllWorkspaces(visible, options) { this.workspaces.push({ visible, ...options }); }
+      setBackgroundColor() {}
+      isAlwaysOnTop() { return this.level !== "normal"; }
+      isDestroyed() { return false; }
+      show() {} focus() {} reload() {}
+    }
+    const electron = { app: { getPath: () => root }, BrowserWindow: Window, ipcMain: { handle: (k, v) => handlers.set(k, v) }, screen: { getAllDisplays: () => [{ workArea: { x: 0, y: 0, width: 1440, height: 900 } }] }, clipboard: { readText: () => "" }, globalShortcut: { register: () => true, unregister() {} }, Notification: { isSupported: () => false }, powerMonitor: new EventEmitter(), dialog: { showMessageBoxSync: () => 0 } };
+    const module = load("electron/productivity.js", { electron }, { __dirname: path.resolve(__dirname, "../electron"), setInterval: () => 1, clearInterval() {}, process: { ...process, platform } });
+    const manager = module.setupProductivity({ port: 3210, token: "fixture", getMainWindow: () => null, showMainWindow() {} });
+    manager.open("notes");
+    const note = windows[0], event = { sender: note.webContents, senderFrame: note.webContents.mainFrame };
+    // Ordinary by default, and never a companion floating over full-screen windows.
+    assert.equal(note.level, "normal", platform);
+    assert.equal(handlers.get("productivity:state")(event).layer, "normal");
+    if (platform === "darwin") assert.deepEqual(note.workspaces.at(-1), { visible: false, visibleOnFullScreen: false, skipTransformProcessType: true });
+    else assert.equal(note.workspaces.length, 0);
+
+    const chosen = handlers.get("productivity:layer")(event, "desktop");
+    if (platform !== "darwin") {
+      // Windows has no desktop window level: it stays an ordinary window.
+      assert.equal(chosen, "normal"); assert.equal(note.level, "normal");
+      assert.equal(handlers.get("productivity:layer")(event, "top"), "top"); assert.equal(note.level, "top");
+      assert.equal(handlers.get("productivity:pin")(event, false), false); assert.equal(note.level, "normal");
+      manager.shutdown();
+      continue;
+    }
+    assert.equal(chosen, "desktop"); assert.equal(note.level, "desktop");
+    assert.equal(handlers.get("productivity:state")(event).pinned, false);
+    // Asked for from the tray or the App: up front to edit, back down on blur.
+    manager.open("notes");
+    assert.equal(note.level, "normal");
+    note.emit("blur");
+    assert.equal(note.level, "desktop");
+    // The choice carries over to the next note window and to the saved state.
+    handlers.get("productivity:open")(event, "notes", "another-note", true);
+    const second = windows[1];
+    assert.equal(second.level, "normal"); second.emit("blur"); assert.equal(second.level, "desktop");
+    assert.equal(handlers.get("productivity:layer")(event, "bogus"), "desktop");
+    manager.shutdown();
+    const saved = JSON.parse(fs.readFileSync(path.join(root, "desktop-windows.json"), "utf8"));
+    assert.equal(saved.noteLayer, "desktop");
+    assert.equal(saved.windows[0].layer, "desktop"); assert.equal(saved.windows[0].pinned, false);
+    // Restored at launch, a desktop note goes straight to the desktop.
+    const restarted = module.setupProductivity({ port: 3210, token: "fixture", getMainWindow: () => null, showMainWindow() {} });
+    assert.ok(windows.slice(2).every((win) => win.level === "desktop"));
+    restarted.shutdown();
+    // An older saved file with only `pinned` keeps meaning 置顶.
+    fs.writeFileSync(path.join(root, "desktop-windows.json"), JSON.stringify({ mainVisible: true, windows: [{ key: "old", kind: "notes", noteId: null, visible: true, pinned: true }] }));
+    const legacy = module.setupProductivity({ port: 3210, token: "fixture", getMainWindow: () => null, showMainWindow() {} });
+    assert.equal(windows.at(-1).level, "top");
+    legacy.shutdown();
+  }
+});

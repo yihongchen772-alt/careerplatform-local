@@ -10,17 +10,44 @@ function fitBounds(bounds, displays) {
   return { width, height, x: Math.max(candidate.x, Math.min(Number.isFinite(bounds?.x) ? bounds.x : candidate.x, candidate.x + candidate.width - width)), y: Math.max(candidate.y, Math.min(Number.isFinite(bounds?.y) ? bounds.y : candidate.y, candidate.y + candidate.height - height)) };
 }
 
+// Where a desktop window sits among the other windows on screen:
+//   normal  — an ordinary window: whatever is opened later covers it
+//   desktop — macOS: below every other window, left on the desktop
+//   top     — above every other window
+const LAYERS = ["normal", "desktop", "top"];
+function layerOf(state) {
+  return LAYERS.includes(state?.layer) ? state.layer : state?.pinned ? "top" : "normal";
+}
+function applyLayer(win, layer) {
+  if (process.platform === "darwin" && typeof win.setVisibleOnAllWorkspaces === "function") {
+    // A window that can't go full screen is made a full-screen companion by
+    // Electron, which floats it over the App's own full-screen window. A note
+    // is not a palette: keep it on the desktop's Space like any window.
+    win.setVisibleOnAllWorkspaces(false, { visibleOnFullScreen: false, skipTransformProcessType: true });
+  }
+  if (layer === "top") win.setAlwaysOnTop(true, "floating");
+  else if (layer === "desktop" && process.platform === "darwin") win.setAlwaysOnTop(true, "normal", -1);
+  else win.setAlwaysOnTop(false);
+}
+
 function setupProductivity({ port, token, getMainWindow, showMainWindow, getNotesAtLogin = () => false, setNotesAtLogin = () => false, openNotesAtLogin = false }) {
   const origin = `http://localhost:${port}`;
   const file = path.join(app.getPath("userData"), "desktop-windows.json");
-  let states = [], mainVisible = true;
+  let states = [], mainVisible = true, noteLayer = "normal";
   try {
     const saved = JSON.parse(fs.readFileSync(file, "utf8"));
     states = (Array.isArray(saved) ? saved : saved.windows || []).filter((s) => ["notes", "calendar"].includes(s.kind)).slice(0, 30);
     if (typeof saved.mainVisible === "boolean") mainVisible = saved.mainVisible;
+    if (LAYERS.includes(saved.noteLayer)) noteLayer = saved.noteLayer;
   } catch { /* first launch */ }
   const windows = new Map(); let quitting = false, polling = false;
-  function persist() { try { fs.writeFileSync(file + ".tmp", JSON.stringify({ mainVisible, windows: states })); fs.renameSync(file + ".tmp", file); } catch (error) { console.error("Window state save failed", error.message); } }
+  function persist() { try { fs.writeFileSync(file + ".tmp", JSON.stringify({ mainVisible, noteLayer, windows: states })); fs.renameSync(file + ".tmp", file); } catch (error) { console.error("Window state save failed", error.message); } }
+  // A desktop-level note asked for by the applicant (tray, App button) comes
+  // up front to be edited, then sinks back once they click elsewhere.
+  function reveal(entry) {
+    if (entry.state.layer === "desktop" && process.platform === "darwin") { entry.raised = true; applyLayer(entry.win, "normal"); }
+    entry.win.show(); entry.win.focus();
+  }
   function setMainWindow(main) {
     main.on("show", () => { mainVisible = true; persist(); });
     main.on("hide", () => { mainVisible = false; persist(); });
@@ -30,24 +57,31 @@ function setupProductivity({ port, token, getMainWindow, showMainWindow, getNote
   function open(kind, id, capture = false, restore, newWindow = false) {
     if (!["notes", "calendar", "capture"].includes(kind)) return;
     const existing = [...windows.values()].find((s) => s.kind === kind && (kind !== "notes" || (id ? s.noteId === id : true)));
-    if (existing && !restore && !newWindow) { if (capture && dialog.showMessageBoxSync(existing.win, { type: "question", message: "用新的剪贴板内容替换当前捕获草稿？", buttons: ["保留当前草稿", "替换"], defaultId: 0, cancelId: 0 }) === 1) { existing.clipboard = clipboard.readText().slice(0, 50000); existing.win.reload(); } existing.win.show(); existing.win.focus(); return; }
+    if (existing && !restore && !newWindow) { if (capture && dialog.showMessageBoxSync(existing.win, { type: "question", message: "用新的剪贴板内容替换当前捕获草稿？", buttons: ["保留当前草稿", "替换"], defaultId: 0, cancelId: 0 }) === 1) { existing.clipboard = clipboard.readText().slice(0, 50000); existing.win.reload(); } reveal(existing); return; }
     const previous = !newWindow && states.find((s) => !s.visible && s.kind === kind && (!id || s.noteId === id));
-    const state = restore || previous || { key: require("crypto").randomUUID(), kind, noteId: id || null, visible: true, pinned: false };
+    const state = restore || previous || { key: require("crypto").randomUUID(), kind, noteId: id || null, visible: true, layer: kind === "notes" ? noteLayer : "normal" };
+    state.layer = layerOf(state);
+    state.pinned = state.layer === "top";
     if (!restore && !previous && kind !== "capture") { states = states.filter((s) => s.visible).concat(states.filter((s) => !s.visible).slice(-20)); states.push(state); }
     // Older note windows may have saved screen-sized bounds while fullscreen.
     const bounds = kind === "notes" && state.bounds ? { ...state.bounds, width: Math.min(state.bounds.width, 720), height: Math.min(state.bounds.height, 820) } : state.bounds;
-    const win = new BrowserWindow({ show: process.env.CAREERPLATFORM_TEST_MODE !== "1", ...fitBounds(bounds, screen.getAllDisplays()), minWidth: 320, minHeight: 300, title: kind === "notes" ? "求职罗盘 · 便利贴" : kind === "calendar" ? "求职罗盘 · 日历" : "求职罗盘 · 岗位捕获", alwaysOnTop: !!state.pinned, ...(kind === "notes" ? { backgroundColor: "#f5f0e7", fullscreenable: false, maximizable: false, ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" } : {}) } : {}), webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, "productivity-preload.js") } });
+    const win = new BrowserWindow({ show: process.env.CAREERPLATFORM_TEST_MODE !== "1", ...fitBounds(bounds, screen.getAllDisplays()), minWidth: 320, minHeight: 300, title: kind === "notes" ? "求职罗盘 · 便利贴" : kind === "calendar" ? "求职罗盘 · 日历" : "求职罗盘 · 岗位捕获", ...(kind === "notes" ? { backgroundColor: "#f5f0e7", fullscreenable: false, maximizable: false, ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" } : {}) } : {}), webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, "productivity-preload.js") } });
     if (kind === "notes") win.on("enter-full-screen", () => win.setFullScreen(false));
     const entry = { ...state, win, state, clipboard: capture ? clipboard.readText().slice(0, 50000) : "" }; windows.set(win.webContents.id, entry);
+    // Restored at launch, a desktop note stays on the desktop; opened just now,
+    // it shows in front until the applicant clicks elsewhere.
+    entry.raised = !restore && state.layer === "desktop" && process.platform === "darwin";
+    applyLayer(win, entry.raised ? "normal" : state.layer);
+    win.on("blur", () => { if (entry.raised && !win.isDestroyed()) { entry.raised = false; applyLayer(win, state.layer); } });
     const allowed = (url) => { try { const u = new URL(url); return u.origin === origin && u.pathname.startsWith("/desktop/"); } catch { return false; } };
     win.webContents.on("will-navigate", (e, url) => { if (!allowed(url)) e.preventDefault(); });
     win.webContents.on("will-redirect", (e, url) => { if (!allowed(url)) e.preventDefault(); });
     win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     let timer;
-    function remember() { clearTimeout(timer); timer = setTimeout(() => { if (!win.isDestroyed()) { state.bounds = win.getBounds(); state.pinned = win.isAlwaysOnTop(); persist(); } }, 250); }
+    function remember() { clearTimeout(timer); timer = setTimeout(() => { if (!win.isDestroyed()) { state.bounds = win.getBounds(); persist(); } }, 250); }
     win.on("query-session-end", () => { quitting = true; state.bounds = win.getBounds(); persist(); });
     win.on("move", remember); win.on("resize", remember);
-    win.on("close", () => { state.bounds = win.getBounds(); state.pinned = win.isAlwaysOnTop(); });
+    win.on("close", () => { state.bounds = win.getBounds(); });
     // Capture the ID before WebContents is destroyed.
     const contentsId = win.webContents.id;
     win.on("closed", () => { clearTimeout(timer); windows.delete(contentsId); if (!quitting) state.visible = false; persist(); });
@@ -62,8 +96,18 @@ function setupProductivity({ port, token, getMainWindow, showMainWindow, getNote
   }
   ipcMain.handle("productivity:open", (e, kind, id, newWindow) => { source(e); if (id != null && (typeof id !== "string" || id.length > 100)) return; open(kind, id, kind === "capture", undefined, newWindow === true); });
   ipcMain.handle("productivity:position", (e, id) => { source(e); if (typeof id !== "string" || id.length > 100) return; showMainWindow(); getMainWindow()?.loadURL(`${origin}/pool?position=${encodeURIComponent(id)}`); });
-  ipcMain.handle("productivity:pin", (e, value) => { const s = source(e); if (!s) return false; s.win.setAlwaysOnTop(value === true); s.state.pinned = value === true; persist(); return s.win.isAlwaysOnTop(); });
-  ipcMain.handle("productivity:state", (e) => { const s = source(e); const value = { pinned: !!s?.win.isAlwaysOnTop(), clipboard: s?.clipboard || "", notesAtLogin: !!getNotesAtLogin(), platform: process.platform }; if (s) s.clipboard = ""; return value; });
+  function setLayer(s, value) {
+    const layer = value === "desktop" && process.platform !== "darwin" ? "normal" : value;
+    s.state.layer = layer; s.state.pinned = layer === "top"; s.raised = false;
+    // The choice made on one note is where new note windows open, too.
+    if (s.kind === "notes") noteLayer = layer;
+    applyLayer(s.win, layer); persist();
+    return layer;
+  }
+  ipcMain.handle("productivity:layer", (e, value) => { const s = source(e); if (!s || !LAYERS.includes(value)) return s ? s.state.layer : "normal"; return setLayer(s, value); });
+  // The calendar's simple 置顶 switch.
+  ipcMain.handle("productivity:pin", (e, value) => { const s = source(e); if (!s) return false; return setLayer(s, value === true ? "top" : "normal") === "top"; });
+  ipcMain.handle("productivity:state", (e) => { const s = source(e); const value = { pinned: s?.state.layer === "top", layer: s?.state.layer || "normal", clipboard: s?.clipboard || "", notesAtLogin: !!getNotesAtLogin(), platform: process.platform }; if (s) s.clipboard = ""; return value; });
   ipcMain.handle("productivity:note", (e, id) => { const s = source(e); if (s?.kind === "notes" && typeof id === "string" && id.length < 100) { s.noteId = id; s.state.noteId = id; persist(); } });
   ipcMain.handle("productivity:color", (e, value) => { const s = source(e); if (s?.kind === "notes" && typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value)) s.win.setBackgroundColor(value); });
   ipcMain.handle("productivity:main", (e) => { source(e); showMainWindow(); });

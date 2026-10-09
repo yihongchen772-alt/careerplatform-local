@@ -17,7 +17,7 @@ export function Notes() {
   const dirty = useRef(false), saving = useRef(false), blocked = useRef(false);
   const [changing, setChanging] = useState(true);
   const [conflict, setConflict] = useState(false);
-  const [status, setStatus] = useState("正在加载"), [pinned, setPinned] = useState(false);
+  const [status, setStatus] = useState("正在加载"), [layer, setLayer] = useState<DesktopWindowLayer>("normal");
   const [menuOpen, setMenuOpen] = useState(false);
   const [onLogin, setOnLogin] = useState(false);
   const [isMac, setIsMac] = useState(false);
@@ -64,7 +64,7 @@ export function Notes() {
   useEffect(() => {
     let alive = true;
     void listNotes().then((rows) => { if (!alive) return; setNotes(rows); const id = new URLSearchParams(location.search).get("id"); const row = rows.find((n) => n.id === id) || rows[0]; if (row) select(row); else setStatus("点击新建，开始写便签"); }).catch(() => setStatus("无法加载，请重新打开窗口")).finally(() => { if (alive) setChanging(false); });
-    void window.desktopProductivity?.state().then((s) => { if (!alive) return; setDesktop(true); setPinned(s.pinned); setOnLogin(s.notesAtLogin); setIsMac(s.platform === "darwin"); });
+    void window.desktopProductivity?.state().then((s) => { if (!alive) return; setDesktop(true); setLayer(s.layer ?? (s.pinned ? "top" : "normal")); setOnLogin(s.notesAtLogin); setIsMac(s.platform === "darwin"); });
     const timer = setInterval(() => { void flush(); }, 650);
     const unload = () => { if (dirty.current) void flush(); };
     window.addEventListener("beforeunload", unload);
@@ -110,6 +110,11 @@ export function Notes() {
     try { setOnLogin(await window.desktopProductivity.setNotesAtLogin(!onLogin)); }
     catch { toast.error("开机启动设置失败，请在系统设置中检查登录项"); }
   }
+  async function chooseLayer(next: DesktopWindowLayer) {
+    if (!window.desktopProductivity) return;
+    try { setLayer(await window.desktopProductivity.setLayer(next)); }
+    catch { toast.error("窗口位置没能切换，请重试"); }
+  }
   function openMain() {
     if (window.desktopProductivity) void window.desktopProductivity.openMain();
     else window.open("/dashboard", "_blank", "noopener");
@@ -132,8 +137,22 @@ export function Notes() {
       <p className="mb-2 text-xs font-medium opacity-70">便签颜色</p>
       <div className="mb-3 grid grid-cols-6 gap-1.5">{NOTE_COLORS.map((name) => <button key={name} type="button" aria-label={NOTE_PALETTE[name].label} title={NOTE_PALETTE[name].label} aria-pressed={colorName === name} disabled={!note} onClick={() => edit({ color: name })} className="flex size-7 items-center justify-center rounded-full border-2 disabled:opacity-40" style={{ backgroundColor: NOTE_PALETTE[name].background, borderColor: colorName === name ? palette.ink : NOTE_PALETTE[name].border }}>{colorName === name && <Check className="size-3.5" />}</button>)}</div>
       <label className="mb-3 flex items-center justify-between gap-2">纸张样式<select aria-label="便签模板" disabled={!note || changing} value={note?.template || "blank"} onChange={(e) => edit({ template: e.target.value })} className="rounded border bg-white/50 px-2 py-1" style={{ borderColor: palette.border }}><option value="blank">空白</option><option value="lined">横线</option></select></label>
+      {desktop && <div className="mb-3">
+        <p className="mb-1.5 text-xs font-medium opacity-70">窗口位置</p>
+        <div role="radiogroup" aria-label="窗口位置" className={`grid gap-1 rounded-lg p-0.5 ${isMac ? "grid-cols-3" : "grid-cols-2"}`} style={{ backgroundColor: "rgba(0,0,0,0.06)" }}>
+          {(isMac ? (["normal", "desktop", "top"] as const) : (["normal", "top"] as const)).map((value) => (
+            <button key={value} type="button" role="radio" aria-checked={layer === value} onClick={() => void chooseLayer(value)} className="rounded-md px-1 py-1 text-xs transition-colors" style={layer === value ? { backgroundColor: palette.background, boxShadow: "0 1px 2px rgba(0,0,0,0.15)" } : { opacity: 0.75 }}>
+              {value === "normal" ? "普通窗口" : value === "desktop" ? "只在桌面" : "置顶"}
+            </button>
+          ))}
+        </div>
+        <p className="mt-1.5 text-[11px] leading-relaxed opacity-70">
+          {layer === "desktop" ? "一直待在所有窗口下面，不会挡住你打开的页面。要编辑时，点菜单栏图标里的「显示便利贴」，它会临时浮上来，点别处后回到桌面。"
+            : layer === "top" ? "一直浮在所有窗口最上面。"
+            : "和普通窗口一样，打开别的窗口或页面时会被盖住。"}
+        </p>
+      </div>}
       <div className="space-y-0.5 border-t pt-2" style={{ borderColor: palette.border }}>
-        <button type="button" role="menuitem" disabled={!desktop} onClick={async () => { if (window.desktopProductivity) setPinned(await window.desktopProductivity.pin(!pinned)); }} className="block w-full rounded px-2 py-1.5 text-left hover:bg-black/5 disabled:opacity-40">{pinned ? "取消置顶" : "置顶显示"}</button>
         <button type="button" role="menuitemcheckbox" aria-checked={onLogin} disabled={!desktop} onClick={() => void toggleLogin()} className="block w-full rounded px-2 py-1.5 text-left hover:bg-black/5 disabled:opacity-40">{onLogin ? "✓ " : ""}开机显示便利贴</button>
         <button type="button" role="menuitem" disabled={!note || !desktop} onClick={() => { if (note) void window.desktopProductivity?.open("notes", note.id, true); setMenuOpen(false); }} className="block w-full rounded px-2 py-1.5 text-left hover:bg-black/5 disabled:opacity-40">在新窗口打开</button>
         <button type="button" role="menuitem" onClick={openMain} className="block w-full rounded px-2 py-1.5 text-left hover:bg-black/5">打开求职罗盘</button>
