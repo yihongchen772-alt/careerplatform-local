@@ -20,7 +20,11 @@ export type DesktopBridgeAutofillModule = "basic" | "education" | "experience" |
 export type FillProposal = { id: string; fieldKey: string; label: string; section?: string; value: string; selected: boolean; eligible: boolean; source: string; ref: string; required?: boolean; maxLength?: number | null; note: string; edited?: boolean; remember?: boolean };
 export type FillRecordBlock = { id: string; label: string; note: string; fieldIds: string[]; choices: { ref: string; label: string; values: Record<string, { value: string; ref: string }> }[] };
 export type FillPlan = { id: string; url: string; proposals: FillProposal[]; choices: { ref: string; label: string; value: string }[]; blocks?: FillRecordBlock[]; uploadResume: boolean; contextKey: string; positionId?: string; resumeVersionId?: string; variantId?: string };
-export type ApplicationSnapshot = { fields: { label: string; value: string }[]; url: string; positionId?: string; resumeVersionId?: string; variantId?: string; contextKey?: string };
+export type ApplicationSnapshot = {
+  fields: { label: string; value: string }[]; url: string; positionId?: string; resumeVersionId?: string; variantId?: string; contextKey?: string;
+  /** The current page's title, visible text (capped) and og:site_name, and this tab's earlier pages. */
+  title?: string; text?: string; siteName?: string; history?: { url: string; title: string }[];
+};
 export type DesktopBridgeAutofillOptions = {
   mode?: "preview" | "apply";
   positionId?: string;

@@ -33,6 +33,8 @@ export function siteKey(rawUrl: string | null | undefined): string | null {
   if (!/^https?:$/.test(url.protocol)) return null;
   const host = url.hostname.toLowerCase().replace(/^www\./, "");
   if (JOB_BOARD_HOSTS.test(host)) return null;
+  // An IP address is one site as a whole, not "0.1" of it.
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host) || host.startsWith("[")) return url.host;
   const segments = url.pathname.split("/").filter(Boolean);
   // Moka: app.mokahr.com/{campus-recruitment|social-recruitment|apply|m}/{org}/…
   if (/(?:^|\.)mokahr\.com$/.test(host)) {

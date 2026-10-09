@@ -268,6 +268,20 @@ async function pageInfo(tabId) {
   return { url: tab.url || "", title: tab.title || "", text, success };
 }
 
+// What the submitted form said (this page's fields, or the previous step's
+// kept for the success page), for the material package and for naming the job.
+async function submittedFields(tabId, url) {
+  const session = await chrome.storage.session.get([`job:${tabId}`, `archive:${tabId}`]);
+  const archive = session[`archive:${tabId}`] || {};
+  const positionId = session[`job:${tabId}`] || undefined;
+  const fields = [];
+  for (const frame of await tabFrames(tabId)) {
+    await runInFrame(tabId, frame, core.readCurrentApplicationFields).catch(() => {});
+    fields.push(...((await runInFrame(tabId, frame, core.collectApplicationFields, [archive.contextKey || (positionId ? `job:v1:${positionId}` : core.portalContext(url))]).catch(() => [])) || []));
+  }
+  return { fields, archive, positionId };
+}
+
 const handlers = {
   async watchMemory({ tabId, enabled }) { return watchMemory(tabId, enabled === true); },
   async memoryStatus({ tabId }) { const status = (await chrome.storage.session.get(`memory-status:${tabId}`))[`memory-status:${tabId}`]; const tab = await chrome.tabs.get(tabId); return status?.url === tab.url ? status : null; },
@@ -303,16 +317,17 @@ const handlers = {
     const page = await pageInfo(tabId);
     return jsonOrThrow(await api("capture-job", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: page.url, title: page.title, text: page.text }) }));
   },
-  async record({ tabId, companyName, title, applyUrl, resumeVersionId }) {
+  async identify({ tabId }) {
+    const page = await pageInfo(tabId);
+    if (!/^https?:/.test(page.url)) return { companyName: "", title: "", evidence: [] };
+    const { fields } = await submittedFields(tabId, page.url);
+    return jsonOrThrow(await api("identify-application", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: page.url, title: page.title.slice(0, 300), text: page.text.slice(0, 4000), fields: fields.slice(0, 250) }) }));
+  },
+  async record({ tabId, companyName, title, applyUrl, resumeVersionId, recognizedPositionId }) {
     const prefs = await settings();
-    const session = await chrome.storage.session.get([`job:${tabId}`, `archive:${tabId}`]);
-    const archive = session[`archive:${tabId}`] || {};
-    const positionId = session[`job:${tabId}`] || undefined;
-    const fields = [];
-    for (const frame of await tabFrames(tabId)) {
-      await runInFrame(tabId, frame, core.readCurrentApplicationFields).catch(() => {});
-      fields.push(...((await runInFrame(tabId, frame, core.collectApplicationFields, [archive.contextKey || (positionId ? `job:v1:${positionId}` : core.portalContext(applyUrl))]).catch(() => [])) || []));
-    }
+    const { fields, archive, positionId: bound } = await submittedFields(tabId, applyUrl);
+    // A recognised pool job is linked only when nothing was bound while filling.
+    const positionId = bound || (!archive.positionId && recognizedPositionId) || undefined;
     return jsonOrThrow(await api("record-application", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ companyName, title, applyUrl, appliedDate: new Date().toISOString(), resumeVersionId, positionId, snapshot: { fields, url: applyUrl, resumeVersionId: archive.resumeVersionId || resumeVersionId, variantId: archive.variantId || prefs.variantId, positionId: archive.positionId || positionId } }) }));
   },
   async portal({ companyId, url }) {

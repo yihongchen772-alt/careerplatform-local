@@ -89,7 +89,7 @@ export default async function BrowserPage({
         }}
         poolPositions={positions
           .filter((p) => p.status === "EVALUATING")
-          .map((p) => ({ id: p.id, label: `${p.company.name} · ${p.title}`, companyName: p.company.name, source: p.source }))}
+          .map((p) => ({ id: p.id, label: `${p.company.name} · ${p.title}`, companyName: p.company.name, source: p.source, title: p.title, jdUrl: p.jdUrl }))}
         applications={applications.map((a) => ({
           id: a.id,
           label: `${a.company.name} · ${a.title}`,

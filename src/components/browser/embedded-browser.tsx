@@ -60,6 +60,8 @@ import { parseJd } from "@/lib/actions/jd-parse";
 import { PositionFormDialog, type PositionFormInitial } from "@/components/pool/position-form-dialog";
 import { PortalSyncDialog, type PortalCompany } from "@/components/browser/portal-sync-dialog";
 import { MarkAppliedFromBrowserDialog, type PoolPosition } from "@/components/browser/mark-applied-from-browser";
+import { recognizeApplication, type Recognition } from "@/components/browser/recognize-application";
+import { siteKey } from "@/lib/site-key";
 import { ScreenshotDialog, type ApplicationOption } from "@/components/browser/screenshot-dialog";
 import { ApplicationAssistant, panelSelect, type AssistantTab } from "@/components/browser/application-assistant";
 import { SiteBanner, type KnownSite } from "@/components/browser/site-banner";
@@ -220,6 +222,10 @@ export function EmbeddedBrowser({
     title: string;
     evidence: string;
   } | null>(null);
+  // Company and job of the just-submitted 网申, worked out from this tab's
+  // pages as soon as 投递成功 shows; handed to the 记为已投递 dialog.
+  const [submittedRecognition, setSubmittedRecognition] = useState<{ tabId: number; url: string; result: Recognition | null } | null>(null);
+  const [markRecognition, setMarkRecognition] = useState<Recognition | null>(null);
   const autoFillPreference = usePreference("careerplatform.browser.autofillEveryPage", "0") === "1";
   const [autoFillOverride, setAutoFillOverride] = useState<boolean | null>(null);
   const autoFill = autoFillOverride ?? autoFillPreference;
@@ -258,6 +264,13 @@ export function EmbeddedBrowser({
   const [appOverlay, setAppOverlay] = useState(false);
   const overlayOpen = captureOpen || portalOpen || markOpen || shotOpen || moreOpen || fillMenuOpen || omniboxOpen || appOverlay;
   const linkedVariant = profileVariants.find((v) => v.resumeVersionId && v.resumeVersionId === resumeVersionId);
+  // Every company whose site is known: applied-to ones, 企业名录 careers pages
+  // and candidate-pool job pages — so an address alone can name the employer.
+  const identitySites = useMemo(() => [
+    ...knownSites.map((site) => ({ companyName: site.companyName, keys: site.keys })),
+    ...quickLinks.companies.map((company) => ({ companyName: company.name, keys: [siteKey(company.url)].filter((key): key is string => !!key) })),
+    ...poolPositions.map((position) => ({ companyName: position.companyName, keys: [siteKey(position.jdUrl)].filter((key): key is string => !!key) })),
+  ].filter((site) => site.keys.length > 0), [knownSites, quickLinks.companies, poolPositions]);
   const variantLabel = variantChoice === "" ? `跟随简历（${linkedVariant ? linkedVariant.name : "默认资料"}）` : variantChoice === "default" ? "默认资料" : profileVariants.find((v) => v.id === variantChoice)?.name ?? "默认资料";
   const scopeLabel = fillModules.length === ALL_FILL_MODULES.length ? "全部模块" : fillModules.length === 0 ? "未选择" : fillModules.length === 1 ? FILL_MODULES.find(({ id }) => id === fillModules[0])?.label : `${fillModules.length} 个模块`;
   const resumeName = resumeVersionId ? resumeVersions.find((r) => r.id === resumeVersionId)?.name ?? "简历" : "不用简历";
@@ -357,6 +370,7 @@ export function EmbeddedBrowser({
     });
     const offSubmitted = bridge.onApplicationSubmitted((payload) => {
       setSubmitted(payload);
+      setSubmittedRecognition({ tabId: payload.tabId, url: payload.url, result: null });
       toast.success(`检测到“${payload.evidence}”，确认后可以记入投递看板`);
     });
     bridge.getTabs().then((state) => { activeIdRef.current = state.activeId; setTabsState(state); if (state.activeId !== null && initialPositionId) setJobBindings((bindings) => ({ ...bindings, [state.activeId!]: initialPositionId })); }).catch(() => {});
@@ -397,6 +411,22 @@ export function EmbeddedBrowser({
       setToasterPosition(null);
     };
   }, []);
+
+  useEffect(() => {
+    if (!bridge || !submittedRecognition || submittedRecognition.result || submittedRecognition.tabId !== tabsState.activeId) return;
+    const controller = new AbortController();
+    const { tabId, url } = submittedRecognition;
+    void bridge.applicationSnapshot()
+      .then((snapshot) => (snapshot ? recognizeApplication({ ...snapshot, positionId: snapshot.positionId || jobBindings[tabId] || undefined }, poolPositions, identitySites, controller.signal) : null))
+      .catch(() => null)
+      .then((result) => {
+        if (controller.signal.aborted) return;
+        // Settled either way, so the bar stops saying "正在识别" when nothing came of it.
+        const settled: Recognition = result ?? { companyName: "", title: "", evidence: [], usedAi: false };
+        setSubmittedRecognition((current) => (current && current.tabId === tabId && current.url === url ? { ...current, result: settled } : current));
+      });
+    return () => controller.abort();
+  }, [bridge, submittedRecognition, tabsState.activeId, poolPositions, identitySites, jobBindings]);
 
   // A still of the page, taken whenever the pointer comes up to the browser
   // controls, so a menu opened next has a current picture to stand on.
@@ -874,7 +904,7 @@ export function EmbeddedBrowser({
               <DropdownMenuSeparator />
               <DropdownMenuItem disabled={!currentUrl} onClick={() => { setFindOpen(true); setTimeout(() => findRef.current?.select(), 50); }}><Search />在页面中查找…<DropdownMenuShortcut>{mod}F</DropdownMenuShortcut></DropdownMenuItem>
               <DropdownMenuItem disabled={capturing || !currentUrl} onClick={handleCapture}><Bookmark />收藏为候选岗位</DropdownMenuItem>
-              <DropdownMenuItem disabled={!currentUrl} onClick={() => setMarkOpen(true)}><Send />记为已投递…</DropdownMenuItem>
+              <DropdownMenuItem disabled={!currentUrl} onClick={() => { setMarkRecognition(null); setMarkOpen(true); }}><Send />记为已投递…</DropdownMenuItem>
               <DropdownMenuItem onClick={() => setPortalOpen(true)}><Radar />设置进度同步…</DropdownMenuItem>
               <DropdownMenuItem disabled={!currentUrl} onClick={handleScreenshot}><Camera />截图存到投递附件…</DropdownMenuItem>
               <DropdownMenuSeparator />
@@ -1001,11 +1031,17 @@ export function EmbeddedBrowser({
           <Infobar
             tone="success"
             icon={<Check />}
-            onClose={() => setSubmitted(null)}
+            onClose={() => { setSubmitted(null); setSubmittedRecognition(null); }}
             closeLabel="不是投递成功"
-            actions={<Button size="xs" onClick={() => { setMarkOpen(true); setSubmitted(null); }}><Send />确认并建档</Button>}
+            actions={<Button size="xs" onClick={() => { setMarkRecognition(submittedRecognition?.tabId === submitted.tabId ? submittedRecognition.result : null); setMarkOpen(true); setSubmitted(null); setSubmittedRecognition(null); }}><Send />确认并建档</Button>}
           >
-            官网显示“{submitted.evidence}”。如果确实提交完成了，把它记进投递看板。
+            {(() => {
+              const result = submittedRecognition?.tabId === submitted.tabId ? submittedRecognition.result : null;
+              const named = result && (result.companyName || result.title) ? [result.companyName, result.title].filter(Boolean).join(" · ") : "";
+              return named
+                ? <>官网显示“{submitted.evidence}”，识别为 <strong className="font-medium">{named}</strong>。确实提交完成的话，把它记进投递看板。</>
+                : <>官网显示“{submitted.evidence}”{result ? "" : "，正在识别公司和岗位…"}。确实提交完成的话，把它记进投递看板。</>;
+            })()}
           </Infobar>
         )}
         <SiteBanner
@@ -1083,10 +1119,11 @@ export function EmbeddedBrowser({
         <MarkAppliedFromBrowserDialog
           open={markOpen}
           onOpenChange={setMarkOpen}
-          pageTitle={activeTab?.title ?? ""}
           pageUrl={currentUrl ?? ""}
           positions={poolPositions}
+          sites={identitySites}
           initialPositionId={positionId || undefined}
+          initialRecognition={markRecognition}
           initialResumeId={resumeVersionId || undefined}
           resumeVersions={resumeVersions}
         />

@@ -936,12 +936,19 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
   });
   handle("browser:application-snapshot", async () => {
     const tab = activeTab(); if (!tab) return null;
+    const wc = tab.view.webContents;
     const fields = [];
-    for (const frame of allFrames(tab.view.webContents)) {
+    for (const frame of allFrames(wc)) {
       await frame.executeJavaScript(`(${readCurrentApplicationFields.toString()})()`).catch(() => {});
-      fields.push(...((await frame.executeJavaScript(`(${collectApplicationFields.toString()})(${JSON.stringify(tab.positionId ? `job:v1:${tab.positionId}` : portalContext(tab.archiveUrl || tab.view.webContents.getURL()))})`).catch(() => [])) || []));
+      fields.push(...((await frame.executeJavaScript(`(${collectApplicationFields.toString()})(${JSON.stringify(tab.positionId ? `job:v1:${tab.positionId}` : portalContext(tab.archiveUrl || wc.getURL()))})`).catch(() => [])) || []));
     }
-    return { fields, url: tab.view.webContents.getURL(), positionId: tab.positionId, resumeVersionId: tab.resumeVersionId, variantId: tab.variantId };
+    // What the tab went through before the success page — the job page's
+    // title usually names both the role and the employer — for working out
+    // which application this was.
+    const history = wc.navigationHistory.getAllEntries().slice(0, wc.navigationHistory.getActiveIndex() + 1)
+      .filter((entry) => /^https?:/i.test(entry.url)).slice(-15).map((entry) => ({ url: entry.url.slice(0, 2000), title: String(entry.title || "").slice(0, 300) }));
+    const page = await wc.executeJavaScript(`(() => ({ text: (${capturePageText.toString()})().slice(0, 4000), siteName: (document.querySelector('meta[property="og:site_name"], meta[name="application-name"]') || {}).content || "" }))()`).catch(() => ({ text: "", siteName: "" }));
+    return { fields, url: wc.getURL(), title: wc.getTitle(), text: page.text, siteName: String(page.siteName || "").slice(0, 100), history, positionId: tab.positionId, resumeVersionId: tab.resumeVersionId, variantId: tab.variantId };
   });
   handle("browser:cancel-autofill", (_e, tabId) => stopFillTask(tabId ?? activeId));
 

@@ -21,7 +21,7 @@
     "desktop:prepare": "node scripts/fetch-prisma-windows-engine.cjs && node scripts/packaging-build.cjs && node scripts/packaging-prepare.cjs",
     "electron:build:win": "npm run desktop:prepare && electron-builder --config electron-builder.cjs --win --x64 --publish never",
     "electron:build:mac": "npm run desktop:prepare && electron-builder --config electron-builder.cjs --mac --arm64 --publish never",
-    "test:desktop": "node --test tests/updater.test.cjs tests/desktop-data.test.cjs tests/autofill.test.cjs tests/autofill-scenarios.test.cjs tests/application-flow.test.cjs tests/inbox-scan.test.cjs tests/features-v13.test.cjs tests/extension.test.cjs tests/email-reminders.test.cjs tests/integrity.test.cjs tests/application-workspace.test.cjs tests/application-memory.test.cjs tests/auto-progress.test.cjs",
+    "test:desktop": "node --test tests/updater.test.cjs tests/desktop-data.test.cjs tests/autofill.test.cjs tests/autofill-scenarios.test.cjs tests/application-flow.test.cjs tests/application-identity.test.cjs tests/inbox-scan.test.cjs tests/features-v13.test.cjs tests/extension.test.cjs tests/email-reminders.test.cjs tests/integrity.test.cjs tests/application-workspace.test.cjs tests/application-memory.test.cjs tests/auto-progress.test.cjs",
     "local:data": "node scripts/desktop-data.cjs inspect"
   },
   "dependencies": {

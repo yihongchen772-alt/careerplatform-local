@@ -260,23 +260,48 @@ $("capture").addEventListener("click", async () => {
   }
 });
 
+// The pool job the page was recognised as, linked on save while the names stay as recognised.
+let recognized = null;
+
 $("record-toggle").addEventListener("click", () => {
   const form = $("record");
   form.hidden = !form.hidden;
-  if (!form.hidden) {
-    const job = assistantJobs.find((p) => p.id === $("job").value);
-    $("record-company").value = job?.company || (siteInfo && siteInfo.match && siteInfo.match.companyName) || "";
-    $("record-title").value = job?.title || ((tab && tab.title) || "").slice(0, 80);
-    ($("record-company").value ? $("record-title") : $("record-company")).focus();
-  }
+  if (form.hidden) return;
+  const job = assistantJobs.find((p) => p.id === $("job").value);
+  const company = $("record-company"), title = $("record-title"), hint = $("record-hint");
+  recognized = null;
+  company.dataset.touched = title.dataset.touched = "";
+  company.value = job?.company || (siteInfo && siteInfo.match && siteInfo.match.companyName) || "";
+  title.value = job?.title || "";
+  hint.hidden = !!job;
+  (company.value ? title : company).focus();
+  if (job) return;
+  // Not bound to a job: read the page and the form just submitted, as the App's 网申浏览器 does.
+  hint.textContent = "正在从页面识别公司和岗位…";
+  const shownFor = tab && tab.url;
+  send("identify").then((found) => {
+    if (form.hidden || (tab && tab.url) !== shownFor) return;
+    // Never over what the applicant has typed meanwhile.
+    if (!company.dataset.touched && found.companyName) company.value = found.companyName;
+    if (!title.dataset.touched && found.title) title.value = found.title;
+    if (found.positionId) recognized = found;
+    hint.textContent = found.companyName || found.title
+      ? `已自动识别${found.evidence && found.evidence.length ? `（依据：${found.evidence.join("、")}）` : ""}，请核对后保存。`
+      : "没能从页面识别出公司和岗位，请手动填写。";
+  }).catch((err) => {
+    if (!form.hidden) hint.textContent = err.code === "offline" || err.code === "unpaired" ? err.message : "没能从页面识别出公司和岗位，请手动填写。";
+  });
 });
+for (const id of ["record-company", "record-title"]) $(id).addEventListener("input", (event) => { event.target.dataset.touched = "1"; });
 
 $("record").addEventListener("submit", async (event) => {
   event.preventDefault();
+  const companyName = $("record-company").value.trim(), title = $("record-title").value.trim();
+  const recognizedPositionId = recognized && recognized.companyName === companyName && recognized.title === title ? recognized.positionId : undefined;
   try {
-    await send("record", { companyName: $("record-company").value, title: $("record-title").value, applyUrl: tab.url, resumeVersionId: $("resume").value || undefined });
+    await send("record", { companyName, title, applyUrl: tab.url, resumeVersionId: $("resume").value || undefined, recognizedPositionId });
     $("record").hidden = true;
-    message("已记入投递记录。之后打开这家公司的“我的投递”页，可以一键设为进度页。");
+    message(`已记入投递记录：${companyName} · ${title}。之后打开这家公司的“我的投递”页，可以一键设为进度页。`);
   } catch (err) {
     message(err.message, "error");
   }
