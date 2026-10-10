@@ -42,6 +42,7 @@ export async function globalSearch(query: string): Promise<GlobalSearchResults> 
         OR: [
           { title: { contains: q} },
           { company: { name: { contains: q} } },
+          { company: { aliases: { some: { alias: { contains: q } } } } },
         ],
       },
       include: { company: true },

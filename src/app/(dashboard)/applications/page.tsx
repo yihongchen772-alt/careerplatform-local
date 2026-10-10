@@ -15,7 +15,8 @@ export default async function ApplicationsPage() {
     db.application.findMany({
       where: { userId: user.id },
       include: {
-        company: true,
+        // Aliases too, so the search finds 字节跳动 by "ByteDance" or "头条".
+        company: { include: { aliases: { select: { alias: true } } } },
         // Only the entry matching the application's current stage is still
         // relevant to "what's next" — earlier stages' deadlines are history.
         // Deliberately NOT `orderBy: enteredAt desc, take: 1`: the very

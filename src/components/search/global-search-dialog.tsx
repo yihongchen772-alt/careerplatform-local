@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Building2, ListChecks, Send } from "lucide-react";
+import { Building2, ListChecks, Search, Send } from "lucide-react";
 import {
   CommandDialog,
   Command,
@@ -60,6 +60,14 @@ export function GlobalSearchDialog({
     results.positions.length > 0 ||
     results.applications.length > 0 ||
     results.companies.length > 0;
+  // The 投递记录 page's own search also takes aliases and pinyin initials,
+  // and lists every match rather than five.
+  const allApplications = (
+    <CommandItem value="applications-all" onSelect={() => go(`/applications?q=${encodeURIComponent(query.trim())}`)}>
+      <Search />
+      <span>在投递记录里搜索「{query.trim()}」</span>
+    </CommandItem>
+  );
 
   return (
     <CommandDialog
@@ -78,7 +86,7 @@ export function GlobalSearchDialog({
           {query.trim().length < 2 ? (
             <CommandEmpty>输入至少 2 个字符开始搜索</CommandEmpty>
           ) : !hasResults ? (
-            <CommandEmpty>没有找到匹配结果</CommandEmpty>
+            <CommandGroup heading="没有直接匹配的结果">{allApplications}</CommandGroup>
           ) : (
             <>
               {results.applications.length > 0 && (
@@ -93,6 +101,7 @@ export function GlobalSearchDialog({
                       <span>{r.subtitle} · {r.title}</span>
                     </CommandItem>
                   ))}
+                  {allApplications}
                 </CommandGroup>
               )}
               {results.positions.length > 0 && (

@@ -29,6 +29,9 @@ import { ConfirmDeleteButton } from "@/components/ui/confirm-delete-button";
 import { deleteApplication } from "@/lib/actions/applications";
 import { applicationStageStyle } from "@/lib/application-stage-style";
 import { QuickStageMenu } from "@/components/applications/quick-stage-menu";
+import { Highlight } from "@/components/applications/highlight";
+import { useStoredChoice } from "@/components/applications/use-stored-choice";
+import { compareCompanyNames, type ApplicationHits } from "@/lib/application-search";
 import { cn } from "@/lib/utils";
 import type { ApplicationStage } from "@prisma/client";
 
@@ -50,23 +53,30 @@ export type ApplicationRow = {
   /** Verbatim wording from the company's portal, via 网申进度同步. */
   portalStatus?: string | null;
   portalSuggestedStage?: ApplicationStage | null;
-  company: { name: string };
+  company: { name: string; aliases?: { alias: string }[] };
 };
+
+const SORTS = ["applied", "updated", "company"] as const;
+const SORT_LABELS: Record<(typeof SORTS)[number], string> = { applied: "最近投递", updated: "最近有进展", company: "公司名 A→Z" };
 
 export function ApplicationsTable({
   applications,
+  hits,
 }: {
   applications: ApplicationRow[];
+  /** The search's matches, when the list shows search results. */
+  hits?: Map<string, ApplicationHits> | null;
 }) {
   const [stageFilter, setStageFilter] = useState<string>("ALL");
+  const [sort, setSort] = useStoredChoice("careerplatform.applications.sort", SORTS, "applied");
 
-  const filtered = useMemo(
-    () =>
-      stageFilter === "ALL"
-        ? applications
-        : applications.filter((a) => a.currentStage === stageFilter),
-    [applications, stageFilter]
-  );
+  const filtered = useMemo(() => {
+    const list = stageFilter === "ALL" ? [...applications] : applications.filter((a) => a.currentStage === stageFilter);
+    // Arrives newest application first; the other orders are re-sorts.
+    if (sort === "updated") list.sort((a, b) => b.currentStageDate.localeCompare(a.currentStageDate));
+    if (sort === "company") list.sort((a, b) => compareCompanyNames(a.company.name, b.company.name) || b.appliedDate.localeCompare(a.appliedDate));
+    return list;
+  }, [applications, stageFilter, sort]);
 
   async function handleDelete(id: string) {
     try {
@@ -95,13 +105,13 @@ export function ApplicationsTable({
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="shrink-0 text-xs font-medium text-muted-foreground">筛选阶段</span>
           <Select
             value={stageFilter}
             onValueChange={(value) => setStageFilter(value ?? "ALL")}
           >
-            <SelectTrigger className="w-full rounded-xl sm:w-48">
+            <SelectTrigger className="w-40 rounded-xl sm:w-48">
               <SelectValue>
                 {(value: string) =>
                   value === "ALL" ? "全部" : STAGE_LABELS[value as ApplicationStage]
@@ -114,6 +124,17 @@ export function ApplicationsTable({
                 <SelectItem key={stage} value={stage}>
                   {label}
                 </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span className="shrink-0 text-xs font-medium text-muted-foreground sm:ml-2">排序</span>
+          <Select value={sort} onValueChange={(value) => value && setSort(value as (typeof SORTS)[number])}>
+            <SelectTrigger className="w-36 rounded-xl" aria-label="排序">
+              <SelectValue>{(value: string) => SORT_LABELS[value as (typeof SORTS)[number]] ?? "最近投递"}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {SORTS.map((value) => (
+                <SelectItem key={value} value={value}>{SORT_LABELS[value]}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -146,9 +167,9 @@ export function ApplicationsTable({
                   <div className="flex min-w-0 items-center gap-2.5">
                     <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/8 text-sm font-semibold text-primary">{app.company.name.slice(0, 1)}</span>
                     <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold">{app.company.name}</p>
+                    <p className="truncate text-sm font-semibold"><Highlight text={app.company.name} ranges={hits?.get(app.id)?.company} />{hits?.get(app.id)?.alias && <span className="ml-1 text-xs font-normal text-muted-foreground">（{hits.get(app.id)!.alias}）</span>}</p>
                     <p className="truncate text-xs text-muted-foreground">
-                      {app.title}
+                      <Highlight text={app.title} ranges={hits?.get(app.id)?.title} />
                     </p>
                     </div>
                   </div>
@@ -216,8 +237,8 @@ export function ApplicationsTable({
                   <Link href={`/applications/${app.id}`} className="flex min-w-0 items-center gap-3 py-1.5 hover:text-primary">
                     <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/8 text-sm font-semibold text-primary">{app.company.name.slice(0, 1)}</span>
                     <span className="min-w-0">
-                      <span className="block truncate font-semibold">{app.company.name}</span>
-                      <span className="block truncate text-xs text-muted-foreground">{app.title}</span>
+                      <span className="block truncate font-semibold"><Highlight text={app.company.name} ranges={hits?.get(app.id)?.company} />{hits?.get(app.id)?.alias && <span className="ml-1 text-xs font-normal text-muted-foreground">（{hits.get(app.id)!.alias}）</span>}</span>
+                      <span className="block truncate text-xs text-muted-foreground"><Highlight text={app.title} ranges={hits?.get(app.id)?.title} /></span>
                     </span>
                   </Link>
                 </TableCell>
