@@ -102,6 +102,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
 contextBridge.exposeInMainWorld("desktopProductivity", {
   open: (kind, id, newWindow) => ipcRenderer.invoke("productivity:open", kind, id, newWindow),
   openPosition: (id) => ipcRenderer.invoke("productivity:position", id),
+  openApplication: (id) => ipcRenderer.invoke("productivity:application", id),
+  openExternal: (url) => ipcRenderer.invoke("productivity:external", url),
   pin: (value) => ipcRenderer.invoke("productivity:pin", value),
   setLayer: (layer) => ipcRenderer.invoke("productivity:layer", layer),
   state: () => ipcRenderer.invoke("productivity:state"),

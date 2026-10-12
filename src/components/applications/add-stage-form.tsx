@@ -17,6 +17,7 @@ import { addStageUpdate } from "@/lib/actions/applications";
 import { addAttachment } from "@/lib/actions/attachments";
 import { FileUploadButton } from "@/components/ui/file-upload-button";
 import { STAGE_LABELS } from "@/lib/stage-labels";
+import { EMPTY_SCHEDULE, ScheduleFields, scheduleFromDraft, type ScheduleDraft } from "@/components/schedule/schedule-fields";
 import type { ApplicationStage } from "@prisma/client";
 
 export function AddStageForm({
@@ -32,13 +33,17 @@ export function AddStageForm({
   const [note, setNote] = useState("");
   const [interviewFormat, setInterviewFormat] = useState("");
   const [interviewer, setInterviewer] = useState("");
-  const [nextDeadline, setNextDeadline] = useState("");
-  const [nextDeadlineEnd, setNextDeadlineEnd] = useState("");
+  const [schedule, setSchedule] = useState<ScheduleDraft>(EMPTY_SCHEDULE);
   const [pendingFiles, setPendingFiles] = useState<{ url: string; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const planned = scheduleFromDraft(schedule);
+    if ("error" in planned) {
+      toast.error(planned.error);
+      return;
+    }
     setLoading(true);
     try {
       const { stageHistoryId } = await addStageUpdate(applicationId, {
@@ -48,21 +53,22 @@ export function AddStageForm({
         note: note || undefined,
         interviewFormat: interviewFormat || undefined,
         interviewer: interviewer || undefined,
-        nextDeadline: nextDeadline ? new Date(nextDeadline) : undefined,
-        nextDeadlineEnd:
-          nextDeadline && nextDeadlineEnd ? new Date(nextDeadlineEnd) : undefined,
+        nextDeadline: planned.value.nextDeadline ?? undefined,
+        nextDeadlineEnd: planned.value.nextDeadlineEnd ?? undefined,
+        nextHasTime: planned.value.nextHasTime,
+        meetingInfo: planned.value.meetingInfo,
+        remindMinutes: planned.value.remindMinutes,
       });
       await Promise.all(
         pendingFiles.map((f) => addAttachment({ stageHistoryId, ...f }))
       );
-      toast.success(stage === "REJECTED" ? "已记录未通过，这条投递会显示在看板的未通过区域" : "已更新进展");
+      toast.success(stage === "REJECTED" ? "已记录未通过，这条投递会显示在看板的未通过区域" : planned.value.nextHasTime ? "已更新进展，时间已进日历，到点前会提醒你" : "已更新进展");
       setStage(stage);
       setStageLabel("");
       setNote("");
       setInterviewFormat("");
       setInterviewer("");
-      setNextDeadline("");
-      setNextDeadlineEnd("");
+      setSchedule(EMPTY_SCHEDULE);
       setPendingFiles([]);
     } catch {
       toast.error("更新失败，请重试");
@@ -113,30 +119,10 @@ export function AddStageForm({
           <Label className="text-xs text-muted-foreground">面试官</Label>
           <Input value={interviewer} onChange={(e) => setInterviewer(e.target.value)} />
         </div>
-        <div className="space-y-1">
-          <Label className="text-xs text-muted-foreground">下一步截止日期</Label>
-          <Input
-            type="date"
-            value={nextDeadline}
-            onChange={(e) => {
-              setNextDeadline(e.target.value);
-              if (!e.target.value) setNextDeadlineEnd("");
-            }}
-          />
-        </div>
-        {nextDeadline && (
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">
-              窗口结束日期（可选——笔试/测评这类给一段时间窗口的，填这个）
-            </Label>
-            <Input
-              type="date"
-              min={nextDeadline}
-              value={nextDeadlineEnd}
-              onChange={(e) => setNextDeadlineEnd(e.target.value)}
-            />
-          </div>
-        )}
+      </div>
+      <div className="space-y-1.5 rounded-xl border border-border/60 bg-background/40 p-3">
+        <p className="text-xs font-medium">时间安排 <span className="font-normal text-muted-foreground">（面试时间 / 笔试截止，可不填）</span></p>
+        <ScheduleFields value={schedule} onChange={setSchedule} idPrefix="add-stage-schedule" />
       </div>
       <div className="space-y-1">
         <Label className="text-xs text-muted-foreground">复盘笔记</Label>

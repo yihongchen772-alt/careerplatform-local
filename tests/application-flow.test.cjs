@@ -84,7 +84,8 @@ test("backfilled stages do not replace the newest event; same-day application is
   const stageSource = fs.readFileSync(path.join(__dirname, "../src/lib/application-stage-history.ts"), "utf8");
   const stageCompiled = ts.transpileModule(stageSource, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
   const stageModule = { exports: {} };
-  vm.runInNewContext(stageCompiled, { module: stageModule, exports: stageModule.exports, require });
+  // latestStageEntry is pure; the calendar sync it sits beside is not needed here.
+  vm.runInNewContext(stageCompiled, { module: stageModule, exports: stageModule.exports, require: (id) => (id === "@/lib/stage-schedule" ? { syncApplicationEvents: async () => {} } : require(id)) });
   const appliedDate = new Date("2026-09-25T00:00:00.000Z");
   const history = [
     { id: "a", stage: "APPLIED", enteredAt: appliedDate },

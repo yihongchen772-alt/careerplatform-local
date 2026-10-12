@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
+import { AUTO_NOTE_PREFIXES } from "@/lib/stage-labels";
 import {
   InterviewNotes,
   type InterviewNote,
@@ -8,20 +9,24 @@ import { InterviewIntelligenceCard } from "@/components/interviews/interview-int
 import type { ExtractedQuestion } from "@/lib/actions/interview-note-extract";
 import type { InterviewIntelligence } from "@/lib/actions/interview-intelligence";
 
-export default async function InterviewsPage() {
+export default async function InterviewsPage({ searchParams }: { searchParams: Promise<{ company?: string }> }) {
   const user = await requireUser();
+  const { company } = await searchParams;
 
   const [histories, intelligence] = await Promise.all([
     db.stageHistory.findMany({
       where: {
         application: { userId: user.id },
         // A stage row only belongs in the library if it carries something worth
-        // re-reading — a bare "moved to 一面" entry would just be noise.
+        // re-reading — a bare "moved to 一面" entry would just be noise, and
+        // so is the App's own note on a step it recorded from a mail or the
+        // portal (until the user writes their own over it).
         OR: [
           { note: { not: null } },
           { interviewer: { not: null } },
           { interviewFormat: { not: null } },
         ],
+        AND: AUTO_NOTE_PREFIXES.map((prefix) => ({ OR: [{ note: null }, { NOT: { note: { startsWith: prefix } } }] })),
       },
       include: {
         application: { include: { company: true } },
@@ -59,7 +64,7 @@ export default async function InterviewsPage() {
       <InterviewIntelligenceCard
         initial={intelligence ? (intelligence.result as InterviewIntelligence) : null}
       />
-      <InterviewNotes notes={notes} />
+      <InterviewNotes key={company ?? ""} notes={notes} initialCompany={company?.trim() || null} />
     </div>
   );
 }

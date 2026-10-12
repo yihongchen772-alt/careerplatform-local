@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { BriefcaseBusiness, CircleX, LayoutGrid, List, MessagesSquare, Search, SearchX, Sparkles, X } from "lucide-react";
+import { BriefcaseBusiness, CircleX, FilterX, LayoutGrid, List, MessagesSquare, Search, SearchX, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { matchApplication, type ApplicationHits } from "@/lib/application-search";
+import { APPLICATION_FILTERS, FILTER_HINTS, FILTER_LABELS, filterCounts, matchesFilter, parseFilter, type ApplicationFilter } from "@/lib/application-filters";
 import { useStoredChoice } from "@/components/applications/use-stored-choice";
 import {
   ApplicationsTable,
@@ -14,6 +15,7 @@ import {
 } from "@/components/applications/applications-table";
 import { ApplicationsBoard } from "@/components/applications/applications-board";
 import { PortalReviewBanner } from "@/components/applications/portal-review-banner";
+import { useNow } from "@/components/schedule/use-now";
 
 /**
  * Board and table over the same data. The board answers "where am I stuck",
@@ -23,37 +25,57 @@ import { PortalReviewBanner } from "@/components/applications/portal-review-bann
  */
 const VIEWS = ["board", "table"] as const;
 
-export function ApplicationsView({ applications }: { applications: ApplicationRow[] }) {
+export function ApplicationsView({ applications, now: serverNow }: { applications: ApplicationRow[]; now: number }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const now = useNow(serverNow);
   const [view, setView] = useStoredChoice("careerplatform.applications.view", VIEWS, "board");
   // What the box shows, and what the lists are filtered by. They differ only
   // while a Chinese input method is composing, whose pinyin letters would
   // otherwise flash through the filter.
   const urlQuery = searchParams.get("q") ?? "";
+  const urlFilter = parseFilter(searchParams.get("f"));
   const [draft, setDraft] = useState(urlQuery);
   const [query, setQuery] = useState(urlQuery);
-  const [seenUrlQuery, setSeenUrlQuery] = useState(urlQuery);
-  // Opened again with another ?q= (from ⌘K search, say) while already here.
-  if (urlQuery !== seenUrlQuery) {
-    setSeenUrlQuery(urlQuery);
+  const [filter, setFilterState] = useState<ApplicationFilter>(urlFilter);
+  const [seenUrl, setSeenUrl] = useState(`${urlQuery}|${urlFilter}`);
+  // Opened again with another ?q= / ?f= (from ⌘K search, say) while already here.
+  if (`${urlQuery}|${urlFilter}` !== seenUrl) {
+    setSeenUrl(`${urlQuery}|${urlFilter}`);
     if (urlQuery !== query.trim()) {
       setDraft(urlQuery);
       setQuery(urlQuery);
     }
+    if (urlFilter !== filter) setFilterState(urlFilter);
   }
   const composing = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  function commit(value: string) {
-    setQuery(value);
-    // In the address too, so coming back from a 投递 shows the same results.
+  // In the address too, so coming back from a 投递 shows the same results.
+  function writeUrl(change: { q?: string; f?: ApplicationFilter }) {
     const params = new URLSearchParams(window.location.search);
-    if (value.trim()) params.set("q", value.trim());
-    else params.delete("q");
+    if (change.q !== undefined) {
+      if (change.q.trim()) params.set("q", change.q.trim());
+      else params.delete("q");
+    }
+    if (change.f !== undefined) {
+      if (change.f !== "all") params.set("f", change.f);
+      else params.delete("f");
+    }
     const search = params.toString();
     window.history.replaceState(null, "", search ? `${pathname}?${search}` : pathname);
+  }
+
+  function commit(value: string) {
+    setQuery(value);
+    writeUrl({ q: value });
+  }
+
+  function chooseFilter(next: ApplicationFilter) {
+    const value = next === filter ? "all" : next;
+    setFilterState(value);
+    writeUrl({ f: value });
   }
 
   const term = query.trim();
@@ -66,8 +88,12 @@ export function ApplicationsView({ applications }: { applications: ApplicationRo
     }
     return found;
   }, [applications, term]);
-  const shown = hits ? applications.filter((app) => hits.has(app.id)) : applications;
+  const searched = hits ? applications.filter((app) => hits.has(app.id)) : applications;
+  const counts = filterCounts(searched, now);
+  const shown = filter === "all" ? searched : searched.filter((app) => matchesFilter(app, filter, now));
   const companies = new Set(shown.map((app) => app.company.name)).size;
+  const narrowed = !!term || filter !== "all";
+  const orderLabel = [filter !== "all" ? FILTER_LABELS[filter] : "", term ? `搜索「${term}」` : ""].filter(Boolean).join(" · ");
 
   // "/" or ⌘F / Ctrl+F jumps to the search box, as in a browser.
   useEffect(() => {
@@ -86,16 +112,24 @@ export function ApplicationsView({ applications }: { applications: ApplicationRo
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
-  const active = applications.filter((a) => !["REJECTED", "ACCEPTED", "DECLINED", "WITHDRAWN", "CANCELLED"].includes(a.currentStage)).length;
-  const interviews = applications.filter((a) => a.currentStage.startsWith("INTERVIEW") || a.currentStage === "HR_INTERVIEW").length;
+
+  const overall = filterCounts(applications, now);
   const offers = applications.filter((a) => a.currentStage === "OFFER" || a.currentStage === "ACCEPTED").length;
-  const rejected = applications.filter((a) => a.currentStage === "REJECTED").length;
-  const metrics = [
-    { label: "累计投递", value: applications.length, icon: BriefcaseBusiness, caption: "所有投递记录" },
-    { label: "进行中", value: active, icon: Sparkles, caption: "仍在推进的机会" },
-    { label: "面试阶段", value: interviews, icon: MessagesSquare, caption: "值得重点准备" },
-    { label: "未通过", value: rejected, icon: CircleX, caption: offers > 0 ? `另有 ${offers} 个 Offer / 已接受` : "公司结束的流程" },
+  // The numbers are also the way in: each card opens what it counts.
+  const metrics: { label: string; value: number; icon: typeof BriefcaseBusiness; caption: string; filter: ApplicationFilter }[] = [
+    { label: "累计投递", value: applications.length, icon: BriefcaseBusiness, caption: "所有投递记录", filter: "all" },
+    { label: "进行中", value: overall.active, icon: Sparkles, caption: "仍在推进的机会", filter: "active" },
+    { label: "面试阶段", value: overall.interview, icon: MessagesSquare, caption: "值得重点准备", filter: "interview" },
+    { label: "未通过", value: overall.rejected, icon: CircleX, caption: offers > 0 ? `另有 ${offers} 个 Offer / 已接受` : "公司结束的流程", filter: "rejected" },
   ];
+  const chips = APPLICATION_FILTERS.filter((key) => key === "all" || key === filter || counts[key] > 0);
+
+  function clearAll() {
+    setDraft("");
+    commit("");
+    setFilterState("all");
+    writeUrl({ q: "", f: "all" });
+  }
 
   return (
     <div className="space-y-6">
@@ -110,15 +144,26 @@ export function ApplicationsView({ applications }: { applications: ApplicationRo
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {metrics.map((metric) => {
           const Icon = metric.icon;
+          const active = metric.filter !== "all" && filter === metric.filter;
           return (
-            <div key={metric.label} className="relative overflow-hidden rounded-[1.35rem] border border-border/70 bg-card/75 p-4 shadow-[0_10px_30px_-24px_rgba(0,0,0,0.4)] backdrop-blur-xl sm:p-5">
+            <button
+              key={metric.label}
+              type="button"
+              aria-pressed={metric.filter === "all" ? filter === "all" : active}
+              title={metric.filter === "all" ? "显示全部投递" : active ? "再点一次显示全部" : `只看${FILTER_LABELS[metric.filter]}的投递`}
+              onClick={() => chooseFilter(metric.filter)}
+              className={cn(
+                "group relative overflow-hidden rounded-[1.35rem] border bg-card/75 p-4 text-left shadow-[0_10px_30px_-24px_rgba(0,0,0,0.4)] backdrop-blur-xl transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_14px_34px_-22px_rgba(0,0,0,0.45)] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40 sm:p-5",
+                active ? "border-primary/50 ring-2 ring-primary/25" : "border-border/70"
+              )}
+            >
               <div className="flex items-start justify-between gap-2">
                 <span className="text-xs font-medium text-muted-foreground">{metric.label}</span>
-                <span className="flex size-8 items-center justify-center rounded-xl bg-primary/8 text-primary"><Icon className="size-4" /></span>
+                <span className={cn("flex size-8 items-center justify-center rounded-xl transition-colors", active ? "bg-primary text-primary-foreground" : "bg-primary/8 text-primary")}><Icon className="size-4" /></span>
               </div>
               <p className="mt-4 text-3xl font-semibold tracking-[-0.055em] tabular-nums sm:text-4xl">{metric.value}</p>
-              <p className="mt-1 text-[11px] text-muted-foreground">{metric.caption}</p>
-            </div>
+              <p className="mt-1 text-[11px] text-muted-foreground">{active ? "正在筛选 · 再点一次取消" : metric.caption}</p>
+            </button>
           );
         })}
       </div>
@@ -203,24 +248,52 @@ export function ApplicationsView({ applications }: { applications: ApplicationRo
         </div>
       </div>
 
-      {term && shown.length > 0 && (
+      {applications.length > 0 && (
+        <div className="-mt-2 flex flex-wrap items-center gap-1.5" role="group" aria-label="快捷筛选">
+          {chips.map((key) => (
+            <button
+              key={key}
+              type="button"
+              aria-pressed={filter === key}
+              title={FILTER_HINTS[key]}
+              onClick={() => chooseFilter(key)}
+              className={cn(
+                "inline-flex h-7 items-center gap-1 rounded-full border px-3 text-xs font-medium transition-colors",
+                filter === key ? "border-foreground bg-foreground text-background" : "border-border/70 bg-card/70 text-muted-foreground hover:border-primary/30 hover:text-foreground"
+              )}
+            >
+              {FILTER_LABELS[key]}
+              <span className={cn("tabular-nums", filter === key ? "text-background/75" : "text-muted-foreground/80")}>{counts[key]}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {narrowed && shown.length > 0 && (
         <p className="-mt-3 text-xs text-muted-foreground" role="status">
-          找到 {shown.length} 条投递{companies > 1 ? `（${companies} 家公司）` : ""}
-          {shown.length === 1 ? "，按回车直接打开" : ""}
-          <button type="button" onClick={() => { setDraft(""); commit(""); }} className="ml-2 font-medium text-primary hover:underline">显示全部</button>
+          {orderLabel}：{shown.length} 条投递{companies > 1 ? `（${companies} 家公司）` : ""}
+          {term && shown.length === 1 ? "，按回车直接打开" : ""}
+          <button type="button" onClick={clearAll} className="ml-2 font-medium text-primary hover:underline">显示全部</button>
         </p>
       )}
 
-      {term && shown.length === 0 ? (
+      {narrowed && shown.length === 0 ? (
         <div className="flex min-h-56 flex-col items-center justify-center rounded-[1.6rem] border border-dashed border-border/80 bg-card/55 px-6 py-10 text-center" role="status">
-          <SearchX className="size-6 text-muted-foreground" />
-          <h3 className="mt-4 text-base font-semibold">没有找到和「{term}」有关的投递</h3>
-          <p className="mt-1 max-w-md text-sm text-muted-foreground">可以试试公司简称、岗位里的关键词，或公司名的拼音首字母（字节跳动 → zjtd）。</p>
-          <Button variant="outline" size="sm" className="mt-4" onClick={() => { setDraft(""); commit(""); inputRef.current?.focus(); }}>显示全部投递</Button>
+          {term ? <SearchX className="size-6 text-muted-foreground" /> : <FilterX className="size-6 text-muted-foreground" />}
+          <h3 className="mt-4 text-base font-semibold">
+            {term ? `没有找到和「${term}」有关的${filter !== "all" ? `「${FILTER_LABELS[filter]}」` : ""}投递` : `暂时没有「${FILTER_LABELS[filter]}」的投递`}
+          </h3>
+          <p className="mt-1 max-w-md text-sm text-muted-foreground">
+            {term ? "可以试试公司简称、岗位里的关键词，或公司名的拼音首字母（字节跳动 → zjtd）。" : FILTER_HINTS[filter]}
+          </p>
+          <Button variant="outline" size="sm" className="mt-4" onClick={() => { clearAll(); inputRef.current?.focus(); }}>显示全部投递</Button>
         </div>
       ) : view === "board" ? (
         <ApplicationsBoard
           hits={hits}
+          narrowed={narrowed}
+          now={now}
+          orderLabel={orderLabel}
           applications={shown.map((a) => ({
             id: a.id,
             companyName: a.company.name,
@@ -231,8 +304,7 @@ export function ApplicationsView({ applications }: { applications: ApplicationRo
             terminatedAtStageLabel: a.terminatedAtStageLabel,
             appliedDate: a.appliedDate,
             currentStageDate: a.currentStageDate,
-            nextDeadline: a.nextDeadline,
-            nextDeadlineEnd: a.nextDeadlineEnd,
+            nextSchedule: a.nextSchedule,
             portalStatus: a.portalStatus,
             portalSuggestedStage: a.portalSuggestedStage,
           }))}
@@ -240,7 +312,7 @@ export function ApplicationsView({ applications }: { applications: ApplicationRo
       ) : (
         <Card className="border-0 bg-card/80">
           <CardContent className="pt-1">
-            <ApplicationsTable applications={shown} hits={hits} />
+            <ApplicationsTable applications={shown} hits={hits} now={now} orderLabel={orderLabel} />
           </CardContent>
         </Card>
       )}

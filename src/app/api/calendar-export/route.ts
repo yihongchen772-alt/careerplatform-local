@@ -1,9 +1,12 @@
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { buildCalendarIcs, type ExportCalendarEvent } from "@/lib/calendar-export";
+import { STAGE_LABELS } from "@/lib/stage-labels";
 export async function GET(request: Request) {
   const user = await requireUser(); const eventId = new URL(request.url).searchParams.get("eventId");
-  const personal = await db.calendarEvent.findMany({ where: { userId: user.id, ...(eventId ? { id: eventId } : {}) }, include: { reminders: true } });
+  // A whole-calendar export lists 投递 steps from their rows below, so their
+  // calendar copies are left out here; one asked for by id is exported as is.
+  const personal = await db.calendarEvent.findMany({ where: { userId: user.id, ...(eventId ? { id: eventId } : { stageHistoryId: null }) }, include: { reminders: true } });
   if (eventId && !personal.length) return Response.json({ error: "日程不存在" }, { status: 404 });
   const events: ExportCalendarEvent[] = personal.map((e) => ({ ...e, offsetMinutes: e.reminders[0]?.offsetMinutes }));
   if (!eventId) {
@@ -13,7 +16,10 @@ export async function GET(request: Request) {
       db.personalTask.findMany({ where: { userId: user.id, done: false, dueDate: { not: null } } }),
       db.contact.findMany({ where: { userId: user.id, nextFollowUpAt: { not: null } } }),
     ]);
-    events.push(...positions.map((p) => ({ id: `position-${p.id}`, title: `${p.company.name} · ${p.title} 投递截止`, startsAt: p.deadline!, description: p.jdUrl })), ...stages.map((s) => ({ id: `stage-${s.id}`, title: `${s.application.company.name} · ${s.application.title} 下一步`, startsAt: s.nextDeadline!, endsAt: s.nextDeadlineEnd, description: s.note })), ...tasks.map((t) => ({ id: `task-${t.id}`, title: t.title, startsAt: t.dueDate!, endsAt: t.dueDateEnd, description: t.note })), ...contacts.map((c) => ({ id: `contact-${c.id}`, title: `跟进 ${c.name}`, startsAt: c.nextFollowUpAt! })));
+    events.push(...positions.map((p) => ({ id: `position-${p.id}`, title: `${p.company.name} · ${p.title} 投递截止`, startsAt: p.deadline!, description: p.jdUrl })), ...stages.map((s) => s.nextHasTime
+      ? { id: `stage-${s.id}`, title: `${s.application.company.name} · ${s.stageLabel || STAGE_LABELS[s.stage]}（${s.application.title}）`, startsAt: s.nextDeadline!, endsAt: s.nextDeadlineEnd && s.nextDeadlineEnd > s.nextDeadline! ? s.nextDeadlineEnd : null, description: [s.meetingInfo, s.note].filter(Boolean).join("\n"), offsetMinutes: s.remindMinutes }
+      // A date-only step is that whole day (stored at UTC midnight), not 08:00.
+      : { id: `stage-${s.id}`, title: `${s.application.company.name} · ${s.application.title} 下一步`, startsAt: s.nextDeadline!, allDay: true, dateKey: s.nextDeadline!.toISOString().slice(0, 10), endDateKey: s.nextDeadlineEnd?.toISOString().slice(0, 10), description: [s.meetingInfo, s.note].filter(Boolean).join("\n") }), ...tasks.map((t) => ({ id: `task-${t.id}`, title: t.title, startsAt: t.dueDate!, endsAt: t.dueDateEnd, description: t.note })), ...contacts.map((c) => ({ id: `contact-${c.id}`, title: `跟进 ${c.name}`, startsAt: c.nextFollowUpAt! })));
   }
   return new Response(buildCalendarIcs(events), { headers: { "Content-Type": "text/calendar; charset=utf-8", "Content-Disposition": 'attachment; filename="jobcompass-calendar.ics"', "Cache-Control": "no-store" } });
 }

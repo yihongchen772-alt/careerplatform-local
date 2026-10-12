@@ -60,3 +60,10 @@ export const POSITION_STATUS_LABELS: Record<PositionStatus, string> = {
   APPLIED: "已投递",
   DROPPED: "已放弃",
 };
+
+/**
+ * How notes the App writes itself begin (官网同步, 邮件识别). 面经库 skips
+ * them — they are not anyone's interview notes — unless the user has written
+ * their own note over one.
+ */
+export const AUTO_NOTE_PREFIXES = ["网申进度同步", "邮件自动识别："] as const;

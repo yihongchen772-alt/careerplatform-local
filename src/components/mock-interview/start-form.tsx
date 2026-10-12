@@ -35,6 +35,9 @@ export function MockInterviewStartForm({
   applications,
   hasOwnKey,
   initialFocusMix,
+  initialTarget,
+  initialResumeVersionId,
+  presetLabel,
 }: {
   resumeVersions: ResumeOption[];
   positions: PositionOption[];
@@ -44,10 +47,20 @@ export function MockInterviewStartForm({
    * "按推荐配比开始模拟面试" link — carried straight through to
    * startInterviewSession, not otherwise interpreted here. */
   initialFocusMix?: string | null;
+  /** `pos:<id>` / `app:<id>`, from a 投递's 「AI 模拟面试」 link. */
+  initialTarget?: string | null;
+  initialResumeVersionId?: string | null;
+  presetLabel?: string | null;
 }) {
   const router = useRouter();
-  const [resumeVersionId, setResumeVersionId] = useState(resumeVersions[0]?.id ?? "");
-  const [target, setTarget] = useState(NONE);
+  const [resumeVersionId, setResumeVersionId] = useState(
+    initialResumeVersionId && resumeVersions.some((r) => r.id === initialResumeVersionId) ? initialResumeVersionId : resumeVersions[0]?.id ?? ""
+  );
+  const [target, setTarget] = useState(() => {
+    if (initialTarget?.startsWith(POS_PREFIX) && positions.some((p) => p.id === initialTarget.slice(POS_PREFIX.length))) return initialTarget;
+    if (initialTarget?.startsWith(APP_PREFIX) && applications.some((a) => a.id === initialTarget.slice(APP_PREFIX.length))) return initialTarget;
+    return NONE;
+  });
   const [targetRole, setTargetRole] = useState("");
   const [includeCoding, setIncludeCoding] = useState(false);
   const [focusMix] = useState(initialFocusMix ?? "");
@@ -187,6 +200,12 @@ export function MockInterviewStartForm({
                   onChange={(e) => setTargetRole(e.target.value)}
                   placeholder="不填就用简历里的求职方向"
                 />
+              </div>
+            )}
+
+            {presetLabel && target !== NONE && (
+              <div className="rounded-md border border-primary/30 bg-primary/5 p-2 text-xs">
+                已按投递选好岗位：<span className="font-medium">{presetLabel}</span>，点「开始面试」即可；面试官会结合这个岗位的要求提问。
               </div>
             )}
 

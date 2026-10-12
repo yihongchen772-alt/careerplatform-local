@@ -14,6 +14,7 @@ import { resolveCompanyId } from "@/lib/company-resolver";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
 import { resyncCurrentStage } from "@/lib/application-stage-history";
 import { terminationFields } from "@/lib/termination";
+import { cleanSchedule, sameSchedule, scheduleOf } from "@/lib/stage-schedule";
 
 export async function createApplication(
   input: z.infer<typeof applicationSchema>
@@ -77,6 +78,14 @@ export async function addStageUpdate(
   const enteredAt = input.enteredAt ? new Date(input.enteredAt) : new Date();
   if (Number.isNaN(enteredAt.getTime())) throw new Error("时间格式不对");
 
+  const schedule = cleanSchedule({
+    nextDeadline: data.nextDeadline ?? null,
+    nextDeadlineEnd: data.nextDeadlineEnd ?? null,
+    nextHasTime: data.nextHasTime,
+    meetingInfo: data.meetingInfo,
+    remindMinutes: data.remindMinutes,
+  });
+
   const stageHistoryId = await db.$transaction(async (tx) => {
     const created = await tx.stageHistory.create({
       data: {
@@ -87,8 +96,7 @@ export async function addStageUpdate(
         note: data.note,
         interviewFormat: data.interviewFormat,
         interviewer: data.interviewer,
-        nextDeadline: data.nextDeadline ?? undefined,
-        nextDeadlineEnd: data.nextDeadlineEnd ?? undefined,
+        ...schedule,
         enteredAt,
       },
     });
@@ -213,6 +221,17 @@ export async function updateStageHistory(
       throw new UserFacingError("时间格式不对");
     }
 
+    // Fields a caller leaves out keep what the row has.
+    const schedule = cleanSchedule({
+      nextDeadline: data.nextDeadline ?? null,
+      nextDeadlineEnd: data.nextDeadlineEnd ?? null,
+      nextHasTime: data.nextHasTime ?? existing.nextHasTime,
+      meetingInfo: data.meetingInfo === undefined ? existing.meetingInfo : data.meetingInfo,
+      remindMinutes: data.remindMinutes === undefined ? (existing.nextHasTime ? existing.remindMinutes : undefined) : data.remindMinutes,
+    });
+    // A time the user edits is theirs from then on, not the email's.
+    const retimed = !sameSchedule({ ...schedule, scheduleSource: null }, scheduleOf(existing));
+
     await db.$transaction(async (tx) => {
       await tx.stageHistory.update({
         where: { id },
@@ -223,8 +242,8 @@ export async function updateStageHistory(
           note: data.note || null,
           interviewFormat: data.interviewFormat || null,
           interviewer: data.interviewer || null,
-          nextDeadline: data.nextDeadline ?? null,
-          nextDeadlineEnd: data.nextDeadlineEnd ?? null,
+          ...schedule,
+          ...(retimed ? { scheduleSource: null } : {}),
           ...(enteredAt ? { enteredAt } : {}),
         },
       });

@@ -2,6 +2,7 @@ import type { ApplicationStage, Prisma } from "@prisma/client";
 import { terminationFields } from "@/lib/termination";
 import { resyncCurrentStage } from "@/lib/application-stage-history";
 import { db } from "@/lib/db";
+import { mailTime } from "@/lib/mail-schedule";
 
 export type AutoProgressSource = "portal" | "email";
 
@@ -59,4 +60,37 @@ export async function loadAutoProgressItems(userId: string, applicationId?: stri
     evidence: row.autoEvidence,
     enteredAt: row.enteredAt.toISOString(),
   }));
+}
+
+/**
+ * Interview / 笔试 times inbox recognition wrote by itself and the user has
+ * not looked at yet — shown in the same 自动更新 banner, with 撤销.
+ */
+export async function loadAutoScheduleItems(userId: string, applicationId?: string) {
+  const tasks = await db.personalTask.findMany({
+    where: { userId, mailAppliedAt: { not: null }, mailAppliedSeenAt: null, mailUndoneAt: null, ...(applicationId ? { applicationId } : {}) },
+    select: { id: true, title: true, note: true, mailUndo: true, mailEventDraft: true, mailAppliedAt: true, application: { select: { id: true, title: true, company: { select: { name: true } } } } },
+    orderBy: { mailAppliedAt: "desc" },
+    take: 30,
+  });
+  return tasks.flatMap((task) => {
+    const time = mailTime(task.mailEventDraft);
+    if (!time) return [];
+    const undo = task.mailUndo as { kind?: string; previous?: { nextDeadline?: string | null; nextHasTime?: boolean } } | null;
+    const previous = undo?.kind === "stage" && undo.previous?.nextHasTime ? undo.previous.nextDeadline ?? null : null;
+    const subject = task.note?.match(/邮件主题：(.+)/)?.[1]?.trim();
+    return [{
+      id: task.id,
+      applicationId: task.application?.id ?? null,
+      companyName: task.application?.company.name ?? null,
+      title: task.application?.title ?? null,
+      what: task.title,
+      startsAt: time.startsAt.toISOString(),
+      endsAt: time.endsAt?.toISOString() ?? null,
+      previousStartsAt: previous,
+      meetingInfo: time.meetingInfo,
+      onStage: undo?.kind === "stage",
+      evidence: subject ? `邮件「${subject.slice(0, 80)}」` : time.evidence || null,
+    }];
+  });
 }

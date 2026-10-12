@@ -43,8 +43,9 @@ const eventSchema = z.object({
 });
 export async function listEvents() {
   const user = await requireUser();
-  return db.calendarEvent.findMany({ where: { userId: user.id }, include: { reminders: true }, orderBy: { startsAt: "asc" } });
+  return db.calendarEvent.findMany({ where: { userId: user.id }, include: { reminders: true, stageHistory: { select: { applicationId: true } } }, orderBy: { startsAt: "asc" } });
 }
+const MANAGED = "这是投递记录里的面试/笔试安排，请在投递详情里修改时间或删除";
 export async function saveEvent(input: z.input<typeof eventSchema>) {
   return toActionResult(async () => {
     const user = await requireUser();
@@ -58,6 +59,8 @@ export async function saveEvent(input: z.input<typeof eventSchema>) {
       let saved;
       if (id) {
         if (revision === undefined) throw new UserFacingError("请重新打开事项");
+        // A 投递 step's calendar copy follows the step; edits belong there.
+        if (await tx.calendarEvent.findFirst({ where: { id, userId: user.id, stageHistoryId: { not: null } }, select: { id: true } })) throw new UserFacingError(MANAGED);
         const updated = await tx.calendarEvent.updateMany({ where: { id, userId: user.id, revision }, data: { ...data, revision: { increment: 1 } } });
         if (!updated.count) throw new UserFacingError("事项已被其他窗口修改，请刷新后重试");
         saved = await tx.calendarEvent.findUniqueOrThrow({ where: { id } });
@@ -80,6 +83,7 @@ export async function saveEvent(input: z.input<typeof eventSchema>) {
 export async function deleteEvent(id: string, revision: number) {
   return toActionResult(async () => {
     const user = await requireUser();
+    if (await db.calendarEvent.findFirst({ where: { id, userId: user.id, stageHistoryId: { not: null } }, select: { id: true } })) throw new UserFacingError(MANAGED);
     const result = await db.calendarEvent.deleteMany({ where: { id, userId: user.id, revision } });
     if (!result.count) throw new UserFacingError("事项已变化，请刷新后重试");
     revalidatePath("/calendar");

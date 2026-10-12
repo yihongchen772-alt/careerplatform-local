@@ -45,13 +45,13 @@ export function MailAccountsCard({ accounts }: { accounts: MailAccountOverview[]
         toast.error(res.message);
         return;
       }
-      const { found, scanned, failedAccounts, progressUpdated } = res.data;
+      const { found, scanned, failedAccounts, progressUpdated, scheduled } = res.data;
       if (failedAccounts.length > 0) {
         toast.error(`${failedAccounts.join("、")} 连接失败，检查一下 IMAP 地址和授权码`);
       }
       toast.success(
         found > 0
-          ? `扫了 ${scanned} 封新邮件，${found} 封求职相关已加入日程${progressUpdated ? `，自动更新了 ${progressUpdated} 条投递进度` : ""}`
+          ? `扫了 ${scanned} 封新邮件，${found} 封求职相关已加入日程${progressUpdated ? `，自动更新了 ${progressUpdated} 条投递进度` : ""}${scheduled ? `，${scheduled} 个面试/笔试时间已写进投递和日历` : ""}`
           : `扫了 ${scanned} 封新邮件，没有求职相关的`
       );
     } finally {

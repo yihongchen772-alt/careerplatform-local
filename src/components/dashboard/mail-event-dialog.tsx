@@ -6,7 +6,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { mailEventDraftSchema, type MailEventDraft } from "@/lib/mail-calendar";
 import { confirmMailCalendar } from "@/lib/actions/mail-calendar";
 export function MailEventDialog({ taskId, initial, eventId }: { taskId: string; initial: unknown; eventId?: string | null }) {
-  const parsed = mailEventDraftSchema.safeParse(initial); const [draft, setDraft] = useState(parsed.success ? parsed.data : mailEventDraftSchema.parse({}));
+  // Mail seldom names a timezone; an invitation to you is in your own time.
+  const parsed = mailEventDraftSchema.safeParse(initial); const [draft, setDraft] = useState(() => { const value = parsed.success ? parsed.data : mailEventDraftSchema.parse({}); return value.timeZone ? value : { ...value, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }; });
   const [open, setOpen] = useState(false); const [busy, setBusy] = useState(false); const [offset, setOffset] = useState(30); const [confirmed, setConfirmed] = useState(false); const [saved, setSaved] = useState(eventId || "");
   function patch(value: Partial<MailEventDraft>) { setDraft((d) => ({ ...d, ...value })); setConfirmed(false); }
   if (saved) return <a href={`/api/calendar-export?eventId=${encodeURIComponent(saved)}`} className="text-xs text-primary underline">已加入日历 · 导出 ICS</a>;

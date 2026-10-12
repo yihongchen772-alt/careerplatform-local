@@ -210,6 +210,14 @@ model CalendarEvent {
   timeZone String
   noteId String?
   note DesktopNote? @relation(fields: [noteId], references: [id], onDelete: SetNull)
+  /// Set when this is the calendar copy of a timed 投递 step. The stage row
+  /// is the source of truth: this event follows it and goes with it.
+  stageHistoryId String? @unique
+  stageHistory StageHistory? @relation(fields: [stageHistoryId], references: [id], onDelete: Cascade)
+  /// 会议链接 / 会议号 / 地点, so 「进入会议」 does not have to dig in the text.
+  meetingInfo String?
+  /// "email" when created from a recognised invitation.
+  source String?
   revision Int @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -703,6 +711,17 @@ model StageHistory {
   /// (an interview slot, a fixed deadline); set means [nextDeadline,
   /// nextDeadlineEnd] is the window.
   nextDeadlineEnd DateTime?
+  /// nextDeadline carries a clock time — an interview at 14:00 rather than a
+  /// day. Then nextDeadlineEnd, if set, is when the slot ends. Date-only
+  /// values keep their old shape (UTC midnight of the day).
+  nextHasTime     Boolean          @default(false)
+  /// 会议链接 / 会议号 / 地点, as one free text: 腾讯会议 invites mix a link,
+  /// a meeting number and a password, and an on-site one is an address.
+  meetingInfo     String?
+  /// Minutes before a timed next step to send a reminder; null = none.
+  remindMinutes   Int?
+  /// "email" when the time came from a recognised invitation; null = typed.
+  scheduleSource  String?
   /// "portal" | "email" when written by recognition rather than by hand.
   autoSource      String?
   /// Short description of what was recognised (official status / subject).
@@ -714,6 +733,8 @@ model StageHistory {
   attachments Attachment[]
   noteExtract InterviewNoteExtract?
   postmortem  StagePostmortem?
+  /// Calendar copy of a timed next step, for 日历 and its reminder.
+  calendarEvent CalendarEvent?
 
   @@index([applicationId])
 }
@@ -1009,6 +1030,15 @@ model InterviewQA {
 model PersonalTask {
   mailEventDraft Json?
   mailEventId String?
+  /// When inbox recognition put this mail's time on the calendar by itself.
+  mailAppliedAt DateTime?
+  /// What 撤销 puts back: { kind: "stage", stageHistoryId, written, previous }
+  /// or { kind: "event", eventId }.
+  mailUndo Json?
+  /// Dismissed from the 自动更新 banner.
+  mailAppliedSeenAt DateTime?
+  /// Undone by the user; never applied again by itself.
+  mailUndoneAt DateTime?
   id            String    @id @default(cuid())
   userId        String
   /// Stable identity for an inbox-created task, so concurrent/retried scans

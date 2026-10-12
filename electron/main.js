@@ -555,11 +555,15 @@ async function maybeScanInbox(force = false) {
     if (!res.ok) throw new Error(`inbox endpoint returned ${res.status}`);
     const outcome = await res.json();
     healthy = outcome.ok !== false && !outcome.errors?.length && !outcome.error;
-    if (Number(outcome.progressUpdated) > 0 && !signal.aborted) {
+    const progress = Number(outcome.progressUpdated) || 0;
+    const scheduled = Number(outcome.scheduled) || 0;
+    if ((progress > 0 || scheduled > 0) && !signal.aborted) {
       const { Notification } = require("electron");
       if (Notification.isSupported()) {
         new Notification({
-          title: `邮件里有新进度，已自动更新 ${outcome.progressUpdated} 条投递`,
+          title: progress && scheduled
+            ? `邮件里有新进度：更新了 ${progress} 条投递，${scheduled} 个面试/笔试时间已加入日程`
+            : progress ? `邮件里有新进度，已自动更新 ${progress} 条投递` : `邮件里有 ${scheduled} 个面试/笔试时间，已加入日程`,
           body: "打开「投递记录」可以查看，认错了点「撤销」即可",
         }).on("click", showWindow).show();
       }

@@ -7,10 +7,14 @@ import { MockInterviewSessionList } from "@/components/mock-interview/session-li
 export default async function MockInterviewPage({
   searchParams,
 }: {
-  searchParams: Promise<{ focusMix?: string }>;
+  searchParams: Promise<{ focusMix?: string; application?: string }>;
 }) {
   const user = await requireUser();
-  const { focusMix } = await searchParams;
+  const { focusMix, application: fromApplication } = await searchParams;
+  // From a 投递's 「AI 模拟面试」: that job and its resume, already chosen.
+  const preset = fromApplication
+    ? await db.application.findFirst({ where: { id: fromApplication, userId: user.id }, select: { id: true, positionId: true, resumeVersionId: true, title: true, company: { select: { name: true } } } })
+    : null;
 
   const [resumeVersions, positions, standaloneApplications, sessions, dbUser] = await Promise.all([
     db.resumeVersion.findMany({
@@ -61,6 +65,9 @@ export default async function MockInterviewPage({
         }))}
         hasOwnKey={!!dbUser?.defaultAiProvider}
         initialFocusMix={focusMix ?? null}
+        initialTarget={preset ? (preset.positionId ? `pos:${preset.positionId}` : `app:${preset.id}`) : null}
+        initialResumeVersionId={preset?.resumeVersionId ?? null}
+        presetLabel={preset ? `${preset.company.name} · ${preset.title}` : null}
       />
 
       {sessions.length > 0 && (

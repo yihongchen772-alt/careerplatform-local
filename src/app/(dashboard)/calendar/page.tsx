@@ -2,6 +2,7 @@ import { DesktopLinks } from "@/components/productivity/desktop-links";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { DeadlineCalendar, type CalendarEvent } from "@/components/calendar/deadline-calendar";
+import { STAGE_LABELS } from "@/lib/stage-labels";
 
 export default async function CalendarPage() {
   const user = await requireUser();
@@ -48,7 +49,9 @@ export default async function CalendarPage() {
     label: `投递：${a.company.name} · ${a.title}`,
   }));
 
-  const personalEvents = await db.calendarEvent.findMany({ where: { userId: user.id } });
+  // Calendar copies of 投递 steps are already in stageHistory below.
+  const personalEvents = await db.calendarEvent.findMany({ where: { userId: user.id, stageHistoryId: null } });
+  const clock = (date: Date) => `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
   const events: CalendarEvent[] = [
     ...personalEvents.map((e) => ({ id: `event-${e.id}`, date: e.allDay ? `${e.dateKey}T00:00:00` : e.startsAt.toISOString(), dateEnd: e.endsAt?.toISOString() ?? null, label: e.title, href: `/desktop/calendar?id=${e.id}` })),
     ...positions.map((p) => ({
@@ -61,8 +64,11 @@ export default async function CalendarPage() {
     ...stageHistory.map((h) => ({
       id: `stage-${h.id}`,
       date: h.nextDeadline!.toISOString(),
-      dateEnd: h.nextDeadlineEnd?.toISOString() ?? null,
-      label: `${h.application.company.name} · ${h.application.title} 下一步`,
+      // A booked slot's end is the same day; only a window spans days.
+      dateEnd: h.nextHasTime ? null : h.nextDeadlineEnd?.toISOString() ?? null,
+      label: h.nextHasTime
+        ? `${clock(h.nextDeadline!)} ${h.application.company.name} · ${h.stageLabel || STAGE_LABELS[h.stage]}（${h.application.title}）`
+        : `${h.application.company.name} · ${h.application.title} 下一步`,
       href: `/applications/${h.application.id}`,
     })),
     ...personalTasks.map((t) => ({

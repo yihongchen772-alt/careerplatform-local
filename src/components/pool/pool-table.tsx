@@ -210,15 +210,18 @@ export function PoolTable({
   resumeVersions,
   defaultResumeVersionId,
   historyByTrack,
+  openPrepFor = null,
 }: {
   positions: PoolPosition[];
   resumeVersions: ResumeOption[];
   defaultResumeVersionId?: string | null;
   historyByTrack: Record<string, ConversionRow>;
+  /** A position whose 面试攻略 opens straight away (a 投递's 「岗位 JD / 面试攻略」). */
+  openPrepFor?: string | null;
 }) {
   const [markingId, setMarkingId] = useState<string | null>(null);
   const [matchingId, setMatchingId] = useState<string | null>(null);
-  const [prepId, setPrepId] = useState<string | null>(null);
+  const [prepId, setPrepId] = useState<string | null>(() => (openPrepFor && positions.some((p) => p.id === openPrepFor) ? openPrepFor : null));
   const [letterId, setLetterId] = useState<string | null>(null);
   const [insightId, setInsightId] = useState<string | null>(null);
   const [batchMarking, setBatchMarking] = useState(false);

@@ -5,11 +5,12 @@ import { db } from "@/lib/db";
 export async function claimEventReminders(userId: string, now = new Date()) {
   const claimToken = randomUUID();
   const reminders = await db.$transaction(async (tx) => {
-    const due = await tx.eventReminder.findMany({ where: { event: { userId }, deliveredAt: null, scheduledAt: { lte: now }, OR: [{ claimUntil: null }, { claimUntil: { lt: now } }] }, orderBy: { scheduledAt: "asc" }, take: 100, include: { event: true } });
+    const due = await tx.eventReminder.findMany({ where: { event: { userId }, deliveredAt: null, scheduledAt: { lte: now }, OR: [{ claimUntil: null }, { claimUntil: { lt: now } }] }, orderBy: { scheduledAt: "asc" }, take: 100, include: { event: { include: { stageHistory: { select: { applicationId: true } } } } } });
     const result = [];
     for (const reminder of due) {
       const claimed = await tx.eventReminder.updateMany({ where: { id: reminder.id, deliveredAt: null, OR: [{ claimUntil: null }, { claimUntil: { lt: now } }] }, data: { claimToken, claimUntil: new Date(now.getTime() + 120000) } });
-      if (claimed.count) result.push({ id: reminder.id, title: reminder.event.title, scheduledAt: reminder.scheduledAt });
+      // An interview's reminder says when it starts and where, and opens its 投递.
+      if (claimed.count) result.push({ id: reminder.id, title: reminder.event.title, scheduledAt: reminder.scheduledAt, startsAt: reminder.event.allDay ? null : reminder.event.startsAt, meetingInfo: reminder.event.meetingInfo, applicationId: reminder.event.stageHistory?.applicationId ?? null });
     }
     return result;
   });

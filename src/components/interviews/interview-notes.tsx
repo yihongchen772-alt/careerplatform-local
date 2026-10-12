@@ -35,10 +35,12 @@ export type InterviewNote = {
   extractedQuestions: ExtractedQuestion[] | null;
 };
 
-export function InterviewNotes({ notes }: { notes: InterviewNote[] }) {
+/** `initialCompany`: from a 投递's 「面经」 button — that company, already filtered. */
+export function InterviewNotes({ notes, initialCompany = null }: { notes: InterviewNote[]; initialCompany?: string | null }) {
   const [query, setQuery] = useState("");
   const [stageFilter, setStageFilter] = useState("ALL");
-  const [companyFilter, setCompanyFilter] = useState("ALL");
+  const companyKnown = !!initialCompany && notes.some((n) => n.companyName === initialCompany);
+  const [companyFilter, setCompanyFilter] = useState(companyKnown ? initialCompany! : "ALL");
   // Seeded from the server-cached extraction (InterviewNoteExtract), then
   // updated locally the moment a fresh extraction finishes — waiting for
   // revalidatePath's server round-trip to reflect it would feel laggy for
@@ -108,6 +110,11 @@ export function InterviewNotes({ notes }: { notes: InterviewNote[] }) {
 
   return (
     <div className="space-y-4">
+      {initialCompany && !companyKnown && (
+        <p className="rounded-xl border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+          还没有「{initialCompany}」的面试记录。面完后在那条投递的时间线里写下复盘，就会汇总到这里；下面是其他公司的面经。
+        </p>
+      )}
       <div className="flex flex-col gap-2 sm:flex-row">
         <Input
           value={query}

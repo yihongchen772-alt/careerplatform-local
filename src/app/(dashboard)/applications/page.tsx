@@ -6,12 +6,17 @@ import { AddApplicationDialog } from "@/components/applications/add-application-
 import { ApplicationsView } from "@/components/applications/applications-view";
 import { PortalSyncButton } from "@/components/applications/portal-sync-button";
 import { AutoProgressBanner } from "@/components/applications/auto-progress-banner";
-import { loadAutoProgressItems } from "@/lib/auto-progress";
+import { loadAutoProgressItems, loadAutoScheduleItems } from "@/lib/auto-progress";
+import { UpcomingSchedule } from "@/components/schedule/upcoming-schedule";
+import { loadUpcomingSchedule } from "@/lib/schedule-loader";
+import { applicationScheduleItems, currentStageRow, isTerminalStage, nextScheduleItem } from "@/lib/interview-schedule";
+import { currentTimeMs } from "@/lib/dates";
 
 export default async function ApplicationsPage() {
   const user = await requireUser();
 
-  const [applications, resumeVersions, portals, settings, autoUpdates] = await Promise.all([
+  const now = currentTimeMs();
+  const [applications, resumeVersions, portals, settings, autoUpdates, autoSchedules, upcoming] = await Promise.all([
     db.application.findMany({
       where: { userId: user.id },
       include: {
@@ -27,7 +32,7 @@ export default async function ApplicationsPage() {
         // timestamp, so "latest by enteredAt" can silently pick the wrong
         // row. Matching on stage directly sidesteps the comparison.
         stageHistory: {
-          select: { stage: true, enteredAt: true, nextDeadline: true, nextDeadlineEnd: true, terminatedAtStage: true, terminatedAtStageLabel: true },
+          select: { id: true, stage: true, stageLabel: true, enteredAt: true, nextDeadline: true, nextDeadlineEnd: true, nextHasTime: true, meetingInfo: true, remindMinutes: true, interviewFormat: true, terminatedAtStage: true, terminatedAtStageLabel: true },
         },
       },
       orderBy: { appliedDate: "desc" },
@@ -43,6 +48,8 @@ export default async function ApplicationsPage() {
     }),
     getAppSettings(),
     loadAutoProgressItems(user.id),
+    loadAutoScheduleItems(user.id),
+    loadUpcomingSchedule(user.id, new Date(now)),
   ]);
 
   const portalCompanies = new Set(portals.map((portal) => portal.companyId));
@@ -88,18 +95,31 @@ export default async function ApplicationsPage() {
         </div>)}</div>
       </section>}
 
-      <AutoProgressBanner items={autoUpdates} />
+      <AutoProgressBanner items={autoUpdates} schedules={autoSchedules} />
+
+      {applications.length > 0 && (
+        <UpcomingSchedule
+          items={upcoming}
+          now={now}
+          applications={applications.filter((a) => !isTerminalStage(a.currentStage)).map((a) => ({ id: a.id, companyName: a.company.name, title: a.title, aliases: a.company.aliases.map((entry) => entry.alias) }))}
+        />
+      )}
 
       <ApplicationsView
-        applications={applications.map((a) => {
-          const currentEntry = a.stageHistory.find((h) => h.stage === a.currentStage && h.enteredAt.getTime() === a.currentStageDate.getTime())
-            ?? a.stageHistory.filter((h) => h.stage === a.currentStage).sort((left, right) => right.enteredAt.getTime() - left.enteredAt.getTime())[0];
+        now={now}
+        applications={applications.map(({ stageHistory, ...a }) => {
+          // The step's time or deadline that matters now: live, else the
+          // next one ahead, else the current step's (past) one.
+          const nextSchedule = nextScheduleItem(applicationScheduleItems({ id: a.id, title: a.title, companyName: a.company.name, currentStage: a.currentStage, currentStageDate: a.currentStageDate }, stageHistory, now), now);
+          // Where a closed application ended (「结束于：一面」).
+          const current = currentStageRow(a, stageHistory);
           return {
             ...a,
             appliedDate: a.appliedDate.toISOString(),
             currentStageDate: a.currentStageDate.toISOString(),
-            nextDeadline: currentEntry?.nextDeadline?.toISOString() ?? null,
-            nextDeadlineEnd: currentEntry?.nextDeadlineEnd?.toISOString() ?? null,
+            terminatedAtStage: current?.terminatedAtStage ?? null,
+            terminatedAtStageLabel: current?.terminatedAtStageLabel ?? null,
+            nextSchedule,
           };
         })}
       />

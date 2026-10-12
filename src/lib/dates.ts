@@ -42,3 +42,13 @@ export function weekStartKey(date: Date = new Date()): string {
 export function daysAgo(days: number): Date {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 }
+
+/**
+ * The current instant in ms, for a Server Component to hand to the client
+ * as the starting point of a countdown (so server and client render the same
+ * text before the client starts ticking). A plain function for the same
+ * react-hooks/purity reason as daysAgo.
+ */
+export function currentTimeMs(): number {
+  return Date.now();
+}

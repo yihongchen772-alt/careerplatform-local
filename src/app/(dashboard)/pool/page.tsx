@@ -6,8 +6,10 @@ import { PoolTable } from "@/components/pool/pool-table";
 import { computeConversion, type ConversionRow } from "@/lib/analytics";
 import type { InterviewPrep, GroupInterviewPrep } from "@/lib/validation";
 
-export default async function PoolPage({ searchParams }: { searchParams: Promise<{ position?: string }> }) {
-  const selected = (await searchParams).position;
+export default async function PoolPage({ searchParams }: { searchParams: Promise<{ position?: string; prep?: string; from?: string }> }) {
+  const { position: selected, prep, from } = await searchParams;
+  // Opened from a 投递's 「岗位 JD / 面试攻略」: a way straight back to it.
+  const backTo = from && /^[A-Za-z0-9_-]{1,100}$/.test(from) ? from : null;
   const user = await requireUser();
 
   const [positions, resumeVersions, applications] = await Promise.all([
@@ -54,7 +56,7 @@ export default async function PoolPage({ searchParams }: { searchParams: Promise
         <AddPositionDialog />
       </div>
 
-      {selected && <a href="/pool" className="text-sm text-primary underline">返回全部候选岗位</a>}
+      {selected && <div className="flex flex-wrap gap-4 text-sm">{backTo && <a href={`/applications/${backTo}#interview`} className="text-primary underline">← 回到这条投递</a>}<a href="/pool" className="text-primary underline">返回全部候选岗位</a></div>}
       <Card>
         <CardContent className="pt-6">
           <PoolTable
@@ -85,6 +87,7 @@ export default async function PoolPage({ searchParams }: { searchParams: Promise
             resumeVersions={resumeVersions}
             defaultResumeVersionId={defaultResumeVersionId}
             historyByTrack={historyByTrack}
+            openPrepFor={selected && prep === "1" ? selected : null}
           />
         </CardContent>
       </Card>

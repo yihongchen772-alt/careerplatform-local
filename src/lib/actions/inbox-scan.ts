@@ -14,6 +14,7 @@ import type { ApplicationStage } from "@prisma/client";
 import { STAGE_LABELS } from "@/lib/stage-labels";
 import { classifyAutoTransition } from "@/lib/application-flow";
 import { writeAutoStage } from "@/lib/auto-progress";
+import { applyMailSchedule } from "@/lib/mail-schedule";
 
 const TERMINAL_STAGES: ApplicationStage[] = ["REJECTED", "ACCEPTED", "DECLINED", "WITHDRAWN", "CANCELLED"];
 // What an email can tell us. Offers and rejections included; accepting,
@@ -158,9 +159,9 @@ ${applications.map((a) => `- applicationId=${a.id}：${a.companyName} · ${a.tit
  */
 async function runScan(
   userId: string
-): Promise<{ found: number; scanned: number; failedAccounts: string[]; progressUpdated: number }> {
+): Promise<{ found: number; scanned: number; failedAccounts: string[]; progressUpdated: number; scheduled: number }> {
   const accounts = await getUserScanAccounts(userId);
-  if (accounts.length === 0) return { found: 0, scanned: 0, failedAccounts: [], progressUpdated: 0 };
+  if (accounts.length === 0) return { found: 0, scanned: 0, failedAccounts: [], progressUpdated: 0, scheduled: 0 };
 
   const aiConfig = await getUserAiConfig(userId);
   if (!aiConfig) {
@@ -172,6 +173,7 @@ async function runScan(
   let found = 0;
   let scanned = 0;
   let progressUpdated = 0;
+  let scheduled = 0;
   const failedAccounts: string[] = [];
   const autoApply = (await db.user.findUnique({ where: { id: userId }, select: { autoApplyProgress: true } }))?.autoApplyProgress ?? false;
   const activeApplications: ActiveApplication[] = autoApply
@@ -213,8 +215,9 @@ async function runScan(
         const matched = c.applicationId && activeApplications.some((a) => a.id === c.applicationId) ? c.applicationId : null;
         const stage = AUTO_STAGES.find((value) => value === c.stage) ?? null;
         let created = false;
+        let taskId: string | null = null;
         try {
-          await db.personalTask.create({
+          taskId = (await db.personalTask.create({
             data: {
               userId,
               applicationId: matched,
@@ -223,7 +226,8 @@ async function runScan(
               title: `${c.type}${c.company ? `：${c.company}` : ""}`,
               note: `${c.summary}\n\n邮件主题：${email.subject}\n来自：${email.from}\n收件箱：${account.label}`,
             },
-          });
+            select: { id: true },
+          })).id;
           found += 1;
           created = true;
         } catch (error) {
@@ -239,6 +243,18 @@ async function runScan(
             if (await applyEmailStage(userId, email, { applicationId: matched, stage, stageLabel: c.stageLabel?.trim() || c.type })) progressUpdated += 1;
           } catch (error) {
             console.error("[inbox-scan] progress update failed", error);
+          }
+        }
+        // An interview / 笔试 time goes on the calendar right away (after the
+        // stage, so it lands on the step the mail is about), with 撤销 in
+        // the 自动更新 banner. With the switch off it waits in 接下来.
+        if (created && taskId && autoApply && (email.calendarInvite || c.event)) {
+          const id = taskId;
+          try {
+            const placed = await db.$transaction((tx) => applyMailSchedule(tx, { taskId: id, userId, stage: matched ? stage : null }));
+            if (placed.status === "stage" || placed.status === "event") scheduled += 1;
+          } catch (error) {
+            console.error("[inbox-scan] schedule write failed", error);
           }
         }
       }
@@ -264,18 +280,19 @@ async function runScan(
     });
   }
 
-  return { found, scanned, failedAccounts, progressUpdated };
+  return { found, scanned, failedAccounts, progressUpdated, scheduled };
 }
 
 /** Manual trigger from settings — surfaces errors to the user. */
 export async function scanInboxNow(): Promise<
-  ActionResult<{ found: number; scanned: number; failedAccounts: string[]; progressUpdated: number }>
+  ActionResult<{ found: number; scanned: number; failedAccounts: string[]; progressUpdated: number; scheduled: number }>
 > {
   return toActionResult(async () => {
     const user = await requireUser();
     const result = await runScan(user.id);
     revalidatePath("/dashboard");
-    if (result.progressUpdated) revalidatePath("/applications");
+    if (result.progressUpdated || result.scheduled) revalidatePath("/applications");
+    if (result.scheduled) revalidatePath("/calendar");
     return result;
   });
 }
@@ -285,13 +302,13 @@ export async function scanInboxNow(): Promise<
  * throw into a plain app boot, so failures are swallowed here rather than
  * surfaced.
  */
-export async function scanInboxOnLaunch(userId: string): Promise<{ ok: boolean; error?: string; progressUpdated?: number }> {
+export async function scanInboxOnLaunch(userId: string): Promise<{ ok: boolean; error?: string; progressUpdated?: number; scheduled?: number }> {
   try {
     const result = await runScan(userId);
-    if (result.progressUpdated) revalidatePath("/applications");
+    if (result.progressUpdated || result.scheduled) revalidatePath("/applications");
     return result.failedAccounts.length
-      ? { ok: false, error: `${result.failedAccounts.join("、")} 扫描失败`, progressUpdated: result.progressUpdated }
-      : { ok: true, progressUpdated: result.progressUpdated };
+      ? { ok: false, error: `${result.failedAccounts.join("、")} 扫描失败`, progressUpdated: result.progressUpdated, scheduled: result.scheduled }
+      : { ok: true, progressUpdated: result.progressUpdated, scheduled: result.scheduled };
   } catch (err) {
     console.error("[inbox-scan] on-launch scan failed", err);
     return { ok: false, error: err instanceof UserFacingError ? err.message : "收件箱扫描失败" };

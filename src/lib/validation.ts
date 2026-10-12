@@ -148,6 +148,12 @@ export const stageUpdateSchema = z.object({
   /// 时间可测") rather than a single moment — 笔试/测评链接routinely give a
   /// window, not a fixed slot the way an interview appointment does.
   nextDeadlineEnd: z.coerce.date().optional().nullable(),
+  /// nextDeadline includes a clock time (面试 at 14:00), not just a day.
+  nextHasTime: z.boolean().optional(),
+  /// 会议链接 / 会议号 / 地点.
+  meetingInfo: z.string().trim().max(2000, "会议信息不能超过 2000 字").optional().nullable(),
+  /// Minutes before a timed step to remind; null = no reminder.
+  remindMinutes: z.number().int().min(0).max(10080).optional().nullable(),
 });
 
 export const resumeVersionSchema = z.object({

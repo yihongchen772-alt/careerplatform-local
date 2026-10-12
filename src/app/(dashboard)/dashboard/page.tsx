@@ -16,17 +16,26 @@ import { getWeeklyReview } from "@/lib/actions/weekly-review";
 import { OnboardingCard } from "@/components/dashboard/onboarding-card";
 import { duplicateImportedTaskIds } from "@/lib/inbox-identity";
 import { AutoProgressBanner } from "@/components/applications/auto-progress-banner";
-import { loadAutoProgressItems } from "@/lib/auto-progress";
+import { loadAutoProgressItems, loadAutoScheduleItems } from "@/lib/auto-progress";
+import { UpcomingSchedule } from "@/components/schedule/upcoming-schedule";
+import { loadUpcomingSchedule } from "@/lib/schedule-loader";
+import { isTerminalStage } from "@/lib/interview-schedule";
+import { currentTimeMs } from "@/lib/dates";
 
 export default async function DashboardPage() {
   const user = await requireUser();
-  const autoUpdates = await loadAutoProgressItems(user.id);
+  const now = currentTimeMs();
+  const [autoUpdates, autoSchedules, upcoming] = await Promise.all([
+    loadAutoProgressItems(user.id),
+    loadAutoScheduleItems(user.id),
+    loadUpcomingSchedule(user.id, new Date(now)),
+  ]);
 
   const [applications, positions, stageHistories, personalTasks, allPositions, contacts] =
     await Promise.all([
       db.application.findMany({
         where: { userId: user.id },
-        include: { company: true },
+        include: { company: { include: { aliases: { select: { alias: true } } } } },
         orderBy: { appliedDate: "desc" },
       }),
       db.position.findMany({
@@ -136,7 +145,16 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      <AutoProgressBanner items={autoUpdates} />
+      <AutoProgressBanner items={autoUpdates} schedules={autoSchedules} />
+
+      {/* Today's interviews, one click from their meeting links. */}
+      {applications.length > 0 && (
+        <UpcomingSchedule
+          items={upcoming}
+          now={now}
+          applications={applications.filter((a) => !isTerminalStage(a.currentStage)).map((a) => ({ id: a.id, companyName: a.company.name, title: a.title, aliases: a.company.aliases.map((entry) => entry.alias) }))}
+        />
+      )}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
         <StatCard label="总投递数" value={total} icon={Send} tone="brand" />
