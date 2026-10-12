@@ -122,7 +122,8 @@ test("saved passwords: one account per site (a company on a shared host is its o
     assert.equal(store.status(realm, "13800000000", "other"), "changed");
     const raw = fs.readFileSync(path.join(dir, "saved-logins.json"), "utf8");
     assert.equal(raw.includes("Pa55-word"), false, "password must not be stored in plain text");
-    assert.equal((fs.statSync(path.join(dir, "saved-logins.json")).mode & 0o077), 0, "file readable only by the owner");
+    // POSIX permission bits only mean something off Windows.
+    if (process.platform !== "win32") assert.equal((fs.statSync(path.join(dir, "saved-logins.json")).mode & 0o077), 0, "file readable only by the owner");
     assert.equal(store.get(id).password, "Pa55-word");
     assert.equal(store.forRealm(realm).length, 1);
     assert.equal(store.forRealm("https://app.mokahr.com/meituan").length, 0);
