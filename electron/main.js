@@ -8,6 +8,7 @@ const { setupUpdater } = require("./updater");
 const { createApplicationSyncSchedule } = require("./application-sync-schedule");
 const { startRenderBridge } = require("./render-bridge");
 const { hasPendingMigrations } = require("./migration-guard.cjs");
+const { upcomingMenuItems, trayTooltip } = require("./tray-menu");
 
 // Pinned regardless of the app's marketing name (package.json's
 // "productName", shown in the dock/menu bar/window title): app.getPath
@@ -448,8 +449,48 @@ function buildTray() {
   if (process.platform === "darwin") icon.setTemplateImage(true);
   tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
   tray.setToolTip("求职罗盘");
+  setTrayMenu([]);
+  tray.on("click", showWindow);
+  void refreshTrayUpcoming();
+  // The countdowns and today's list go stale: refresh every minute, and
+  // right after the machine wakes.
+  setInterval(() => { void refreshTrayUpcoming(); }, 60 * 1000);
+  require("electron").powerMonitor.on("resume", () => { void refreshTrayUpcoming(); });
+}
+
+function openApplicationInWindow(id, page = "") {
+  if (typeof id !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(id)) return;
+  showWindow();
+  mainWindow?.loadURL(`http://localhost:${PORT}/applications/${encodeURIComponent(id)}${page === "brief" ? "/brief" : "#interview"}`);
+}
+
+// 接下来 in the tray: today's interviews one click from their meeting
+// link, without opening the window first.
+async function refreshTrayUpcoming() {
+  if (!tray) return;
+  try {
+    const res = await fetch(`http://localhost:${PORT}/api/upcoming?days=7`, { signal: AbortSignal.timeout(10000) });
+    if (!res.ok) return;
+    const payload = await res.json();
+    setTrayMenu(Array.isArray(payload.items) ? payload.items : []);
+    tray.setToolTip(trayTooltip(payload));
+  } catch { /* server not up yet: the next tick retries */ }
+}
+
+function setTrayMenu(upcoming) {
+  if (!tray) return;
+  const { Menu, clipboard } = require("electron");
+  const items = upcomingMenuItems(upcoming, {
+    openMeeting: (url) => { try { const parsed = new URL(url); if (parsed.protocol === "http:" || parsed.protocol === "https:") shell.openExternal(parsed.href).catch(() => {}); } catch { /* not a link */ } },
+    copyText: (text) => clipboard.writeText(String(text)),
+    openApplication: (id) => openApplicationInWindow(id),
+    openBrief: (id) => openApplicationInWindow(id, "brief"),
+    openList: () => { showWindow(); mainWindow?.loadURL(`http://localhost:${PORT}/applications`); },
+  });
   tray.setContextMenu(
     Menu.buildFromTemplate([
+      ...items,
+      { type: "separator" },
       { label: "显示便利贴", click: () => productivity?.open("notes") },
       { label: "显示日历 / 提醒", click: () => productivity?.open("calendar") },
       { label: "快速捕获岗位 (Ctrl/Cmd+Shift+J)", click: () => productivity?.open("capture") },
@@ -483,7 +524,6 @@ function buildTray() {
       },
     ])
   );
-  tray.on("click", showWindow);
 }
 
 // ---------- background reminder loop ----------

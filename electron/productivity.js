@@ -96,7 +96,7 @@ function setupProductivity({ port, token, getMainWindow, showMainWindow, getNote
   }
   ipcMain.handle("productivity:open", (e, kind, id, newWindow) => { source(e); if (id != null && (typeof id !== "string" || id.length > 100)) return; open(kind, id, kind === "capture", undefined, newWindow === true); });
   ipcMain.handle("productivity:position", (e, id) => { source(e); if (typeof id !== "string" || id.length > 100) return; showMainWindow(); getMainWindow()?.loadURL(`${origin}/pool?position=${encodeURIComponent(id)}`); });
-  function openApplication(id) { if (typeof id !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(id)) return; showMainWindow(); getMainWindow()?.loadURL(`${origin}/applications/${encodeURIComponent(id)}`); }
+  function openApplication(id, page = "") { if (typeof id !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(id)) return; showMainWindow(); getMainWindow()?.loadURL(`${origin}/applications/${encodeURIComponent(id)}${page === "brief" ? "/brief" : ""}`); }
   ipcMain.handle("productivity:application", (e, id) => { source(e); openApplication(id); });
   // Meeting links from the calendar window go to the system browser.
   ipcMain.handle("productivity:external", (e, url) => { source(e); try { const parsed = new URL(String(url)); if (parsed.protocol === "http:" || parsed.protocol === "https:") void shell.openExternal(parsed.href).catch(() => {}); } catch { /* not a link */ } });
@@ -143,7 +143,8 @@ function setupProductivity({ port, token, getMainWindow, showMainWindow, getNote
           ? new Notification({ title: `求职罗盘 · ${single.title}`, body: [single.startsAt ? `${clock(single.startsAt)} 开始` : "", single.meetingInfo ? String(single.meetingInfo).slice(0, 120) : "点开查看会议链接和准备入口"].filter(Boolean).join(" · ") })
           : new Notification({ title: group === missed ? `你有 ${group.length} 条已过期提醒` : "求职罗盘 · 日程提醒", body: group.slice(0, 4).map((r) => `${r.title}\n${r.startsAt ? `${clock(r.startsAt)} 开始 · ` : ""}原定提醒：${new Date(r.scheduledAt).toLocaleString()}`).join("\n") });
         notifications.add(notification);
-        notification.on("click", () => (single && single.applicationId ? openApplication(single.applicationId) : open("calendar")));
+        // An interview's reminder opens its 面试速览, the page to read right now.
+        notification.on("click", () => (single && single.applicationId ? openApplication(single.applicationId, single.interview ? "brief" : "") : open("calendar")));
         notification.on("close", () => notifications.delete(notification));
         notification.once("show", () => { void request({ action: "ack", ids: group.map((r) => r.id), claimToken }).catch(console.error); });
         notification.once("failed", () => { notifications.delete(notification); });

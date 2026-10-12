@@ -14,7 +14,7 @@ const source = fs.readFileSync(path.join(__dirname, "../electron/browser-view.js
 const context = vm.createContext({ module: { exports: {} }, URL, URLSearchParams });
 const coreModule = { exports: {} };
 vm.runInContext(`(function (module, exports) {\n${fs.readFileSync(path.join(__dirname, "../electron/autofill-core.js"), "utf8")}\n})`, context)(coreModule, coreModule.exports);
-context.require = (name) => name === "electron" ? {} : name === "./autofill-core.js" ? coreModule.exports : require(name);
+context.require = (name) => name === "electron" ? {} : name === "./autofill-core.js" ? coreModule.exports : name.startsWith("./") ? require(path.join(__dirname, "../electron", name)) : require(name);
 vm.runInContext(`${source}\nmodule.exports.__test = { fillDetail, formatDateForField, dateRangeValue, degreeAlternatives, matchBasicField, resolveRepeatField, repeatFieldValue, missingRepeatBlocks, repeatFieldGoesToAi, matchRememberedField, fieldMemoryKey, isForbiddenMemoryField, isNeverGuessField, isOpenEndedQuestionField, isSensitiveMemoryField, portalContext, memoryCandidate, trackUserEdits, assertTrustedBrowserEvent, safeDownloadFilename, openSafeExternalUrl };`, context);
 const { fillDetail, formatDateForField, dateRangeValue, degreeAlternatives, matchBasicField, resolveRepeatField, repeatFieldValue, missingRepeatBlocks, repeatFieldGoesToAi, matchRememberedField, fieldMemoryKey, isForbiddenMemoryField, isNeverGuessField, isOpenEndedQuestionField, isSensitiveMemoryField, portalContext, memoryCandidate, trackUserEdits, assertTrustedBrowserEvent, safeDownloadFilename, openSafeExternalUrl } = context.module.exports.__test;
 

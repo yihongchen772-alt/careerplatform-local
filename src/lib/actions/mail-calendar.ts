@@ -3,7 +3,8 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { toActionResult, UserFacingError } from "@/lib/action-result";
 import { mailEventDraftSchema, confirmedWallTime, type MailEventDraft } from "@/lib/mail-calendar";
-import { currentStageRow, isTerminalStage } from "@/lib/interview-schedule";
+import { isTerminalStage, targetStageFor } from "@/lib/interview-schedule";
+import { rowForSchedule } from "@/lib/schedule-target";
 import { syncApplicationEvents } from "@/lib/stage-schedule";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
@@ -26,7 +27,10 @@ export async function confirmMailCalendar(taskId: string, draft: MailEventDraft,
       // A mail about one of the 投递 puts the time on that 投递's current step,
       // so it shows there, in 接下来 and in 日历 — one place to change it.
       const app = task.application && task.application.userId === user.id && !isTerminalStage(task.application.currentStage) ? task.application : null;
-      const row = app ? currentStageRow(app, app.stageHistory) : undefined;
+      // On the round the invitation is for (moving the 投递 forward to it).
+      const target = app ? targetStageFor(app.currentStage, `${data.title} ${task.title} ${data.evidence}`) : null;
+      const placed = app && target ? await rowForSchedule(tx, app.id, target, { kind: "forward" }) : null;
+      const row = placed ? await tx.stageHistory.findUnique({ where: { id: placed.rowId }, select: { id: true, meetingInfo: true } }) : null;
       if (app && row) {
         await tx.stageHistory.update({ where: { id: row.id }, data: { nextDeadline: startsAt, nextDeadlineEnd: endsAt && endsAt > startsAt ? endsAt : null, nextHasTime: true, meetingInfo: meetingInfo ?? row.meetingInfo, remindMinutes: offsetMinutes, scheduleSource: null } });
         await syncApplicationEvents(tx, app.id);

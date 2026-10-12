@@ -2,7 +2,7 @@ import type { ApplicationStage, Prisma } from "@prisma/client";
 import { terminationFields } from "@/lib/termination";
 import { resyncCurrentStage } from "@/lib/application-stage-history";
 import { db } from "@/lib/db";
-import { mailTime } from "@/lib/mail-schedule";
+import { mailTime } from "@/lib/mail-time";
 
 export type AutoProgressSource = "portal" | "email";
 

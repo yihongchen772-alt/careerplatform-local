@@ -151,6 +151,7 @@ export async function syncApplicationEvents(tx: Prisma.TransactionClient, applic
           nextHasTime: true,
           meetingInfo: true,
           remindMinutes: true,
+          completedAt: true,
           calendarEvent: { select: { id: true, title: true, description: true, startsAt: true, endsAt: true, dateKey: true, timeZone: true, meetingInfo: true, reminders: true } },
         },
       },
@@ -189,14 +190,15 @@ export async function syncApplicationEvents(tx: Prisma.TransactionClient, applic
       if (changed) await tx.calendarEvent.update({ where: { id: event.id }, data: { ...data, revision: { increment: 1 } } });
     }
 
-    // No reminder for a closed application, for a step already under way,
-    // or when the applicant chose none. One that is due already (a slot
-    // fifteen minutes away with a 30-minute reminder) goes out right away.
+    // No reminder for a closed application, for a step already under way
+    // or marked done (测评 finished early), or when the applicant chose
+    // none. One that is due already (a slot fifteen minutes away with a
+    // 30-minute reminder) goes out right away.
     const offset = row.remindMinutes;
-    const wanted = !closed && offset !== null && offset >= 0 && start.getTime() > now.getTime();
+    const wanted = !closed && !row.completedAt && offset !== null && offset >= 0 && start.getTime() > now.getTime();
     if (!wanted) {
       // A reminder already shown for a past step stays as its record.
-      if (reminder && (closed || offset === null || !reminder.deliveredAt)) await tx.eventReminder.delete({ where: { id: reminder.id } });
+      if (reminder && (closed || row.completedAt || offset === null || !reminder.deliveredAt)) await tx.eventReminder.delete({ where: { id: reminder.id } });
       continue;
     }
     const scheduledAt = new Date(Math.max(start.getTime() - offset * 60_000, now.getTime()));

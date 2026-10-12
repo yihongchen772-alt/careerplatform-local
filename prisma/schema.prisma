@@ -119,6 +119,7 @@ model User {
   interviewNoteExtracts   InterviewNoteExtract[]
   stagePostmortems        StagePostmortem[]
   interviewQAs            InterviewQA[]
+  interviewBriefs         InterviewBrief[]
   personalTasks           PersonalTask[]
   interviewSessions       InterviewSession[]
   personalityTestResults  PersonalityTestResult[]
@@ -686,6 +687,7 @@ model Application {
   stageHistory  StageHistory[]
   attachments   Attachment[]
   interviewQA   InterviewQA?
+  interviewBrief InterviewBrief?
   personalTasks PersonalTask[]
   contacts      Contact[]
 
@@ -722,6 +724,12 @@ model StageHistory {
   remindMinutes   Int?
   /// "email" when the time came from a recognised invitation; null = typed.
   scheduleSource  String?
+  /// The applicant finished this step (笔试 submitted, 面试 attended): from
+  /// then on it is waiting for the company. A timed step also counts as
+  /// finished once its time has passed, without this.
+  completedAt     DateTime?
+  /// Last 「已跟进」 while waiting, so the 该跟进了 nudge rests a while.
+  followedUpAt    DateTime?
   /// "portal" | "email" when written by recognition rather than by hand.
   autoSource      String?
   /// Short description of what was recognised (official status / subject).
@@ -1006,6 +1014,24 @@ model CoverLetter {
 // Post-application mock interview: a generated question bank + reference
 // answers for the specific position actually applied to. One per
 // application; regenerating overwrites.
+/// 面试速览: one page to read just before an interview — what the job
+/// wants, which of your experiences answer it, likely questions, your own
+/// 面经 for the company and questions to ask back. One per application,
+/// regenerating overwrites (same shape as InterviewQA).
+model InterviewBrief {
+  id            String   @id @default(cuid())
+  userId        String
+  applicationId String   @unique
+  content       Json
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
 model InterviewQA {
   id            String   @id @default(cuid())
   userId        String

@@ -250,6 +250,8 @@ export type StageScheduleRow = {
   meetingInfo?: string | null;
   remindMinutes?: number | null;
   interviewFormat?: string | null;
+  /** Marked done (笔试 submitted early): nothing left to count down to. */
+  completedAt?: Date | string | null;
 };
 
 type ScheduleApplication = {
@@ -304,6 +306,7 @@ export function applicationScheduleItems(app: ScheduleApplication, rows: StageSc
   const current = currentStageRow(app, rows);
   const items: ScheduleItem[] = [];
   for (const row of rows) {
+    if (row.completedAt) continue;
     const item = stageRowItem(app, row);
     if (!item) continue;
     if (row === current || (item.hasTime && itemEndMs(item) + AFTER_END_GRACE_MINUTES * MINUTE >= now)) items.push(item);
@@ -315,4 +318,168 @@ export function applicationScheduleItems(app: ScheduleApplication, rows: StageSc
 export function nextScheduleItem(items: ScheduleItem[], now: number): ScheduleItem | null {
   const sorted = [...items].sort(compareItems);
   return sorted.find((item) => isUpcoming(item, now, 3650)) ?? sorted[sorted.length - 1] ?? null;
+}
+
+// ---------- which round a time is for ----------
+
+/** Rounds a time can be booked for. */
+export const SCHEDULE_STAGES: ApplicationStage[] = ["ASSESSMENT", "OA", "INTERVIEW_1", "INTERVIEW_2", "INTERVIEW_3", "HR_INTERVIEW", "OFFER"];
+const INTERVIEW_ROUNDS: ApplicationStage[] = ["INTERVIEW_1", "INTERVIEW_2", "INTERVIEW_3", "HR_INTERVIEW"];
+
+/** The round an invitation names outright (「二面」「终面」「在线测评」), if any. */
+export function stageFromText(text: string): ApplicationStage | null {
+  if (/HR\s*面|人力面|综合面/i.test(text)) return "HR_INTERVIEW";
+  if (/三面|终面|最终面|final interview/i.test(text)) return "INTERVIEW_3";
+  if (/二面|复试|第二轮|second interview/i.test(text)) return "INTERVIEW_2";
+  if (/一面|初面|初试|第一轮|群面|first interview/i.test(text)) return "INTERVIEW_1";
+  if (/测评|测验|性格测试|assessment/i.test(text)) return "ASSESSMENT";
+  if (/笔试|机试|在线测试|\bOA\b|coding test|online test/i.test(text)) return "OA";
+  return null;
+}
+
+/**
+ * The round a time in this text is for, given where the 投递 is: a round
+ * named outright; a plain 「面试」 is the current interview round (or 一面
+ * if none yet); otherwise the current step if it is a round at all.
+ */
+export function targetStageFor(current: ApplicationStage, text: string): ApplicationStage | null {
+  const named = stageFromText(text);
+  if (named) return named;
+  if (kindFromText(text) === "interview") return INTERVIEW_ROUNDS.includes(current) ? current : "INTERVIEW_1";
+  return SCHEDULE_STAGES.includes(current) ? current : null;
+}
+
+/**
+ * The rounds offered when adding a time: every bookable round except an
+ * interview round already behind the current one (测评 / 笔试 can come at
+ * any point, companies differ).
+ */
+export function scheduleStageChoices(current: ApplicationStage): ApplicationStage[] {
+  const round = INTERVIEW_ROUNDS.indexOf(current);
+  return SCHEDULE_STAGES.filter((stage) => {
+    const index = INTERVIEW_ROUNDS.indexOf(stage);
+    return index < 0 || round < 0 || index >= round;
+  });
+}
+
+/**
+ * Which round a new time most likely belongs to: the current one when the
+ * 投递 is already at a bookable round, else what the invitation says, else
+ * 一面 (the usual first booking after 投递 / 筛选).
+ */
+export function defaultScheduleStage(current: ApplicationStage, text = ""): ApplicationStage {
+  if (SCHEDULE_STAGES.includes(current)) return current;
+  return targetStageFor(current, text) ?? "INTERVIEW_1";
+}
+
+// ---------- after a step: waiting for the result ----------
+
+/** Days of silence after a finished step before 「该跟进了」. */
+export const FOLLOW_UP_DAYS = 7;
+
+export type StepRow = {
+  stage: ApplicationStage;
+  nextDeadline: Date | string | null;
+  nextDeadlineEnd: Date | string | null;
+  nextHasTime?: boolean | null;
+  completedAt?: Date | string | null;
+  followedUpAt?: Date | string | null;
+};
+
+export type StepState =
+  /** Nothing to say: no time, nothing finished. */
+  | { phase: "none" }
+  /** A time or deadline still ahead. */
+  | { phase: "upcoming" }
+  /** A 笔试/测评 deadline has passed and it is not marked done. */
+  | { phase: "due"; daysPast: number }
+  /** Done on the applicant's side; the company owes a result. */
+  | { phase: "waiting"; since: string; days: number; followUp: boolean; byTime: boolean };
+
+const toMs = (value: Date | string) => (typeof value === "string" ? new Date(value) : value).getTime();
+
+/**
+ * Where a step stands. Marked done, or a timed step whose slot is over
+ * (an interview at 14:00 is done by 15:00) → waiting; how long, and whether
+ * it is time to follow up (rests for a while after 「已跟进」).
+ */
+export function stepState(row: StepRow, now: number): StepState {
+  const kind = scheduleKindOf(row.stage);
+  let since: number | null = null;
+  let byTime = false;
+  if (row.completedAt) since = toMs(row.completedAt);
+  else if (row.nextHasTime && row.nextDeadline) {
+    const end = itemEndMs({ startsAt: new Date(toMs(row.nextDeadline)).toISOString(), endsAt: row.nextDeadlineEnd ? new Date(toMs(row.nextDeadlineEnd)).toISOString() : null, hasTime: true });
+    if (end <= now) {
+      since = end;
+      byTime = true;
+    }
+  }
+  if (since !== null) {
+    const days = Math.max(0, Math.floor((now - since) / DAY));
+    const lastNudge = row.followedUpAt ? Math.max(toMs(row.followedUpAt), since) : since;
+    return { phase: "waiting", since: new Date(since).toISOString(), days, followUp: now - lastNudge >= FOLLOW_UP_DAYS * DAY, byTime };
+  }
+  if (!row.nextDeadline) return { phase: "none" };
+  const item = { startsAt: new Date(toMs(row.nextDeadline)).toISOString(), endsAt: row.nextDeadlineEnd ? new Date(toMs(row.nextDeadlineEnd)).toISOString() : null, hasTime: !!row.nextHasTime };
+  if (itemEndMs(item) >= now) return { phase: "upcoming" };
+  if (kind === "exam" || kind === "deadline") return { phase: "due", daysPast: Math.max(1, Math.round((now - itemEndMs(item)) / DAY)) };
+  return { phase: "none" };
+}
+
+/** 「已面完 · 等结果 3 天」「已完成 · 等结果 8 天 · 该跟进了」. */
+export function waitingText(stage: ApplicationStage, state: Extract<StepState, { phase: "waiting" }>): string {
+  const done = scheduleKindOf(stage) === "interview" ? "已面完" : "已完成";
+  const wait = state.days === 0 ? "等结果" : `等结果 ${state.days} 天`;
+  return `${done} · ${wait}${state.followUp ? " · 该跟进了" : ""}`;
+}
+
+// ---------- overlapping times ----------
+
+export type Slot = { key: string; startsAt: string; endsAt: string | null; label: string };
+
+/** Slots that overlap [start, end) — a booked interview with no end counts as an hour. */
+export function overlapping(slots: Slot[], start: Date, end: Date | null, excludeKey?: string | null): Slot[] {
+  const from = start.getTime();
+  const to = end && end.getTime() > from ? end.getTime() : from + DEFAULT_SLOT_MINUTES * MINUTE;
+  return slots.filter((slot) => {
+    if (slot.key === excludeKey) return false;
+    const slotFrom = new Date(slot.startsAt).getTime();
+    const slotEnd = slot.endsAt ? new Date(slot.endsAt).getTime() : NaN;
+    const slotTo = Number.isFinite(slotEnd) && slotEnd > slotFrom ? slotEnd : slotFrom + DEFAULT_SLOT_MINUTES * MINUTE;
+    return slotFrom < to && from < slotTo;
+  });
+}
+
+/** Keys of timed items that overlap another timed item in the list. */
+export function clashingKeys(items: ScheduleItem[]): Set<string> {
+  const timed = items.filter((item) => item.hasTime);
+  const keys = new Set<string>();
+  for (const item of timed) {
+    const start = new Date(item.startsAt);
+    const end = item.endsAt ? new Date(item.endsAt) : null;
+    const others = overlapping(timed.map((other) => ({ key: other.key, startsAt: other.startsAt, endsAt: other.endsAt, label: other.title })), start, end, item.key);
+    if (others.length) keys.add(item.key);
+  }
+  return keys;
+}
+
+/** What a card or list row says about the current step beyond its stage. */
+export type StepView = {
+  rowId: string;
+  stage: ApplicationStage;
+  /** waiting: done, company owes a result · due: 笔试/测评 deadline passed, not marked done · open: a round still to do */
+  phase: "waiting" | "due" | "open";
+  text: string;
+  followUp: boolean;
+  completed: boolean;
+};
+
+export function stepView(row: StepRow & { id: string }, now: number): StepView | null {
+  const kind = scheduleKindOf(row.stage);
+  if (kind !== "interview" && kind !== "exam") return null;
+  const state = stepState(row, now);
+  if (state.phase === "waiting") return { rowId: row.id, stage: row.stage, phase: "waiting", text: waitingText(row.stage, state), followUp: state.followUp, completed: !!row.completedAt };
+  if (state.phase === "due") return { rowId: row.id, stage: row.stage, phase: "due", text: `截止已过 ${state.daysPast} 天 · 做完了吗？`, followUp: false, completed: false };
+  return { rowId: row.id, stage: row.stage, phase: "open", text: "", followUp: false, completed: false };
 }

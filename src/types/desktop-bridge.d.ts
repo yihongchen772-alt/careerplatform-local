@@ -65,6 +65,13 @@ export type DesktopBridgeDownload = { state: "completed" | "cancelled" | "interr
 
 export type DesktopBridgeRect = { x: number; y: number; width: number; height: number };
 
+/** A kept 网申 account, without its password. */
+export type SavedLoginAccount = { id: string; username: string };
+export type SavedLogin = { id: string; realm: string; site: string; username: string; createdAt: number; updatedAt: number; lastUsedAt: number | null };
+/** What the key icon knows about the tab's login form. */
+export type LoginState = { site: string; realm: string; accounts: SavedLoginAccount[]; nearby: (SavedLoginAccount & { site: string })[]; filled: string | null };
+export type LoginOffer = { tabId: number; site: string; username: string; update: boolean };
+
 export type DesktopBridge = {
   navigate(url: string): Promise<void>;
   back(): Promise<void>;
@@ -109,6 +116,19 @@ export type DesktopBridge = {
   onShortcut(callback: (payload: DesktopBridgeShortcut) => void): () => void;
   onDownload(callback: (payload: DesktopBridgeDownload) => void): () => void;
   onFindResult(callback: (payload: { tabId: number; active: number; total: number }) => void): () => void;
+  // Saved passwords (missing before v1.14).
+  loginState?(tabId: number): Promise<LoginState | null>;
+  loginSave?(tabId: number): Promise<{ ok: boolean; site?: string; message?: string }>;
+  loginDismiss?(tabId: number): Promise<void>;
+  loginNever?(tabId: number): Promise<{ ok: boolean }>;
+  loginFill?(tabId: number, loginId: string): Promise<{ ok: boolean; username?: string; message?: string }>;
+  logins?(): Promise<{ logins: SavedLogin[]; never: { realm: string; site: string }[] }>;
+  loginReveal?(id: string): Promise<{ ok: boolean; password?: string; message?: string }>;
+  loginCopy?(id: string): Promise<{ ok: boolean; message?: string }>;
+  loginDelete?(id: string): Promise<{ ok: boolean }>;
+  loginNeverRemove?(realm: string): Promise<void>;
+  onLoginOffer?(callback: (payload: LoginOffer) => void): () => void;
+  onLoginState?(callback: (payload: { tabId: number; state: LoginState | null }) => void): () => void;
 };
 
 declare global {

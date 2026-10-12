@@ -9,9 +9,12 @@ import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action
 import { resyncCurrentStage } from "@/lib/application-stage-history";
 import { cleanSchedule, sameSchedule, scheduleOf, syncApplicationEvents } from "@/lib/stage-schedule";
 import { applyMailSchedule, undoMailScheduleWrite } from "@/lib/mail-schedule";
-import { currentStageRow, isTerminalStage } from "@/lib/interview-schedule";
+import { currentStageRow, isTerminalStage, overlapping, scheduleStageChoices, targetStageFor } from "@/lib/interview-schedule";
+import { STAGE_LABELS } from "@/lib/stage-labels";
+import { rowForSchedule } from "@/lib/schedule-target";
 import { terminationFields } from "@/lib/termination";
 import { deleteApplicationsFor } from "@/lib/application-delete";
+import { applicationStageValues } from "@/lib/validation";
 
 function revalidate(applicationIds: (string | null | undefined)[] = []) {
   revalidatePath("/applications");
@@ -48,6 +51,102 @@ export async function setStageSchedule(stageHistoryId: string, input: z.input<ty
     revalidate([row.applicationId]);
     return null;
   });
+}
+
+/**
+ * 「添加面试时间」: a time for a round the user picked. On the current step
+ * when it is that round, otherwise on a new step for it (the 投递 moves
+ * forward, with 撤销 in the toast).
+ */
+export async function addStageSchedule(applicationId: string, stage: string, input: z.input<typeof scheduleInput>): Promise<ActionResult<{ stageHistoryId: string; created: boolean }>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const parsed = scheduleInput.safeParse(input);
+    if (!parsed.success) throw new UserFacingError(parsed.error.issues[0]?.message ?? "时间格式不对");
+    const app = await db.application.findFirst({ where: { id: applicationId, userId: user.id }, select: { id: true, currentStage: true } });
+    if (!app) throw new UserFacingError("这条投递已经不在了，请刷新");
+    if (isTerminalStage(app.currentStage)) throw new UserFacingError("这条投递已经结束");
+    const round = z.enum(applicationStageValues).safeParse(stage);
+    if (!round.success || (round.data !== app.currentStage && !scheduleStageChoices(app.currentStage).includes(round.data))) throw new UserFacingError("请选择是哪一轮");
+    const schedule = cleanSchedule(parsed.data);
+    const result = await db.$transaction(async (tx) => {
+      const placed = await rowForSchedule(tx, app.id, round.data, { kind: "manual" });
+      if (!placed) throw new UserFacingError("这条投递没有进度记录");
+      await tx.stageHistory.update({ where: { id: placed.rowId }, data: { ...schedule, scheduleSource: null } });
+      await syncApplicationEvents(tx, app.id);
+      return { stageHistoryId: placed.rowId, created: placed.created };
+    });
+    revalidate([app.id]);
+    return result;
+  });
+}
+
+/** 「我已完成 / 我已面完」 on a step, or taking that back. */
+export async function setStepCompleted(stageHistoryId: string, done: boolean): Promise<ActionResult<null>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const row = await db.stageHistory.findFirst({ where: { id: stageHistoryId, application: { userId: user.id } }, select: { id: true, applicationId: true } });
+    if (!row) throw new UserFacingError("这条进度记录已不存在，请刷新");
+    await db.$transaction(async (tx) => {
+      await tx.stageHistory.update({ where: { id: row.id }, data: { completedAt: done ? new Date() : null, ...(done ? {} : { followedUpAt: null }) } });
+      // Done early: a reminder for its slot is no longer wanted.
+      await syncApplicationEvents(tx, row.applicationId);
+    });
+    revalidate([row.applicationId]);
+    return null;
+  });
+}
+
+/** The few lines written right after an interview (they feed 面经库). */
+export async function saveStepNote(stageHistoryId: string, note: string): Promise<ActionResult<null>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const text = z.string().max(20000, "复盘太长了，先精简到 2 万字以内").safeParse(note);
+    if (!text.success) throw new UserFacingError(text.error.issues[0]?.message ?? "内容不对");
+    const row = await db.stageHistory.findFirst({ where: { id: stageHistoryId, application: { userId: user.id } }, select: { id: true, applicationId: true } });
+    if (!row) throw new UserFacingError("这条进度记录已不存在，请刷新");
+    await db.stageHistory.update({ where: { id: row.id }, data: { note: text.data.trim() || null } });
+    revalidate([row.applicationId]);
+    revalidatePath("/interviews");
+    return null;
+  });
+}
+
+/** 「已跟进」: the 该跟进了 nudge rests for another while. */
+export async function markFollowedUp(stageHistoryId: string): Promise<ActionResult<null>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const row = await db.stageHistory.findFirst({ where: { id: stageHistoryId, application: { userId: user.id } }, select: { id: true, applicationId: true } });
+    if (!row) throw new UserFacingError("这条进度记录已不存在，请刷新");
+    await db.stageHistory.update({ where: { id: row.id }, data: { followedUpAt: new Date() } });
+    revalidate([row.applicationId]);
+    return null;
+  });
+}
+
+/**
+ * Booked times that overlap [start, end) — for the 撞期 warning while a
+ * time is being typed. Steps of open 投递 and calendar items from mail.
+ */
+export async function scheduleConflicts(start: string, end: string | null, excludeRowId: string | null): Promise<{ label: string; startsAt: string; endsAt: string | null; applicationId: string | null }[]> {
+  const user = await requireUser();
+  const from = new Date(start);
+  if (Number.isNaN(from.getTime())) return [];
+  const to = end ? new Date(end) : null;
+  const window = { gte: new Date(from.getTime() - 86_400_000), lte: new Date(from.getTime() + 86_400_000) };
+  const [rows, events] = await Promise.all([
+    db.stageHistory.findMany({
+      where: { nextHasTime: true, nextDeadline: window, completedAt: null, application: { userId: user.id, currentStage: { notIn: ["REJECTED", "ACCEPTED", "DECLINED", "WITHDRAWN", "CANCELLED"] } }, ...(excludeRowId ? { id: { not: excludeRowId } } : {}) },
+      select: { id: true, stage: true, stageLabel: true, nextDeadline: true, nextDeadlineEnd: true, application: { select: { id: true, company: { select: { name: true } } } } },
+    }),
+    db.calendarEvent.findMany({ where: { userId: user.id, stageHistoryId: null, allDay: false, startsAt: window }, select: { id: true, title: true, startsAt: true, endsAt: true } }),
+  ]);
+  const slots = [
+    ...rows.map((row) => ({ key: `stage:${row.id}`, startsAt: row.nextDeadline!.toISOString(), endsAt: row.nextDeadlineEnd?.toISOString() ?? null, label: `${row.application.company.name} · ${row.stageLabel || STAGE_LABELS[row.stage]}`, applicationId: row.application.id })),
+    ...events.map((event) => ({ key: `event:${event.id}`, startsAt: event.startsAt.toISOString(), endsAt: event.endsAt?.toISOString() ?? null, label: event.title, applicationId: null })),
+  ];
+  const hits = new Set(overlapping(slots, from, to && !Number.isNaN(to.getTime()) ? to : null).map((slot) => slot.key));
+  return slots.filter((slot) => hits.has(slot.key)).map(({ label, startsAt, endsAt, applicationId }) => ({ label, startsAt, endsAt, applicationId }));
 }
 
 /** 「写入日程」 on a recognised time: onto its 投递 (replacing a typed time) or the calendar. */
@@ -92,9 +191,14 @@ export async function attachEventToApplication(eventId: string, applicationId: s
     if (!app) throw new UserFacingError("这条投递已经不在了，请刷新");
     if (event.allDay) throw new UserFacingError("全天事项没有具体时间，请在投递详情里填写");
     if (isTerminalStage(app.currentStage)) throw new UserFacingError("这条投递已经结束，不能再关联面试时间");
-    const row = currentStageRow(app, app.stageHistory);
-    if (!row) throw new UserFacingError("这条投递没有进度记录");
+    if (!currentStageRow(app, app.stageHistory)) throw new UserFacingError("这条投递没有进度记录");
     await db.$transaction(async (tx) => {
+      // The round the title names (moving forward to it), else the current step.
+      const target = targetStageFor(app.currentStage, event.title);
+      const placed = (target ? await rowForSchedule(tx, app.id, target, { kind: "forward" }) : null)
+        ?? await rowForSchedule(tx, app.id, app.currentStage, { kind: "manual" });
+      if (!placed) throw new UserFacingError("这条投递没有进度记录");
+      const row = { id: placed.rowId };
       const offset = event.reminders[0]?.offsetMinutes;
       await tx.stageHistory.update({
         where: { id: row.id },

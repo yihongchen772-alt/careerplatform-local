@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowUpRight, CalendarClock, Link2, Mail } from "lucide-react";
+import { ArrowUpRight, CalendarClock, CheckCircle2, Link2, Mail, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import {
   SCHEDULE_KIND_LABELS,
   absoluteWhen,
+  clashingKeys,
   clock,
   dayLabel,
   itemDayKey,
@@ -23,6 +24,7 @@ import { matchApplication } from "@/lib/application-search";
 import { attachEventToApplication, dismissMailDraft, writeMailSchedule } from "@/lib/actions/schedule";
 import { MeetingActions } from "@/components/schedule/meeting-actions";
 import { useNow } from "@/components/schedule/use-now";
+import { completeStep } from "@/components/schedule/step-actions";
 
 export type LinkableApplication = { id: string; companyName: string; title: string; aliases?: string[] };
 
@@ -53,6 +55,8 @@ export function UpcomingSchedule({ items, now: serverNow, applications, days = 7
   const [busy, setBusy] = useState<string | null>(null);
   const [linking, setLinking] = useState<ScheduleItem | null>(null);
   const visible = items.filter((item) => !hidden.includes(item.key) && urgencyOf(item, now) !== "past");
+  // Two booked times on top of each other: say so on both.
+  const clashes = useMemo(() => clashingKeys(visible), [visible]);
   const counts = useMemo(() => {
     const result: Partial<Record<ScheduleKind, number>> = {};
     for (const item of visible) result[item.kind] = (result[item.kind] ?? 0) + 1;
@@ -117,6 +121,8 @@ export function UpcomingSchedule({ items, now: serverNow, applications, days = 7
                     item={item}
                     now={now}
                     busy={busy === item.key}
+                    clash={clashes.has(item.key)}
+                    onComplete={() => { setHidden((previous) => [...previous, item.key]); void completeStep(item.sourceId, () => router.refresh(), `${item.companyName ?? ""} · ${item.title}已完成，开始等结果`).then((ok) => { if (!ok) setHidden((previous) => previous.filter((key) => key !== item.key)); }); }}
                     onWrite={() => run(item, () => writeMailSchedule(item.sourceId), item.applicationId ? `已写进 ${item.companyName ?? "投递"} 的进度和日历` : "已加入日历")}
                     onDismiss={() => run(item, () => dismissMailDraft(item.sourceId), "已忽略这封邮件里的时间")}
                     onLink={() => setLinking(item)}
@@ -147,7 +153,7 @@ export function UpcomingSchedule({ items, now: serverNow, applications, days = 7
   );
 }
 
-function ScheduleRow({ item, now, busy, onWrite, onDismiss, onLink }: { item: ScheduleItem; now: number; busy: boolean; onWrite: () => void; onDismiss: () => void; onLink: () => void }) {
+function ScheduleRow({ item, now, busy, clash, onComplete, onWrite, onDismiss, onLink }: { item: ScheduleItem; now: number; busy: boolean; clash: boolean; onComplete: () => void; onWrite: () => void; onDismiss: () => void; onLink: () => void }) {
   const urgency = urgencyOf(item, now);
   const start = new Date(item.startsAt);
   const end = item.endsAt ? new Date(item.endsAt) : null;
@@ -169,6 +175,7 @@ function ScheduleRow({ item, now, busy, onWrite, onDismiss, onLink }: { item: Sc
         <div className="min-w-0 flex-1">
           <p className="flex min-w-0 items-center gap-1.5 text-sm">
             <span className={cn("shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold", KIND_STYLE[item.kind])}>{SCHEDULE_KIND_LABELS[item.kind]}</span>
+            {clash && <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-rose-500/12 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700 dark:text-rose-300" title="和另一场安排时间重叠"><TriangleAlert className="size-3" />撞期</span>}
             {item.applicationId ? (
               <Link href={`/applications/${item.applicationId}#interview`} className="truncate font-medium hover:text-primary">{heading}</Link>
             ) : (
@@ -200,6 +207,8 @@ function ScheduleRow({ item, now, busy, onWrite, onDismiss, onLink }: { item: Sc
           </>
         ) : item.source === "event" && item.hasTime ? (
           <Button type="button" size="sm" variant="outline" className="h-7 gap-1 rounded-full px-2.5 text-xs" disabled={busy} onClick={onLink}><Link2 className="size-3.5" />关联投递</Button>
+        ) : item.source === "stage" && item.kind === "exam" ? (
+          <Button type="button" size="sm" variant="outline" className="h-7 gap-1 rounded-full px-2.5 text-xs" disabled={busy} onClick={onComplete} title="做完了：不再提醒截止，开始等结果"><CheckCircle2 className="size-3.5" />已完成</Button>
         ) : null}
         {item.applicationId && (
           <Link href={`/applications/${item.applicationId}#interview`} className="inline-flex h-7 items-center gap-0.5 rounded-full px-2 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={`打开 ${heading}`}>

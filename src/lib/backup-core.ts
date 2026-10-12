@@ -56,6 +56,7 @@ export const TABLES = [
   "groupInterviewPrep",
   "coverLetter",
   "interviewQA",
+  "interviewBrief",
   "personalTask",
   "contact",
   "interviewSession",

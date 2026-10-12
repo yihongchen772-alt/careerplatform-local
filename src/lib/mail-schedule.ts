@@ -1,16 +1,15 @@
 import type { ApplicationStage, Prisma } from "@prisma/client";
-import { confirmedWallTime, mailEventDraftSchema } from "@/lib/mail-calendar";
-import { currentStageRow, isTerminalStage } from "@/lib/interview-schedule";
+import { mailTime } from "@/lib/mail-time";
+import { isTerminalStage, targetStageFor } from "@/lib/interview-schedule";
+import { rowForSchedule } from "@/lib/schedule-target";
 import {
   DEFAULT_REMIND_MINUTES,
   dayKeyIn,
-  isValidTimeZone,
   loadSchedule,
   sameSchedule,
   scheduleOf,
   storeSchedule,
   syncApplicationEvents,
-  systemTimeZone,
   type StageSchedule,
   type StoredSchedule,
 } from "@/lib/stage-schedule";
@@ -22,50 +21,9 @@ import {
  * the 自动更新 banner can show it and 撤销 can put things back.
  */
 
-export type MailTime = {
-  startsAt: Date;
-  endsAt: Date | null;
-  timeZone: string;
-  meetingInfo: string | null;
-  title: string;
-  evidence: string;
-};
-
 export type MailUndo =
   | { kind: "stage"; stageHistoryId: string; written: StoredSchedule; previous: StoredSchedule }
   | { kind: "event"; eventId: string };
-
-const LOCAL_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
-
-/**
- * The time in a recognised draft, or null when it has no clear date and
- * clock time. Mail rarely names a timezone; it is then this machine's own
- * (an invitation to you is written in your time).
- */
-export function mailTime(draft: unknown, fallbackZone = systemTimeZone()): MailTime | null {
-  const parsed = mailEventDraftSchema.safeParse(draft);
-  if (!parsed.success) return null;
-  const value = parsed.data;
-  if (!LOCAL_TIME.test(value.localStart)) return null;
-  const zone = isValidTimeZone(value.timeZone.trim()) ? value.timeZone.trim() : fallbackZone;
-  let startsAt: Date;
-  try {
-    startsAt = confirmedWallTime(value.localStart, zone);
-  } catch {
-    return null;
-  }
-  let endsAt: Date | null = null;
-  if (LOCAL_TIME.test(value.localEnd)) {
-    try {
-      const end = confirmedWallTime(value.localEnd, zone);
-      if (end.getTime() > startsAt.getTime()) endsAt = end;
-    } catch {
-      endsAt = null;
-    }
-  }
-  const meetingInfo = [value.location.trim(), value.meetingUrl.trim()].filter(Boolean).join(" ").slice(0, 2000) || null;
-  return { startsAt, endsAt, timeZone: zone, meetingInfo, title: value.title.trim(), evidence: value.evidence.trim() };
-}
 
 export type MailApplyResult =
   | { status: "stage"; applicationId: string; stageHistoryId: string }
@@ -138,7 +96,20 @@ export async function applyMailSchedule(
   if (!input.force && time.startsAt.getTime() <= now.getTime()) return { status: "skipped", reason: "past" };
 
   const app = task.application && task.application.userId === input.userId ? task.application : null;
-  const row = app && !isTerminalStage(app.currentStage) && (!input.stage || input.stage === app.currentStage) ? currentStageRow(app, app.stageHistory) : undefined;
+  // The round the mail is about: as recognised, else as its words say. A
+  // recognised round other than the current one means the stage update
+  // above declined it (older mail, a move back): then it stays off the steps.
+  let row: NonNullable<typeof app>["stageHistory"][number] | undefined;
+  if (app && !isTerminalStage(app.currentStage)) {
+    const subject = task.note?.match(/邮件主题：(.+)/)?.[1]?.trim().slice(0, 120) || task.title;
+    const target = input.stage ?? targetStageFor(app.currentStage, `${time.title} ${task.title} ${time.evidence}`);
+    if (target && (target === app.currentStage || !input.stage)) {
+      const placed = await rowForSchedule(tx, app.id, target, { kind: "forward", auto: input.force ? undefined : { evidence: `邮件「${subject}」`, note: `邮件自动识别：「${subject}」` } });
+      if (placed) {
+        row = (await tx.stageHistory.findUnique({ where: { id: placed.rowId }, select: taskSelect.application.select.stageHistory.select })) ?? undefined;
+      }
+    }
+  }
   if (app && row) {
     const current = scheduleOf(row);
     if (current.nextHasTime && current.nextDeadline?.getTime() === time.startsAt.getTime()) {

@@ -97,6 +97,28 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     ipcRenderer.on("browser:find-result", listener);
     return () => ipcRenderer.removeListener("browser:find-result", listener);
   },
+  // Saved passwords. Passwords only come back through loginReveal, on an
+  // explicit click in 密码管理.
+  loginState: (tabId) => ipcRenderer.invoke("browser:login-state", tabId),
+  loginSave: (tabId) => ipcRenderer.invoke("browser:login-save", tabId),
+  loginDismiss: (tabId) => ipcRenderer.invoke("browser:login-dismiss", tabId),
+  loginNever: (tabId) => ipcRenderer.invoke("browser:login-never", tabId),
+  loginFill: (tabId, loginId) => ipcRenderer.invoke("browser:login-fill", tabId, loginId),
+  logins: () => ipcRenderer.invoke("browser:logins"),
+  loginReveal: (id) => ipcRenderer.invoke("browser:login-reveal", id),
+  loginCopy: (id) => ipcRenderer.invoke("browser:login-copy", id),
+  loginDelete: (id) => ipcRenderer.invoke("browser:login-delete", id),
+  loginNeverRemove: (realm) => ipcRenderer.invoke("browser:login-never-remove", realm),
+  onLoginOffer: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("browser:login-offer", listener);
+    return () => ipcRenderer.removeListener("browser:login-offer", listener);
+  },
+  onLoginState: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("browser:login-state", listener);
+    return () => ipcRenderer.removeListener("browser:login-state", listener);
+  },
 });
 
 contextBridge.exposeInMainWorld("desktopProductivity", {

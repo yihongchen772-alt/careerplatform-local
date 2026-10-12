@@ -305,6 +305,7 @@ export function ApplicationsView({ applications, now: serverNow }: { application
             appliedDate: a.appliedDate,
             currentStageDate: a.currentStageDate,
             nextSchedule: a.nextSchedule,
+            step: a.step,
             portalStatus: a.portalStatus,
             portalSuggestedStage: a.portalSuggestedStage,
           }))}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -33,6 +33,34 @@ import { GlobalSearchDialog } from "@/components/search/global-search-dialog";
 import { BrandMark } from "@/components/brand-mark";
 
 type NavLink = { href: string; label: string; icon: LucideIcon };
+
+type Today = { count: number; labels: string[] };
+
+/**
+ * How many 面试 / 笔试 are today, for the badge beside 投递记录. Polled: the
+ * sidebar stays mounted across pages, so it would otherwise never change.
+ */
+function useTodaySchedule(): Today {
+  const [today, setToday] = useState<Today>({ count: 0, labels: [] });
+  useEffect(() => {
+    let alive = true;
+    async function load() {
+      try {
+        const res = await fetch("/api/upcoming?days=1", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = (await res.json()) as { today: number; items: { label: string; relative: string; source: string }[] };
+        if (alive) setToday({ count: data.today, labels: data.items.filter((item) => item.source !== "mail").slice(0, 4).map((item) => `${item.label}（${item.relative}）`) });
+      } catch {
+        // Offline or starting up: keep what is shown.
+      }
+    }
+    const first = setTimeout(load, 0);
+    const timer = setInterval(load, 60_000);
+    window.addEventListener("focus", load);
+    return () => { alive = false; clearTimeout(first); clearInterval(timer); window.removeEventListener("focus", load); };
+  }, []);
+  return today;
+}
 
 const overview: NavLink = { href: "/dashboard", label: "总览", icon: LayoutDashboard };
 
@@ -84,16 +112,19 @@ function NavItem({
   link,
   active,
   onNavigate,
+  badge,
 }: {
   link: NavLink;
   active: boolean;
   onNavigate?: () => void;
+  badge?: { text: string; title: string } | null;
 }) {
   const Icon = link.icon;
   return (
     <Link
       href={link.href}
       onClick={onNavigate}
+      title={badge?.title}
       className={cn(
         "flex items-center gap-2.5 rounded-xl px-3.5 py-2 text-sm font-medium transition-all duration-200 ease-(--ease-apple)",
         active
@@ -103,6 +134,7 @@ function NavItem({
     >
       <Icon className="size-4 shrink-0" strokeWidth={active ? 2.1 : 1.8} />
       {link.label}
+      {badge && <span className="ml-auto rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-amber-700 dark:text-amber-300">{badge.text}</span>}
     </Link>
   );
 }
@@ -118,6 +150,8 @@ function NavContent({
 }) {
   const pathname = usePathname();
   const isActive = (href: string) => pathname.startsWith(href);
+  const today = useTodaySchedule();
+  const todayBadge = today.count > 0 ? { text: `今天 ${today.count}`, title: `今天的安排：\n${today.labels.join("\n")}` } : null;
 
   return (
     <div className="flex h-full flex-col justify-between p-4">
@@ -161,6 +195,7 @@ function NavContent({
                   link={link}
                   active={isActive(link.href)}
                   onNavigate={onNavigate}
+                  badge={link.href === "/applications" ? todayBadge : null}
                 />
               ))}
             </nav>
@@ -188,7 +223,7 @@ export function DashboardNav({ userLabel }: { userLabel: string }) {
           rather than a flat fill, the way macOS's own sidebar material
           reads as a distinct layer floating over the content instead of a
           solid panel butted up against it. */}
-      <aside className="hidden w-56 shrink-0 border-r border-border/60 bg-sidebar/80 backdrop-blur-xl md:block">
+      <aside className="hidden w-56 shrink-0 border-r border-border/60 bg-sidebar/80 backdrop-blur-xl md:block print:hidden">
         <div className="sticky top-0 h-screen overflow-y-auto">
           <NavContent
             userLabel={userLabel}
@@ -200,7 +235,7 @@ export function DashboardNav({ userLabel }: { userLabel: string }) {
       {/* Mobile top bar */}
       {/* h-14 is the bar itself; the notch inset is added as padding on top, so
           the real height is 3.5rem + inset — layout's pt must match. */}
-      <header className="fixed inset-x-0 top-0 z-40 flex h-[calc(3.5rem+env(safe-area-inset-top))] items-center gap-2 border-b bg-card/80 px-3 pt-[env(safe-area-inset-top)] backdrop-blur-xl md:hidden">
+      <header className="fixed inset-x-0 top-0 z-40 flex h-[calc(3.5rem+env(safe-area-inset-top))] items-center gap-2 border-b bg-card/80 px-3 pt-[env(safe-area-inset-top)] backdrop-blur-xl md:hidden print:hidden">
         <Button
           variant="ghost"
           size="icon"

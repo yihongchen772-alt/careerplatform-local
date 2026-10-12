@@ -45,9 +45,9 @@ import { Highlight } from "@/components/applications/highlight";
 import { useStoredChoice } from "@/components/applications/use-stored-choice";
 import { rememberListOrder } from "@/components/applications/list-order";
 import { deleteLater } from "@/components/applications/pending-deletes";
-import { NextScheduleLine } from "@/components/schedule/next-schedule";
+import { ProgressLine } from "@/components/schedule/next-schedule";
 import { compareCompanyNames, type ApplicationHits } from "@/lib/application-search";
-import { absoluteWhen, isUpcoming, itemStartMs, type ScheduleItem } from "@/lib/interview-schedule";
+import { absoluteWhen, isUpcoming, itemStartMs, type ScheduleItem, type StepView } from "@/lib/interview-schedule";
 import { cn } from "@/lib/utils";
 import type { ApplicationStage } from "@prisma/client";
 
@@ -66,6 +66,9 @@ export type ApplicationRow = {
   salaryMax: number | null;
   /** The step's time or deadline that matters now (see nextScheduleItem). */
   nextSchedule: ScheduleItem | null;
+  /** 等结果 / 截止已过 / a round still to do, for the current step. */
+  step: StepView | null;
+  waiting: boolean;
   /** Verbatim wording from the company's portal, via 网申进度同步. */
   portalStatus?: string | null;
   portalSuggestedStage?: ApplicationStage | null;
@@ -344,9 +347,9 @@ export function ApplicationsTable({
                   {app.referrer && <span>内推：{app.referrer}</span>}
                 </div>
               </Link>
-              {!terminal && app.nextSchedule && <NextScheduleLine item={app.nextSchedule} now={now} href={`/applications/${app.id}#interview`} className="mt-2" />}
+              {!terminal && <ProgressLine applicationId={app.id} step={app.step} next={app.nextSchedule} now={now} className="mt-2" />}
               <div className="mt-1 flex items-center justify-end gap-1">
-                <QuickStageMenu applicationId={app.id} companyName={app.company.name} currentStage={app.currentStage} />
+                <QuickStageMenu applicationId={app.id} companyName={app.company.name} currentStage={app.currentStage} step={app.step} />
                 <ConfirmDeleteButton
                   trigger={
                     <Button size="sm" variant="ghost">
@@ -415,7 +418,7 @@ export function ApplicationsTable({
                   {app.currentStageLabel && <p className="mt-1 max-w-48 truncate text-xs text-muted-foreground" title={app.currentStageLabel}>{app.currentStageLabel}</p>}
                 </TableCell>
                 <TableCell className="max-w-72">
-                  {!terminal && app.nextSchedule ? <NextScheduleLine item={app.nextSchedule} now={now} href={`/applications/${app.id}#interview`} /> : <span className="text-muted-foreground">—</span>}
+                  {!terminal && (app.nextSchedule || (app.step && app.step.phase !== "open")) ? <ProgressLine applicationId={app.id} step={app.step} next={app.nextSchedule} now={now} /> : <span className="text-muted-foreground">—</span>}
                 </TableCell>
                 <TableCell className="text-xs tabular-nums text-muted-foreground">
                   {new Date(app.appliedDate).toLocaleDateString("zh-CN")}
@@ -432,7 +435,7 @@ export function ApplicationsTable({
                 <TableCell className="text-muted-foreground">{app.source ?? "—"}{app.referrer ? <span className="block text-xs">内推：{app.referrer}</span> : null}</TableCell>
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-1">
-                  <QuickStageMenu applicationId={app.id} companyName={app.company.name} currentStage={app.currentStage} />
+                  <QuickStageMenu applicationId={app.id} companyName={app.company.name} currentStage={app.currentStage} step={app.step} />
                   <ConfirmDeleteButton
                     trigger={
                       <Button size="sm" variant="ghost">

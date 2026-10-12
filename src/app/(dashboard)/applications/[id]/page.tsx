@@ -22,7 +22,7 @@ import { PortalAssignmentCard } from "@/components/applications/portal-assignmen
 import { ApplicationPager } from "@/components/applications/application-pager";
 import { InterviewHub, type HubRow } from "@/components/applications/interview-hub";
 import { loadApplicationSchedule } from "@/lib/schedule-loader";
-import { currentStageRow, isTerminalStage } from "@/lib/interview-schedule";
+import { currentStageRow, isTerminalStage, stepView } from "@/lib/interview-schedule";
 import { currentTimeMs } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import type { InterviewQa } from "@/lib/validation";
@@ -39,10 +39,13 @@ const SECTIONS = [
 
 export default async function ApplicationDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ addTime?: string }>;
 }) {
   const { id } = await params;
+  const { addTime } = await searchParams;
   const user = await requireUser();
   const now = currentTimeMs();
 
@@ -54,6 +57,7 @@ export default async function ApplicationDetailPage({
         resumeVersion: true,
         attachments: true,
         interviewQA: true,
+        interviewBrief: { select: { id: true } },
         stageHistory: {
           orderBy: { enteredAt: "asc" },
           include: { attachments: true, postmortem: { select: { content: true } } },
@@ -92,6 +96,8 @@ export default async function ApplicationDetailPage({
   const closed = isTerminalStage(application.currentStage);
   const hubRow = (row: (typeof application.stageHistory)[number]): HubRow => ({
     id: row.id,
+    stage: row.stage,
+    note: row.note,
     label: row.stageLabel || STAGE_LABELS[row.stage],
     nextDeadline: row.nextDeadline?.toISOString() ?? null,
     nextDeadlineEnd: row.nextDeadlineEnd?.toISOString() ?? null,
@@ -100,6 +106,7 @@ export default async function ApplicationDetailPage({
     remindMinutes: row.remindMinutes,
   });
   const current = currentStageRow(application, application.stageHistory);
+  const step = current && !closed ? stepView(current, now) : null;
   const offerStage = ["OFFER", "ACCEPTED", "DECLINED"].includes(application.currentStage);
   const offerFilled = [application.salaryMin, application.salaryMax, application.offerNote, application.offerAnnualTotal, application.commuteMinutes, application.overtimeNote, application.growthNote].some((value) => value !== null && value !== "");
 
@@ -120,7 +127,7 @@ export default async function ApplicationDetailPage({
             {STAGE_LABELS[application.currentStage]}
           </Badge>
           {application.currentStageLabel && <span className="text-sm font-medium text-muted-foreground">{application.currentStageLabel}</span>}
-          <QuickStageMenu applicationId={application.id} companyName={application.company.name} currentStage={application.currentStage} className="h-7" />
+          <QuickStageMenu applicationId={application.id} companyName={application.company.name} currentStage={application.currentStage} step={step} className="h-7" />
         </div>
         <div className="mt-6 grid grid-cols-2 gap-3 border-t border-border/55 pt-5 sm:grid-cols-4">
           {[
@@ -154,17 +161,22 @@ export default async function ApplicationDetailPage({
 
       <InterviewHub
         // Fresh state when the times change elsewhere (an email, the timeline).
-        key={`${current?.id}-${current?.nextDeadline?.getTime() ?? ""}-${application.currentStage}`}
+        key={`${current?.id}-${current?.nextDeadline?.getTime() ?? ""}-${application.currentStage}-${current?.completedAt?.getTime() ?? ""}-${addTime ?? ""}`}
         applicationId={application.id}
         companyName={application.company.name}
+        jobTitle={application.title}
         positionId={application.positionId}
+        currentStage={application.currentStage}
         closed={closed}
         items={schedule.items}
         currentRow={current ? hubRow(current) : null}
         rows={application.stageHistory.map(hubRow)}
+        step={step}
         tasks={schedule.tasks}
         notesCount={notesCount}
         hasQuestions={!!application.interviewQA}
+        hasBrief={!!application.interviewBrief}
+        autoAdd={addTime === "1"}
         now={now}
       />
 

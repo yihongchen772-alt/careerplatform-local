@@ -9,7 +9,7 @@ import { AutoProgressBanner } from "@/components/applications/auto-progress-bann
 import { loadAutoProgressItems, loadAutoScheduleItems } from "@/lib/auto-progress";
 import { UpcomingSchedule } from "@/components/schedule/upcoming-schedule";
 import { loadUpcomingSchedule } from "@/lib/schedule-loader";
-import { applicationScheduleItems, currentStageRow, isTerminalStage, nextScheduleItem } from "@/lib/interview-schedule";
+import { applicationScheduleItems, currentStageRow, isTerminalStage, nextScheduleItem, stepView } from "@/lib/interview-schedule";
 import { currentTimeMs } from "@/lib/dates";
 
 export default async function ApplicationsPage() {
@@ -32,7 +32,7 @@ export default async function ApplicationsPage() {
         // timestamp, so "latest by enteredAt" can silently pick the wrong
         // row. Matching on stage directly sidesteps the comparison.
         stageHistory: {
-          select: { id: true, stage: true, stageLabel: true, enteredAt: true, nextDeadline: true, nextDeadlineEnd: true, nextHasTime: true, meetingInfo: true, remindMinutes: true, interviewFormat: true, terminatedAtStage: true, terminatedAtStageLabel: true },
+          select: { id: true, stage: true, stageLabel: true, enteredAt: true, nextDeadline: true, nextDeadlineEnd: true, nextHasTime: true, meetingInfo: true, remindMinutes: true, interviewFormat: true, completedAt: true, followedUpAt: true, terminatedAtStage: true, terminatedAtStageLabel: true },
         },
       },
       orderBy: { appliedDate: "desc" },
@@ -113,6 +113,8 @@ export default async function ApplicationsPage() {
           const nextSchedule = nextScheduleItem(applicationScheduleItems({ id: a.id, title: a.title, companyName: a.company.name, currentStage: a.currentStage, currentStageDate: a.currentStageDate }, stageHistory, now), now);
           // Where a closed application ended (「结束于：一面」).
           const current = currentStageRow(a, stageHistory);
+          // 等结果 / 截止已过 for the current round.
+          const step = current && !isTerminalStage(a.currentStage) ? stepView(current, now) : null;
           return {
             ...a,
             appliedDate: a.appliedDate.toISOString(),
@@ -120,6 +122,8 @@ export default async function ApplicationsPage() {
             terminatedAtStage: current?.terminatedAtStage ?? null,
             terminatedAtStageLabel: current?.terminatedAtStageLabel ?? null,
             nextSchedule,
+            step,
+            waiting: step?.phase === "waiting",
           };
         })}
       />

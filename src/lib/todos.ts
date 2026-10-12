@@ -5,7 +5,8 @@ import {
   findUpcomingPositionDeadlines,
   isTerminalStage,
 } from "@/lib/reminders";
-import { relativeText, whenText } from "@/lib/interview-schedule";
+import { relativeText, stepState, waitingText, whenText } from "@/lib/interview-schedule";
+import { STAGE_LABELS } from "@/lib/stage-labels";
 
 export type TodoUrgency = "overdue" | "urgent" | "soon";
 
@@ -50,6 +51,9 @@ type TodoStageHistory = {
   nextDeadlineEnd: Date | null;
   /** nextDeadline is a clock time (面试 at 14:00), not a day. */
   nextHasTime?: boolean;
+  stageLabel?: string | null;
+  completedAt?: Date | null;
+  followedUpAt?: Date | null;
   application: {
     id: string;
     title: string;
@@ -190,6 +194,20 @@ export function buildTodos(
     const current = !h.enteredAt || !h.application.currentStageDate
       || (h.stage === h.application.currentStage && h.enteredAt.getTime() === h.application.currentStageDate.getTime());
     if (!current && !(h.nextHasTime && h.nextDeadline.getTime() > now)) continue;
+    // Done on the applicant's side: no deadline to chase. A word the day an
+    // interview ends (notes while fresh, the result), then quiet until it is
+    // time to follow up.
+    const state = stepState(h, now);
+    if (state.phase === "waiting") {
+      const round = h.stageLabel || STAGE_LABELS[h.stage];
+      const label = `${h.application.company.name} · ${h.application.title}`;
+      if (state.followUp && current) {
+        todos.push({ id: `follow-${h.id}`, label, sublabel: `${round}${waitingText(h.stage, state)}，可以发封邮件问问进度`, urgency: "soon", href: `/applications/${h.application.id}#interview`, order: -state.days });
+      } else if (state.byTime && state.days === 0 && current) {
+        todos.push({ id: `after-${h.id}`, label, sublabel: `${round}已结束：趁记得记两句面经，有结果了点一下`, urgency: "soon", href: `/applications/${h.application.id}#interview`, order: 0 });
+      }
+      continue;
+    }
     if (h.nextHasTime) {
       // A booked slot: urgent on its day, with the clock time in view.
       const item = { startsAt: h.nextDeadline.toISOString(), endsAt: h.nextDeadlineEnd?.toISOString() ?? null, hasTime: true, kind: "interview" as const };

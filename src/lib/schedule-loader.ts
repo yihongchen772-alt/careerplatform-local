@@ -8,7 +8,7 @@ import {
   kindFromText,
   type ScheduleItem,
 } from "@/lib/interview-schedule";
-import { mailTime } from "@/lib/mail-schedule";
+import { mailTime } from "@/lib/mail-time";
 import type { ApplicationStage } from "@prisma/client";
 
 /**
@@ -32,6 +32,8 @@ export const scheduleRowSelect = {
   remindMinutes: true,
   interviewFormat: true,
   scheduleSource: true,
+  completedAt: true,
+  followedUpAt: true,
 } as const;
 
 type EventRow = { id: string; title: string; description: string; startsAt: Date; endsAt: Date | null; allDay: boolean; dateKey: string; meetingInfo: string | null; source: string | null };

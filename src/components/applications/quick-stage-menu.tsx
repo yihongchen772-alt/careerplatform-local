@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, PencilLine } from "lucide-react";
+import { CalendarPlus, CheckCircle2, ChevronDown, PencilLine, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 import type { ApplicationStage } from "@prisma/client";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { addStageUpdate, deleteStageHistory } from "@/lib/actions/applications";
+import { setStepCompleted } from "@/lib/actions/schedule";
 import { STAGE_LABELS } from "@/lib/stage-labels";
+import { SCHEDULE_STAGES, scheduleKindOf, type StepView } from "@/lib/interview-schedule";
+import { completeStep } from "@/components/schedule/step-actions";
 import { cn } from "@/lib/utils";
 
 const PROGRESS: ApplicationStage[] = ["SCREENING", "ASSESSMENT", "OA", "INTERVIEW_1", "INTERVIEW_2", "INTERVIEW_3", "HR_INTERVIEW", "OFFER"];
@@ -37,11 +40,14 @@ export function QuickStageMenu({
   applicationId,
   companyName,
   currentStage,
+  step = null,
   className,
 }: {
   applicationId: string;
   companyName: string;
   currentStage: ApplicationStage;
+  /** The current round, for 「本轮已完成」. */
+  step?: StepView | null;
   className?: string;
 }) {
   const router = useRouter();
@@ -52,7 +58,10 @@ export function QuickStageMenu({
     setSaving(true);
     try {
       const { stageHistoryId } = await addStageUpdate(applicationId, { stage });
+      // A round usually comes with a time: one click to add it.
+      const bookable = SCHEDULE_STAGES.includes(stage);
       toast.success(`${companyName} 已改为「${STAGE_LABELS[stage]}」`, {
+        ...(bookable ? { description: "收到时间了？点「加时间」记上，到点提醒你", duration: 8000 } : {}),
         action: {
           label: "撤销",
           onClick: async () => {
@@ -61,6 +70,7 @@ export function QuickStageMenu({
             else router.refresh();
           },
         },
+        ...(bookable ? { cancel: { label: "加时间", onClick: () => router.push(`/applications/${applicationId}?addTime=1#interview`) } } : {}),
       });
       router.refresh();
     } catch {
@@ -79,6 +89,22 @@ export function QuickStageMenu({
         <ChevronDown className="size-3" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">
+        {step && step.phase !== "waiting" && (
+          <>
+            <DropdownMenuItem onClick={() => { void completeStep(step.rowId, () => router.refresh(), `${companyName} · ${STAGE_LABELS[step.stage]}已完成，开始等结果`); }}>
+              <CheckCircle2 className="size-4" />{scheduleKindOf(step.stage) === "interview" ? "这轮已面完" : "这轮已完成"}（等结果）
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
+        {step?.completed && (
+          <>
+            <DropdownMenuItem onClick={async () => { const res = await setStepCompleted(step.rowId, false); if (!res.ok) toast.error(res.message); else router.refresh(); }}>
+              <Undo2 className="size-4" />取消「已完成」
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
         <DropdownMenuGroup>
           <DropdownMenuLabel>推进到</DropdownMenuLabel>
           {PROGRESS.filter((stage) => stage !== currentStage).map((stage) => (
@@ -93,6 +119,11 @@ export function QuickStageMenu({
           ))}
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
+        {!["REJECTED", "ACCEPTED", "DECLINED", "WITHDRAWN", "CANCELLED"].includes(currentStage) && (
+          <DropdownMenuItem onClick={() => router.push(`/applications/${applicationId}?addTime=1#interview`)}>
+            <CalendarPlus className="size-4" />添加面试 / 笔试时间
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem onClick={() => router.push(`/applications/${applicationId}#add-stage`)}>
           <PencilLine className="size-4" />填写阶段名称、日期…
         </DropdownMenuItem>

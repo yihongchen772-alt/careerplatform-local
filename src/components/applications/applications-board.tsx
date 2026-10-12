@@ -10,9 +10,9 @@ import { cn } from "@/lib/utils";
 import { QuickStageMenu } from "@/components/applications/quick-stage-menu";
 import { Highlight } from "@/components/applications/highlight";
 import { rememberListOrder } from "@/components/applications/list-order";
-import { NextScheduleLine } from "@/components/schedule/next-schedule";
+import { ProgressLine } from "@/components/schedule/next-schedule";
 import type { ApplicationHits } from "@/lib/application-search";
-import type { ScheduleItem } from "@/lib/interview-schedule";
+import type { ScheduleItem, StepView } from "@/lib/interview-schedule";
 
 export type BoardApplication = {
   id: string;
@@ -26,6 +26,7 @@ export type BoardApplication = {
   currentStageDate: string;
   /** The step's time or deadline that matters now (see nextScheduleItem). */
   nextSchedule: ScheduleItem | null;
+  step: StepView | null;
   portalStatus?: string | null;
   portalSuggestedStage?: ApplicationStage | null;
 };
@@ -88,8 +89,8 @@ function ApplicationCard({ app, closed = false, hit, now }: { app: BoardApplicat
         {!closed && <span className={cn("flex items-center gap-1", stay >= 14 && "text-amber-700 dark:text-amber-400")}><Clock3 className="size-3" />停留 {stay} 天</span>}
       </div>
       {app.terminatedAtStage && <p className="mt-2 text-xs text-muted-foreground">结束于：{app.terminatedAtStageLabel || STAGE_LABELS[app.terminatedAtStage as ApplicationStage]}</p>}
-      {!closed && app.nextSchedule && <NextScheduleLine item={app.nextSchedule} now={now} href={`/applications/${app.id}#interview`} className="relative z-10 mt-2" />}
-      <QuickStageMenu applicationId={app.id} companyName={app.companyName} currentStage={app.currentStage} className="absolute right-3 top-3 z-10 bg-card/95" />
+      {!closed && <ProgressLine applicationId={app.id} step={app.step} next={app.nextSchedule} now={now} className="relative z-10 mt-2" />}
+      <QuickStageMenu applicationId={app.id} companyName={app.companyName} currentStage={app.currentStage} step={app.step} className="absolute right-3 top-3 z-10 bg-card/95" />
     </div>
   );
 }

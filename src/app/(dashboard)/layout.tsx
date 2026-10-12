@@ -33,7 +33,7 @@ export default async function DashboardLayout({
           underneath. */}
       <div
         aria-hidden="true"
-        className="pointer-events-none fixed inset-0 z-0 overflow-hidden"
+        className="pointer-events-none fixed inset-0 z-0 overflow-hidden print:hidden"
       >
         <div
           className="absolute -top-40 right-[-8rem] size-[36rem] rounded-full opacity-20 blur-[90px] dark:opacity-25"
@@ -61,7 +61,7 @@ export default async function DashboardLayout({
       <main className="relative z-10 min-w-0 flex-1 px-4 pb-16 pt-[calc(3.5rem+env(safe-area-inset-top)+1rem)] md:p-6 md:pb-16">
         {children}
       </main>
-      <AssistantWidget />
+      <div className="print:hidden"><AssistantWidget /></div>
     </div>
   );
 }

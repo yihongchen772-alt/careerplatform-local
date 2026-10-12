@@ -96,7 +96,7 @@ test("quick filters match what each card counts", () => {
   const at = (stage, daysAgo = 1) => ({ currentStage: stage, currentStageDate: new Date(now - daysAgo * 86_400_000).toISOString() });
   const apps = [at("APPLIED", 20), at("SCREENING"), at("OA"), at("ASSESSMENT", 30), at("INTERVIEW_1"), at("HR_INTERVIEW"), at("OFFER"), at("ACCEPTED"), at("REJECTED", 40), at("WITHDRAWN")];
   const counts = plain(filters.filterCounts(apps, now));
-  assert.deepEqual(counts, { all: 10, active: 7, exam: 2, interview: 2, offer: 2, stale: 2, rejected: 1, closed: 3 });
+  assert.deepEqual(counts, { all: 10, active: 7, exam: 2, interview: 2, waiting: 0, offer: 2, stale: 2, rejected: 1, closed: 3 });
   assert.equal(filters.parseFilter("interview"), "interview");
   assert.equal(filters.parseFilter("nonsense"), "all");
   assert.equal(filters.parseFilter(null), "all");

@@ -2,6 +2,7 @@ const crypto = require("node:crypto");
 const { ipcMain, WebContentsView, BrowserWindow, Menu, session, shell, app, clipboard, dialog } = require("electron");
 const fs = require("fs");
 const path = require("path");
+const { createLoginStore, loginRealm, realmLabel } = require("./saved-logins");
 
 // The page-injected helpers and field matchers live in autofill-core.js so
 // the Chrome extension can reuse them unchanged.
@@ -125,6 +126,98 @@ const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 2;
 const PARTITION = "persist:job-application-browser";
 const HISTORY_LIMIT = 50;
+// Login detection runs in every frame of a tab, isolated from the page (see
+// browser-guest-preload.js).
+const guestPreload = () => path.join(__dirname, "browser-guest-preload.js");
+
+// ---- saved passwords ----
+let loginStore = null;
+function logins() {
+  if (!loginStore) loginStore = createLoginStore({ dir: app.getPath("userData") });
+  return loginStore;
+}
+// A typed account waiting for 保存 / 不保存, per tab (the password stays here,
+// never in the App window).
+const pendingLogins = new Map();
+// What the key icon shows for a tab: the site's kept accounts.
+const loginStates = new Map();
+// Pop-up windows (微信扫码登录 and the like) belong to the tab that opened them.
+const popupTabs = new Map();
+
+function tabForSender(sender) {
+  return tabs.find((t) => t.view.webContents === sender) || tabs.find((t) => t.id === popupTabs.get(sender.id)) || null;
+}
+
+// A secure page (or this machine): a kept password is filled in by itself
+// only there; anywhere else it waits for a click on the key icon.
+function autoFillAllowed(url) {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" || ["localhost", "127.0.0.1"].includes(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
+// Injected into one frame: puts an account into its login form, the way a
+// person typing would (React/Vue see the input events). `overwrite`: the
+// applicant picked this account, so replace what is there.
+function fillLoginFields(username, password, overwrite) {
+  const NOT_USERNAME = /验证码|校验码|动态码|短信|图形|captcha|verif|otp|\bcode\b/i;
+  const HINT = /user|account|login|email|mail|phone|mobile|tel|账号|帐号|用户名|手机|邮箱|登录名/i;
+  const visible = (el) => !!el && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden";
+  const describe = (el) => [el.name, el.id, el.placeholder, el.getAttribute("aria-label"), el.getAttribute("autocomplete")].filter(Boolean).join(" ");
+  const box = Array.from(document.querySelectorAll('input[type="password"]')).find(visible);
+  if (!box) return { filled: false };
+  let scope = box.closest("form");
+  if (!scope) {
+    scope = document.body;
+    let node = box.parentElement;
+    for (let depth = 0; node && depth < 7; depth++, node = node.parentElement) {
+      if (node.querySelectorAll("input").length >= 2) { scope = node; break; }
+    }
+  }
+  const before = Array.from(scope.querySelectorAll("input")).filter((input) =>
+    visible(input) && /^(?:text|email|tel|number|)$/i.test(input.getAttribute("type") || "text") && !NOT_USERNAME.test(describe(input)) && (input.compareDocumentPosition(box) & Node.DOCUMENT_POSITION_FOLLOWING));
+  const user = before.find((input) => HINT.test(describe(input)) || input.getAttribute("autocomplete") === "username") || before[before.length - 1] || null;
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+  const put = (el, value) => {
+    el.focus();
+    setter.call(el, value);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    el.setAttribute("data-cp-saved-login", "1");
+    el.style.backgroundColor = "rgb(232, 240, 254)";
+  };
+  let changed = false;
+  if (user && username && (overwrite || !user.value)) { put(user, username); changed = true; }
+  if (overwrite || !box.value) { put(box, password); changed = true; }
+  box.blur();
+  return { filled: changed };
+}
+
+function sendLoginState(tab, state) {
+  if (state) loginStates.set(tab.id, state);
+  else loginStates.delete(tab.id);
+  send("browser:login-state", { tabId: tab.id, state: state || null });
+}
+
+// Frames of a tab that show a password box and belong to `realm`.
+async function loginFramesFor(tab, realm, sameOrigin = false) {
+  const frames = [];
+  for (const frame of allFrames(tab.view.webContents)) {
+    const frameRealm = loginRealm(frame.url);
+    if (!frameRealm) continue;
+    let matches = frameRealm === realm;
+    if (!matches && sameOrigin) {
+      try { matches = new URL(frame.url).origin === new URL(realm.replace(/\?.*$/, "")).origin; } catch { matches = false; }
+    }
+    if (!matches) continue;
+    const hasBox = await frame.executeJavaScript('Array.from(document.querySelectorAll(\'input[type="password"]\')).some((el) => el.getClientRects().length > 0)').catch(() => false);
+    if (hasBox) frames.push(frame);
+  }
+  return frames;
+}
 
 // Module-level, not per-call: on mac, closing the window without background
 // reminders on leaves the app running with zero windows, and `activate` then
@@ -304,6 +397,10 @@ function createTab(url, { activate = true } = {}) {
       nodeIntegration: false,
       sandbox: true,
       session: session.fromPartition(PARTITION),
+      // Not Node: with sandbox on, this only lets the login watcher run in
+      // iframes too (many 网申 login boxes live in one).
+      preload: guestPreload(),
+      nodeIntegrationInSubFrames: true,
     },
   });
   view.setBackgroundColor("#ffffff");
@@ -318,6 +415,8 @@ function createTab(url, { activate = true } = {}) {
   });
   wc.on("did-navigate", () => {
     lastAiFilled.delete(tab.id);
+    // A new page: its own login box (if any) will announce itself.
+    if (loginStates.has(tab.id)) sendLoginState(tab, null);
     // A new document brings its own icon; keep none rather than the last site's.
     tab.favicon = null;
     tab.faviconUrl = null;
@@ -373,7 +472,7 @@ function createTab(url, { activate = true } = {}) {
           width: 520,
           height: 640,
           autoHideMenuBar: true,
-          webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, session: session.fromPartition(PARTITION) },
+          webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, session: session.fromPartition(PARTITION), preload: guestPreload(), nodeIntegrationInSubFrames: true },
         },
       };
     }
@@ -416,6 +515,11 @@ function createTab(url, { activate = true } = {}) {
     );
     Menu.buildFromTemplate(template).popup({ window: currentWindow });
   });
+  wc.on("did-create-window", (child) => {
+    const childId = child.webContents.id;
+    popupTabs.set(childId, tab.id);
+    child.on("closed", () => popupTabs.delete(childId));
+  });
   wc.on("destroyed", () => sendTabsState());
 
   wc.loadURL(normalizeUrl(url || "about:blank"));
@@ -436,6 +540,8 @@ function closeTab(id) {
   if (attachedView === tab.view) detach();
   lastAiFilled.delete(id);
   pendingPlans.delete(id);
+  pendingLogins.delete(id);
+  loginStates.delete(id);
   tab.view.webContents.close();
   if (activeId === id) {
     const next = tabs[index] || tabs[index - 1] || null;
@@ -715,6 +821,138 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     await browserSession.clearStorageData();
     await browserSession.clearCache();
     for (const t of tabs) t.view.webContents.reload();
+  });
+
+  // ---- saved passwords ----
+  // From the pages (browser-guest-preload.js): only a tab's own frames and
+  // its pop-ups are listened to; the site is taken from the frame that
+  // sent it, never from what the page says.
+  ipcMain.on("browser-guest:login", (event, payload) => {
+    const tab = tabForSender(event.sender);
+    const frameUrl = event.senderFrame && event.senderFrame.url;
+    const realm = frameUrl ? loginRealm(frameUrl) : null;
+    if (!tab || !realm || !payload || typeof payload !== "object") return;
+    const username = typeof payload.username === "string" ? payload.username.trim().slice(0, 200) : "";
+    const password = typeof payload.password === "string" ? payload.password.slice(0, 500) : "";
+    if (!password) return;
+    try {
+      const store = logins();
+      if (store.isNever(realm)) return;
+      const status = store.status(realm, username, password);
+      if (status === "same") return;
+      pendingLogins.set(tab.id, { realm, username, password, at: Date.now() });
+      send("browser:login-offer", { tabId: tab.id, site: realmLabel(realm), username, update: status === "changed" });
+    } catch (error) {
+      console.error("[saved-logins] could not check a login", error.message);
+    }
+  });
+  ipcMain.on("browser-guest:login-form", async (event) => {
+    const tab = tabForSender(event.sender);
+    const frame = event.senderFrame;
+    const realm = frame ? loginRealm(frame.url) : null;
+    if (!tab || !realm) return;
+    try {
+      const store = logins();
+      const accounts = store.forRealm(realm).map(({ id, username }) => ({ id, username }));
+      const nearby = store.nearby(realm).map(({ id, username, site }) => ({ id, username, site }));
+      let filled = null;
+      // One kept account for this site and an empty form: fill it, like Chrome.
+      if (accounts.length === 1 && autoFillAllowed(frame.url)) {
+        const login = store.get(accounts[0].id);
+        if (login) {
+          const result = await frame.executeJavaScript(`(${fillLoginFields.toString()})(${JSON.stringify(login.username)}, ${JSON.stringify(login.password)}, false)`).catch(() => null);
+          if (result && result.filled) {
+            filled = login.username;
+            store.touch(login.id);
+          }
+        }
+      }
+      // Like Chrome, the key icon only shows when there is something to fill.
+      sendLoginState(tab, accounts.length || nearby.length ? { site: realmLabel(realm), realm, accounts, nearby, filled } : null);
+    } catch (error) {
+      console.error("[saved-logins] could not offer a login", error.message);
+    }
+  });
+  handle("browser:login-state", (_e, tabId) => loginStates.get(tabId) || null);
+  handle("browser:login-save", (_e, tabId) => {
+    const pending = pendingLogins.get(tabId);
+    if (!pending || Date.now() - pending.at > 10 * 60 * 1000) {
+      pendingLogins.delete(tabId);
+      return { ok: false, message: "这次登录的信息已过期，请重新登录后再保存" };
+    }
+    pendingLogins.delete(tabId);
+    logins().save(pending.realm, pending.username, pending.password);
+    const tab = tabs.find((t) => t.id === tabId);
+    if (tab) {
+      const store = logins();
+      sendLoginState(tab, { site: realmLabel(pending.realm), realm: pending.realm, accounts: store.forRealm(pending.realm).map(({ id, username }) => ({ id, username })), nearby: [], filled: null });
+    }
+    return { ok: true, site: realmLabel(pending.realm) };
+  });
+  handle("browser:login-dismiss", (_e, tabId) => {
+    pendingLogins.delete(tabId);
+  });
+  handle("browser:login-never", (_e, tabId) => {
+    const pending = pendingLogins.get(tabId);
+    pendingLogins.delete(tabId);
+    if (pending) logins().addNever(pending.realm);
+    return { ok: !!pending };
+  });
+  // The applicant picked an account from the key icon: fill it on this
+  // tab's login form of that site (or the same host, for 「其他账号」).
+  handle("browser:login-fill", async (_e, tabId, loginId) => {
+    const tab = tabs.find((t) => t.id === tabId);
+    const login = typeof loginId === "string" ? logins().get(loginId) : null;
+    if (!tab || !login) return { ok: false, message: "这个账号已经删除了" };
+    const frames = await loginFramesFor(tab, login.realm, true);
+    for (const frame of frames) {
+      const result = await frame.executeJavaScript(`(${fillLoginFields.toString()})(${JSON.stringify(login.username)}, ${JSON.stringify(login.password)}, true)`).catch(() => null);
+      if (result && result.filled) {
+        logins().touch(login.id);
+        return { ok: true, username: login.username };
+      }
+    }
+    return { ok: false, message: "这页没有找到这个网站的登录框" };
+  });
+  handle("browser:logins", () => {
+    const store = logins();
+    return { logins: store.list(), never: store.neverList() };
+  });
+  // Showing a kept password asks for the Mac's Touch ID first where there is
+  // one, as Chrome asks for the system password.
+  handle("browser:login-reveal", async (_e, id) => {
+    const login = typeof id === "string" ? logins().get(id) : null;
+    if (!login) return { ok: false, message: "这个账号已经删除了" };
+    const { systemPreferences } = require("electron");
+    if (process.platform === "darwin" && process.env.CAREERPLATFORM_TEST_MODE !== "1" && systemPreferences.canPromptTouchID()) {
+      try {
+        await systemPreferences.promptTouchID(`查看 ${login.site} 保存的密码`);
+      } catch {
+        return { ok: false, message: "没有通过验证，密码未显示" };
+      }
+    }
+    return { ok: true, password: login.password };
+  });
+  handle("browser:login-copy", (_e, id) => {
+    const login = typeof id === "string" ? logins().get(id) : null;
+    if (!login) return { ok: false, message: "这个账号已经删除了" };
+    clipboard.writeText(login.password);
+    // Not left on the clipboard for long.
+    setTimeout(() => { if (clipboard.readText() === login.password) clipboard.writeText(""); }, 60 * 1000);
+    return { ok: true };
+  });
+  handle("browser:login-delete", (_e, id) => {
+    const removed = typeof id === "string" && logins().remove(id);
+    for (const [tabId, state] of loginStates) {
+      if (state && state.accounts.some((account) => account.id === id)) {
+        const tab = tabs.find((t) => t.id === tabId);
+        if (tab) sendLoginState(tab, { ...state, accounts: state.accounts.filter((account) => account.id !== id), filled: null });
+      }
+    }
+    return { ok: removed };
+  });
+  handle("browser:login-never-remove", (_e, realm) => {
+    if (typeof realm === "string") logins().removeNever(realm);
   });
 
   // ---- find in page ----

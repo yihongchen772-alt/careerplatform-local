@@ -16,6 +16,7 @@ import {
   FileCode,
   ListChecks,
   Loader2,
+  KeyRound,
   LogOut,
   Maximize2,
   Minus,
@@ -68,6 +69,7 @@ import { SiteBanner, type KnownSite } from "@/components/browser/site-banner";
 import { TabStrip, useModKey } from "@/components/browser/tab-strip";
 import { Omnibox, type QuickLinks } from "@/components/browser/omnibox";
 import { Infobar } from "@/components/browser/infobar";
+import { LoginOfferInfobar, PasswordKeyButton, PasswordManagerDialog, useSavedLogins } from "@/components/browser/passwords";
 import { NewTabPage } from "@/components/browser/new-tab-page";
 import type {
   DesktopBridgeAutofillModule,
@@ -255,6 +257,9 @@ export function EmbeddedBrowser({
 
   const bridge = useDesktopBridge();
   const mod = useModKey();
+  const [passwordsOpen, setPasswordsOpen] = useState(false);
+  const savedLogins = useSavedLogins(bridge);
+  const activeLogin = tabsState.activeId === null ? null : savedLogins.states[tabsState.activeId] ?? null;
   const activeTab = tabsState.tabs.find((t) => t.id === tabsState.activeId) ?? null;
   const currentUrl = activeTab?.url && activeTab.url !== "about:blank" ? activeTab.url : null;
   const draftContext = JSON.stringify([tabsState.activeId, currentUrl, positionId, resumeVersionId, variantChoice]);
@@ -803,6 +808,9 @@ export function EmbeddedBrowser({
               onFocusRequestHistory={loadHistory}
             />
           </div>
+          {activeLogin && tabsState.activeId !== null && (
+            <PasswordKeyButton bridge={bridge} tabId={tabsState.activeId} state={activeLogin} onManage={() => setPasswordsOpen(true)} />
+          )}
 
           {pendingChangeCount > 0 && (
             <button type="button" onClick={() => router.push("/settings#pending-application-changes")} title="你在网页上手填或修改的内容，确认后才会用于以后填写" className="flex h-7 shrink-0 items-center gap-1 rounded-full bg-amber-500/12 px-2.5 text-xs font-medium text-amber-700 hover:bg-amber-500/20 dark:text-amber-400">
@@ -928,6 +936,7 @@ export function EmbeddedBrowser({
               <DropdownMenuItem disabled={!currentUrl} onClick={() => bridge.openExternal()}><ExternalLink />在系统浏览器中打开</DropdownMenuItem>
               <DropdownMenuItem disabled={!currentUrl} onClick={() => { void bridge.copyUrl(); toast.success("链接已复制"); }}><Copy />复制链接</DropdownMenuItem>
               <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setPasswordsOpen(true)}><KeyRound />密码管理…</DropdownMenuItem>
               <DropdownMenuItem onClick={async () => { await bridge.clearHistory(); setHistory([]); toast.success("最近访问已清空"); }}><Trash2 />清空最近访问</DropdownMenuItem>
               <DropdownMenuItem
                 variant="destructive"
@@ -1044,6 +1053,9 @@ export function EmbeddedBrowser({
             })()}
           </Infobar>
         )}
+        {savedLogins.offer && savedLogins.offer.tabId === tabsState.activeId && (
+          <LoginOfferInfobar bridge={bridge} offer={savedLogins.offer} onDone={savedLogins.clearOffer} />
+        )}
         <SiteBanner
           bridge={bridge}
           url={currentUrl}
@@ -1104,6 +1116,8 @@ export function EmbeddedBrowser({
           </div>
         )}
       </div>
+
+      <PasswordManagerDialog bridge={bridge} open={passwordsOpen} onOpenChange={setPasswordsOpen} />
 
       {portalOpen && (
         <PortalSyncDialog

@@ -209,7 +209,7 @@ function TimelineRow({
         </div>
         <div className="space-y-1.5 rounded-xl border border-border/60 bg-background/40 p-3">
           <p className="text-xs font-medium">时间安排 <span className="font-normal text-muted-foreground">（面试时间 / 笔试截止）</span></p>
-          <ScheduleFields value={schedule} onChange={setSchedule} idPrefix={`timeline-${entry.id}`} />
+          <ScheduleFields value={schedule} onChange={setSchedule} idPrefix={`timeline-${entry.id}`} excludeRowId={entry.id} />
         </div>
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">复盘 / 备注</Label>

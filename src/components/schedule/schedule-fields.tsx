@@ -1,8 +1,11 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { TriangleAlert } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { clock, localDayKey } from "@/lib/interview-schedule";
+import { absoluteWhen, clock, localDayKey } from "@/lib/interview-schedule";
+import { scheduleConflicts } from "@/lib/actions/schedule";
 
 /**
  * 时间安排 for a 投递 step: a day, optionally a clock time (then it goes on
@@ -97,18 +100,44 @@ export function scheduleFromDraft(draft: ScheduleDraft): { value: ScheduleValue 
   return { value: { nextDeadline: day, nextDeadlineEnd: end, nextHasTime: false, meetingInfo, remindMinutes: null } };
 }
 
+type Clash = { label: string; startsAt: string; endsAt: string | null };
+
+/** Booked times that overlap the one being typed (撞期), looked up as it changes. */
+function useClashes(value: ScheduleDraft, excludeRowId: string | null): Clash[] {
+  const [found, setFound] = useState<{ key: string; clashes: Clash[] }>({ key: "", clashes: [] });
+  const key = value.date && value.time ? `${value.date}T${value.time}|${value.endTime}|${excludeRowId ?? ""}` : "";
+  useEffect(() => {
+    if (!key) return;
+    let alive = true;
+    const timer = setTimeout(() => {
+      const start = new Date(`${value.date}T${value.time}`);
+      const end = value.endTime ? new Date(`${value.date}T${value.endTime}`) : null;
+      if (Number.isNaN(start.getTime())) return;
+      scheduleConflicts(start.toISOString(), end && !Number.isNaN(end.getTime()) ? end.toISOString() : null, excludeRowId)
+        .then((clashes) => { if (alive) setFound({ key, clashes }); })
+        .catch(() => {});
+    }, 300);
+    return () => { alive = false; clearTimeout(timer); };
+  }, [key, value.date, value.time, value.endTime, excludeRowId]);
+  return key && found.key === key ? found.clashes : [];
+}
+
 export function ScheduleFields({
   value,
   onChange,
   idPrefix,
   autoFocusDate = false,
+  excludeRowId = null,
 }: {
   value: ScheduleDraft;
   onChange: (next: ScheduleDraft) => void;
   idPrefix: string;
   autoFocusDate?: boolean;
+  /** The step being edited, so its own time is not a clash. */
+  excludeRowId?: string | null;
 }) {
   const patch = (change: Partial<ScheduleDraft>) => onChange({ ...value, ...change });
+  const clashes = useClashes(value, excludeRowId);
   return (
     <div className="space-y-2">
       <div className="grid gap-2 sm:grid-cols-3">
@@ -169,6 +198,12 @@ export function ScheduleFields({
           </div>
         )}
       </div>
+      {clashes.length > 0 && (
+        <p role="alert" className="flex items-start gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-2.5 py-1.5 text-xs text-amber-800 dark:text-amber-200">
+          <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
+          <span>撞期了：和{clashes.map((clash) => `「${clash.label}」${absoluteWhen(clash.startsAt)}${clash.endsAt ? `–${clock(new Date(clash.endsAt))}` : ""}`).join("、")}时间重叠。可以照常保存，记得和 HR 协调改期。</span>
+        </p>
+      )}
       <p className="text-[11px] leading-4 text-muted-foreground">
         {value.time ? "有具体时间的安排会进日历，到点前弹系统提醒（App 需在运行或常驻托盘）。" : "只填日期就是截止日；填上几点就当作面试/笔试时间，进日历并提醒。"}
       </p>

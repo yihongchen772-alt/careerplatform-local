@@ -5,7 +5,7 @@ import type { ApplicationStage } from "@prisma/client";
  * in: 「面试阶段 4」 opens those four. Kept in the address (?f=) so coming
  * back from a 投递 shows the same list.
  */
-export const APPLICATION_FILTERS = ["all", "active", "exam", "interview", "offer", "stale", "rejected", "closed"] as const;
+export const APPLICATION_FILTERS = ["all", "active", "exam", "interview", "waiting", "offer", "stale", "rejected", "closed"] as const;
 export type ApplicationFilter = (typeof APPLICATION_FILTERS)[number];
 
 /** Same threshold as the 待办's 「该催一下 HR 了」. */
@@ -16,6 +16,7 @@ export const FILTER_LABELS: Record<ApplicationFilter, string> = {
   active: "进行中",
   exam: "笔试测评",
   interview: "面试中",
+  waiting: "等结果",
   offer: "Offer",
   stale: "久未更新",
   rejected: "未通过",
@@ -27,6 +28,7 @@ export const FILTER_HINTS: Record<ApplicationFilter, string> = {
   active: "还没结束的流程",
   exam: "测评、笔试阶段",
   interview: "一面到 HR 面",
+  waiting: "面完 / 考完，在等公司结果",
   offer: "拿到 Offer 的（含已接受 / 已拒绝）",
   stale: `进行中、${STALE_DAYS} 天以上没有新进展`,
   rejected: "企业未通过",
@@ -42,13 +44,14 @@ export function parseFilter(value: string | null | undefined): ApplicationFilter
   return (APPLICATION_FILTERS as readonly string[]).includes(value ?? "") ? (value as ApplicationFilter) : "all";
 }
 
-export function matchesFilter(app: { currentStage: ApplicationStage; currentStageDate: string | Date }, filter: ApplicationFilter, now: number): boolean {
+export function matchesFilter(app: { currentStage: ApplicationStage; currentStageDate: string | Date; waiting?: boolean }, filter: ApplicationFilter, now: number): boolean {
   const stage = app.currentStage;
   switch (filter) {
     case "all": return true;
     case "active": return !TERMINAL.includes(stage);
     case "exam": return EXAM.includes(stage);
     case "interview": return INTERVIEW.includes(stage);
+    case "waiting": return !TERMINAL.includes(stage) && !!app.waiting;
     case "offer": return OFFER.includes(stage);
     case "stale": {
       if (TERMINAL.includes(stage)) return false;
@@ -60,7 +63,7 @@ export function matchesFilter(app: { currentStage: ApplicationStage; currentStag
   }
 }
 
-export function filterCounts(apps: { currentStage: ApplicationStage; currentStageDate: string | Date }[], now: number): Record<ApplicationFilter, number> {
+export function filterCounts(apps: { currentStage: ApplicationStage; currentStageDate: string | Date; waiting?: boolean }[], now: number): Record<ApplicationFilter, number> {
   const counts = Object.fromEntries(APPLICATION_FILTERS.map((filter) => [filter, 0])) as Record<ApplicationFilter, number>;
   for (const app of apps) for (const filter of APPLICATION_FILTERS) if (matchesFilter(app, filter, now)) counts[filter] += 1;
   return counts;
