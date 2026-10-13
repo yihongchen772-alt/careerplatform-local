@@ -1,6 +1,6 @@
-// 网申填写多场景实测台：在真实 Chromium 里用共享填写引擎填 12 个仿真表单
+// 网申填写多场景实测台：在真实 Chromium 里用共享填写引擎填 13 个仿真表单
 // （AntD 仿 Moka、Element Plus iframe 仿北森、老式表格仿大易、英文 Workday 式、
-// 手写控件、Shadow DOM、已有内容保护、自动补齐栏目、Semi 式下拉、分步向导、已保存经历卡片），
+// 手写控件、Shadow DOM、已有内容保护、自动补齐栏目、Semi 式下拉、分步向导、已保存经历卡片、长表头），
 // 逐字段核对结果。全部是虚构资料，不访问任何真实网站或 App 数据。
 //
 //   npm run test:fill-lab            全部场景
@@ -338,6 +338,11 @@ Object.assign(suites, {
     { label: "实习 全部已保存", read: val("#c"), expect: "" },
     { label: "实习 不重复第一段", read: val("#r"), expect: "" },
   ]],
+  "header-row": [[
+    { label: "奖励名称（标题在长表头里）", read: val("#an"), expect: "全国大学生数学建模竞赛一等奖" },
+    { label: "已有获得时间不动", read: val("#ad"), expect: "2023-11" },
+    { label: "颁奖机构", read: val("#ai"), expect: "中国工业与应用数学学会" },
+  ], { options: { modules: ["award"] } }],
   "wizard": [[
     { label: "第1步 姓名", read: val("#a1"), expect: "林晓舟" },
     { label: "第1步 性别", read: sel("#a4"), expect: "女" },

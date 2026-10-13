@@ -192,3 +192,15 @@ test("isolated DB: a 投递 recorded from mail can be undone; scan health streak
   await db.mailAccount.updateMany({ data: { enabled: false } });
   assert.equal((await health.getScanHealth("local-user")).failing, false, "no mailbox switched on, nothing to warn about");
 });
+
+test("「奖励名称 / 颁奖机构」 are award fields even when no section heading was read", () => {
+  const profile = { awards: [{ name: "志善奖学金", date: "2023.6.18", issuer: "东南大学" }], education: [], experiences: [], projects: [], mappings: [] };
+  const fields = [
+    { id: "a", label: "奖励名称", section: "" },
+    { id: "b", label: "获得时间", section: "奖励荣誉", hasValue: true, currentValue: "2023-06" },
+    { id: "c", label: "颁奖机构", section: "" },
+  ];
+  const { repeats } = core.classifyRepeatBlocks(fields, profile, "");
+  assert.deepEqual([repeats.get("a"), repeats.get("c")].map((info) => info && `${info.group}:${info.kind}`), ["award:name", "award:issuer"]);
+  assert.equal(repeats.get("b").kind, "date");
+});

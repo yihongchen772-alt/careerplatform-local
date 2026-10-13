@@ -222,7 +222,7 @@ function scanPageFields(prefix, readOnly = false) {
   // their own inputs are skipped so row two never inherits row one's heading.
   // 家庭成员 / 紧急联系人 headings matter as much: those fields are about
   // someone else and must never receive the applicant's own details.
-  const SECTION_HEADING = /基本信息|个人信息|联系方式|求职意向|开放题|问答|补充信息|其他信息|其它信息|附加信息|自我评价|教育|学习经历|本科|硕士|研究生|博士|大专|专科|实习|工作经历|工作经验|实践经历|社会实践|项目|获奖|荣誉|奖项|家庭成员|家庭情况|家庭信息|家庭关系|家庭主要成员|主要家庭成员|紧急联系人|联系人信息|推荐人|证明人|社会关系|亲属|第\s*[一二三四五六七八九十\d]+\s*段|personal information|contact information|questions|education|academic|internship|employment|work experience|project|award|honou?r|emergency contact|family members?|family information|referees?|references/i;
+  const SECTION_HEADING = /基本信息|个人信息|联系方式|求职意向|开放题|问答|补充信息|其他信息|其它信息|附加信息|自我评价|教育|学习经历|本科|硕士|研究生|博士|大专|专科|实习|工作经历|工作经验|实践经历|社会实践|项目|获奖|荣誉|奖项|奖励|家庭成员|家庭情况|家庭信息|家庭关系|家庭主要成员|主要家庭成员|紧急联系人|联系人信息|推荐人|证明人|社会关系|亲属|第\s*[一二三四五六七八九十\d]+\s*段|personal information|contact information|questions|education|academic|internship|employment|work experience|project|award|honou?r|emergency contact|family members?|family information|referees?|references/i;
   function sectionFor(el) {
     let node = el;
     let depth = 0;
@@ -236,6 +236,12 @@ function scanPageFields(prefix, readOnly = false) {
         if (!sibling.matches("input, select, textarea, button, label") && !sibling.querySelector("input, select, textarea")) {
           const text = clean(sibling.textContent);
           if (text && text.length <= 30 && SECTION_HEADING.test(text)) return text;
+          // A header row holding the title, a one-line description and an
+          // 「添加」 link reads too long as a whole; its title element is the heading.
+          if (text && text.length <= 200) {
+            const title = Array.from(sibling.querySelectorAll("h1, h2, h3, h4, h5, h6, strong, b, [class*='title'], [class*='Title'], [class*='name'], [class*='head']")).map((node) => clean(node.textContent)).find((value) => value && value.length <= 30 && SECTION_HEADING.test(value));
+            if (title) return title;
+          }
           if (text) textHops++;
         }
         sibling = sibling.previousElementSibling;
@@ -431,13 +437,13 @@ function scanPageFields(prefix, readOnly = false) {
   const groupFor = (field) => {
     const section = field.section || "";
     const text = section || field.label || "";
-    return /获奖|荣誉|奖项|award|honou?r/i.test(text) ? "award" : /项目|project/i.test(text) ? "project" : /实习|工作经历|工作经验|实践经历|internship|employment|work experience/i.test(text) ? "experience" : /教育|学习经历|本科|硕士|博士|大专|学校|education|academic/i.test(text) ? "education" : null;
+    return /获奖|荣誉|奖项|奖励|award|honou?r/i.test(text) ? "award" : /项目|project/i.test(text) ? "project" : /实习|工作经历|工作经验|实践经历|internship|employment|work experience/i.test(text) ? "experience" : /教育|学习经历|本科|硕士|博士|大专|学校|education|academic/i.test(text) ? "education" : null;
   };
   const isAnchor = (field, group) => {
     const text = field.label || field.placeholder || "";
     return group === "project" ? /^(?:项目)?(?:名称|名)|project[ _-]*(?:name|title)|^name$/i.test(text)
       : group === "experience" ? /公司|单位|企业|机构|company|employer/i.test(text) && !/描述|介绍|职责/.test(text)
-      : group === "award" ? /奖项名称|获奖名称|荣誉名称|^(?:名称|奖项|荣誉|name)$|award[ _-]*(?:name|title)/i.test(text)
+      : group === "award" ? /(?:奖项|获奖|荣誉|奖励)名称|^(?:名称|奖项|荣誉|奖励|name)$|award[ _-]*(?:name|title)/i.test(text)
       : /学校|院校|school|university/i.test(text) && !/城市|性质|排名/.test(text);
   };
   for (const field of results) {
@@ -1457,7 +1463,7 @@ function sectionOrdinal(section) {
 }
 
 function sectionGroup(section) {
-  if (/获奖|荣誉|奖项|award|honou?r/i.test(section)) return "award";
+  if (/获奖|荣誉|奖项|奖励|award|honou?r/i.test(section)) return "award";
   if (/项目|project/i.test(section)) return "project";
   if (/实习|工作经历|工作经验|实践经历|社会实践|internship|employment|work experience/i.test(section)) return "experience";
   if (/教育|学习经历|本科|硕士|研究生|博士|大专|专科|education|academic/i.test(section)) return "education";
@@ -1525,13 +1531,13 @@ function experienceFieldKind(haystack, inSection, bare = "") {
 }
 
 function awardFieldKind(haystack, bare, inSection) {
-  if (/奖项名称|获奖名称|荣誉名称|award[ _-]*(?:name|title)/i.test(haystack) || (inSection && /^(?:名称|奖项|荣誉|name|title)$/.test(bare))) return "name";
-  if (!inSection && !/获奖|奖项|荣誉|award/i.test(haystack)) return null;
+  if (/(?:奖项|获奖|荣誉|奖励)名称|award[ _-]*(?:name|title)/i.test(haystack) || (inSection && /^(?:名称|奖项|荣誉|奖励|name|title)$/.test(bare))) return "name";
+  if (!inSection && !/获奖|奖项|荣誉|奖励|颁奖|award/i.test(haystack)) return null;
   if (/颁发|颁奖|授予|单位|机构|issuer|organi[sz]ation/i.test(haystack)) return "issuer";
   if (/等级|级别|奖级|奖等|level|grade/i.test(haystack)) return "level";
   if (/日期|时间|年月|年度|date|year/i.test(haystack)) return "date";
   if (/描述|说明|介绍|内容|description|details/i.test(haystack)) return "description";
-  if (/^(?:获奖情况|获奖经历|荣誉奖励|荣誉奖项|awards?|honou?rs?)$/.test(bare)) return "summary";
+  if (/^(?:获奖情况|获奖经历|荣誉奖励|荣誉奖项|奖励荣誉|奖励情况|awards?|honou?rs?)$/.test(bare)) return "summary";
   return null;
 }
 
@@ -1985,7 +1991,7 @@ async function clickAddBlock(group) {
     education: /教育|学历|学习经历|education/i,
     experience: /实习|工作经历|工作经验|实践|internship|work experience|employment/i,
     project: /项目|project/i,
-    award: /获奖|奖项|荣誉|award|honou?r/i,
+    award: /获奖|奖项|荣誉|奖励|award|honou?r/i,
   };
   const words = GROUP_WORDS[group];
   const ADD = /^[+＋]?\s*(?:添加|新增|增加|继续添加|再添加|add\b)/i;
