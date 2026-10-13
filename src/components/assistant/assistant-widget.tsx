@@ -43,9 +43,18 @@ function hrefLinkLabel(href: string): string {
 // takes plain "I did X" statements and turns them into records.
 const SUGGESTIONS = [
   "结合我的求职进度，安排本周计划和待办",
+  "按我的方向和意向城市，去公司官网帮我找几个新岗位",
   "研究我候选池里最值得投的岗位，结合简历分析匹配和不足",
-  "帮我准备投递材料，检查缺少的资料并给出网申入口",
-  "我刚投了字节的后端开发，帮我记下来",
+  "我刚面完腾讯二面，问了项目难点和一道 SQL，帮我记下来",
+];
+
+/** One tap, any time — the questions asked most during 秋招. */
+const QUICK_QUESTIONS = [
+  "今天有什么安排？",
+  "帮我准备下一场面试",
+  "哪些该跟进了？",
+  "这周投得怎么样？",
+  "帮我找新岗位",
 ];
 
 export function AssistantWidget() {
@@ -124,7 +133,8 @@ export function AssistantWidget() {
       setMessages((prev) => [...prev.slice(-59), { id, role: "assistant", content: error, failedRequest: { message: content, history } }]);
     };
     addMessage("user", content);
-    setInput("");
+    // A tapped suggestion leaves whatever was being typed alone.
+    if (text === undefined) setInput("");
     setSending(true);
     try {
       const res = await askAssistant(content, history);
@@ -275,7 +285,20 @@ export function AssistantWidget() {
             <div ref={bottomRef} />
           </div>
 
-          <div className="flex items-center gap-2 border-t p-2">
+          <div className="flex gap-1.5 overflow-x-auto border-t px-2 pt-2 [scrollbar-width:none]">
+            {QUICK_QUESTIONS.map((question) => (
+              <button
+                key={question}
+                type="button"
+                disabled={sending || !loaded}
+                onClick={() => handleSend(question)}
+                className="shrink-0 rounded-full border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+              >
+                {question}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-2 p-2">
             <VoiceInput disabled={sending || !loaded} onText={(text) => setInput((previous) => (previous ? previous + "\n" + text : text).slice(0, 6000))} />
             <Input
               value={input}

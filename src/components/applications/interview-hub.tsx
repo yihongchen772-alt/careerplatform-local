@@ -140,7 +140,8 @@ export function InterviewHub({
         const result = await addStageSchedule(applicationId, round, parsed.value);
         if (!result.ok) return void toast.error(result.message);
         const { stageHistoryId, created } = result.data;
-        toast.success(created ? `已推进到「${STAGE_LABELS[round]}」，${parsed.value.nextHasTime ? "时间已进日历" : "截止日期已记上"}` : parsed.value.nextHasTime ? "已保存，到点前会提醒你" : "已保存截止日期", created ? {
+        const message = created && round === currentStage ? `已添加一场「${STAGE_LABELS[round]}」，原来那场保留` : created ? `已推进到「${STAGE_LABELS[round]}」，${parsed.value.nextHasTime ? "时间已进日历" : "截止日期已记上"}` : parsed.value.nextHasTime ? "已保存，到点前会提醒你" : "已保存截止日期";
+        toast.success(message, created ? {
           action: {
             label: "撤销",
             onClick: async () => {
@@ -152,6 +153,8 @@ export function InterviewHub({
         } : undefined);
       }
       setMode("view");
+      // Opened from 「加时间」: drop ?addTime so a reload does not reopen the form.
+      if (window.location.search.includes("addTime=")) router.replace(`${window.location.pathname}#interview`, { scroll: false });
       router.refresh();
     } finally {
       setSaving(false);
@@ -243,7 +246,7 @@ export function InterviewHub({
               </p>
               {next.meetingInfo && <p className="mt-3 break-all text-sm text-foreground/85">{next.meetingInfo}</p>}
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <MeetingActions info={next.meetingInfo} />
+                <MeetingActions info={next.meetingInfo} exam={next.kind === "exam"} />
                 {next.source === "mail" ? (
                   <Button size="sm" className="h-7 rounded-full px-2.5 text-xs" disabled={writing !== null} onClick={() => write(next)}>{writing === next.key ? "写入中…" : "写入日程"}</Button>
                 ) : (

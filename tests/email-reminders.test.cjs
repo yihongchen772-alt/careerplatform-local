@@ -14,6 +14,11 @@ function load(file, mocks = {}, globals = {}) {
   return mod.exports;
 }
 const schedule = load('src/lib/email-reminder-schedule.ts');
+// The morning mail's 面试/笔试 list; these fixtures have nothing scheduled.
+const digestMocks = {
+  '@/lib/schedule-loader': { loadUpcomingSchedule: async () => [] },
+  '@/lib/digest-email': load('src/lib/digest-email.ts', { '@/lib/interview-schedule': load('src/lib/interview-schedule.ts', { '@/lib/stage-labels': load('src/lib/stage-labels.ts') }) }),
+};
 test('daily email schedule uses saved zone, minute boundary, DST and enabled flag', () => {
   const config = { enabled: true, time: '09:15', timeZone: 'Asia/Shanghai' };
   assert.equal(schedule.dueEmailReminderDay(config, new Date('2026-10-02T01:14:59Z')), null);
@@ -44,7 +49,7 @@ test('scheduled digest persists daily deduplication, claims concurrent checks, r
   let pause = true;
   const empty = { findMany: async () => [] };
   const dbFacade = { user: db.user, application: empty, position: empty, stageHistory: empty, personalTask: empty, contact: empty, calendarEvent: empty };
-  const mocks = { '@/lib/db': { db: dbFacade }, '@/lib/session': { requireUser: async () => ({ id: 'fixture' }) }, '@/lib/email-reminder-schedule': schedule,
+  const mocks = { ...digestMocks, '@/lib/db': { db: dbFacade }, '@/lib/session': { requireUser: async () => ({ id: 'fixture' }) }, '@/lib/email-reminder-schedule': schedule,
     '@/lib/todos': { buildTodos: () => urgent ? [{ label: '<面试>', sublabel: '明天', urgency: 'urgent' }] : [] },
     '@/lib/action-result': load('src/lib/action-result.ts'),
     '@/lib/mailer': { getUserMailConfig: async () => ({ user: 'mail@example.test' }), sendMail: async (_config, mail) => { assert.match(mail.html, /&lt;面试&gt;|暂时没有/); if (fail) throw new Error('SMTP fixture failure'); sent++; if (pause) { started(); await wait; } } } };
@@ -108,6 +113,7 @@ test('a claimed email checks the latest schedule and mailbox before SMTP, and re
     const signal = new Promise((r) => { started = r; }), wait = new Promise((r) => { release = r; });
     const empty = { findMany: async () => [] };
     const actions = load('src/lib/actions/reminder-digest.ts', {
+      ...digestMocks,
       '@/lib/db': { db: { user: db.user, application: { findMany: async () => { started(); await wait; return []; } }, position: empty, stageHistory: empty, personalTask: empty, contact: empty, calendarEvent: empty } },
       '@/lib/session': {}, '@/lib/email-reminder-schedule': schedule, '@/lib/action-result': load('src/lib/action-result.ts'),
       '@/lib/todos': { buildTodos: () => [{ label: 'fixture', sublabel: 'fixture', urgency: 'urgent' }] },

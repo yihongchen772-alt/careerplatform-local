@@ -33,7 +33,7 @@ import type { EmailProviderId } from "@/lib/email-provider-labels";
  * whatever arrived at the others. This lets the user add as many as they
  * actually use, each scanned independently.
  */
-export function MailAccountsCard({ accounts }: { accounts: MailAccountOverview[] }) {
+export function MailAccountsCard({ accounts, health }: { accounts: MailAccountOverview[]; health?: { failing: boolean; error: string | null; lastOkAt: string | null } }) {
   const [adding, setAdding] = useState(false);
   const [scanning, setScanning] = useState(false);
 
@@ -45,13 +45,11 @@ export function MailAccountsCard({ accounts }: { accounts: MailAccountOverview[]
         toast.error(res.message);
         return;
       }
-      const { found, scanned, failedAccounts, progressUpdated, scheduled } = res.data;
-      if (failedAccounts.length > 0) {
-        toast.error(`${failedAccounts.join("、")} 连接失败，检查一下 IMAP 地址和授权码`);
-      }
+      const { found, scanned, failures, progressUpdated, scheduled, recorded } = res.data;
+      if (failures.length > 0) toast.error(failures.join("；"));
       toast.success(
         found > 0
-          ? `扫了 ${scanned} 封新邮件，${found} 封求职相关已加入日程${progressUpdated ? `，自动更新了 ${progressUpdated} 条投递进度` : ""}${scheduled ? `，${scheduled} 个面试/笔试时间已写进投递和日历` : ""}`
+          ? `扫了 ${scanned} 封新邮件，${found} 封求职相关已加入日程${progressUpdated ? `，自动更新了 ${progressUpdated} 条投递进度` : ""}${scheduled ? `，${scheduled} 个面试/笔试时间已写进投递和日历` : ""}${recorded ? `，新记了 ${recorded} 条之前没记的投递` : ""}`
           : `扫了 ${scanned} 封新邮件，没有求职相关的`
       );
     } finally {
@@ -60,7 +58,7 @@ export function MailAccountsCard({ accounts }: { accounts: MailAccountOverview[]
   }
 
   return (
-    <Card>
+    <Card id="mail-accounts" className="scroll-mt-20">
       <CardHeader>
         <CardTitle>收件箱扫描</CardTitle>
       </CardHeader>
@@ -71,6 +69,13 @@ export function MailAccountsCard({ accounts }: { accounts: MailAccountOverview[]
           面试邀请/笔试通知/offer/拒信，是的话自动加进「我的日程」。只读，不会修改、
           标记或删除任何邮件。需要先在「AI 设置」里配置好 Key。
         </p>
+
+        {health?.failing && health.error && (
+          <p role="alert" className="rounded-md border border-amber-300/70 bg-amber-50/80 px-3 py-2 text-sm dark:border-amber-500/40 dark:bg-amber-500/10">
+            后台自动扫描连续失败：{health.error}
+            {health.lastOkAt && <span className="text-muted-foreground">（上次成功 {new Date(health.lastOkAt).toLocaleString()}）</span>}
+          </p>
+        )}
 
         {accounts.length > 0 && (
           <div className="space-y-2">

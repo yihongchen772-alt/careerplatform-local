@@ -70,7 +70,7 @@ export async function addStageSchedule(applicationId: string, stage: string, inp
     if (!round.success || (round.data !== app.currentStage && !scheduleStageChoices(app.currentStage).includes(round.data))) throw new UserFacingError("请选择是哪一轮");
     const schedule = cleanSchedule(parsed.data);
     const result = await db.$transaction(async (tx) => {
-      const placed = await rowForSchedule(tx, app.id, round.data, { kind: "manual" });
+      const placed = await rowForSchedule(tx, app.id, round.data, { kind: "manual", separate: true });
       if (!placed) throw new UserFacingError("这条投递没有进度记录");
       await tx.stageHistory.update({ where: { id: placed.rowId }, data: { ...schedule, scheduleSource: null } });
       await syncApplicationEvents(tx, app.id);

@@ -167,8 +167,12 @@ function fillLoginFields(username, password, overwrite) {
   const HINT = /user|account|login|email|mail|phone|mobile|tel|账号|帐号|用户名|手机|邮箱|登录名/i;
   const visible = (el) => !!el && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden";
   const describe = (el) => [el.name, el.id, el.placeholder, el.getAttribute("aria-label"), el.getAttribute("autocomplete")].filter(Boolean).join(" ");
-  const box = Array.from(document.querySelectorAll('input[type="password"]')).find(visible);
+  const boxes = Array.from(document.querySelectorAll('input[type="password"]')).filter(visible);
+  const box = boxes[0];
   if (!box) return { filled: false };
+  // 注册 / 改密码 (两个密码框，或标了 new-password): not a login — only fill
+  // there when the applicant picked an account themselves.
+  if (!overwrite && (boxes.length > 1 || box.getAttribute("autocomplete") === "new-password")) return { filled: false };
   let scope = box.closest("form");
   if (!scope) {
     scope = document.body;

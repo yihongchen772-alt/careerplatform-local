@@ -22,7 +22,7 @@ export async function rowForSchedule(
   tx: Prisma.TransactionClient,
   applicationId: string,
   stage: ApplicationStage,
-  mode: { kind: "manual" } | { kind: "forward"; auto?: { evidence: string; note: string } }
+  mode: { kind: "manual"; separate?: boolean } | { kind: "forward"; auto?: { evidence: string; note: string } }
 ): Promise<{ rowId: string; created: boolean } | null> {
   const app = await tx.application.findUnique({
     where: { id: applicationId },
@@ -31,6 +31,16 @@ export async function rowForSchedule(
   if (!app || isTerminalStage(app.currentStage)) return null;
   if (stage === app.currentStage) {
     const row = currentStageRow(app, app.stageHistory);
+    // 「添加安排」 for a round that already has a time is another session of
+    // it (群面 then 单面): a step of its own, the first one kept as it was.
+    if (row && mode.kind === "manual" && mode.separate) {
+      const taken = await tx.stageHistory.findUnique({ where: { id: row.id }, select: { nextDeadline: true } });
+      if (taken?.nextDeadline) {
+        const created = await tx.stageHistory.create({ data: { applicationId, stage, enteredAt: new Date() } });
+        await resyncCurrentStage(tx, applicationId);
+        return { rowId: created.id, created: true };
+      }
+    }
     return row ? { rowId: row.id, created: false } : null;
   }
   if (mode.kind === "forward" && classifyAutoTransition(app.currentStage, stage) !== "apply") return null;

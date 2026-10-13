@@ -5,6 +5,7 @@ import { ProxySettingsCard } from "@/components/settings/proxy-settings-card";
 import { AppearanceForm } from "@/components/settings/appearance-form";
 import { EmailSettingsForm } from "@/components/settings/email-settings-form";
 import { MailAccountsCard } from "@/components/settings/mail-accounts-card";
+import { getScanHealth } from "@/lib/scan-health";
 import { BackupCard } from "@/components/settings/backup-card";
 import { AutoBackupCard } from "@/components/settings/auto-backup-card";
 import { getAutoBackupSettings } from "@/lib/actions/auto-backup";
@@ -20,7 +21,7 @@ import { ApplicationProfileCard } from "@/components/settings/application-profil
 import { AutofillMemoryCard } from "@/components/settings/autofill-memory-card";
 import { ApplicationMemoryCard } from "@/components/settings/application-memory-card";
 import { PendingApplicationChangesCard } from "@/components/settings/pending-application-changes-card";
-import { toPendingApplicationChangeView } from "@/lib/pending-application-change";
+import { visiblePendingWhere, toPendingApplicationChangeView } from "@/lib/pending-application-change";
 import { toMemoryView, type MemoryView } from "@/lib/application-memory";
 import { parseApplicationProfile } from "@/lib/application-profile";
 import { db } from "@/lib/db";
@@ -28,6 +29,7 @@ import packageInfo from "../../../../package.json";
 
 export default async function SettingsPage() {
   const user = await requireUser();
+  const scanHealth = await getScanHealth(user.id);
   const [aiKeys, appSettings, mailAccounts, freshnessResult, resumeVersions, rememberedAnswers, autoBackup, extensionPairing, memories, pendingChanges] = await Promise.all([
     getAiKeysOverview(user.id),
     getAppSettings(),
@@ -46,7 +48,7 @@ export default async function SettingsPage() {
     getAutoBackupSettings(),
     getExtensionPairing(),
     db.applicationMemory.findMany({ where: { userId: user.id }, orderBy: { updatedAt: "desc" } }),
-    db.pendingApplicationChange.findMany({ where: { userId: user.id, status: "pending" }, orderBy: { updatedAt: "desc" } }),
+    db.pendingApplicationChange.findMany({ where: visiblePendingWhere(user.id), orderBy: { updatedAt: "desc" } }),
   ]);
   const freshness = freshnessResult.ok ? freshnessResult.data : null;
   const memoryViews = memories.map(toMemoryView).filter((row): row is MemoryView => row !== null);
@@ -79,7 +81,7 @@ export default async function SettingsPage() {
         <AiSettingsForm keys={aiKeys} />
         <ProxySettingsCard initial={appSettings} />
         <EmailSettingsForm currentUser={user.smtpUser} schedule={{ enabled: user.emailReminderEnabled, time: user.emailReminderTime, timeZone: user.emailReminderTimeZone, lastError: user.emailReminderLastError }} />
-        <MailAccountsCard accounts={mailAccounts} />
+        <MailAccountsCard accounts={mailAccounts} health={{ failing: scanHealth.failing, error: scanHealth.error, lastOkAt: scanHealth.lastOkAt?.toISOString() ?? null }} />
         <BackgroundReminderCard initial={appSettings} autoApplyProgress={user.autoApplyProgress} />
         <BackupCard initialFreshness={freshness} />
         <AutoBackupCard initial={autoBackup} />

@@ -1,0 +1,219 @@
+// Type catalog for the provider plugin contract.
+//
+// This file is documentation-only — pure JSDoc @typedef annotations. The
+// project is plain ESM JavaScript with no build step; provider authors can
+// reference these types via `/** @typedef {import('./_types.js').Provider} Provider */`
+// at the top of a `// @ts-check`-enabled file to get IDE hints. The runtime
+// contract is enforced by scan.mjs (id presence, fetch is a function, fetch
+// returns an array), not by these annotations.
+//
+// Prose companion (checklist, mandatory guards, tests): ADDING_A_PROVIDER.md
+// in this directory.
+//
+// Files prefixed with _ are never loaded as providers by scan.mjs.
+
+/**
+ * Normalized job posting — the unit of currency throughout the scanner.
+ *
+ * @typedef {object} Job
+ * @property {string} title    Required, non-empty after trim.
+ * @property {string} url      Required, absolute URL — used as the dedup key.
+ * @property {string} company  May be empty when the source can't expose it
+ *                             at the list-page level; populated downstream.
+ * @property {string} location May be empty.
+ * @property {string} [description] Job description text, populated ONLY when the
+ *                               provider's list payload carries it for free (no
+ *                               extra per-job request — the scanner is zero-token),
+ *                               or when a board opts into vdab/smartrecruiters-style
+ *                               `fetchDetails` (bounded per-job enrichment, skipped
+ *                               while probing). Lever/Ashby supply it via
+ *                               `descriptionPlain`; most providers omit it.
+ *                               Consumed by scan.mjs's content_filter; an
+ *                               empty/absent value always passes the filter.
+ * @property {number} [postedAt] Epoch ms when the posting was published.
+ *                               Omitted when the source doesn't expose a
+ *                               usable date. scan.mjs ignores it; consumers
+ *                               like scan-ats-full.mjs use it for recency
+ *                               filtering.
+ * @property {{min?: number, max?: number, currency?: string}} [salary]
+ *                               Annualized compensation, attached ONLY when the
+ *                               source exposes real figures — never inferred
+ *                               (`ashby.mjs` is the reference shape; most
+ *                               providers omit it). At least one of `min` / `max`
+ *                               is present; most providers normalize both bounds
+ *                               (filling a one-sided range from the other), but
+ *                               some — e.g. `agentic-jobs.mjs` — leave the absent
+ *                               bound off rather than coerce it. scan.mjs's
+ *                               salary_filter reads `min ?? max` and tolerates
+ *                               either bound alone.
+ *                               `currency` is the source's currency string,
+ *                               upper-cased by most providers (`''` or absent
+ *                               when the source gives none); it is not validated
+ *                               as an ISO code, and the filter compares it
+ *                               case-insensitively. Consumed by scan.mjs's
+ *                               salary_filter and rendered into pipeline.md's
+ *                               compensation column via formatCompensation(); an
+ *                               empty/absent value always passes the filter.
+ *                               `adp-workforcenow.mjs` is another producer.
+ * @property {string} [externalId] The ATS's own id for this POSTING, where the
+ *                               source exposes one (`git grep -n externalId
+ *                               providers/` lists the providers that set it).
+ *                               Unique within that ATS, not across employers —
+ *                               pair it with the source if you key on it. Not
+ *                               read by the scanner, whose per-posting identity
+ *                               is the URL. Left unset when the source exposes no
+ *                               posting id — never filled with a requisition id,
+ *                               which is shared by sibling postings.
+ * @property {string} [requisitionId] The EMPLOYER's requisition id — the
+ *                               schema.org/JobPosting `identifier` concept — from
+ *                               wherever the ATS exposes it: a dedicated payload
+ *                               field, or the posting URL when the ATS encodes it
+ *                               there. `git grep -n requisitionId providers/`
+ *                               lists the providers that set it.
+ *
+ *                               ⚠ MANY-TO-ONE WITH POSTINGS. This is a REQ key,
+ *                               not a posting key, and must NEVER be used alone to
+ *                               conclude two rows are the same opening. Measured on
+ *                               Affirm's live board: 181 postings carry 118 distinct
+ *                               requisition_ids, and 61 of those cover more than one
+ *                               posting — JR103863 alone spans four, including
+ *                               "Engineering Manager, ML Platform" AND "Senior
+ *                               Engineering Manager, ML Platform" across US and
+ *                               Canada. Keying dedup on it merges two different
+ *                               levels of a role. That is by design: Google's own
+ *                               guidance calls `identifier` useful "when the same
+ *                               role exists at multiple locations".
+ *
+ *                               Correct use: an ADVISORY grouping signal ("possible
+ *                               repost / sibling req"), always paired with employer
+ *                               and, where it matters, location. Per-posting
+ *                               identity is the URL. scan.mjs's company+role dedup
+ *                               reads it only in the safe direction: two
+ *                               same-titled postings with DIFFERENT ids are two
+ *                               requisitions. Written to scan-history.tsv. The
+ *                               scanner compares it as given (case folded), so
+ *                               report it in canonical form: any normalization,
+ *                               such as dropping an ATS repost suffix, happens in
+ *                               the provider.
+ * @property {number} [trustScore] 0-100 trust score from _trust-validator.mjs.
+ * @property {string[]} [trustFlags] Flags raised by trust validation (e.g.
+ *                                   'invalid_url', 'suspicious_domain').
+ * @property {'high'|'medium'|'low'} [trustLevel] Classification derived from
+ *                                                 trustScore.
+ * @property {string} [language] Language the posting is written in, as the
+ *                               source names it: a code (`de`, `en-GB`,
+ *                               `en_GLOBAL`) or a name (`German`). Prefer the
+ *                               code when the source offers both. Consumers
+ *                               reduce a code to its canonical language subtag
+ *                               (`en-GB`, `en_GLOBAL` → `en`; `deu` → `de`) and
+ *                               compare anything else whole, case-folded.
+ *                               Omitted when the source doesn't say. Consumed
+ *                               by scan.mjs's opt-in
+ *                               `scan_history.dedup_include_language` and
+ *                               written to scan-history.tsv. A source that
+ *                               serves every language version of a posting at
+ *                               one URL, told apart by a `language` / `lang` /
+ *                               `locale` param, returns one Job per version,
+ *                               each with `language` set and that param on its
+ *                               `url`, the posting's own default language
+ *                               first: the URL dedup resolves a seen row of
+ *                               unknown language to the first version when no
+ *                               title tells it apart. A candidate's language
+ *                               is only ever this field, never read from its
+ *                               URL, so a version without it stays a duplicate.
+ */
+
+/**
+ * Result returned by the trust validator for a single job posting.
+ *
+ * @typedef {object} TrustResult
+ * @property {number} score       0-100, where 100 = fully trusted.
+ * @property {string[]} flags     Flags raised (e.g. 'invalid_url', 'suspicious_domain').
+ * @property {'high'|'medium'|'low'} level  Classification: 90-100 high, 60-89 medium, 0-59 low.
+ */
+
+/**
+ * A single portal entry from `portals.yml` — `tracked_companies` or `job_boards`.
+ *
+ * Provider-specific fields are opaque to scan.mjs and validated by the
+ * provider itself. Examples in current providers: `api`, `careers_url`.
+ * Providers read these directly off the entry object — no schema enforcement
+ * at the framework level.
+ *
+ * @typedef {object} PortalEntry
+ * @property {string}             name             User-facing label; appears in logs and placeholders.
+ * @property {boolean}            [enabled]        Default: true.
+ * @property {string}             [careers_url]    Public listing URL; consumed by detect().
+ * @property {string}             [api]            JSON API URL; used directly by greenhouse/ashby providers.
+ * @property {string}             [provider]       Explicit provider id — bypasses detect().
+ * @property {('http')}           [transport]      Default: 'http'. Reserved for future transports.
+ * @property {number}             [max_pages]      Provider-specific pagination cap (avature, workday).
+ * @property {string}             [offset_param]   avature only: pins the pagination query key and disables the
+ *                                                 provider's jobOffset→offset self-heal. Rarely needed — an
+ *                                                 escape hatch for a tenant the auto-switch can't resolve.
+ */
+
+/**
+ * Returned by `detect()` when a provider claims an entry. `url` is
+ * informational (used in logs); routing only checks for a non-null return.
+ *
+ * @typedef {object} DetectHit
+ * @property {string} url
+ */
+
+/**
+ * Options forwarded to the underlying `fetch` call.
+ *
+ * @typedef {object} FetchOptions
+ * @property {number}                [timeoutMs]
+ * @property {Object<string,string>} [headers]
+ * @property {string}                [method]
+ * @property {(string|null)}         [body]
+ * @property {('error'|'follow'|'manual')} [redirect]
+ */
+
+/**
+ * What scan.mjs hands to provider.fetch(). For Phase A only `transport: 'http'`
+ * is implemented; the shape reserves room for future transports without
+ * breaking the contract.
+ *
+ * @typedef {object} Context
+ * @property {('http')} transport
+ * @property {(url: string, opts?: FetchOptions) => Promise<string>}  fetchText
+ * @property {(url: string, opts?: FetchOptions) => Promise<unknown>} fetchJson
+ * @property {(url: string, opts?: FetchOptions) => Promise<Response>} fetchResponse  Raw Response (timeout + non-2xx guard applied); for providers needing response headers.
+ * @property {number} [maxPages] Optional pagination hint. When set (verify-portals.mjs's
+ *                              health probe passes 1), a paginating provider SHOULD stop
+ *                              after this many pages — the probe only needs the first page
+ *                              to tell a live board from a broken one, and must not walk an
+ *                              entire careers site. Providers that ignore it stay correct:
+ *                              the probe caps their requests defensively via the context's
+ *                              own fetch functions.
+ * @property {(ms: number) => Promise<void>} [sleep] Optional cross-provider pacing hook used by
+ *                              paginating providers (avature, workday) to throttle between page
+ *                              requests. May be absent — providers fall back to a native
+ *                              `setTimeout`-based delay.
+ * @property {boolean} [dedupIncludeLanguage] Whether the scan keeps language versions of
+ *                              one posting apart (`scan_history.dedup_include_language`).
+ *                              A provider whose extra language versions cost extra
+ *                              requests fetches them only when this is true; otherwise
+ *                              the scan keeps one version per posting and drops the rest.
+ */
+
+/**
+ * The provider contract — the default export of every providers/*.mjs file
+ * (excluding _-prefixed shared helpers).
+ *
+ * @typedef {object} Provider
+ * @property {string} id                                                       Unique across all loaded providers.
+ * @property {((entry: PortalEntry) => (DetectHit | null))} [detect]           Optional auto-detection.
+ * @property {(entry: PortalEntry, ctx: Context) => Promise<Job[]>} fetch      Required.
+ * @property {((job: Job) => (string | null))} [dedupKey]                     Optional. A
+ *   provider-scoped identifier for a job, precise where URL normalization
+ *   isn't — e.g. a Workday requisition ID, so the same posting served under
+ *   several sites of one tenant (different paths/hosts) collapses to one key
+ *   (#3439). Return null when no such key is derivable for a given job;
+ *   callers then fall back to normalizeUrlForDedup(job.url) as before.
+ */
+
+export {};

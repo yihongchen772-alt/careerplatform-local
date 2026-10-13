@@ -188,10 +188,12 @@ test("isolated DB: rounds, 已完成 and its reminders, follow-up to-dos, mail i
   assert.equal(row.stage, "INTERVIEW_1");
   assert.equal(row.calendarEvent.title, "示例科技 · 一面");
   assert.equal(row.calendarEvent.reminders.length, 1);
-  // The same round again: the current step, nothing new.
+  // The same round again while it already has a time: another session of
+  // it (群面 then 单面), a step of its own; the first one keeps its time.
   const again = await actions.addStageSchedule("applied", "INTERVIEW_1", { nextDeadline: local(2027, 3, 16, 9), nextDeadlineEnd: null, nextHasTime: true, meetingInfo: null, remindMinutes: 30 });
-  assert.equal(again.data.created, false);
-  assert.equal(again.data.stageHistoryId, row.id);
+  assert.equal(again.data.created, true);
+  assert.notEqual(again.data.stageHistoryId, row.id);
+  assert.equal((await db.stageHistory.findUnique({ where: { id: row.id } })).nextDeadline.getTime(), start.getTime());
   assert.equal((await actions.addStageSchedule("applied", "APPLIED", { nextDeadline: start, nextDeadlineEnd: null, nextHasTime: true })).ok, false);
 
   // 撞期.

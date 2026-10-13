@@ -33,6 +33,8 @@ export type AutoScheduleItem = {
   what: string;
   startsAt: string;
   endsAt: string | null;
+  /** False for a 笔试 / 测评 deadline (a day, no clock time). */
+  hasTime?: boolean;
   previousStartsAt: string | null;
   meetingInfo: string | null;
   onStage: boolean;
@@ -68,7 +70,11 @@ export function AutoProgressBanner({ items, schedules = [], showApplication = tr
       const result = await undoAutoStageUpdate(item.id);
       if (!result.ok) return void toast.error(result.message);
       setHandled((previous) => [...previous, item.id]);
-      toast.success(`已撤销，${item.companyName} 回到之前的进度`);
+      if (item.source === "email-new") {
+        toast.success(`已撤销，删掉了自动记的「${item.companyName} · ${item.title}」`);
+        // On that 投递's own page there is nothing left to show.
+        if (!showApplication) return void router.replace("/applications");
+      } else toast.success(`已撤销，${item.companyName} 回到之前的进度`);
       router.refresh();
     } finally {
       setBusy(null);
@@ -128,9 +134,9 @@ export function AutoProgressBanner({ items, schedules = [], showApplication = tr
                   <div className="min-w-0">
                     <p className="text-sm">
                       {showApplication && item.applicationId ? <><Link href={`/applications/${item.applicationId}`} className="font-medium hover:text-primary">{item.companyName} · {item.title}</Link><span className="text-muted-foreground"> → </span></> : !item.applicationId ? <span className="font-medium">{item.what}</span> : null}
-                      {item.applicationId && <span className="text-muted-foreground">{item.previousStartsAt ? "时间改为 " : "时间 "}</span>}
+                      {item.applicationId && <span className="text-muted-foreground">{item.hasTime === false ? "截止 " : item.previousStartsAt ? "时间改为 " : "时间 "}</span>}
                       {!item.applicationId && <span className="text-muted-foreground"> → 日历 </span>}
-                      <span className="font-medium">{absoluteWhen(item.startsAt)}{end ? `–${clock(end)}` : ""}</span>
+                      <span className="font-medium">{item.hasTime === false ? (item.endsAt ? `${absoluteWhen(item.startsAt, false)}–${absoluteWhen(item.endsAt, false)}` : absoluteWhen(item.startsAt, false)) : `${absoluteWhen(item.startsAt)}${end ? `–${clock(end)}` : ""}`}</span>
                       {item.previousStartsAt && <span className="text-muted-foreground">（原 {absoluteWhen(item.previousStartsAt)}）</span>}
                     </p>
                     <p className="mt-0.5 truncate text-xs text-muted-foreground" title={[item.evidence, item.meetingInfo].filter(Boolean).join("\n") || undefined}>
@@ -146,7 +152,8 @@ export function AutoProgressBanner({ items, schedules = [], showApplication = tr
             );
           }
           const item = row.item;
-          const Icon = item.source === "email" ? Mail : Radar;
+          const fromMail = item.source === "email" || item.source === "email-new";
+          const Icon = fromMail ? Mail : Radar;
           return (
             <div key={item.id} className="flex flex-col gap-2 rounded-xl border border-border/60 bg-card/80 p-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex min-w-0 items-start gap-2.5">
@@ -154,11 +161,13 @@ export function AutoProgressBanner({ items, schedules = [], showApplication = tr
                 <div className="min-w-0">
                   <p className="text-sm">
                     {showApplication && <><Link href={`/applications/${item.applicationId}`} className="font-medium hover:text-primary">{item.companyName} · {item.title}</Link><span className="text-muted-foreground"> → </span></>}
-                    <span className="font-medium">{STAGE_LABELS[item.stage]}</span>
-                    {item.stageLabel && item.stageLabel !== STAGE_LABELS[item.stage] && <span className="text-muted-foreground">（{item.stageLabel}）</span>}
+                    {item.source === "email-new" ? <span className="font-medium">新记了一条投递</span> : <>
+                      <span className="font-medium">{STAGE_LABELS[item.stage]}</span>
+                      {item.stageLabel && item.stageLabel !== STAGE_LABELS[item.stage] && <span className="text-muted-foreground">（{item.stageLabel}）</span>}
+                    </>}
                   </p>
                   <p className="mt-0.5 truncate text-xs text-muted-foreground" title={item.evidence ?? undefined}>
-                    {item.source === "email" ? "来自邮件" : "来自官网"}{item.evidence ? `：${item.evidence}` : ""} · {new Date(item.enteredAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                    {item.source === "email-new" ? "收到投递成功邮件，之前没记过" : fromMail ? "来自邮件" : "来自官网"}{item.evidence ? `：${item.evidence}` : ""} · {new Date(item.enteredAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                   </p>
                 </div>
               </div>

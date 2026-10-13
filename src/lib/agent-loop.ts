@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const agentDecisionSchema = z.object({
-  tool: z.enum(["search_records", "resume_context", "research_web", "prepare_application", "finish"]),
+  tool: z.enum(["search_records", "resume_context", "research_web", "find_jobs", "prepare_application", "finish"]),
   query: z.string().max(600).default(""),
   targetId: z.string().max(150).default(""),
 });
@@ -18,6 +18,7 @@ const labels: Record<AgentDecision["tool"], string> = {
   search_records: "查询求职记录",
   resume_context: "读取简历摘要",
   research_web: "联网研究公司与岗位",
+  find_jobs: "到公司招聘官网找岗位",
   prepare_application: "准备投递材料和网申入口",
   finish: "整理结果",
 };

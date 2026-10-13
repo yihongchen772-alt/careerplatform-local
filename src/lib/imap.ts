@@ -84,8 +84,11 @@ export async function fetchRecentEmails(
     await client.connect();
   } catch (err) {
     console.error("[imap] connect failed", err);
+    // Told apart so the 「自动读邮件停了」 notice can say what to do.
     throw new UserFacingError(
-      "邮箱收件箱连不上，检查一下 IMAP 地址、端口和授权码"
+      (err as { authenticationFailed?: boolean })?.authenticationFailed
+        ? "邮箱拒绝登录：授权码可能过期或被重置了，去邮箱网页版重新生成一个填进来"
+        : "连不上邮箱服务器，检查一下网络和 IMAP 地址、端口"
     );
   }
 

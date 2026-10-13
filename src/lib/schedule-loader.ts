@@ -75,16 +75,16 @@ export function draftItem(task: DraftTask): ScheduleItem | null {
   let conflictsWith: string | null = null;
   if (app && !TERMINAL.includes(app.currentStage)) {
     const row = currentStageRow(app, app.stageHistory);
-    if (row?.nextHasTime && row.nextDeadline && row.nextDeadline.getTime() !== time.startsAt.getTime()) conflictsWith = row.nextDeadline.toISOString();
+    if (row?.nextDeadline && (row.nextHasTime || !time.hasTime) && row.nextDeadline.getTime() !== time.startsAt.getTime()) conflictsWith = row.nextDeadline.toISOString();
   }
   return {
     key: `mail:${task.id}`,
     source: "mail",
     sourceId: task.id,
-    kind: kindFromText(`${time.title}\n${task.title}`),
+    kind: time.hasTime ? kindFromText(`${time.title}\n${task.title}`) : "exam",
     startsAt: time.startsAt.toISOString(),
     endsAt: time.endsAt?.toISOString() ?? null,
-    hasTime: true,
+    hasTime: time.hasTime,
     title: time.title || task.title,
     applicationId: app?.id ?? null,
     companyName: app?.company.name ?? null,

@@ -1,0 +1,5 @@
+-- AlterTable
+ALTER TABLE "User" ADD COLUMN "inboxScanFailStreak" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "User" ADD COLUMN "inboxScanError" TEXT;
+ALTER TABLE "User" ADD COLUMN "inboxScanErrorAt" DATETIME;
+ALTER TABLE "User" ADD COLUMN "inboxScanOkAt" DATETIME;

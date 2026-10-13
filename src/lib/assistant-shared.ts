@@ -32,6 +32,11 @@ export const assistantActionSchema = z.object({
     "withdraw_application",
     "complete_task",
     "mark_contacted",
+    "set_schedule",
+    "reschedule",
+    "complete_step",
+    "save_note",
+    "mark_followed_up",
   ]),
   label: z.string(),
   companyName: z.string().nullish(),
@@ -48,6 +53,8 @@ export const assistantActionSchema = z.object({
   stage: z.string().nullish(),
   targetId: z.string().nullish(),
   note: z.string().nullish(),
+  /// A job's link, for add_position (from 「找岗位」).
+  url: z.string().nullish(),
 });
 
 export type AssistantAction = z.infer<typeof assistantActionSchema>;

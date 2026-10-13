@@ -1791,7 +1791,45 @@ function recordReference(group, row) {
 
 /** One source per DOM block, aligned with existing names/dates instead of
  * blindly filling remaining fields from the first saved experience. */
-function classifyRepeatBlocks(fields, profile) {
+// Portals where each 经历 must be saved before 「添加」 offers the next one
+// show the saved ones as plain text cards, with one empty form below. Which
+// saved records are already on the page as such a card: its name (school /
+// company / project) plus its role, major or start month in the page text.
+function normalizedPageText(text) {
+  return String(text || "").normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+function savedRecordsOnPage(profile, pageText) {
+  const saved = new Map();
+  const text = normalizedPageText(pageText);
+  if (!text) return saved;
+  const has = (value) => {
+    const key = normalizedPageText(value);
+    return key.length >= 2 && text.includes(key);
+  };
+  const month = (value) => {
+    const match = /(\d{4})\D{0,3}(\d{1,2})/.exec(String(value || ""));
+    return match ? `${match[1]}${match[2].padStart(2, "0")}` : "";
+  };
+  for (const group of ["education", "experience", "project", "award"]) {
+    const rows = rowsForGroup(profile, group);
+    const found = new Set();
+    rows.forEach((row, index) => {
+      const name = group === "education" ? row.school : group === "experience" ? row.company : row.name;
+      if (!name || !has(name)) return;
+      const second = [row.major, row.role, row.level, row.degree].filter(Boolean).some(has) || [row.start, row.date].map(month).some((value) => value && text.includes(value));
+      if (second) found.add(index);
+    });
+    // The same school twice (本科 + 硕士 at one university) cannot be told apart
+    // by name; only trust the text when it is not ambiguous.
+    const names = rows.map((row) => normalizedPageText(group === "education" ? row.school : group === "experience" ? row.company : row.name));
+    for (const index of [...found]) if (names.filter((name) => name === names[index]).length > 1 && !(normalizedPageText(rows[index].major || rows[index].role || "") && has(rows[index].major || rows[index].role))) found.delete(index);
+    if (found.size) saved.set(group, found);
+  }
+  return saved;
+}
+
+function classifyRepeatBlocks(fields, profile, pageText = "") {
   const rowIndexes = new Map(), repeats = new Map(), blocks = new Map();
   for (const field of fields) {
     const info = resolveRepeatField(field, rowIndexes);
@@ -1819,6 +1857,18 @@ function classifyRepeatBlocks(fields, profile) {
     }
     block.anchored = true;
   }
+  // Records already saved as cards on the page are taken too, so the empty
+  // form below them gets the next one instead of the first one again.
+  const savedOnPage = savedRecordsOnPage(profile, pageText);
+  for (const [group, indexes] of savedOnPage) {
+    // Only for a group whose fields are on the page, and never a record an
+    // input block on the page already holds (it is that block's text).
+    const held = reserved.get(group) || new Set();
+    const cards = [...indexes].filter((index) => !held.has(index));
+    if (!cards.length || ![...blocks.values()].some((block) => block.group === group)) continue;
+    rowIndexes.set(`${group}:saved`, cards.length);
+    reserved.set(group, new Set([...held, ...cards]));
+  }
   // Unanchored blocks keep their row unless an anchored block took it.
   // Blocks sharing a nominal row share the record: one 教育 block whose
   // fields straddle two table rows is still one block, not two.
@@ -1832,6 +1882,9 @@ function classifyRepeatBlocks(fields, profile) {
         let row = block.row;
         if (used.has(row)) row = rows.findIndex((_, index) => !used.has(index));
         if (row >= 0) { used.add(row); reserved.set(block.group, used); }
+        // Every record is already saved on the page: nothing left for this
+        // empty form (filling the first one again would duplicate it).
+        else if (rowIndexes.get(`${block.group}:saved`)) row = rows.length;
         remapped.set(key, row >= 0 ? row : block.row);
       }
       block.row = remapped.get(key);
@@ -1904,7 +1957,8 @@ function fillDetail(field, pair, filledSet, failedSet) {
 // "有 2 段教育经历，页面只有 1 组" — most portals render one empty block and
 // hide the rest behind an 添加 button, which autofill deliberately never clicks.
 function missingRepeatCounts(profile, rowIndexes) {
-  const seen = (group, kind) => Math.max(rowIndexes.get(`${group}:${kind}:in`) || 0, rowIndexes.get(`${group}:${kind}:out`) || 0);
+  // Cards already saved on the page count as shown.
+  const seen = (group, kind) => Math.max(rowIndexes.get(`${group}:${kind}:in`) || 0, rowIndexes.get(`${group}:${kind}:out`) || 0) + (rowIndexes.get(`${group}:saved`) || 0);
   const checks = [
     ["education", "school", educationRows(profile).length, "教育经历"],
     ["experience", "company", (profile.experiences || []).length, "实习/工作经历"],
@@ -2185,9 +2239,15 @@ function showPageStatus(payload) {
 //   getDrafts() / setDrafts(list)   AI drafts filled on this tab (for memory)
 //   onFilled()               optional hook after a fill
 
+// Injected: the page's visible text (saved 经历 cards are plain text, not inputs).
+function readPageText() {
+  return String((document.body && document.body.innerText) || "").slice(0, 80000);
+}
+
 async function scanFrames(adapter) {
   const frames = await adapter.frames();
   const fields = [];
+  let pageText = "";
   const frameById = new Map();
   const run = Date.now().toString(36).slice(-4);
   for (let i = 0; i < frames.length; i++) {
@@ -2200,11 +2260,12 @@ async function scanFrames(adapter) {
         frameById.set(f.id, frames[i]);
         fields.push(f);
       }
+      if (found && found.length) pageText += `\n${await adapter.run(frames[i], readPageText, []).catch(() => "")}`;
     } catch {
       // A frame that refuses scripts (sandboxed ad iframe, about:blank) has no form anyway.
     }
   }
-  return { fields, frameById };
+  return { fields, frameById, pageText };
 }
 
 async function fillFrames(adapter, pairs, frameById, initialUrl) {
@@ -2260,7 +2321,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     const profile = await profileRes.json();
 
     assertActive();
-    const { fields, frameById } = await scanFrames(adapter);
+    const { fields, frameById, pageText } = await scanFrames(adapter);
     assertActive();
     // A page may only contain an upload control. Keep going when a resume
     // is selected so the attachment pass below still gets a chance to run.
@@ -2268,7 +2329,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
 
     const pairs = [];
     let candidates = []; // fields going to AI: {id, label, kind, options?}
-    const { repeats, blocks, rowIndexes } = classifyRepeatBlocks(fields, profile);
+    const { repeats, blocks, rowIndexes } = classifyRepeatBlocks(fields, profile, pageText);
     const pageContext = options.positionId ? `job:v1:${options.positionId}` : portalContext(initialUrl);
     let neverGuessCount = 0;
     let alreadyFilled = 0;
@@ -2434,11 +2495,16 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     const aiReused = essayReused - rememberedFilled;
     const failedSet = new Set(failed);
     const skippedSet = new Set(skipped);
+    // An empty form below saved cards with no record left for it.
+    const allSavedOnPage = (field) => {
+      const repeat = repeats.get(field.id);
+      return !!repeat && !field.hasValue && !filledSet.has(field.id) && !!rowIndexes.get(`${repeat.group}:saved`) && repeat.row >= rowsForGroup(profile, repeat.group).length;
+    };
     const details = fields.map((field) => excluded.has(field.id)
       ? { label: field.section ? `${field.section} · ${displayLabel(field)}` : displayLabel(field), id: field.id, state: "未勾选此模块，已跳过", source: "excluded" }
       : skippedSet.has(field.id)
       ? { label: displayLabel(field), state: "填写期间已有修改，已保留", source: "prefilled" }
-      : { ...fillDetail(field, pairs.find((p) => p.id === field.id), filledSet, failedSet), id: field.id });
+      : { ...fillDetail(field, pairs.find((p) => p.id === field.id), filledSet, failedSet), id: field.id, ...(allSavedOnPage(field) ? { state: "这类经历已全部保存在页面上，这一组不用再填", source: "prefilled" } : {}) });
     const previous = options.accumulated || { filled: 0, uploaded: 0, details: [] };
     const earlier = new Map(previous.details.map((d) => [d.key, d]));
     const merged = new Map(earlier);
@@ -2478,6 +2544,8 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       parts.push(`${essayFilled} 道问答题已填（${bits.join("，")}）`);
     }
     if (shortFilled > 0) parts.push(`AI 从简历里补全了 ${shortFilled} 个其他字段`);
+    const savedCards = ["education", "experience", "project", "award"].reduce((sum, group) => sum + (rowIndexes.get(`${group}:saved`) || 0), 0);
+    if (savedCards > 0) parts.push(`页面上已保存的 ${savedCards} 段经历没有重复填，空白的一组接着填了下一段`);
     if (uploadedResumeCount > 0) parts.push(`已上传简历附件到 ${uploadedResumeCount} 个位置`);
     if (uploadError) parts.push(uploadError);
     // After an 添加 round the earlier rounds' own fills count as "已有内容".
@@ -2836,7 +2904,7 @@ async function applyAutofillPlan(adapter, input) {
 
 module.exports = {
   isThirdPartyField, displayLabel, basicRuleMatches, normalizePhone, englishValue, matchPhoneChoice,
-  classifyRepeatBlocks, previewRecordBlocks, rowsForGroup, recordReference, awardFieldKind,
+  classifyRepeatBlocks, savedRecordsOnPage, previewRecordBlocks, rowsForGroup, recordReference, awardFieldKind,
   profileChoices, applyAutofillPlan, validatePageFields, focusFormField, collectApplicationFields, readCurrentApplicationFields, watchApplicationFields,
   AUTOFILL_MODULES,
   fieldModule,

@@ -16,6 +16,8 @@ import { getWeeklyReview } from "@/lib/actions/weekly-review";
 import { OnboardingCard } from "@/components/dashboard/onboarding-card";
 import { duplicateImportedTaskIds } from "@/lib/inbox-identity";
 import { AutoProgressBanner } from "@/components/applications/auto-progress-banner";
+import { ScanHealthBanner } from "@/components/applications/scan-health-banner";
+import { getScanHealth } from "@/lib/scan-health";
 import { loadAutoProgressItems, loadAutoScheduleItems } from "@/lib/auto-progress";
 import { UpcomingSchedule } from "@/components/schedule/upcoming-schedule";
 import { loadUpcomingSchedule } from "@/lib/schedule-loader";
@@ -24,6 +26,7 @@ import { currentTimeMs } from "@/lib/dates";
 
 export default async function DashboardPage() {
   const user = await requireUser();
+  const scanHealth = await getScanHealth(user.id);
   const now = currentTimeMs();
   const [autoUpdates, autoSchedules, upcoming] = await Promise.all([
     loadAutoProgressItems(user.id),
@@ -145,6 +148,7 @@ export default async function DashboardPage() {
         </div>
       </div>
 
+      {scanHealth.failing && <ScanHealthBanner error={scanHealth.error} since={scanHealth.since?.toISOString() ?? null} lastOkAt={scanHealth.lastOkAt?.toISOString() ?? null} />}
       <AutoProgressBanner items={autoUpdates} schedules={autoSchedules} />
 
       {/* Today's interviews, one click from their meeting links. */}

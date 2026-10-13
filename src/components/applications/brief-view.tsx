@@ -87,7 +87,7 @@ export function BriefView({
             <span className="inline-flex items-center gap-1.5 font-medium"><CalendarClock className="size-4 text-primary print:text-black" />{whenText(next, now)}</span>
             <span className="text-muted-foreground">{relativeText(next, now)}</span>
             {next.meetingInfo && <span className="min-w-0 basis-full break-all text-xs text-muted-foreground sm:basis-auto">{next.meetingInfo}</span>}
-            <span className="print:hidden"><MeetingActions info={next.meetingInfo} /></span>
+            <span className="print:hidden"><MeetingActions info={next.meetingInfo} exam={next.kind === "exam"} /></span>
           </div>
         ) : (
           <p className="mt-4 text-xs text-muted-foreground">还没记面试时间。<Link href={`/applications/${applicationId}?addTime=1#interview`} className="text-primary hover:underline">去添加</Link></p>

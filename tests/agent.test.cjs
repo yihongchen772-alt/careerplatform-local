@@ -66,6 +66,7 @@ function toolWithDb(db, extras = {}) {
     "@/lib/resume-context": { getResumeContext: async () => ({ resumeName: "简历", resumeText: "真实摘要" }) },
     "@/lib/ai-file-search": { getSearchKey: async () => null },
     "@/lib/action-result": { UserFacingError: Error },
+    "@/lib/career-ops": { findJobs: async () => { throw new Error("no network in tests"); } },
     ...extras,
   }).executeAgentTool;
 }
@@ -103,4 +104,20 @@ test("application preparation assumes https for a scheme-less stored URL instead
 test("missing search credentials fail explicitly without a network call", async () => {
   const execute = toolWithDb({});
   await assert.rejects(execute("owner", decision("research_web", "校招")), /联网研究需要/);
+});
+
+test("find_jobs passes the query and the applicant's cities, and reports boards it could not read", async () => {
+  let asked = null;
+  const execute = toolWithDb({ user: { findUnique: async (args) => { assert.equal(args.where.id, "owner"); return { preferredCities: "上海、杭州" }; } } }, {
+    "@/lib/career-ops": { findJobs: async (userId, query, cities) => {
+      asked = { userId, query, cities };
+      return { jobs: [{ company: "字节跳动", title: "数据分析", location: "上海", url: "https://jobs.bytedance.com/x", postedAt: null, description: "SQL" }], total: 1, searched: [{ name: "字节跳动", found: 40, error: null }, { name: "华为", found: 0, error: "这个网站暂不支持" }] };
+    } },
+  });
+  const result = await execute("owner", decision("find_jobs", "数据分析"));
+  assert.deepEqual(asked, { userId: "owner", query: "数据分析", cities: ["上海", "杭州"] });
+  assert.match(result.summary, /找到 1 个/);
+  assert.match(result.summary, /华为（这个网站暂不支持）/);
+  assert.match(result.data, /jobs\.bytedance\.com/);
+  await assert.rejects(execute("owner", decision("find_jobs", " ")), /要找什么岗位/);
 });

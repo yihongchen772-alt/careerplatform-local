@@ -5,7 +5,7 @@ module.exports = {
   productName: "求职罗盘",
   asar: true,
   // The Node-mode child process needs physical files outside Electron's ASAR.
-  asarUnpack: ["electron/backup-worker.cjs", "electron/data-backup.cjs"],
+  asarUnpack: ["electron/backup-worker.cjs", "electron/data-backup.cjs", "electron/career-ops/**"],
   npmRebuild: false,
   compression: "normal",
   directories: {

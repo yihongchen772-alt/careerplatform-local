@@ -87,6 +87,7 @@ export async function loadAutoScheduleItems(userId: string, applicationId?: stri
       what: task.title,
       startsAt: time.startsAt.toISOString(),
       endsAt: time.endsAt?.toISOString() ?? null,
+      hasTime: time.hasTime,
       previousStartsAt: previous,
       meetingInfo: time.meetingInfo,
       onStage: undo?.kind === "stage",

@@ -175,7 +175,7 @@ export function ScheduleFields({
       </div>
       <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_10rem]">
         <div className="space-y-1">
-          <Label htmlFor={`${idPrefix}-meeting`} className="text-xs text-muted-foreground">会议链接 / 会议号 / 地点</Label>
+          <Label htmlFor={`${idPrefix}-meeting`} className="text-xs text-muted-foreground">会议链接 / 会议号 / 地点 / 测评链接</Label>
           <Input
             id={`${idPrefix}-meeting`}
             value={value.meetingInfo}

@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
 import { resyncCurrentStage } from "@/lib/application-stage-history";
+import { NEW_APPLICATION_SOURCE } from "@/lib/mail-new-application";
 
 function revalidate(applicationId?: string) {
   revalidatePath("/applications");
@@ -22,6 +23,18 @@ export async function undoAutoStageUpdate(id: string): Promise<ActionResult<null
       select: { id: true, applicationId: true, autoSource: true, stageLabel: true },
     });
     if (!entry) throw new UserFacingError("这条自动更新已撤销或不存在");
+    if (entry.autoSource === NEW_APPLICATION_SOURCE) {
+      // A 投递 recorded from a 「投递成功」 mail: undo removes it again, as
+      // long as nothing has been added to it since.
+      await db.$transaction(async (tx) => {
+        if (await tx.stageHistory.count({ where: { applicationId: entry.applicationId } }) > 1) {
+          throw new UserFacingError("这条投递后来又有了新进度，要删掉请到投递详情里删除");
+        }
+        await tx.application.delete({ where: { id: entry.applicationId } });
+      });
+      revalidate();
+      return null;
+    }
     await db.$transaction(async (tx) => {
       if (await tx.stageHistory.count({ where: { applicationId: entry.applicationId } }) <= 1) {
         throw new UserFacingError("这是这条投递唯一的进度记录，不能撤销");

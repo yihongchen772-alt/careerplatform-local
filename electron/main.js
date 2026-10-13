@@ -187,6 +187,8 @@ async function startNextServer() {
     NODE_ENV: isDev ? "development" : "production",
     CAREERPLATFORM_RENDER_BRIDGE_URL: renderBridge.url,
     CAREERPLATFORM_RENDER_BRIDGE_TOKEN: renderBridge.token,
+    // 小欧's 「找岗位」 runs the vendored career-ops fetchers from here.
+    CAREERPLATFORM_CAREER_OPS_DIR: isDev ? path.join(__dirname, "career-ops") : path.join(process.resourcesPath, "app.asar.unpacked", "electron", "career-ops"),
   };
 
   const appRoot = getAppRoot();
@@ -595,15 +597,26 @@ async function maybeScanInbox(force = false) {
     if (!res.ok) throw new Error(`inbox endpoint returned ${res.status}`);
     const outcome = await res.json();
     healthy = outcome.ok !== false && !outcome.errors?.length && !outcome.error;
-    const progress = Number(outcome.progressUpdated) || 0;
-    const scheduled = Number(outcome.scheduled) || 0;
-    if ((progress > 0 || scheduled > 0) && !signal.aborted) {
+    // Second failure in a row: say so once, instead of mail quietly not
+    // being read for days. The banner in the App stays until it works.
+    if (outcome.alert && !signal.aborted) {
       const { Notification } = require("electron");
       if (Notification.isSupported()) {
         new Notification({
-          title: progress && scheduled
-            ? `邮件里有新进度：更新了 ${progress} 条投递，${scheduled} 个面试/笔试时间已加入日程`
-            : progress ? `邮件里有新进度，已自动更新 ${progress} 条投递` : `邮件里有 ${scheduled} 个面试/笔试时间，已加入日程`,
+          title: "自动读邮件停了，新的面试/笔试通知不会自动记进来",
+          body: String(outcome.error || "收件箱扫描失败").slice(0, 180),
+        }).on("click", () => { showWindow(); mainWindow?.loadURL(`http://localhost:${PORT}/settings#mail-accounts`).catch(() => {}); }).show();
+      }
+    }
+    const progress = Number(outcome.progressUpdated) || 0;
+    const scheduled = Number(outcome.scheduled) || 0;
+    const recorded = Number(outcome.recorded) || 0;
+    if ((progress > 0 || scheduled > 0 || recorded > 0) && !signal.aborted) {
+      const { Notification } = require("electron");
+      if (Notification.isSupported()) {
+        const parts = [progress && `更新了 ${progress} 条投递`, scheduled && `${scheduled} 个面试/笔试时间已加入日程`, recorded && `新记了 ${recorded} 条投递`].filter(Boolean);
+        new Notification({
+          title: `邮件里有新进度：${parts.join("，")}`,
           body: "打开「投递记录」可以查看，认错了点「撤销」即可",
         }).on("click", showWindow).show();
       }

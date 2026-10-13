@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, Video } from "lucide-react";
+import { Copy, ExternalLink, Video } from "lucide-react";
 import { toast } from "sonner";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -11,7 +11,7 @@ import { extractMeetingNumber, extractMeetingUrl } from "@/lib/interview-schedul
  * window there), and 复制 copies the meeting number or the whole text for
  * an address — whichever the invitation gave.
  */
-export function MeetingActions({ info, size = "sm", className, compact = false }: { info: string | null | undefined; size?: "sm" | "xs"; className?: string; compact?: boolean }) {
+export function MeetingActions({ info, size = "sm", className, compact = false, exam = false }: { info: string | null | undefined; size?: "sm" | "xs"; className?: string; compact?: boolean; /** A 笔试 / 测评 link: 「打开测评」 rather than 「进入会议」. */ exam?: boolean }) {
   if (!info?.trim()) return null;
   const url = extractMeetingUrl(info);
   const number = extractMeetingNumber(info);
@@ -21,8 +21,8 @@ export function MeetingActions({ info, size = "sm", className, compact = false }
     <span className={cn("inline-flex flex-wrap items-center gap-1.5", className)}>
       {url && (
         <a href={url} target="_blank" rel="noreferrer" title={url} className={cn(buttonVariants({ size: "sm" }), "gap-1 rounded-full", height)}>
-          <Video className="size-3.5" />
-          进入会议
+          {exam ? <ExternalLink className="size-3.5" /> : <Video className="size-3.5" />}
+          {exam ? "打开测评" : "进入会议"}
         </a>
       )}
       <Button

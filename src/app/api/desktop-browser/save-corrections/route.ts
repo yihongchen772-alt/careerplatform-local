@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { memoryCaptureSchema, memorySourceUrl } from "@/lib/application-memory";
-import { stageApplicationChanges } from "@/lib/pending-application-change";
+import { stageApplicationChanges, visiblePendingWhere } from "@/lib/pending-application-change";
 import { applicationDraftSchema, storeApplicationDraft } from "@/lib/application-draft-store";
 
 const bodySchema = z.object({
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
   const result = await db.$transaction(async (tx) => {
     if (input.draft) await storeApplicationDraft(tx, user.id, input.draft);
     const result = await stageApplicationChanges(tx, user.id, { ...input, sourceUrl });
-    return { ...result, pendingTotal: await tx.pendingApplicationChange.count({ where: { userId: user.id, status: "pending" } }) };
+    return { ...result, pendingTotal: await tx.pendingApplicationChange.count({ where: visiblePendingWhere(user.id) }) };
   });
   if (result.staged) revalidatePath("/settings");
   return NextResponse.json({ saved: 0, pending: result.staged, pendingTotal: result.pendingTotal, draftSaved: !!input.draft, processed: result.processed, unchanged: result.processed - result.staged });

@@ -31,7 +31,7 @@ export function NextScheduleLine({ item, now, href, className }: { item: Schedul
         <span className="truncate">{item.title} · {whenText(item, now)}</span>
         <span className="shrink-0">· {relativeText(item, now)}</span>
       </Link>
-      {urgency !== "past" && <MeetingActions info={item.meetingInfo} size="xs" compact />}
+      {urgency !== "past" && <MeetingActions info={item.meetingInfo} size="xs" compact exam={item.kind === "exam"} />}
     </div>
   );
 }

@@ -104,16 +104,16 @@ test('manual profile facts win; direction variants retain selected projects; dis
 
 test('flat answers deduplicate without merging opposite questions or company scopes; tidy removes only identical confirmed rows', async (t) => {
   const { db, post, load, review } = await fixture(t);
-  const answers = [{ questionLabel: '姓名', answer: '虚构姓名', kind: 'field' }];
+  const answers = [{ questionLabel: '是否有海外经历', answer: '有，交换一学期', kind: 'field' }];
   assert.equal((await post([], { answers })).data.pending, 1);
   assert.equal((await review(await db.pendingApplicationChange.findFirst(), { shareAcrossCompanies: true })).ok, true);
   assert.equal((await post([], { answers })).data.saved, 0);
   await post([], { answers: [{ questionLabel: '是否接受调剂？', answer: '接受', kind: 'short' }, { questionLabel: '是否不接受调剂？', answer: '不接受', kind: 'short' }] });
   for (const row of await db.pendingApplicationChange.findMany({ where: { status: 'pending' } })) assert.equal((await review(row)).ok, true);
-  await post([], { contextKey: 'page:v2:https://company-two.example/apply', answers: [{ questionLabel: '姓名', answer: '其他名字', kind: 'field' }] });
+  await post([], { contextKey: 'page:v2:https://company-two.example/apply', answers: [{ questionLabel: '是否有海外经历', answer: '没有', kind: 'field' }] });
   assert.equal((await review(await db.pendingApplicationChange.findFirst({ where: { status: 'pending' } }))).ok, true);
   assert.equal(await db.autofillAnswer.count(), 4);
-  const global = await db.autofillAnswer.findFirst({ where: { contextKey: null, questionLabel: '姓名' } }); assert.equal(global.answer, '虚构姓名');
+  const global = await db.autofillAnswer.findFirst({ where: { contextKey: null, questionLabel: '是否有海外经历' } }); assert.equal(global.answer, '有，交换一学期');
   const { id: _id, createdAt: _created, updatedAt: _updated, ...copy } = global;
   await db.autofillAnswer.create({ data: copy });
   const tidy = await load('src/lib/actions/autofill-memory.ts').tidyAutofillMemories(); assert.equal(tidy.ok, true); assert.equal(tidy.data.length, 1); assert.equal(await db.autofillAnswer.count(), 4);

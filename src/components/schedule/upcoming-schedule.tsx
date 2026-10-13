@@ -199,7 +199,7 @@ function ScheduleRow({ item, now, busy, clash, onComplete, onWrite, onDismiss, o
         </div>
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-1.5 pl-[6.25rem] sm:pl-0">
-        <MeetingActions info={item.meetingInfo} compact />
+        <MeetingActions info={item.meetingInfo} compact exam={item.kind === "exam"} />
         {item.source === "mail" ? (
           <>
             <Button type="button" size="sm" className="h-7 rounded-full px-2.5 text-xs" disabled={busy} onClick={onWrite}>{busy ? "写入中…" : "写入日程"}</Button>

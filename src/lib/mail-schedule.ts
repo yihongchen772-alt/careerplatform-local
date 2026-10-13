@@ -1,5 +1,5 @@
 import type { ApplicationStage, Prisma } from "@prisma/client";
-import { mailTime } from "@/lib/mail-time";
+import { mailTime, mailTimeOver } from "@/lib/mail-time";
 import { isTerminalStage, targetStageFor } from "@/lib/interview-schedule";
 import { rowForSchedule } from "@/lib/schedule-target";
 import {
@@ -93,7 +93,7 @@ export async function applyMailSchedule(
   if (task.mailEventId || task.mailAppliedAt || (task.mailUndoneAt && !input.force)) return { status: "skipped", reason: "handled" };
   const time = mailTime(task.mailEventDraft);
   if (!time) return { status: "skipped", reason: "no-time" };
-  if (!input.force && time.startsAt.getTime() <= now.getTime()) return { status: "skipped", reason: "past" };
+  if (!input.force && mailTimeOver(time) <= now.getTime()) return { status: "skipped", reason: "past" };
 
   const app = task.application && task.application.userId === input.userId ? task.application : null;
   // The round the mail is about: as recognised, else as its words say. A
@@ -112,7 +112,7 @@ export async function applyMailSchedule(
   }
   if (app && row) {
     const current = scheduleOf(row);
-    if (current.nextHasTime && current.nextDeadline?.getTime() === time.startsAt.getTime()) {
+    if (current.nextHasTime === time.hasTime && current.nextDeadline?.getTime() === time.startsAt.getTime() && (current.nextDeadlineEnd?.getTime() ?? null) === (time.endsAt?.getTime() ?? null)) {
       // The same slot again: fill in a link the first mail lacked, nothing else.
       if (!current.meetingInfo && time.meetingInfo) {
         await tx.stageHistory.update({ where: { id: row.id }, data: { meetingInfo: time.meetingInfo } });
@@ -122,15 +122,18 @@ export async function applyMailSchedule(
       await tx.personalTask.update({ where: { id: task.id }, data: { mailEventId: copy?.id ?? null, done: true } });
       return { status: "same" };
     }
-    if (current.nextHasTime && current.scheduleSource !== "email" && !input.force) {
-      return { status: "conflict", existing: current.nextDeadline! };
+    // A time the user typed is theirs. A typed day without a time gives way
+    // to a mail's exact time (the same 一面, now with its hour), but not to
+    // a mail's deadline.
+    if (current.nextDeadline && current.scheduleSource !== "email" && !input.force && (current.nextHasTime || !time.hasTime)) {
+      return { status: "conflict", existing: current.nextDeadline };
     }
     const written: StageSchedule = {
       nextDeadline: time.startsAt,
       nextDeadlineEnd: time.endsAt,
-      nextHasTime: true,
+      nextHasTime: time.hasTime,
       meetingInfo: time.meetingInfo ?? current.meetingInfo,
-      remindMinutes: current.nextHasTime ? current.remindMinutes : DEFAULT_REMIND_MINUTES,
+      remindMinutes: !time.hasTime ? null : current.nextHasTime ? current.remindMinutes : DEFAULT_REMIND_MINUTES,
       scheduleSource: "email",
     };
     await tx.stageHistory.update({ where: { id: row.id }, data: written });
@@ -149,13 +152,16 @@ export async function applyMailSchedule(
   // Several mails about one slot (a notice, a reminder, a change of room)
   // make one calendar item, not three.
   const title = (time.title || task.title).slice(0, 200);
+  // A deadline (no clock time) is an all-day item on its last day.
+  const dayKey = time.hasTime ? dayKeyIn(time.startsAt, time.timeZone) : (time.endsAt ?? time.startsAt).toISOString().slice(0, 10);
+  const eventStart = time.hasTime ? time.startsAt : new Date(`${dayKey}T00:00:00`);
   const sameSlot = await tx.calendarEvent.findMany({
-    where: { userId: input.userId, stageHistoryId: null, startsAt: time.startsAt },
+    where: { userId: input.userId, stageHistoryId: null, startsAt: eventStart },
     select: { id: true, title: true },
   });
   for (const event of sameSlot) {
     const sibling = await tx.personalTask.findFirst({ where: { userId: input.userId, mailEventId: event.id, title: task.title }, select: { id: true } });
-    if (event.title === title || sibling) {
+    if (event.title === title || event.title === `${title}（截止）` || sibling) {
       await tx.personalTask.update({ where: { id: task.id }, data: { mailEventId: event.id, done: true } });
       return { status: "same" };
     }
@@ -164,16 +170,16 @@ export async function applyMailSchedule(
   const event = await tx.calendarEvent.create({
     data: {
       userId: input.userId,
-      title,
+      title: time.hasTime ? title : `${title}（截止）`.slice(0, 200),
       description: [time.meetingInfo, time.evidence, task.note].filter(Boolean).join("\n").slice(0, 20000),
-      startsAt: time.startsAt,
-      endsAt: time.endsAt,
-      allDay: false,
-      dateKey: dayKeyIn(time.startsAt, time.timeZone),
+      startsAt: eventStart,
+      endsAt: time.hasTime ? time.endsAt : null,
+      allDay: !time.hasTime,
+      dateKey: dayKey,
       timeZone: time.timeZone,
       meetingInfo: time.meetingInfo,
       source: "email",
-      ...(time.startsAt.getTime() > now.getTime() ? { reminders: { create: { offsetMinutes: DEFAULT_REMIND_MINUTES, scheduledAt: remindAt } } } : {}),
+      ...(time.hasTime && time.startsAt.getTime() > now.getTime() ? { reminders: { create: { offsetMinutes: DEFAULT_REMIND_MINUTES, scheduledAt: remindAt } } } : {}),
     },
   });
   await settleSiblings(tx, { userId: input.userId, taskId: task.id, startsAt: time.startsAt, eventId: event.id, applicationId: null, titles: [task.title, title] });

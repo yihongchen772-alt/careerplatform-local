@@ -6,6 +6,8 @@ import { AddApplicationDialog } from "@/components/applications/add-application-
 import { ApplicationsView } from "@/components/applications/applications-view";
 import { PortalSyncButton } from "@/components/applications/portal-sync-button";
 import { AutoProgressBanner } from "@/components/applications/auto-progress-banner";
+import { ScanHealthBanner } from "@/components/applications/scan-health-banner";
+import { getScanHealth } from "@/lib/scan-health";
 import { loadAutoProgressItems, loadAutoScheduleItems } from "@/lib/auto-progress";
 import { UpcomingSchedule } from "@/components/schedule/upcoming-schedule";
 import { loadUpcomingSchedule } from "@/lib/schedule-loader";
@@ -14,6 +16,7 @@ import { currentTimeMs } from "@/lib/dates";
 
 export default async function ApplicationsPage() {
   const user = await requireUser();
+  const scanHealth = await getScanHealth(user.id);
 
   const now = currentTimeMs();
   const [applications, resumeVersions, portals, settings, autoUpdates, autoSchedules, upcoming] = await Promise.all([
@@ -95,6 +98,7 @@ export default async function ApplicationsPage() {
         </div>)}</div>
       </section>}
 
+      {scanHealth.failing && <ScanHealthBanner error={scanHealth.error} since={scanHealth.since?.toISOString() ?? null} lastOkAt={scanHealth.lastOkAt?.toISOString() ?? null} />}
       <AutoProgressBanner items={autoUpdates} schedules={autoSchedules} />
 
       {applications.length > 0 && (

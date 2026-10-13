@@ -197,6 +197,8 @@ function prepareRuntime() {
   if (!updaterVersion) throw new Error("electron-updater must be installed as a production dependency.");
   fs.mkdirSync(path.join(shellRoot, "electron"));
   copySafe(path.join(projectRoot, "electron", "assets"), path.join(shellRoot, "electron", "assets"));
+  // 小欧's 「找岗位」 fetchers (career-ops, MIT), run as a plain Node child.
+  copySafe(path.join(projectRoot, "electron", "career-ops"), path.join(shellRoot, "electron", "career-ops"));
   for (const entry of fs.readdirSync(path.join(projectRoot, "electron"), { withFileTypes: true })) {
     if (entry.isFile() && /\.(?:js|cjs|json)$/.test(entry.name) && !isPrivatePath(entry.name)) {
       copySafe(path.join(projectRoot, "electron", entry.name), path.join(shellRoot, "electron", entry.name));
@@ -258,7 +260,7 @@ async function afterPack(context) {
   for (const required of ["manifest.json", "background.js", "popup.html", "lib/autofill-core.js"]) {
     if (!fs.existsSync(path.join(packagedExtension, required))) throw new Error(`Packaged Chrome extension entry missing: ${required}`);
   }
-  for (const required of ["backup-worker.cjs", "data-backup.cjs"]) {
+  for (const required of ["backup-worker.cjs", "data-backup.cjs", "career-ops/run.mjs", "career-ops/providers/_http.mjs"]) {
     if (!fs.existsSync(path.join(resources, "app.asar.unpacked", "electron", required))) {
       throw new Error(`Unpacked Node worker entry missing: ${required}`);
     }

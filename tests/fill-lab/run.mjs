@@ -1,6 +1,6 @@
-// 网申填写多场景实测台：在真实 Chromium 里用共享填写引擎填 11 个仿真表单
+// 网申填写多场景实测台：在真实 Chromium 里用共享填写引擎填 12 个仿真表单
 // （AntD 仿 Moka、Element Plus iframe 仿北森、老式表格仿大易、英文 Workday 式、
-// 手写控件、Shadow DOM、已有内容保护、自动补齐栏目、Semi 式下拉、分步向导），
+// 手写控件、Shadow DOM、已有内容保护、自动补齐栏目、Semi 式下拉、分步向导、已保存经历卡片），
 // 逐字段核对结果。全部是虚构资料，不访问任何真实网站或 App 数据。
 //
 //   npm run test:fill-lab            全部场景
@@ -329,6 +329,14 @@ Object.assign(suites, {
     { label: "政治面貌(已有)", read: "document.querySelector('#s-pol .semi-select-selection').textContent.trim()", expect: "群众" },
     { label: "毕业院校(搜索)", read: "document.querySelector('#s-sch .semi-select-selection').textContent.trim()", expect: "复旦大学" },
     { label: "性别", read: "document.querySelector('#s-gen .semi-select-selection').textContent.trim()", expect: "女" },
+  ]],
+  "saved-cards": [[
+    { label: "教育 下一段学校", read: val("#s"), expect: "南京大学" },
+    { label: "教育 下一段专业", read: val("#m"), expect: "数学与应用数学" },
+    { label: "教育 下一段学历", read: sel("#d"), expect: "本科" },
+    { label: "教育 下一段入学", read: val("#st"), expect: "2020-09" },
+    { label: "实习 全部已保存", read: val("#c"), expect: "" },
+    { label: "实习 不重复第一段", read: val("#r"), expect: "" },
   ]],
   "wizard": [[
     { label: "第1步 姓名", read: val("#a1"), expect: "林晓舟" },
