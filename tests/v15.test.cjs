@@ -129,7 +129,8 @@ test("找岗位: only boards the career-ops fetchers can read", async () => {
   assert.equal(ops.supportedBoard("https://career.huawei.com"), false);
   assert.equal(ops.supportedBoard("https://join.qq.com"), false);
   assert.equal(ops.supportedBoard(null), false);
-  const runner = await import(path.resolve(__dirname, "../electron/career-ops/run.mjs"));
+  // A file:// URL: a bare Windows path (D:\...) is not an import specifier.
+  const runner = await import(require("node:url").pathToFileURL(path.resolve(__dirname, "../electron/career-ops/run.mjs")).href);
   assert.equal(runner.providerFor({ name: "x", careers_url: "https://jobs.bytedance.com" }).id, "feishu-jobs");
   assert.equal(runner.providerFor({ name: "x", careers_url: "https://careers.tencent.com/search.html" }).id, "tencent");
   assert.equal(runner.providerFor({ name: "x", careers_url: "https://career.huawei.com" }), null);
