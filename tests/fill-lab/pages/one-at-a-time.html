@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>北辰银行 · 网申（每个栏目保存一条才能加下一条）</title>
+<style>body{font:14px sans-serif;max-width:640px;margin:20px auto}.card{border:1px solid #ddd;border-radius:6px;padding:8px 12px;margin:8px 0}.form-item{margin:10px 0;display:flex;gap:8px;align-items:center}.form-item span{width:110px}.top{color:#999}</style></head>
+<body>
+<div class="top">林晓舟，欢迎你 · 已保存：英语 学生会</div>
+<h3>个人信息</h3>
+<div class="form-item"><span>姓名</span><input id="n1"></div>
+<h3>语言能力</h3>
+<div class="card">英语 | CET-6 560 <a href="#">编辑</a> <a href="#">删除</a></div>
+<div class="lang-form">
+  <div class="form-item"><span>语种</span><select id="l1"><option value="">请选择</option><option>英语</option><option>日语</option></select></div>
+  <div class="form-item"><span>等级/证书</span><input id="l2"></div>
+  <button type="button">保存</button>
+</div>
+<h3>校园活动经历</h3>
+<div class="card"><strong>学生会</strong> · 外联部部长<br>2021.09 - 2022.06 <a href="#">删除本条记录</a></div>
+<div class="act-form">
+  <div class="form-item"><span>活动名称</span><input id="c1"></div>
+  <div class="form-item"><span>担任角色</span><input id="c2"></div>
+  <button type="button">保存</button>
+</div>
+<script>if (location.search.includes("fresh")) document.querySelectorAll(".card").forEach((card) => card.remove());</script>
+</body></html>

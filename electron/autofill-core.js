@@ -222,7 +222,49 @@ function scanPageFields(prefix, readOnly = false) {
   // their own inputs are skipped so row two never inherits row one's heading.
   // 家庭成员 / 紧急联系人 headings matter as much: those fields are about
   // someone else and must never receive the applicant's own details.
-  const SECTION_HEADING = /基本信息|个人信息|联系方式|求职意向|开放题|问答|补充信息|其他信息|其它信息|附加信息|自我评价|教育|学习经历|本科|硕士|研究生|博士|大专|专科|实习|工作经历|工作经验|实践经历|社会实践|项目|获奖|荣誉|奖项|奖励|家庭成员|家庭情况|家庭信息|家庭关系|家庭主要成员|主要家庭成员|紧急联系人|联系人信息|推荐人|证明人|社会关系|亲属|第\s*[一二三四五六七八九十\d]+\s*段|personal information|contact information|questions|education|academic|internship|employment|work experience|project|award|honou?r|emergency contact|family members?|family information|referees?|references/i;
+  const SECTION_HEADING = /基本信息|个人信息|联系方式|求职意向|开放题|问答|补充信息|其他信息|其它信息|附加信息|自我评价|教育|学习经历|本科|硕士|研究生|博士|大专|专科|实习|工作经历|工作经验|实践经历|社会实践|项目|获奖|荣誉|奖项|奖励|校园活动|社团经历|社团活动|学生工作|学生干部|语言能力|外语能力|专业技能|技能特长|资格证书|证书情况|获得证书|职业证书|技能证书|培训经历|家庭成员|家庭情况|家庭信息|家庭关系|家庭主要成员|主要家庭成员|紧急联系人|联系人信息|推荐人|证明人|社会关系|亲属|第\s*[一二三四五六七八九十\d]+\s*段|personal information|contact information|questions|education|academic|internship|employment|work experience|project|award|honou?r|emergency contact|family members?|family information|referees?|references/i;
+  // A header row holding the title, a one-line description and an 「添加」
+  // link reads too long as a whole; its title element is the heading.
+  function headerTitle(node, text) {
+    if (!text || text.length > 200) return "";
+    return Array.from(node.querySelectorAll("h1, h2, h3, h4, h5, h6, strong, b, [class*='title'], [class*='Title'], [class*='name'], [class*='head']")).map((child) => clean(child.textContent)).find((value) => value && value.length <= 30 && SECTION_HEADING.test(value)) || "";
+  }
+  // Entries the site already saved in this module, shown as text cards next
+  // to the one empty form (portals that take one 经历 / 证书 / 语言 at a time).
+  // Same walk as sectionFor, but it stops at the module's own heading, so
+  // other modules and the page header never count; no heading, no entries.
+  const ACTION_ONLY = /^(?:[+＋]?\s*(?:编辑|删除|修改|保存|取消|添加|新增|收起|展开|删除本条记录|删除此条|上移|下移|edit|delete|remove|save|cancel|add)\s*)+$/i;
+  function savedEntriesFor(el, captions) {
+    const entries = [];
+    const look = (sibling) => {
+      if (sibling.matches("input, select, textarea, button, label, script, style") || sibling.querySelector("input, select, textarea")) return "";
+      // A dropdown's hidden option list is not something the site saved.
+      if (sibling.hidden || sibling.matches("[role='listbox'], [role='option'], [role='menu'], [role='tooltip'], [aria-hidden='true'], datalist, template") || !isVisible(sibling)) return "";
+      const text = clean(sibling.textContent);
+      // A form item's own caption ("证书名称") is neither a heading nor an entry.
+      if (!text || captions.has(text.replace(/[*＊：:]/g, ""))) return "";
+      if ((text.length <= 30 && SECTION_HEADING.test(text)) || headerTitle(sibling, text)) return "heading";
+      // Only a saved entry carries its own 编辑 / 删除: that tells it apart
+      // from a module's description or tips.
+      const editable = /编辑|删除|修改|edit|delete|remove/i.test(text) || !!sibling.querySelector("[class*='edit' i], [class*='delete' i], [class*='remove' i], [title*='编辑'], [title*='删除'], [aria-label*='编辑'], [aria-label*='删除'], [aria-label*='edit' i], [aria-label*='delete' i]");
+      const data = text.replace(/删除本条记录|删除此条|编辑|删除|修改|上移|下移/g, " ").replace(/\s+/g, " ").trim();
+      if (editable && data.length >= 2 && text.length <= 400 && !ACTION_ONLY.test(text)) entries.push(data);
+      return "";
+    };
+    let node = el;
+    for (let depth = 0; node && node !== document.body && depth < 12; depth++, node = parentOf(node)) {
+      let heading = false;
+      for (let sibling = node.previousElementSibling, scanned = 0; sibling && scanned < 40; sibling = sibling.previousElementSibling, scanned++) {
+        if (look(sibling) === "heading") { heading = true; break; }
+      }
+      // Some portals list the saved ones below the form, up to the next module.
+      for (let sibling = node.nextElementSibling, scanned = 0; sibling && scanned < 40; sibling = sibling.nextElementSibling, scanned++) {
+        if (look(sibling) === "heading") break;
+      }
+      if (heading) return entries;
+    }
+    return [];
+  }
   function sectionFor(el) {
     let node = el;
     let depth = 0;
@@ -236,12 +278,8 @@ function scanPageFields(prefix, readOnly = false) {
         if (!sibling.matches("input, select, textarea, button, label") && !sibling.querySelector("input, select, textarea")) {
           const text = clean(sibling.textContent);
           if (text && text.length <= 30 && SECTION_HEADING.test(text)) return text;
-          // A header row holding the title, a one-line description and an
-          // 「添加」 link reads too long as a whole; its title element is the heading.
-          if (text && text.length <= 200) {
-            const title = Array.from(sibling.querySelectorAll("h1, h2, h3, h4, h5, h6, strong, b, [class*='title'], [class*='Title'], [class*='name'], [class*='head']")).map((node) => clean(node.textContent)).find((value) => value && value.length <= 30 && SECTION_HEADING.test(value));
-            if (title) return title;
-          }
+          const title = headerTitle(sibling, text);
+          if (title) return title;
           if (text) textHops++;
         }
         sibling = sibling.previousElementSibling;
@@ -485,6 +523,13 @@ function scanPageFields(prefix, readOnly = false) {
       const count = occurrences.get(key) || 0; occurrences.set(key, count + 1);
       field.mappingKey = `${key}|${count}`;
     }
+  }
+  const captions = new Set(results.flatMap((field) => [field.label, field.placeholder]).map((text) => clean(text).replace(/[*＊：:]/g, "")).filter(Boolean));
+  for (const field of results) {
+    const el = nodes.get(field.id);
+    if (!el) continue;
+    const entries = [...new Set(savedEntriesFor(el, captions))].slice(0, 8).map((text) => text.slice(0, 200));
+    if (entries.length) field.savedEntries = entries;
   }
   if (!readOnly) for (const field of results) {
     const el = nodes.get(field.id);
@@ -1805,6 +1850,24 @@ function normalizedPageText(text) {
   return String(text || "").normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
 }
 
+// The same for any module taken one entry at a time (语言、证书、技能、
+// 校园活动…): the value about to go into the empty form is already in one of
+// the entries saved above it. A name-like value decides; with none, all must.
+const ENTRY_IDENTITY = /名称|名字|标题|活动|社团|组织|证书|语种|语言|技能|课程|学校|院校|公司|单位|项目|奖|职位|岗位|name|title|language|skill|certific/i;
+const ENTRY_DETAIL = /时间|日期|年月|描述|内容|介绍|职责|角色|职务|等级|级别|程度|分数|成绩|说明|time|date|description|level|score/i;
+
+function savedEntryHas(entries, value) {
+  const key = normalizedPageText(value).slice(0, 40);
+  return key.length >= 2 && entries.some((entry) => normalizedPageText(entry).includes(key));
+}
+
+function repeatsSavedEntry(entries, items) {
+  const distinct = items.filter((item) => normalizedPageText(item.value).length >= 2);
+  if (!distinct.length) return false;
+  const identity = distinct.filter((item) => ENTRY_IDENTITY.test(item.label || "") && !ENTRY_DETAIL.test(item.label || ""));
+  return identity.length ? identity.some((item) => savedEntryHas(entries, item.value)) : distinct.every((item) => savedEntryHas(entries, item.value));
+}
+
 function savedRecordsOnPage(profile, pageText) {
   const saved = new Map();
   const text = normalizedPageText(pageText);
@@ -2110,6 +2173,11 @@ function matchFlatField(field, profile) {
   if (/company.?name|employer.?name|school.?name|岗位名称|公司名称|企业名称/.test(haystack)) return null;
   const phoneChoice = matchPhoneChoice(field, profile);
   if (phoneChoice) return phoneChoice;
+  // Inside a 语言能力 module the bare 语种 / 等级 / 证书 boxes are about English.
+  if (profile.english && /语言|外语|英语|language/i.test(field.section || "") && /语种|等级|证书|成绩|分数|水平|level|score|certificat|language/i.test(haystack)) {
+    const english = englishValue(field, String(profile.english));
+    if (english) return english;
+  }
   for (const rule of BASIC_FIELD_RULES) {
     if (!basicRuleMatches(rule, field)) continue;
     let value = rule.get(profile);
@@ -2403,6 +2471,31 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
         candidates.push({ id: field.id, label, kind: "short" });
       }
     }
+    // Fields sharing one module's saved entries are one entry being added.
+    // Whatever would repeat a saved entry is left out, from 网申资料 now and
+    // from the AI below; the AI is also told what is already there.
+    const entryBlocks = new Map();
+    for (const field of fields) {
+      if (!field.savedEntries || repeats.has(field.id) || excluded.has(field.id)) continue;
+      const key = JSON.stringify(field.savedEntries);
+      if (!entryBlocks.has(key)) entryBlocks.set(key, { entries: field.savedEntries, ids: new Set() });
+      entryBlocks.get(key).ids.add(field.id);
+    }
+    const repeatsSaved = new Map();
+    const dropRepeatedEntries = (from) => {
+      for (const block of entryBlocks.values()) {
+        const items = pairs.slice(from).filter((pair) => block.ids.has(pair.id));
+        if (!items.length || !repeatsSavedEntry(block.entries, items)) continue;
+        for (const id of block.ids) repeatsSaved.set(id, block.entries.find((entry) => items.some((item) => savedEntryHas([entry], item.value))) || block.entries[0]);
+      }
+      for (let i = pairs.length - 1; i >= from; i--) if (repeatsSaved.has(pairs[i].id)) pairs.splice(i, 1);
+      candidates = candidates.filter((question) => !repeatsSaved.has(question.id));
+    };
+    dropRepeatedEntries(0);
+    candidates = candidates.map((question) => {
+      const field = fields.find((f) => f.id === question.id);
+      return field?.savedEntries && !repeats.has(field.id) ? { ...question, saved: field.savedEntries } : question;
+    });
     const tooLong = new Set();
     function rejectOversize(from = 0) { for (let i = pairs.length - 1; i >= from; i--) { const field = fields.find((f) => f.id === pairs[i].id); if (options.mode !== "preview" && field?.maxLength && pairs[i].value.length > field.maxLength) { tooLong.add(field.id); pairs.splice(i, 1); } } }
     rejectOversize();
@@ -2481,6 +2574,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       plan.preview = result.plan; await adapter.setPlan(plan);
       adapter.status(result); return result;
     }
+    dropRepeatedEntries(basicPairCount);
     rejectOversize(basicPairCount);
     const aiResult = await fillFrames(adapter, pairs.slice(basicPairCount), frameById, initialUrl);
     if (!adapter.stillOnPage(initialUrl)) throw new Error("页面或标签已切换，已停止写入；请在当前页面重新填充");
@@ -2510,6 +2604,8 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       ? { label: field.section ? `${field.section} · ${displayLabel(field)}` : displayLabel(field), id: field.id, state: "未勾选此模块，已跳过", source: "excluded" }
       : skippedSet.has(field.id)
       ? { label: displayLabel(field), state: "填写期间已有修改，已保留", source: "prefilled" }
+      : repeatsSaved.has(field.id) && !field.hasValue && !filledSet.has(field.id)
+      ? { label: displayLabel(field), id: field.id, state: `上面已保存过「${repeatsSaved.get(field.id).slice(0, 30)}」，这一组没重复填`, source: "prefilled" }
       : { ...fillDetail(field, pairs.find((p) => p.id === field.id), filledSet, failedSet), id: field.id, ...(allSavedOnPage(field) ? { state: "这类经历已全部保存在页面上，这一组不用再填", source: "prefilled" } : {}) });
     const previous = options.accumulated || { filled: 0, uploaded: 0, details: [] };
     const earlier = new Map(previous.details.map((d) => [d.key, d]));
@@ -2552,6 +2648,8 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     if (shortFilled > 0) parts.push(`AI 从简历里补全了 ${shortFilled} 个其他字段`);
     const savedCards = ["education", "experience", "project", "award"].reduce((sum, group) => sum + (rowIndexes.get(`${group}:saved`) || 0), 0);
     if (savedCards > 0) parts.push(`页面上已保存的 ${savedCards} 段经历没有重复填，空白的一组接着填了下一段`);
+    const repeatedEmpty = fields.filter((field) => repeatsSaved.has(field.id) && !field.hasValue && !field.userEdited).length;
+    if (repeatedEmpty > 0) parts.push(`${repeatedEmpty} 个字段要填的内容上面已保存过，没重复填；还有别的要加就手填这一组`);
     if (uploadedResumeCount > 0) parts.push(`已上传简历附件到 ${uploadedResumeCount} 个位置`);
     if (uploadError) parts.push(uploadError);
     // After an 添加 round the earlier rounds' own fills count as "已有内容".
@@ -2564,7 +2662,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     if (neverGuessCount > 0) parts.push(`${neverGuessCount} 个需核对的姓名拆分或敏感字段，没有自动填`);
     if (thirdPartyCount > 0) parts.push(`${thirdPartyCount} 个家庭成员 / 联系人等他人信息字段留给你填`);
     if (pickOnPageCount > 0) parts.push(`${pickOnPageCount} 个日期只能在网页上点选`);
-    const attempted = filled.length + neverGuessCount + thirdPartyCount + pickOnPageCount + alreadyFilled + failed.length + skipped.length;
+    const attempted = repeatedEmpty + filled.length + neverGuessCount + thirdPartyCount + pickOnPageCount + alreadyFilled + failed.length + skipped.length;
     const stillManual = fields.length - excluded.size - attempted;
     if (stillManual > 0) {
       parts.push(aiError ? `${stillManual} 个字段没能自动填（${aiError}）` : `${stillManual} 个字段简历里没有对应信息，需要自己填`);
@@ -2910,7 +3008,7 @@ async function applyAutofillPlan(adapter, input) {
 
 module.exports = {
   isThirdPartyField, displayLabel, basicRuleMatches, normalizePhone, englishValue, matchPhoneChoice,
-  classifyRepeatBlocks, savedRecordsOnPage, previewRecordBlocks, rowsForGroup, recordReference, awardFieldKind,
+  classifyRepeatBlocks, savedRecordsOnPage, repeatsSavedEntry, previewRecordBlocks, rowsForGroup, recordReference, awardFieldKind,
   profileChoices, applyAutofillPlan, validatePageFields, focusFormField, collectApplicationFields, readCurrentApplicationFields, watchApplicationFields,
   AUTOFILL_MODULES,
   fieldModule,

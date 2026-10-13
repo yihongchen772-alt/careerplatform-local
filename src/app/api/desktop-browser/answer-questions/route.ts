@@ -53,6 +53,8 @@ const bodySchema = z.object({
         kind: z.enum(["essay", "short", "choice"]).default("essay"),
         options: z.array(z.string()).optional(),
         maxLength: z.number().int().min(1).max(100000).optional(),
+        /** Entries this module already saved on the page (one 证书 / 活动 at a time). */
+        saved: z.array(z.string().max(400)).max(10).optional(),
       })
     )
     .min(1),
@@ -71,6 +73,13 @@ const bodySchema = z.object({
 // page (never cached either, below — a "couldn't find it" isn't a real
 // answer worth reusing).
 const NEEDS_MANUAL_INPUT = "NEEDS_MANUAL_INPUT";
+
+// An answer already saved in this module would be a duplicate entry.
+function alreadySaved(answer: string, saved: string[] | undefined): boolean {
+  const key = (text: string) => text.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+  const value = key(answer).slice(0, 40);
+  return !!saved?.length && value.length >= 2 && saved.some((entry) => key(entry).includes(value));
+}
 
 // Only typography may differ. Similarity cannot establish that negation,
 // dates, quantities or the subject of a question have the same meaning.
@@ -140,7 +149,7 @@ export async function POST(request: Request) {
         best = { answer: c.answer, score: rank, id: c.id, confirmed: c.confirmed };
       }
     }
-    if (best && !parsed.data.regenerate && (!q.maxLength || best.answer.length <= q.maxLength)) {
+    if (best && !parsed.data.regenerate && (!q.maxLength || best.answer.length <= q.maxLength) && !alreadySaved(best.answer, q.saved)) {
       answers.push({ id: q.id, answer: best.answer, reused: true, remembered: best.confirmed, answerId: best.id });
     } else {
       needsGeneration.push(q);
@@ -203,6 +212,20 @@ export async function POST(request: Request) {
               `- 每题尽量不超过 ${parsed.data.answerLength || 300} 字；有字段上限时严格遵守，语气自然、具体，不要写"我是一个xxx的人"这类空话\n` +
               `- 如果没有可靠依据，只输出 ${NEEDS_MANUAL_INPUT}，不要编造\n\n` +
               essays.map((q) => `- [id:${q.id}] ${q.label}${q.maxLength ? `（最多 ${q.maxLength} 字）` : ""}`).join("\n")
+          );
+        }
+        const withSaved = needsGeneration.filter((q) => q.saved?.length);
+        if (withSaved.length > 0) {
+          const groups = new Map<string, string[]>();
+          for (const q of withSaved) {
+            const key = JSON.stringify(q.saved);
+            groups.set(key, [...(groups.get(key) || []), q.id]);
+          }
+          sections.push(
+            `下面几组字段所在的栏目，网页上已经保存过若干条（这类栏目一次只能填一条，保存后再添加下一条）。这次要填的是另一条：\n` +
+              `- 不能重复已保存的任何一条；同一组里的字段要描述同一条新内容\n` +
+              `- 简历里没有另一条可填时，这一组都输出 ${NEEDS_MANUAL_INPUT}\n\n` +
+              [...groups].map(([key, ids]) => `- 字段 ${ids.map((id) => `[id:${id}]`).join(" ")} 已保存：${(JSON.parse(key) as string[]).map((entry) => `「${entry}」`).join("")}`).join("\n")
           );
         }
         if (shortFields.length > 0) {

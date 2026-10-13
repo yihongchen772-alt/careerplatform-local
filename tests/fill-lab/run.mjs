@@ -1,6 +1,6 @@
-// 网申填写多场景实测台：在真实 Chromium 里用共享填写引擎填 13 个仿真表单
+// 网申填写多场景实测台：在真实 Chromium 里用共享填写引擎填 15 个仿真表单
 // （AntD 仿 Moka、Element Plus iframe 仿北森、老式表格仿大易、英文 Workday 式、
-// 手写控件、Shadow DOM、已有内容保护、自动补齐栏目、Semi 式下拉、分步向导、已保存经历卡片、长表头），
+// 手写控件、Shadow DOM、已有内容保护、自动补齐栏目、Semi 式下拉、分步向导、已保存经历卡片、长表头、各栏目一条一条填），
 // 逐字段核对结果。全部是虚构资料，不访问任何真实网站或 App 数据。
 //
 //   npm run test:fill-lab            全部场景
@@ -86,6 +86,10 @@ function fakeAi(questions) {
     }
     if (q.kind === "essay") return { id: q.id, answer: `【AI草稿】${q.label.slice(0, 12)}` };
     if (/hear about/i.test(q.label)) return { id: q.id, answer: "Company Website" };
+    // Told what this module already saved, a different entry comes back.
+    const savedText = (q.saved || []).join(" ");
+    if (/活动名称/.test(q.label)) return { id: q.id, answer: savedText.includes("学生会") ? "数学建模协会" : "学生会" };
+    if (/担任角色/.test(q.label)) return { id: q.id, answer: savedText.includes("学生会") ? "副会长" : "外联部部长" };
     return { id: q.id, answer: "NEEDS_MANUAL_INPUT" };
   });
 }
@@ -343,6 +347,18 @@ Object.assign(suites, {
     { label: "已有获得时间不动", read: val("#ad"), expect: "2023-11" },
     { label: "颁奖机构", read: val("#ai"), expect: "中国工业与应用数学学会" },
   ], { options: { modules: ["award"] } }],
+  "one-at-a-time": [[
+    { label: "页头有名字，姓名照填", read: val("#n1"), expect: "林晓舟" },
+    { label: "语种 上面已保存英语，不重复", read: sel("#l1"), expect: "" },
+    { label: "语言等级 不重复", read: val("#l2"), expect: "" },
+    { label: "校园活动 换一条（AI 知道已保存）", read: val("#c1"), expect: "数学建模协会" },
+    { label: "担任角色 跟着新的一条", read: val("#c2"), expect: "副会长" },
+  ]],
+  "one-at-a-time-fresh": [[
+    { label: "第一条 语种", read: sel("#l1"), expect: "英语" },
+    { label: "第一条 语言等级", read: val("#l2"), expect: "CET-6 560" },
+    { label: "第一条 校园活动", read: val("#c1"), expect: "学生会" },
+  ], { page: "one-at-a-time", query: "?fresh" }],
   "wizard": [[
     { label: "第1步 姓名", read: val("#a1"), expect: "林晓舟" },
     { label: "第1步 性别", read: sel("#a4"), expect: "女" },

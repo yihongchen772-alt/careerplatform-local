@@ -204,3 +204,16 @@ test("「奖励名称 / 颁奖机构」 are award fields even when no section he
   assert.deepEqual([repeats.get("a"), repeats.get("c")].map((info) => info && `${info.group}:${info.kind}`), ["award:name", "award:issuer"]);
   assert.equal(repeats.get("b").kind, "date");
 });
+
+test("any module taken one entry at a time: an entry already saved above is not written again", () => {
+  const saved = ["英语 | CET-6 560", "学生会 · 外联部部长 2021.09 - 2022.06"];
+  // The name-like box decides: same 语种 / 活动 → a repeat.
+  assert.equal(core.repeatsSavedEntry(saved, [{ label: "语种", value: "英语" }, { label: "等级", value: "CET-4" }]), true);
+  assert.equal(core.repeatsSavedEntry(saved, [{ label: "活动名称", value: "学生会" }, { label: "担任角色", value: "副会长" }]), true);
+  // A different entry is filled, even when a detail (role, level) matches.
+  assert.equal(core.repeatsSavedEntry(saved, [{ label: "活动名称", value: "数学建模协会" }, { label: "担任角色", value: "外联部部长" }]), false);
+  assert.equal(core.repeatsSavedEntry(saved, [{ label: "语种", value: "日语" }]), false);
+  // Without a name-like box every value must already be there; one-letter values never decide.
+  assert.equal(core.repeatsSavedEntry(saved, [{ label: "等级", value: "CET-6 560" }]), true);
+  assert.equal(core.repeatsSavedEntry(saved, [{ label: "是否党员", value: "否" }]), false);
+});
