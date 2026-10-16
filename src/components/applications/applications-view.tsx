@@ -116,11 +116,12 @@ export function ApplicationsView({ applications, now: serverNow }: { application
   const overall = filterCounts(applications, now);
   const offers = applications.filter((a) => a.currentStage === "OFFER" || a.currentStage === "ACCEPTED").length;
   // The numbers are also the way in: each card opens what it counts.
-  const metrics: { label: string; value: number; icon: typeof BriefcaseBusiness; caption: string; filter: ApplicationFilter }[] = [
-    { label: "累计投递", value: applications.length, icon: BriefcaseBusiness, caption: "所有投递记录", filter: "all" },
-    { label: "进行中", value: overall.active, icon: Sparkles, caption: "仍在推进的机会", filter: "active" },
-    { label: "面试阶段", value: overall.interview, icon: MessagesSquare, caption: "值得重点准备", filter: "interview" },
-    { label: "未通过", value: overall.rejected, icon: CircleX, caption: offers > 0 ? `另有 ${offers} 个 Offer / 已接受` : "公司结束的流程", filter: "rejected" },
+  // tone: the 柔光 style's pastel tile (stat-tile in globals.css).
+  const metrics: { label: string; value: number; icon: typeof BriefcaseBusiness; caption: string; filter: ApplicationFilter; tone: string }[] = [
+    { label: "累计投递", value: applications.length, icon: BriefcaseBusiness, caption: "所有投递记录", filter: "all", tone: "brand" },
+    { label: "进行中", value: overall.active, icon: Sparkles, caption: "仍在推进的机会", filter: "active", tone: "amber" },
+    { label: "面试阶段", value: overall.interview, icon: MessagesSquare, caption: "值得重点准备", filter: "interview", tone: "emerald" },
+    { label: "未通过", value: overall.rejected, icon: CircleX, caption: offers > 0 ? `另有 ${offers} 个 Offer / 已接受` : "公司结束的流程", filter: "rejected", tone: "slate" },
   ];
   const chips = APPLICATION_FILTERS.filter((key) => key === "all" || key === filter || counts[key] > 0);
 
@@ -152,14 +153,15 @@ export function ApplicationsView({ applications, now: serverNow }: { application
               aria-pressed={metric.filter === "all" ? filter === "all" : active}
               title={metric.filter === "all" ? "显示全部投递" : active ? "再点一次显示全部" : `只看${FILTER_LABELS[metric.filter]}的投递`}
               onClick={() => chooseFilter(metric.filter)}
+              data-tone={metric.tone}
               className={cn(
-                "surface-card group relative overflow-hidden rounded-xl p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_14px_34px_-22px_rgba(0,0,0,0.45)] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40 sm:p-5",
+                "surface-card stat-tile group relative overflow-hidden rounded-xl p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_14px_34px_-22px_rgba(0,0,0,0.45)] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40 sm:p-5",
                 active ? "border-primary/50 ring-2 ring-primary/25" : "border-border/70"
               )}
             >
               <div className="flex items-start justify-between gap-2">
                 <span className="text-xs font-medium text-muted-foreground">{metric.label}</span>
-                <span className={cn("flex size-8 items-center justify-center rounded-xl transition-colors", active ? "bg-primary text-primary-foreground" : "bg-primary/8 text-primary")}><Icon className="size-4" /></span>
+                <span className={cn("flex size-8 items-center justify-center rounded-xl transition-colors", active ? "bg-primary text-primary-foreground" : "stat-icon bg-primary/8 text-primary")}><Icon className="size-4" /></span>
               </div>
               <p className="mt-4 text-3xl font-semibold tracking-[-0.055em] tabular-nums sm:text-4xl">{metric.value}</p>
               <p className="mt-1 text-[11px] text-muted-foreground">{active ? "正在筛选 · 再点一次取消" : metric.caption}</p>

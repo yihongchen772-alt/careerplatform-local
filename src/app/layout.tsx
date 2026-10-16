@@ -48,7 +48,7 @@ const NO_FLASH_THEME_SCRIPT = `
   try {
     var mode = localStorage.getItem("careerplatform:theme-mode") || "system";
     var palette = localStorage.getItem("careerplatform:theme-palette") || "indigo";
-    var style = localStorage.getItem("careerplatform:theme-style") || "minimal";
+    var style = localStorage.getItem("careerplatform:theme-style") || "soft";
     var isDark = mode === "dark" || (mode === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
     var root = document.documentElement;
     if (isDark) root.classList.add("dark");

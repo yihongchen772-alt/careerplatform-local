@@ -53,7 +53,7 @@ function makeStore<T extends string>(key: string, fallback: T) {
 
 const modeStore = makeStore<ThemeMode>(THEME_MODE_KEY, "system");
 const paletteStore = makeStore<ThemePalette>(THEME_PALETTE_KEY, "indigo");
-const styleStore = makeStore<ThemeStyle>(THEME_STYLE_KEY, "minimal");
+const styleStore = makeStore<ThemeStyle>(THEME_STYLE_KEY, "soft");
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const mode = useSyncExternalStore(

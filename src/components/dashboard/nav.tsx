@@ -139,9 +139,9 @@ function NavItem({
       title={badge?.title}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "flex h-[30px] items-center gap-2.5 rounded-md px-2.5 text-[13px] transition-colors duration-150",
+        "flex h-[30px] items-center gap-2.5 rounded-lg px-2.5 text-[13px] transition-colors duration-150",
         active
-          ? "bg-foreground/[0.07] font-medium text-foreground"
+          ? "nav-active font-medium text-foreground"
           : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
       )}
     >

@@ -299,17 +299,18 @@ function StatCard({
 }) {
   const t = STAT_TONES[tone];
   return (
-    <Card className="surface-card overflow-hidden rounded-xl">
-      <CardContent className="flex items-center gap-3.5 py-5 sm:py-6">
-        <div className={`flex size-11 shrink-0 items-center justify-center rounded-2xl ${t.badge}`}>
-          <Icon className="size-5" />
+    // stat-tile + data-tone: a pastel gradient in the 柔光 style (globals.css).
+    <Card className="stat-tile overflow-hidden rounded-xl" data-tone={tone}>
+      <CardContent className="flex min-h-28 flex-col justify-between gap-4 py-1">
+        <div className="flex items-start justify-between gap-2">
+          <p className="truncate text-sm font-medium text-muted-foreground">{label}</p>
+          <div className={`stat-icon flex size-9 shrink-0 items-center justify-center rounded-xl ${t.badge}`}>
+            <Icon className="size-4" />
+          </div>
         </div>
-        <div className="min-w-0">
-          <p className="truncate text-sm text-muted-foreground">{label}</p>
-          <p className={`text-3xl font-semibold tracking-tight tabular-nums ${t.value}`}>
-            {value}
-          </p>
-        </div>
+        <p className={`text-4xl font-semibold tracking-tight tabular-nums ${t.value}`}>
+          {value}
+        </p>
       </CardContent>
     </Card>
   );

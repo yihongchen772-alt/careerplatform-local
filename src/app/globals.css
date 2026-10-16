@@ -522,6 +522,8 @@
   --sidebar-edge: color-mix(in oklch, var(--foreground) 8%, transparent);
   --glow-opacity: 0;
   --page-heading: 1.5rem;
+  --nav-active-bg: color-mix(in oklch, var(--foreground) 7%, transparent);
+  --nav-active-shadow: 0 0 0 0 transparent;
 }
 
 [data-style="glass"] {
@@ -556,6 +558,55 @@
   --page-heading: 1.875rem;
 }
 
+/* 柔光 (the default): white cards that float on soft shadows instead of
+   borders, generous rounding, pill buttons, the system font — the way Apple's
+   own apps and the reference dashboards look. */
+[data-style="soft"] {
+  --radius: 1rem;
+  --surface-card: var(--card);
+  --card-edge: color-mix(in oklch, var(--foreground) 4%, transparent);
+  --card-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 28px -10px rgba(15, 23, 42, 0.1);
+  --card-shadow-hover: 0 2px 4px rgba(15, 23, 42, 0.05), 0 14px 36px -12px rgba(15, 23, 42, 0.14);
+  --card-blur: 0px;
+  --btn-primary-bg: var(--primary);
+  --btn-primary-shadow: 0 6px 16px -8px color-mix(in oklch, var(--primary), transparent 30%);
+  --btn-radius: 9999px;
+  --sidebar-surface: transparent;
+  --sidebar-edge: transparent;
+  --nav-active-bg: var(--card);
+  --nav-active-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 4px 12px -6px rgba(15, 23, 42, 0.12);
+  --glow-opacity: 0.5;
+  --page-heading: 1.875rem;
+}
+
+.dark[data-style="soft"] {
+  --card-edge: color-mix(in oklch, var(--foreground) 7%, transparent);
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 30px -12px rgba(0, 0, 0, 0.5);
+  --card-shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.35), 0 16px 38px -12px rgba(0, 0, 0, 0.55);
+  --nav-active-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+/* The system font: SF Pro + 苹方 on a Mac, Segoe UI + 微软雅黑 on Windows. */
+html[data-style="soft"] {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+
+[data-style="soft"] [data-slot="card-title"] {
+  font-weight: 600;
+}
+
+/* Dashboard number tiles: soft pastel gradients, like the reference cards. */
+[data-style="soft"] .stat-tile[data-tone="brand"] { background: linear-gradient(140deg, #eef0ff 0%, #d9ddff 55%, #c9cffc 100%); }
+[data-style="soft"] .stat-tile[data-tone="amber"] { background: linear-gradient(140deg, #fff3e6 0%, #ffd9c4 55%, #ffc2c7 100%); }
+[data-style="soft"] .stat-tile[data-tone="emerald"] { background: linear-gradient(140deg, #e9fbf4 0%, #c8f1e4 55%, #b9e4f7 100%); }
+[data-style="soft"] .stat-tile[data-tone="slate"] { background: linear-gradient(140deg, #f5f6f9 0%, #e7e9f0 100%); }
+.dark[data-style="soft"] .stat-tile[data-tone="brand"] { background: linear-gradient(140deg, #23264a 0%, #2d3170 100%); }
+.dark[data-style="soft"] .stat-tile[data-tone="amber"] { background: linear-gradient(140deg, #3a2a22 0%, #4a2a33 100%); }
+.dark[data-style="soft"] .stat-tile[data-tone="emerald"] { background: linear-gradient(140deg, #183329 0%, #18324a 100%); }
+.dark[data-style="soft"] .stat-tile[data-tone="slate"] { background: linear-gradient(140deg, #1f2127 0%, #26292f 100%); }
+[data-style="soft"] .stat-tile .stat-icon { background: color-mix(in oklch, white 70%, transparent); color: var(--foreground); box-shadow: 0 2px 8px -4px rgba(15, 23, 42, 0.2); }
+.dark[data-style="soft"] .stat-tile .stat-icon { background: color-mix(in oklch, white 10%, transparent); }
+
 /* Dark surfaces carry depth by lightness, not shadow. */
 .dark[data-style="glass"] {
   --surface-card: color-mix(in oklch, var(--card) 62%, transparent);
@@ -578,6 +629,10 @@
   }
   .btn-primary:hover {
     filter: brightness(1.07);
+  }
+  .nav-active {
+    background: var(--nav-active-bg);
+    box-shadow: var(--nav-active-shadow);
   }
   .ambient-glow {
     opacity: calc(var(--glow-opacity) * 0.2);

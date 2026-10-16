@@ -2,13 +2,14 @@ export type ThemeMode = "light" | "dark" | "system";
 export type ThemePalette = "indigo" | "tech" | "mono" | "titanium" | "aurora" | "champagne";
 
 /** How surfaces look, independent of color: flat and quiet, frosted glass, or the original soft cards. */
-export type ThemeStyle = "minimal" | "glass" | "classic";
+export type ThemeStyle = "soft" | "minimal" | "glass" | "classic";
 
 export const THEME_MODE_KEY = "careerplatform:theme-mode";
 export const THEME_PALETTE_KEY = "careerplatform:theme-palette";
 export const THEME_STYLE_KEY = "careerplatform:theme-style";
 
 export const STYLES: { id: ThemeStyle; label: string; description: string }[] = [
+  { id: "soft", label: "柔光", description: "白色悬浮卡片、柔和阴影和渐变，系统字体" },
   { id: "minimal", label: "简约", description: "平整留白，细线分隔，没有阴影和光晕" },
   { id: "glass", label: "通透", description: "磨砂玻璃卡片，柔和的彩色光晕" },
   { id: "classic", label: "经典", description: "原来的圆润卡片和渐变按钮" },
