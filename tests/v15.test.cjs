@@ -229,3 +229,11 @@ test("待核对: fragments of an 经历 block, counters, placeholders and login 
   assert.equal(noise("本科学习成绩排名", "前 10%"), false);
   assert.equal(noise("（简答题）用过哪些 AI 工具？举一个例子", "……", "essay"), false);
 });
+
+test("personal 日程 open inside the main app, not the sidebar-less 日历 window page", () => {
+  for (const file of ["src/app/(dashboard)/calendar/page.tsx", "src/lib/todos.ts"]) {
+    const source = fs.readFileSync(path.join(__dirname, "..", file), "utf8");
+    assert.equal(source.includes("/desktop/calendar?id="), false, file);
+    assert.equal(source.includes("/calendar/events?id="), true, file);
+  }
+});

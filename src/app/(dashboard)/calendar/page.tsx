@@ -53,7 +53,7 @@ export default async function CalendarPage() {
   const personalEvents = await db.calendarEvent.findMany({ where: { userId: user.id, stageHistoryId: null } });
   const clock = (date: Date) => `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
   const events: CalendarEvent[] = [
-    ...personalEvents.map((e) => ({ id: `event-${e.id}`, date: e.allDay ? `${e.dateKey}T00:00:00` : e.startsAt.toISOString(), dateEnd: e.endsAt?.toISOString() ?? null, label: e.title, href: `/desktop/calendar?id=${e.id}` })),
+    ...personalEvents.map((e) => ({ id: `event-${e.id}`, date: e.allDay ? `${e.dateKey}T00:00:00` : e.startsAt.toISOString(), dateEnd: e.endsAt?.toISOString() ?? null, label: e.title, href: `/calendar/events?id=${e.id}` })),
     ...positions.map((p) => ({
       id: `position-${p.id}`,
       date: p.deadline!.toISOString(),

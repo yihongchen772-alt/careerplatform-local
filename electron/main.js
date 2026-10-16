@@ -283,6 +283,8 @@ function createWindow({ show = true } = {}) {
     details.preventDefault();
     openExternalLink(details.url);
   };
+  mainWindow.on("resize", applyFitZoom);
+  mainWindow.webContents.on("did-finish-load", applyFitZoom);
   mainWindow.webContents.on("will-navigate", guardNavigation);
   mainWindow.webContents.on("will-redirect", guardNavigation);
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -405,6 +407,39 @@ function setNotesAtLogin(enabled) {
   return readAppSettings().notesAtLogin;
 }
 
+// ---------- fit the UI to the window ----------
+// Narrower than the width the pages are laid out for, the whole UI scales
+// down with the window (to 75% at most) instead of wrapping and scrolling.
+// Zooming by hand (⌘+ / ⌘−) turns this off; 显示 → 随窗口自动缩放 turns it back on.
+const DESIGN_WIDTH = 1320;
+const MIN_FIT_ZOOM = 0.75;
+
+function fitZoomEnabled() {
+  return readAppSettings().fitZoom !== false;
+}
+
+function applyFitZoom() {
+  if (!mainWindow || mainWindow.isDestroyed() || !fitZoomEnabled()) return;
+  const [width] = mainWindow.getContentSize();
+  const zoom = Math.round(Math.max(MIN_FIT_ZOOM, Math.min(1, width / DESIGN_WIDTH)) * 100) / 100;
+  if (Math.abs(mainWindow.webContents.getZoomFactor() - zoom) > 0.005) mainWindow.webContents.setZoomFactor(zoom);
+}
+
+function setFitZoom(enabled) {
+  try {
+    fs.writeFileSync(settingsFile(), JSON.stringify({ ...readAppSettings(), fitZoom: enabled }, null, 2));
+  } catch (err) { console.error("[zoom] could not save", err); }
+  if (enabled) applyFitZoom();
+  buildApplicationMenu();
+}
+
+function zoomBy(step) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (fitZoomEnabled()) setFitZoom(false);
+  const contents = mainWindow.webContents;
+  contents.setZoomFactor(step === 0 ? 1 : Math.min(2, Math.max(0.5, Math.round((contents.getZoomFactor() + step) * 10) / 10)));
+}
+
 function buildApplicationMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { label: "求职罗盘", submenu: [
@@ -425,8 +460,11 @@ function buildApplicationMenu() {
       { label: "剪切", role: "cut" }, { label: "复制", role: "copy" }, { label: "粘贴", role: "paste" }, { label: "全选", role: "selectAll" },
     ] },
     { label: "显示", submenu: [
-      { label: "重新加载", role: "reload" }, { label: "放大", role: "zoomIn" },
-      { label: "缩小", role: "zoomOut" }, { label: "恢复默认大小", role: "resetZoom" },
+      { label: "重新加载", role: "reload" }, { type: "separator" },
+      { label: "随窗口自动缩放", type: "checkbox", checked: fitZoomEnabled(), click: (item) => setFitZoom(item.checked) },
+      { label: "放大", accelerator: "CmdOrCtrl+=", click: () => zoomBy(0.1) },
+      { label: "缩小", accelerator: "CmdOrCtrl+-", click: () => zoomBy(-0.1) },
+      { label: "恢复默认大小", accelerator: "CmdOrCtrl+0", click: () => zoomBy(0) },
     ] },
     { label: "窗口", submenu: [
       { label: "最小化", role: "minimize" }, { label: "关闭窗口", role: "close" },

@@ -82,7 +82,7 @@ export function DeadlineCalendar({
   const shownEvents = selectedKey ? eventsByDay.get(selectedKey) ?? [] : upcoming;
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[auto_1fr]">
+    <div className="grid gap-6 lg:grid-cols-[auto_minmax(0,1fr)]">
       <Card className="w-fit">
         <CardContent className="pt-6">
           <Calendar

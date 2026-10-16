@@ -973,17 +973,20 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     withActive((wc) => wc.executeJavaScript(`(${findInPageText.toString()})("", true, true)`).catch(() => {}))
   );
 
-  handle("browser:set-bounds", (_e, rect) => {
+  handle("browser:set-bounds", (e, rect) => {
     if (!rect) {
       lastBounds = null;
       detach();
       return;
     }
+    // The page measures in CSS pixels; the window places views in its own.
+    // They differ by the app's zoom (⌘+/⌘−, or fitting a narrow window).
+    const zoom = e.sender.getZoomFactor() || 1;
     lastBounds = {
-      x: Math.round(rect.x),
-      y: Math.round(rect.y),
-      width: Math.round(rect.width),
-      height: Math.round(rect.height),
+      x: Math.round(rect.x * zoom),
+      y: Math.round(rect.y * zoom),
+      width: Math.round(rect.width * zoom),
+      height: Math.round(rect.height * zoom),
     };
     const tab = activeTab() || createTab("about:blank");
     attach(tab);

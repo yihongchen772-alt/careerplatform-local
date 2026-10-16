@@ -10,11 +10,12 @@ type Draft = { id?: string; revision?: number; title: string; description: strin
 function timeInput(date: Date) { return `${localDay(date)}T${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`; }
 function eventDraft(event: Event): Draft { return { id: event.id, revision: event.revision, title: event.title, description: event.description, date: event.allDay ? event.dateKey : localDay(event.startsAt), time: timeInput(event.startsAt).slice(11), end: event.endsAt ? timeInput(event.endsAt) : "", allDay: event.allDay, noteId: event.noteId || "", reminder: event.reminders[0]?.offsetMinutes.toString() ?? "" }; }
 const subscribe = () => () => {};
-export function MiniCalendar() {
+/** `embedded`: shown inside the main app (with its sidebar), not the separate 日历 window. */
+export function MiniCalendar({ embedded = false }: { embedded?: boolean }) {
   const ready = useSyncExternalStore(subscribe, () => true, () => false);
-  return ready ? <CalendarContent /> : <p className="p-4">正在加载日历…</p>;
+  return ready ? <CalendarContent embedded={embedded} /> : <p className="p-4">正在加载日历…</p>;
 }
-function CalendarContent() {
+function CalendarContent({ embedded }: { embedded: boolean }) {
   const initialOpened = useRef(false);
   const [today, setToday] = useState(() => localDay(new Date()));
   const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1, 12));
@@ -37,8 +38,9 @@ function CalendarContent() {
   }
   function patch(change: Partial<Draft>) { setDraft((d) => d && { ...d, ...change }); }
   const selected = events.filter((e) => (e.allDay ? e.dateKey : localDay(e.startsAt)) <= day && (e.endsAt ? localDay(e.endsAt) : e.allDay ? e.dateKey : localDay(e.startsAt)) >= day);
-  return <main className="mx-auto w-full max-w-2xl space-y-3 p-4">
-    <header className="flex items-center justify-between"><h1 className="font-semibold">日历与提醒</h1><button className="text-sm" onClick={async () => { if (window.desktopProductivity) setPinned(await window.desktopProductivity.pin(!pinned)); }}>{pinned ? "取消置顶" : "置顶"}</button></header>
+  const Root = embedded ? "div" : "main";
+  return <Root className={embedded ? "mx-auto w-full max-w-2xl space-y-3" : "mx-auto w-full max-w-2xl space-y-3 p-4"}>
+    <header className="flex items-center justify-between"><h1 className="font-semibold">{embedded ? "我的日程" : "日历与提醒"}</h1>{embedded ? <a href="/calendar" className="text-sm text-muted-foreground hover:text-foreground">← 日历视图</a> : <button className="text-sm" onClick={async () => { if (window.desktopProductivity) setPinned(await window.desktopProductivity.pin(!pinned)); }}>{pinned ? "取消置顶" : "置顶"}</button>}</header>
     <div className="flex items-center justify-between gap-2"><Button variant="outline" size="sm" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1, 12))}>上月</Button><input aria-label="年月" type="month" min="1900-01" max="2200-12" value={`${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}`} onChange={(e) => { if (!e.target.value) return; const [y, m] = e.target.value.split("-").map(Number); setMonth(new Date(y, m - 1, 1, 12)); }} /><Button variant="outline" size="sm" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1, 12))}>下月</Button></div>
     <div className="grid grid-cols-7 gap-1 text-center text-sm">{["一", "二", "三", "四", "五", "六", "日"].map((w) => <span key={w} className="text-muted-foreground">{w}</span>)}{monthGrid(month.getFullYear(), month.getMonth()).map((date) => { const key = localDay(date); const marked = events.some((e) => (e.allDay ? e.dateKey : localDay(e.startsAt)) === key); return <button aria-label={key} aria-pressed={day === key} key={key} className={`relative rounded py-2 ${day === key ? "bg-primary text-primary-foreground" : key === today ? "ring-1 ring-primary" : "hover:bg-muted"} ${date.getMonth() !== month.getMonth() ? "opacity-40" : ""}`} onClick={() => setDay(key)}>{date.getDate()}{marked && <span className="absolute bottom-0 left-1/2">·</span>}</button>; })}</div>
     <div className="flex justify-between"><button className="text-sm" onClick={() => { setDay(today); setMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1, 12)); }}>今天</button><span>{day}</span><Button size="sm" onClick={() => edit()}>添加事项</Button></div>
@@ -55,5 +57,5 @@ function CalendarContent() {
       <div className="flex gap-2"><Button type="submit" disabled={busy}>保存</Button><Button type="button" variant="outline" disabled={busy} onClick={() => setDraft(null)}>取消</Button>{draft.id && <Button type="button" variant="destructive" disabled={busy} onClick={async () => { if (!confirm("删除事项及其提醒？")) return; setBusy(true); try { const r = await deleteEvent(draft.id!, draft.revision!); if (!r.ok) return toast.error(r.message); setDraft(null); await refresh(); } finally { setBusy(false); } }}>删除</Button>}</div>
     </form>}
     <p className="text-xs text-muted-foreground">提醒需要求职罗盘保持运行；关闭主窗口后提醒请开启设置中的后台提醒。完全退出或关机后，下一次运行会补发错过提醒。</p>
-  </main>;
+  </Root>;
 }

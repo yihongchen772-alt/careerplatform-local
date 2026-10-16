@@ -589,6 +589,11 @@
 
 /* Page titles: one size per style instead of each page's own text-3xl
    (unlayered on purpose, so it wins over those utilities). */
+/* Long unbroken strings (emails, links) wrap instead of widening the page. */
+main {
+  overflow-wrap: break-word;
+}
+
 main h1 {
   font-size: var(--page-heading);
   line-height: 1.2;

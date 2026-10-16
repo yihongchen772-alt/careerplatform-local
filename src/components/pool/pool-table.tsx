@@ -2,8 +2,10 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Crosshair, FileText, Globe, ListChecks } from "lucide-react";
+import { ChevronDown, ClipboardCheck, Crosshair, FileText, Globe, ListChecks, Pencil, Sparkles, Trash2 } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import {
   Table,
   TableBody,
@@ -134,16 +136,17 @@ function readinessItems(p: PoolPosition): { label: string; done: boolean }[] {
   ];
 }
 
-function ReadinessBadge({ items }: { items: { label: string; done: boolean }[] }) {
+/** `compact` (the table): the badge alone, what is missing on hover. */
+function ReadinessBadge({ items, compact = false }: { items: { label: string; done: boolean }[]; compact?: boolean }) {
   const doneCount = items.filter((i) => i.done).length;
   const missing = items.filter((i) => !i.done).map((i) => i.label);
   const variant = doneCount === items.length ? "default" : doneCount === 0 ? "outline" : "secondary";
   return (
-    <div className="space-y-0.5">
+    <div className="space-y-0.5" title={missing.length ? `还缺：${missing.join("、")}` : undefined}>
       <Badge variant={variant}>
         {doneCount}/{items.length} 就绪
       </Badge>
-      {missing.length > 0 && (
+      {!compact && missing.length > 0 && (
         <p className="text-xs text-muted-foreground">缺：{missing.join("、")}</p>
       )}
     </div>
@@ -219,6 +222,7 @@ export function PoolTable({
   /** A position whose 面试攻略 opens straight away (a 投递's 「岗位 JD / 面试攻略」). */
   openPrepFor?: string | null;
 }) {
+  const router = useRouter();
   const [markingId, setMarkingId] = useState<string | null>(null);
   const [matchingId, setMatchingId] = useState<string | null>(null);
   const [prepId, setPrepId] = useState<string | null>(() => (openPrepFor && positions.some((p) => p.id === openPrepFor) ? openPrepFor : null));
@@ -265,6 +269,8 @@ export function PoolTable({
       return 0;
     });
   }, [positions, q, city, track, sort, historyByTrack]);
+  // A column of dashes says nothing; only shown once some position has a salary.
+  const anySalary = sorted.some((p) => p.salaryMin || p.salaryMax);
   const markable = sorted.filter((p) => p.status !== "APPLIED");
   // Looked up from the full unfiltered list, not `sorted` — a dialog opened
   // for a position must keep working even if the search/filter above it
@@ -506,16 +512,14 @@ export function PoolTable({
               />
             </TableHead>
             <TableHead>公司 / 岗位</TableHead>
-            <TableHead>方向</TableHead>
-            <TableHead>地点</TableHead>
-            <TableHead>薪资</TableHead>
-            <TableHead>综合得分</TableHead>
-            <TableHead>AI 匹配</TableHead>
+            <TableHead>方向 · 地点</TableHead>
+            {anySalary && <TableHead>薪资</TableHead>}
+            <TableHead>得分</TableHead>
             <TableHead>投递就绪</TableHead>
             <TableHead>优先级</TableHead>
             <TableHead>截止日期</TableHead>
             <TableHead>状态</TableHead>
-            <TableHead className="text-right">操作</TableHead>
+            <TableHead className="sticky right-0 z-10 bg-card text-right">操作</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -535,40 +539,34 @@ export function PoolTable({
                     />
                   )}
                 </TableCell>
-                <TableCell>
+                <TableCell className="max-w-[16rem] whitespace-normal">
                   <div className="font-medium">{p.company.name}</div>
-                  <div className="text-sm text-muted-foreground">{p.title}</div>
+                  <div className="line-clamp-2 text-sm text-muted-foreground" title={p.title}>{p.title}</div>
                 </TableCell>
-                <TableCell>{p.track ?? "-"}</TableCell>
-                <TableCell>{p.location ?? "-"}</TableCell>
-                <TableCell>
+                <TableCell className="max-w-[10rem] whitespace-normal">
+                  <div className="truncate" title={p.track ?? undefined}>{p.track ?? "-"}</div>
+                  <div className="truncate text-xs text-muted-foreground" title={p.location ?? undefined}>{p.location ?? ""}</div>
+                </TableCell>
+                {anySalary && (
+                  <TableCell>
                   {p.salaryMin || p.salaryMax
                     ? `${p.salaryMin ?? "?"}-${p.salaryMax ?? "?"}K`
                     : "-"}
+                  </TableCell>
+                )}
+                <TableCell>
+                  {/* 综合得分 with the AI 匹配 under it. */}
+                  <div className="flex flex-col items-start gap-0.5">
+                    {p.interestScore !== null ? <Badge variant={scoreVariant(p.interestScore)} title="综合得分">{p.interestScore}</Badge> : <span>-</span>}
+                    {p.bestMatch ? (
+                      <span className="text-xs text-muted-foreground" title={p.bestMatch.recommendation}>AI {p.bestMatch.score} · {p.bestMatch.recommendation}</span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">未匹配</span>
+                    )}
+                  </div>
                 </TableCell>
                 <TableCell>
-                  {p.interestScore !== null ? (
-                    <Badge variant={scoreVariant(p.interestScore)}>
-                      {p.interestScore}
-                    </Badge>
-                  ) : (
-                    "-"
-                  )}
-                </TableCell>
-                <TableCell>
-                  {p.bestMatch ? (
-                    <Badge
-                      variant={scoreVariant(p.bestMatch.score)}
-                      title={p.bestMatch.recommendation}
-                    >
-                      {p.bestMatch.score} · {p.bestMatch.recommendation}
-                    </Badge>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">未匹配</span>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <ReadinessBadge items={readinessItems(p)} />
+                  <ReadinessBadge items={readinessItems(p)} compact />
                 </TableCell>
                 <TableCell>
                   <OpportunityBadge opportunity={getOpportunity(p, historyByTrack)} />
@@ -593,72 +591,56 @@ export function PoolTable({
                     {POSITION_STATUS_LABELS[p.status]}
                   </Badge>
                 </TableCell>
-                <TableCell className="space-x-2 text-right">
-                  <MatchResumeTrigger onClick={() => setMatchingId(p.id)} />
-                  <InterviewPrepTrigger onClick={() => setPrepId(p.id)} />
-                  <CoverLetterTrigger onClick={() => setLetterId(p.id)} />
-                  <CompanyInsightTrigger onClick={() => setInsightId(p.id)} />
-                  {p.status !== "APPLIED" && (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => setMarkingId(p.id)}
-                    >
-                      标记已投
-                    </Button>
-                  )}
-                  {p.jdUrl && (
-                    <Link
-                      href={`/browser?url=${encodeURIComponent(p.jdUrl)}&positionId=${p.id}`}
-                      className={buttonVariants({ size: "sm", variant: "outline" })}
-                    >
-                      <Globe className="size-3.5" />
-                      打开网申页面
-                    </Link>
-                  )}
-                  <Link
-                    href={`/resume-drill?position=${p.id}`}
-                    className={buttonVariants({ size: "sm", variant: "outline" })}
-                    title="针对这个岗位的 JD，让 AI 按你的简历生成三层追问来练"
-                  >
-                    <Crosshair className="size-3.5" />
-                    简历深挖
-                  </Link>
-                  <Link
-                    href={`/resumes/tailored?positionId=${p.id}`}
-                    className={buttonVariants({ size: "sm", variant: "outline" })}
-                    title="用 AI 为这个岗位整理一份定制简历，可编辑后导出 PDF / Word"
-                  >
-                    <FileText className="size-3.5" />
-                    定制简历
-                  </Link>
-                  <ApplicationRulesDialog positionId={p.id} />
-                  <PositionFormDialog
-                    mode="edit"
-                    positionId={p.id}
-                    initial={toEditInitial(p)}
-                    trigger={
-                      <Button size="sm" variant="outline">
-                        编辑
-                      </Button>
-                    }
-                  />
-                  <ConfirmDeleteButton
-                    trigger={
-                      <Button size="sm" variant="ghost">
-                        删除
-                      </Button>
-                    }
-                    title={`确定删除 ${p.company.name} · ${p.title} 吗？`}
-                    onConfirm={() => handleDelete(p.id)}
-                  />
+                <TableCell className="sticky right-0 z-10 bg-card text-right shadow-[-8px_0_12px_-10px_rgba(0,0,0,0.25)]">
+                  {/* One main action, the AI tools in a menu, the rest as icons:
+                      nine buttons in a row made this table 3x the window wide. */}
+                  <div className="flex items-center justify-end gap-1">
+                    {p.jdUrl ? (
+                      <Link
+                        href={`/browser?url=${encodeURIComponent(p.jdUrl)}&positionId=${p.id}`}
+                        className={buttonVariants({ size: "sm", variant: "outline" })}
+                      >
+                        <Globe className="size-3.5" />
+                        网申
+                      </Link>
+                    ) : p.status !== "APPLIED" ? (
+                      <Button size="sm" variant="secondary" onClick={() => setMarkingId(p.id)}>标记已投</Button>
+                    ) : null}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger render={<Button size="sm" variant="ghost" className="px-2" aria-label={`${p.company.name} · ${p.title} 的 AI 工具`} title="AI 工具：匹配、面试攻略、自荐信、口碑、简历深挖、定制简历" />}>
+                        <Sparkles className="size-3.5" /><ChevronDown className="size-3" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-44">
+                        <DropdownMenuItem onClick={() => setMatchingId(p.id)}>选简历 · 匹配分析</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setPrepId(p.id)}>面试攻略</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setLetterId(p.id)}>自荐信</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setInsightId(p.id)}>岗位口碑</DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => router.push(`/resume-drill?position=${p.id}`)}><Crosshair className="size-3.5" />简历深挖</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => router.push(`/resumes/tailored?positionId=${p.id}`)}><FileText className="size-3.5" />定制简历</DropdownMenuItem>
+                        {p.jdUrl && p.status !== "APPLIED" && <><DropdownMenuSeparator /><DropdownMenuItem onClick={() => setMarkingId(p.id)}>标记已投</DropdownMenuItem></>}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    <ApplicationRulesDialog positionId={p.id} trigger={<Button size="icon-sm" variant="ghost" aria-label="报名规则" title="报名规则"><ClipboardCheck className="size-3.5" /></Button>} />
+                    <PositionFormDialog
+                      mode="edit"
+                      positionId={p.id}
+                      initial={toEditInitial(p)}
+                      trigger={<Button size="icon-sm" variant="ghost" aria-label="编辑" title="编辑"><Pencil className="size-3.5" /></Button>}
+                    />
+                    <ConfirmDeleteButton
+                      trigger={<Button size="icon-sm" variant="ghost" aria-label="删除" title="删除"><Trash2 className="size-3.5" /></Button>}
+                      title={`确定删除 ${p.company.name} · ${p.title} 吗？`}
+                      onConfirm={() => handleDelete(p.id)}
+                    />
+                  </div>
                 </TableCell>
               </TableRow>
             );
           })}
           {sorted.length === 0 && (
             <TableRow>
-              <TableCell colSpan={12} className="h-32 text-center text-muted-foreground">
+              <TableCell colSpan={anySalary ? 10 : 9} className="h-32 text-center text-muted-foreground">
                 <div className="flex flex-col items-center gap-2">
                   <ListChecks className="size-8 text-muted-foreground/50" />
                   <span>

@@ -180,7 +180,7 @@ function TaskRow({
             .filter(Boolean)
             .join(" · ")}
         </p>
-        {task.note && <p className="mt-1 text-xs">{task.note}</p>}
+        {task.note && <p className="mt-1 text-xs [overflow-wrap:anywhere]">{task.note}</p>}
         {task.mailEventDraft ? <MailEventDialog taskId={task.id} initial={task.mailEventDraft} eventId={task.mailEventId} /> : null}
       </div>
       <div className="flex shrink-0 gap-1">

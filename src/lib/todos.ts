@@ -139,7 +139,7 @@ export function buildTodos(
     if (event.allDay ? (event.dateKey || "") < today : (event.endsAt || event.startsAt).getTime() < Date.now()) continue;
     const daysLeft = daysUntil(event.startsAt); if (daysLeft > NEXT_STEP_WINDOW_DAYS) continue;
     const when = event.allDay ? event.dateKey : new Intl.DateTimeFormat("zh-CN", { timeZone: timezone, month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(event.startsAt);
-    todos.push({ id: `event-${event.id}`, label: event.title, sublabel: `${when}（${timezone}）`, urgency: urgencyOf(daysLeft), href: `/desktop/calendar?id=${event.id}`, order: event.startsAt.getTime() });
+    todos.push({ id: `event-${event.id}`, label: event.title, sublabel: `${when}（${timezone}）`, urgency: urgencyOf(daysLeft), href: `/calendar/events?id=${event.id}`, order: event.startsAt.getTime() });
   }
 
   // User-written plans surface the same way the auto-derived ones do — due
