@@ -112,24 +112,27 @@ export default async function ApplicationDetailPage({
 
   return (
     <div className="mx-auto max-w-[96rem] space-y-6">
-      <div className="surface-card relative overflow-hidden rounded-xl p-5 sm:p-7">
-        <div aria-hidden="true" className="pointer-events-none absolute -right-16 -top-28 size-64 rounded-full bg-primary/10 blur-3xl" />
+      <div className="hero-card surface-card rounded-xl p-5 sm:p-7">
+        <div aria-hidden="true" className="hero-decor pointer-events-none absolute inset-0">
+          <span className="absolute -right-12 -top-20 size-60 rounded-full bg-white/15 blur-2xl" />
+          <span className="absolute right-[12%] bottom-8 size-14 rotate-12 rounded-[1.2rem] bg-gradient-to-br from-white/40 to-white/10 shadow-[0_14px_30px_-10px_rgba(0,0,0,0.3)]" />
+        </div>
         <div className="relative">
         <ApplicationPager id={application.id} fallbackIds={order.map((row) => row.id)} />
         <div className="mt-5 flex flex-wrap items-start gap-4">
-          <span className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-xl font-semibold text-primary ring-1 ring-primary/15">{application.company.name.slice(0, 1)}</span>
+          <span className="hero-chip flex size-14 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-xl font-semibold text-primary ring-1 ring-primary/15">{application.company.name.slice(0, 1)}</span>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-muted-foreground">{application.company.name}</p>
+            <p className="hero-sub text-sm font-medium text-muted-foreground">{application.company.name}</p>
             <h1 className="mt-0.5 text-2xl font-semibold tracking-[-0.04em] sm:text-3xl">{application.title}</h1>
           </div>
           <Badge className={cn("h-7 border-0 px-3 text-xs", applicationStageStyle(application.currentStage).pill)}>
             <span className={cn("mr-1 size-1.5 rounded-full", applicationStageStyle(application.currentStage).dot)} />
             {STAGE_LABELS[application.currentStage]}
           </Badge>
-          {application.currentStageLabel && <span className="text-sm font-medium text-muted-foreground">{application.currentStageLabel}</span>}
+          {application.currentStageLabel && <span className="hero-sub text-sm font-medium text-muted-foreground">{application.currentStageLabel}</span>}
           <QuickStageMenu applicationId={application.id} companyName={application.company.name} currentStage={application.currentStage} step={step} className="h-7" />
         </div>
-        <div className="mt-6 grid grid-cols-2 gap-3 border-t border-border/55 pt-5 sm:grid-cols-4">
+        <div className="hero-divider mt-6 grid grid-cols-2 gap-3 border-t border-border/55 pt-5 sm:grid-cols-4">
           {[
             { label: "投递日期", value: application.appliedDate.toLocaleDateString("zh-CN") },
             { label: "最近更新", value: application.currentStageDate.toLocaleDateString("zh-CN") },
@@ -137,12 +140,12 @@ export default async function ApplicationDetailPage({
             { label: "简历版本", value: application.resumeVersion?.name || "未关联" },
           ].map((item) => (
             <div key={item.label} className="min-w-0">
-              <p className="text-[11px] font-medium text-muted-foreground">{item.label}</p>
+              <p className="hero-sub text-[11px] font-medium text-muted-foreground">{item.label}</p>
               <p className="mt-1 truncate text-sm font-semibold" title={item.value}>{item.value}</p>
             </div>
           ))}
         </div>
-        {application.portalStatus && <p className="mt-4 rounded-xl border border-border/60 bg-background/50 px-3 py-2 text-xs text-muted-foreground">官网最近显示：<span className="font-medium text-foreground">{application.portalStatus}</span>{application.portalStatusAt && <span> · {application.portalStatusAt.toLocaleString("zh-CN")}</span>}</p>}
+        {application.portalStatus && <p className="hero-chip mt-4 rounded-xl border border-border/60 bg-background/50 px-3 py-2 text-xs text-muted-foreground">官网最近显示：<span className="font-medium text-foreground">{application.portalStatus}</span>{application.portalStatusAt && <span> · {application.portalStatusAt.toLocaleString("zh-CN")}</span>}</p>}
         </div>
       </div>
 

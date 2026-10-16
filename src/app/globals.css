@@ -524,6 +524,8 @@
   --page-heading: 1.5rem;
   --nav-active-bg: color-mix(in oklch, var(--foreground) 7%, transparent);
   --nav-active-shadow: 0 0 0 0 transparent;
+  --nav-active-fg: var(--foreground);
+  --nav-active-icon: var(--primary);
 }
 
 [data-style="glass"] {
@@ -565,25 +567,134 @@
   --radius: 1rem;
   --surface-card: var(--card);
   --card-edge: color-mix(in oklch, var(--foreground) 4%, transparent);
-  --card-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 28px -10px rgba(15, 23, 42, 0.1);
-  --card-shadow-hover: 0 2px 4px rgba(15, 23, 42, 0.05), 0 14px 36px -12px rgba(15, 23, 42, 0.14);
+  /* Shadows carry a little of the brand color, the way the reference cards glow. */
+  --card-shadow: 0 1px 2px rgba(15, 23, 42, 0.03), 0 14px 34px -16px color-mix(in oklch, var(--primary), transparent 72%);
+  --card-shadow-hover: 0 2px 4px rgba(15, 23, 42, 0.04), 0 20px 44px -16px color-mix(in oklch, var(--primary), transparent 62%);
   --card-blur: 0px;
-  --btn-primary-bg: var(--primary);
-  --btn-primary-shadow: 0 6px 16px -8px color-mix(in oklch, var(--primary), transparent 30%);
+  --btn-primary-bg: var(--gradient-accent);
+  --btn-primary-shadow: 0 8px 20px -8px color-mix(in oklch, var(--primary), transparent 35%);
   --btn-radius: 9999px;
   --sidebar-surface: transparent;
   --sidebar-edge: transparent;
-  --nav-active-bg: var(--card);
-  --nav-active-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 4px 12px -6px rgba(15, 23, 42, 0.12);
-  --glow-opacity: 0.5;
+  --nav-active-bg: var(--gradient-accent);
+  --nav-active-shadow: 0 8px 18px -8px color-mix(in oklch, var(--primary), transparent 30%);
+  --nav-active-fg: var(--primary-foreground);
+  --nav-active-icon: var(--primary-foreground);
+  --hero-bg: radial-gradient(120% 140% at 100% 0%, color-mix(in oklch, var(--glow-2), white 10%) 0%, transparent 55%), var(--gradient-accent);
+  --page-bg:
+    radial-gradient(1100px 620px at 100% -8%, color-mix(in oklch, var(--glow-1), transparent 80%), transparent 62%),
+    radial-gradient(900px 640px at -6% 108%, color-mix(in oklch, var(--glow-2), transparent 78%), transparent 60%),
+    color-mix(in oklch, var(--background) 94%, var(--primary) 3%);
+  --glow-opacity: 0;
   --page-heading: 1.875rem;
 }
 
 .dark[data-style="soft"] {
   --card-edge: color-mix(in oklch, var(--foreground) 7%, transparent);
-  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 30px -12px rgba(0, 0, 0, 0.5);
-  --card-shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.35), 0 16px 38px -12px rgba(0, 0, 0, 0.55);
-  --nav-active-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px -14px rgba(0, 0, 0, 0.55);
+  --card-shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.35), 0 18px 40px -14px rgba(0, 0, 0, 0.6);
+  --nav-active-shadow: 0 8px 18px -10px rgba(0, 0, 0, 0.6);
+  --page-bg:
+    radial-gradient(1100px 620px at 100% -8%, color-mix(in oklch, var(--glow-1), transparent 86%), transparent 62%),
+    radial-gradient(900px 640px at -6% 108%, color-mix(in oklch, var(--glow-2), transparent 88%), transparent 60%),
+    var(--background);
+}
+
+/* 柔光: the page itself is a soft brand-tinted gradient; the sidebar is a
+   floating frosted panel on it. */
+html[data-style="soft"] body {
+  background: var(--page-bg);
+  background-attachment: fixed;
+}
+[data-style="soft"] .app-sidebar {
+  position: sticky;
+  top: 12px;
+  align-self: flex-start;
+  height: calc(100vh - 24px);
+  margin: 12px 0 12px 12px;
+  border-radius: 1.5rem;
+  background: color-mix(in oklch, var(--card) 72%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--foreground) 5%, transparent), 0 16px 40px -20px color-mix(in oklch, var(--primary), transparent 70%);
+  backdrop-filter: blur(24px);
+}
+[data-style="soft"] .app-sidebar > div {
+  position: static;
+  height: 100%;
+}
+
+/* The page's opening card: the brand gradient with white text in 柔光, a
+   plain heading elsewhere. */
+.hero-card {
+  position: relative;
+  overflow: hidden;
+}
+.hero-card .hero-decor {
+  display: none;
+}
+[data-style="soft"] .hero-card {
+  border-radius: 1.75rem;
+  padding: 1.75rem 2rem;
+  color: var(--primary-foreground);
+  background: var(--hero-bg);
+  box-shadow: 0 22px 48px -24px color-mix(in oklch, var(--primary), transparent 25%);
+}
+[data-style="soft"] .hero-card .hero-sub,
+[data-style="soft"] .hero-card .text-muted-foreground {
+  color: color-mix(in oklch, var(--primary-foreground), transparent 25%);
+}
+[data-style="soft"] .hero-card .hero-decor {
+  display: block;
+}
+/* Calendars in 柔光: round days, the chosen one a gradient dot, days with something on them tinted. */
+[data-style="soft"] [data-slot="calendar"] {
+  --cell-radius: 9999px;
+}
+[data-style="soft"] [data-slot="calendar"] .has-event button {
+  background: color-mix(in oklch, var(--primary), transparent 88%);
+  border-radius: 9999px;
+}
+[data-style="soft"] [data-slot="calendar"] button[data-selected-single="true"] {
+  background: var(--gradient-accent);
+  color: var(--primary-foreground);
+  border-radius: 9999px;
+  box-shadow: 0 6px 14px -6px color-mix(in oklch, var(--primary), transparent 30%);
+}
+
+/* Controls on the gradient: frosted white instead of white-on-white. */
+[data-style="soft"] .hero-card .bg-background {
+  background: color-mix(in oklch, white 20%, transparent);
+  border-color: color-mix(in oklch, white 32%, transparent);
+  color: inherit;
+}
+[data-style="soft"] .hero-card .bg-background:hover {
+  background: color-mix(in oklch, white 30%, transparent);
+}
+/* Dark mode's brand color is a light tint; the opening card stays deep. */
+.dark[data-style="soft"] .hero-card {
+  color: #fff;
+  background: radial-gradient(120% 140% at 100% 0%, color-mix(in oklch, var(--primary), transparent 55%) 0%, transparent 60%), linear-gradient(135deg, color-mix(in oklch, var(--primary), black 45%), color-mix(in oklch, var(--glow-2), black 50%));
+}
+.dark[data-style="soft"] .hero-card .hero-sub,
+.dark[data-style="soft"] .hero-card .text-muted-foreground {
+  color: rgba(255, 255, 255, 0.72);
+}
+.dark[data-style="soft"] .hero-card .hero-chip,
+.dark[data-style="soft"] .hero-card .hero-action {
+  color: #fff;
+}
+[data-style="soft"] .hero-card .hero-chip {
+  background: color-mix(in oklch, white 24%, transparent);
+  color: var(--primary-foreground);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, white 35%, transparent);
+}
+[data-style="soft"] .hero-card .hero-divider {
+  border-color: color-mix(in oklch, white 25%, transparent);
+}
+[data-style="soft"] .hero-card .hero-action {
+  background: color-mix(in oklch, white 22%, transparent);
+  color: var(--primary-foreground);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, white 30%, transparent);
+  backdrop-filter: blur(8px);
 }
 
 /* The system font: SF Pro + 苹方 on a Mac, Segoe UI + 微软雅黑 on Windows. */
@@ -633,6 +744,10 @@ html[data-style="soft"] {
   .nav-active {
     background: var(--nav-active-bg);
     box-shadow: var(--nav-active-shadow);
+    color: var(--nav-active-fg);
+  }
+  .nav-active-icon {
+    color: var(--nav-active-icon);
   }
   .ambient-glow {
     opacity: calc(var(--glow-opacity) * 0.2);

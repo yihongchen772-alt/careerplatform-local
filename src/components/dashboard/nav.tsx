@@ -139,13 +139,13 @@ function NavItem({
       title={badge?.title}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "flex h-[30px] items-center gap-2.5 rounded-lg px-2.5 text-[13px] transition-colors duration-150",
+        "flex h-[32px] items-center gap-2.5 rounded-xl px-3 text-[13px] transition-colors duration-150",
         active
-          ? "nav-active font-medium text-foreground"
+          ? "nav-active font-medium"
           : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
       )}
     >
-      <Icon className={cn("size-4 shrink-0", active && "text-primary")} strokeWidth={active ? 2 : 1.7} />
+      <Icon className={cn("size-4 shrink-0", active && "nav-active-icon")} strokeWidth={active ? 2 : 1.7} />
       {link.label}
       {badge && <span className="ml-auto rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-amber-700 dark:text-amber-300">{badge.text}</span>}
     </Link>
@@ -222,7 +222,7 @@ export function DashboardNav({ userLabel }: { userLabel: string }) {
           rather than a flat fill, the way macOS's own sidebar material
           reads as a distinct layer floating over the content instead of a
           solid panel butted up against it. */}
-      <aside className="hidden w-56 shrink-0 border-r border-(--sidebar-edge) bg-(--sidebar-surface) backdrop-blur-xl md:block print:hidden">
+      <aside className="app-sidebar hidden w-56 shrink-0 border-r border-(--sidebar-edge) bg-(--sidebar-surface) backdrop-blur-xl md:block print:hidden">
         <div className="sticky top-0 h-screen overflow-y-auto">
           <NavContent
             userLabel={userLabel}

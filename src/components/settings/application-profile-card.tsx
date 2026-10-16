@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { Copy, Plus, Sparkles, Trash2 } from "lucide-react";
+import { Copy, Plus, Sparkles, Trash2, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -214,20 +214,14 @@ export function ApplicationProfileCard({
           </div>
           {profile.education.length === 0 && <p className="text-xs text-muted-foreground">还没有——点「加一段」或从简历提取。</p>}
           {profile.education.map((e, i) => (
-            <div key={i} className="grid gap-2 rounded-md border p-3 sm:grid-cols-6">
+            <RecordShell key={i} className="sm:grid-cols-6" startOpen={!e.school && !e.major} summary={[e.school, e.major, e.degree, [e.start, e.end].filter(Boolean).join(" – ")].filter(Boolean).join(" · ")} onDelete={() => setProfile((p) => ({ ...p, education: p.education.filter((_, j) => j !== i) }))}>
               <Field label="学校" className="sm:col-span-2"><Input value={e.school} onChange={(ev) => setEdu(i, { school: ev.target.value })} /></Field>
               <Field label="专业" className="sm:col-span-2"><Input value={e.major} onChange={(ev) => setEdu(i, { major: ev.target.value })} /></Field>
               <Field label="学历"><Input value={e.degree} onChange={(ev) => setEdu(i, { degree: ev.target.value })} placeholder="硕士" /></Field>
               <Field label="GPA"><Input value={e.gpa} onChange={(ev) => setEdu(i, { gpa: ev.target.value })} placeholder="3.8/4.0" /></Field>
               <Field label="入学"><Input value={e.start} onChange={(ev) => setEdu(i, { start: ev.target.value })} placeholder="2025-08" /></Field>
               <Field label="毕业"><Input value={e.end} onChange={(ev) => setEdu(i, { end: ev.target.value })} placeholder="2027-06" /></Field>
-              <div className="flex items-end sm:col-span-4 sm:justify-end">
-                <Button type="button" size="sm" variant="ghost" onClick={() => setProfile((p) => ({ ...p, education: p.education.filter((_, j) => j !== i) }))}>
-                  <Trash2 className="size-4" />
-                  删除
-                </Button>
-              </div>
-            </div>
+            </RecordShell>
           ))}
         </section>
 
@@ -241,20 +235,14 @@ export function ApplicationProfileCard({
           </div>
           {view.projects.length === 0 && <p className="text-xs text-muted-foreground">还没有——可以手动添加，也可以从简历提取。</p>}
           {view.projects.map((project, i) => (
-            <div key={i} className="grid gap-2 rounded-md border p-3 sm:grid-cols-4">
+            <RecordShell key={i} className="sm:grid-cols-4" startOpen={!project.name} summary={[project.name, project.role, [project.start, project.end].filter(Boolean).join(" – ")].filter(Boolean).join(" · ")} onDelete={() => setView((v) => ({ ...v, projects: v.projects.filter((_, j) => j !== i) }))}>
               <Field label="项目名称" className="sm:col-span-2"><Input value={project.name} onChange={(ev) => setProject(i, { name: ev.target.value })} /></Field>
               <Field label="我的角色" className="sm:col-span-2"><Input value={project.role} onChange={(ev) => setProject(i, { role: ev.target.value })} placeholder="项目负责人 / 核心成员" /></Field>
               <Field label="开始"><Input value={project.start} onChange={(ev) => setProject(i, { start: ev.target.value })} placeholder="2025-06" /></Field>
               <Field label="结束"><Input value={project.end} onChange={(ev) => setProject(i, { end: ev.target.value })} placeholder="2025-09" /></Field>
               <Field label="项目描述" className="sm:col-span-4"><Textarea rows={2} value={project.description} onChange={(ev) => setProject(i, { description: ev.target.value })} placeholder="项目背景、目标、做了什么" /></Field>
               <Field label="个人职责与成果" className="sm:col-span-4"><Textarea rows={3} value={project.responsibilities} onChange={(ev) => setProject(i, { responsibilities: ev.target.value })} placeholder="你具体负责什么，取得了什么结果" /></Field>
-              <div className="flex justify-end sm:col-span-4">
-                <Button type="button" size="sm" variant="ghost" onClick={() => setView((v) => ({ ...v, projects: v.projects.filter((_, j) => j !== i) }))}>
-                  <Trash2 className="size-4" />
-                  删除
-                </Button>
-              </div>
-            </div>
+            </RecordShell>
           ))}
         </section>
 
@@ -268,29 +256,22 @@ export function ApplicationProfileCard({
           </div>
           {view.experiences.length === 0 && <p className="text-xs text-muted-foreground">还没有。</p>}
           {view.experiences.map((x, i) => (
-            <div key={i} className="grid gap-2 rounded-md border p-3 sm:grid-cols-4">
+            <RecordShell key={i} className="sm:grid-cols-4" startOpen={!x.company} summary={[x.company, x.role, [x.start, x.end].filter(Boolean).join(" – ")].filter(Boolean).join(" · ")} onDelete={() => setView((v) => ({ ...v, experiences: v.experiences.filter((_, j) => j !== i) }))}>
               <Field label="单位" className="sm:col-span-2"><Input value={x.company} onChange={(ev) => setExp(i, { company: ev.target.value })} /></Field>
               <Field label="职位" className="sm:col-span-2"><Input value={x.role} onChange={(ev) => setExp(i, { role: ev.target.value })} /></Field>
               <Field label="开始"><Input value={x.start} onChange={(ev) => setExp(i, { start: ev.target.value })} placeholder="2025-06" /></Field>
               <Field label="结束"><Input value={x.end} onChange={(ev) => setExp(i, { end: ev.target.value })} placeholder="2025-09" /></Field>
               <Field label="做了什么" className="sm:col-span-4"><Textarea rows={2} value={x.description} onChange={(ev) => setExp(i, { description: ev.target.value })} /></Field>
-              <div className="flex justify-end sm:col-span-4">
-                <Button type="button" size="sm" variant="ghost" onClick={() => setView((v) => ({ ...v, experiences: v.experiences.filter((_, j) => j !== i) }))}>
-                  <Trash2 className="size-4" />
-                  删除
-                </Button>
-              </div>
-            </div>
+            </RecordShell>
           ))}
         </section>
 
         <section className="space-y-3">
           <div className="flex items-center justify-between"><p className="text-sm font-medium">获奖情况（所有方案共用）</p><Button size="sm" variant="outline" disabled={profile.awards.length >= 30} onClick={() => setProfile((p) => ({ ...p, awards: [...p.awards, { ...emptyAward }] }))}><Plus className="size-4" />添加奖项</Button></div>
-          {profile.awards.map((award, i) => <div key={i} className="grid gap-2 rounded-md border p-3 sm:grid-cols-2">
+          {profile.awards.map((award, i) => <RecordShell key={i} className="sm:grid-cols-2" startOpen={!award.name} summary={[award.name, award.level, award.date].filter(Boolean).join(" · ")} onDelete={() => setProfile((p) => ({ ...p, awards: p.awards.filter((_, j) => j !== i) }))}>
             {([["name", "奖项名称"], ["issuer", "颁发单位"], ["level", "等级"], ["date", "获奖时间"]] as const).map(([key, label]) => <Field key={key} label={label}><Input value={award[key]} onChange={(event) => setProfile((p) => ({ ...p, awards: p.awards.map((item, j) => j === i ? { ...item, [key]: event.target.value } : item) }))} /></Field>)}
             <Field label="补充说明" className="sm:col-span-2"><Textarea value={award.description} onChange={(event) => setProfile((p) => ({ ...p, awards: p.awards.map((item, j) => j === i ? { ...item, description: event.target.value } : item) }))} /></Field>
-            <Button size="sm" variant="ghost" className="sm:col-span-2 justify-self-end" onClick={() => setProfile((p) => ({ ...p, awards: p.awards.filter((_, j) => j !== i) }))}><Trash2 className="size-4" />删除</Button>
-          </div>)}
+          </RecordShell>)}
         </section>
 
         <section className="space-y-3">
@@ -330,6 +311,26 @@ function Field({ label, className, children }: { label: string; className?: stri
     <div className={`space-y-1 ${className ?? ""}`}>
       <Label className="text-xs text-muted-foreground">{label}</Label>
       {children}
+    </div>
+  );
+}
+
+/**
+ * One saved 经历 / 奖项 as a single summary line that opens to edit; a new,
+ * still-empty one starts open. Keeps a dozen awards from filling the page.
+ */
+function RecordShell({ summary, startOpen, onDelete, className, children }: { summary: string; startOpen: boolean; onDelete: () => void; className: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(startOpen);
+  return (
+    <div className="rounded-xl border bg-background/40">
+      <div className="flex items-center gap-2 px-3 py-2">
+        <button type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open} className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-sm">
+          <ChevronRight className={`size-3.5 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`} />
+          <span className={`truncate ${summary ? "" : "text-muted-foreground"}`}>{summary || "（新的一条，展开填写）"}</span>
+        </button>
+        <Button type="button" size="icon-sm" variant="ghost" aria-label="删除" title="删除" onClick={onDelete}><Trash2 className="size-3.5" /></Button>
+      </div>
+      {open && <div className={`grid gap-2 border-t px-3 pb-3 pt-3 ${className}`}>{children}</div>}
     </div>
   );
 }

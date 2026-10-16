@@ -93,7 +93,7 @@ export function DeadlineCalendar({
             modifiers={{ hasEvent: eventDates }}
             modifiersClassNames={{
               hasEvent:
-                "relative after:absolute after:bottom-1 after:left-1/2 after:size-1 after:-translate-x-1/2 after:rounded-full after:bg-primary",
+                "has-event relative after:absolute after:bottom-1 after:left-1/2 after:size-1 after:-translate-x-1/2 after:rounded-full after:bg-primary",
             }}
           />
         </CardContent>
