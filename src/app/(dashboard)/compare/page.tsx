@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { STAGE_BADGE_VARIANT, STAGE_LABELS } from "@/lib/stage-labels";
 import { OfferCompareTable, type OfferRow } from "@/components/compare/offer-compare-table";
 import { OfferAnalysisDialog } from "@/components/compare/offer-analysis-dialog";
+import { PageHero } from "@/components/layout/page-hero";
 
 export default async function ComparePage() {
   const user = await requireUser();
@@ -28,12 +29,7 @@ export default async function ComparePage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">Offer 对比</h1>
-        <p className="text-sm text-muted-foreground">
-          汇总所有拿到 offer 或已接受的投递，方便横向比较
-        </p>
-      </div>
+      <PageHero title="Offer 对比" icon={Scale} description="汇总所有拿到 offer 或已接受的投递，方便横向比较" />
 
       {applications.length === 0 ? (
         <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed py-16 text-center text-muted-foreground">

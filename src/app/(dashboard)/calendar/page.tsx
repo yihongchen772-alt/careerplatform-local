@@ -3,6 +3,9 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { DeadlineCalendar, type CalendarEvent } from "@/components/calendar/deadline-calendar";
 import { STAGE_LABELS } from "@/lib/stage-labels";
+import { PageHero } from "@/components/layout/page-hero";
+import { buttonVariants } from "@/components/ui/button";
+import { CalendarDays } from "lucide-react";
 
 export default async function CalendarPage() {
   const user = await requireUser();
@@ -89,13 +92,8 @@ export default async function CalendarPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">日历视图</h1>
-        <p className="text-sm text-muted-foreground">
-          候选岗位投递截止日期 + 投递记录里填写的下一步截止日期 + 你自己写的日程 + 联系人跟进提醒，一次看清楚有没有撞期
-        </p>
-      </div>
-      <a className="inline-flex rounded border px-3 py-2 text-sm" href="/api/calendar-export">导出 ICS 到系统 / 手机日历</a>
+      <PageHero title="日历视图" icon={CalendarDays} description="候选岗位投递截止日期 + 投递记录里填写的下一步截止日期 + 你自己写的日程 + 联系人跟进提醒，一次看清楚有没有撞期" />
+      <a className={buttonVariants({ variant: "outline", size: "sm" })} href="/api/calendar-export">导出 ICS 到系统 / 手机日历</a>
       <p className="text-xs text-muted-foreground">导出当前日程快照；之后修改安排需要重新导入。系统日历是否提醒取决于你的日历设置。</p>
       <DesktopLinks />
       <DeadlineCalendar

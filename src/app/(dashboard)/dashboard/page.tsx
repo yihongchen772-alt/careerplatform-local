@@ -20,6 +20,8 @@ import { ScanHealthBanner } from "@/components/applications/scan-health-banner";
 import { getScanHealth } from "@/lib/scan-health";
 import { loadAutoProgressItems, loadAutoScheduleItems } from "@/lib/auto-progress";
 import { UpcomingSchedule } from "@/components/schedule/upcoming-schedule";
+import { AgentBriefCard } from "@/components/dashboard/agent-brief-card";
+import { loadBriefState } from "@/lib/agent/brief";
 import { loadUpcomingSchedule } from "@/lib/schedule-loader";
 import { isTerminalStage } from "@/lib/interview-schedule";
 import { currentTimeMs } from "@/lib/dates";
@@ -33,10 +35,11 @@ export default async function DashboardPage() {
   const user = await requireUser();
   const scanHealth = await getScanHealth(user.id);
   const now = currentTimeMs();
-  const [autoUpdates, autoSchedules, upcoming] = await Promise.all([
+  const [autoUpdates, autoSchedules, upcoming, briefs] = await Promise.all([
     loadAutoProgressItems(user.id),
     loadAutoScheduleItems(user.id),
     loadUpcomingSchedule(user.id, new Date(now)),
+    loadBriefState(user.id, new Date(now)),
   ]);
 
   const [applications, positions, stageHistories, personalTasks, allPositions, contacts] =
@@ -164,6 +167,8 @@ export default async function DashboardPage() {
           </Link>
         </div>
       </header>
+
+      <AgentBriefCard {...briefs} />
 
       {scanHealth.failing && <ScanHealthBanner error={scanHealth.error} since={scanHealth.since?.toISOString() ?? null} lastOkAt={scanHealth.lastOkAt?.toISOString() ?? null} />}
       <AutoProgressBanner items={autoUpdates} schedules={autoSchedules} />

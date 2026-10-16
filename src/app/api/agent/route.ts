@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { requireUser } from "@/lib/session";
-import { getUserAiConfig } from "@/lib/ai-providers";
+import { getAgentConfig } from "@/lib/agent/config";
 import { UserFacingError } from "@/lib/action-result";
 import { MAX_HISTORY_TURNS } from "@/lib/assistant-context";
 import { createChat, historyMessages } from "@/lib/agent/llm";
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
   const user = await requireUser();
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: parsed.error.issues[0]?.message ?? "请求格式不对" }, { status: 400 });
-  const config = await getUserAiConfig(user.id);
+  const config = await getAgentConfig(user.id);
   if (!config) return Response.json({ error: "先去账号设置配置一个 AI Key 才能用小欧" }, { status: 400 });
   const { message, history } = parsed.data;
 

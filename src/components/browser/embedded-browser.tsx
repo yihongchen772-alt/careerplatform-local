@@ -2,40 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
-import {
-  ArrowLeft,
-  ArrowRight,
-  Bookmark,
-  Camera,
-  Check,
-  ChevronDown,
-  ChevronUp,
-  Copy,
-  Eraser,
-  ExternalLink,
-  FileCode,
-  ListChecks,
-  Loader2,
-  KeyRound,
-  LogOut,
-  Maximize2,
-  Minus,
-  MoreVertical,
-  NotebookPen,
-  PanelRight,
-  PanelRightClose,
-  Plus,
-  Radar,
-  RotateCw,
-  ScanSearch,
-  Search,
-  Send,
-  Settings2,
-  Sparkles,
-  Trash2,
-  TriangleAlert,
-  X,
-} from "lucide-react";
+import { ArrowLeft, ArrowRight, Bookmark, Camera, Check, ChevronDown, ChevronUp, Copy, Eraser, ExternalLink, FileCode, ListChecks, Loader2, KeyRound, LogOut, Maximize2, Minus, MoreVertical, NotebookPen, PanelRight, PanelRightClose, Plus, Radar, RotateCw, ScanSearch, Search, Send, Settings2, Sparkles, Trash2, TriangleAlert, X, Bug } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { AiProgress } from "@/components/ui/ai-progress";
@@ -919,6 +886,17 @@ export function EmbeddedBrowser({
               <DropdownMenuItem disabled={savingCorrections || busy || !currentUrl} onClick={handleSaveCorrections}><Check />{savingCorrections ? "检测中…" : "核对本页变化"}</DropdownMenuItem>
               <DropdownMenuItem onClick={() => router.push("/settings?tab=autofill#pending-application-changes")}><NotebookPen />打开待核对变化{pendingChangeCount ? `（${pendingChangeCount}）` : ""}</DropdownMenuItem>
               <DropdownMenuItem onClick={() => bridge.clearMarks()}><Eraser />清除填写标记</DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={!currentUrl}
+                onClick={async () => {
+                  try {
+                    const res = await bridge.captureSample();
+                    toast.success(`已存下这页的表单结构（${res.fields} 个字段，不含你填的内容），文件夹已打开——把这个文件发给开发者就能复现问题`, { duration: 8000 });
+                  } catch (error) {
+                    toast.error(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : "没存下来");
+                  }
+                }}
+              ><Bug />这页没填好？存一份表单样本</DropdownMenuItem>
               <DropdownMenuItem
                 disabled={!currentUrl}
                 onClick={async () => {

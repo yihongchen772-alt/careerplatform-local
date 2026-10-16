@@ -3,6 +3,8 @@ import { requireUser } from "@/lib/session";
 import { AddResumeDialog } from "@/components/resumes/add-resume-dialog";
 import { ResumeList } from "@/components/resumes/resume-list";
 import type { ResumeCheck } from "@/lib/validation";
+import { PageHero } from "@/components/layout/page-hero";
+import { FileText } from "lucide-react";
 
 export default async function ResumesPage() {
   const user = await requireUser();
@@ -14,10 +16,7 @@ export default async function ResumesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-3xl font-semibold tracking-tight">简历版本</h1>
-        <AddResumeDialog />
-      </div>
+      <PageHero title="简历版本" icon={FileText} description="不同方向用不同版本的简历，网申和小欧会按岗位选用" actions={<><AddResumeDialog /></>} />
 
       <ResumeList
         resumes={resumes.map((r) => ({

@@ -40,6 +40,9 @@ export async function runAgent({ chat, request, execute, describe, emit, review,
   const steps: AgentStep[] = [];
   const seen = new Map<string, string>();
   let reviewed = false;
+  // Weaker models sometimes write the real answer beside a tool call and
+  // end with only "完成了，按钮在下面"; keep the longest such draft.
+  let draft = "";
   for (let round = 0; ; round++) {
     const lastRound = round >= Math.min(Math.max(maxRounds, 0), MAX_TOOL_ROUNDS);
     if (lastRound) messages.push({ role: "user", text: "（系统提示：这一轮的工具步数用完了。请直接用已经查到的内容回答；没做完的事明确告诉用户还差什么。）" });
@@ -48,13 +51,14 @@ export async function runAgent({ chat, request, execute, describe, emit, review,
       if (!turn.text) throw new UserFacingError("AI 没有给出回答，请重试");
       const problem = !lastRound && !reviewed ? review?.(turn.text) : null;
       reviewed = true;
-      if (!problem) return { reply: turn.text, steps };
+      if (!problem) return { reply: draft.length > 120 && turn.text.length < 120 && !turn.text.includes(draft.slice(0, 40)) ? `${draft}\n\n${turn.text}` : turn.text, steps };
       messages.push({ role: "assistant", text: turn.text, calls: [], raw: turn.raw }, { role: "user", text: `（系统提示：${problem}）` });
       continue;
     }
     // A short line alongside tool calls is the model saying what it is doing
     // ("先看看你的投递…"); longer text there is its reasoning, not for display.
     if (turn.text && turn.text.length <= 80 && !turn.text.includes("\n")) emit({ type: "note", text: turn.text });
+    if (turn.text.length > draft.length) draft = turn.text;
     messages.push({ role: "assistant", text: turn.text, calls: turn.calls, raw: turn.raw });
     const results: { call: ToolCall; content: string }[] = [];
     for (const call of turn.calls) {

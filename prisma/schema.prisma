@@ -90,6 +90,12 @@ model User {
   /// 小欧's working plan for this search (markdown it keeps up to date).
   agentPlan             String?
   agentPlanAt           DateTime?
+  /// 小欧's own model; null follows the default provider.
+  agentAiProvider       String?
+  agentAiModel          String?
+  /// 每天早上的简报 / 周日的复盘, written when the app is opened.
+  agentDailyBrief       Boolean   @default(true)
+  agentWeeklyReview     Boolean   @default(true)
   // This build has no cloud sync — a user running the app on two machines
   // (e.g. Windows + Mac) has two entirely independent local databases, kept
   // in step only by manually exporting/importing a backup. Tracked so the
@@ -137,6 +143,7 @@ model User {
   careerFitAnalysis       CareerFitAnalysis?
   aiKeys                  AiKey[]
   agentMemories           AgentMemory[]
+  agentBriefs             AgentBrief[]
   jobLeads                JobLead[]
   questionBanks           QuestionBank[]
   examSessions            ExamSession[]
@@ -1320,4 +1327,20 @@ model AgentMemory {
   updatedAt DateTime @updatedAt
 
   @@index([userId])
+}
+
+/// A brief 小欧 wrote on its own: today's (kind "daily", period YYYY-MM-DD)
+/// or the week's review (kind "weekly", period = that Sunday's date).
+model AgentBrief {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      String
+  period    String
+  content   String
+  /// Proposed record changes, the same shape as 小欧's action buttons.
+  actions   Json
+  createdAt DateTime @default(now())
+
+  @@unique([userId, kind, period])
 }

@@ -638,6 +638,14 @@ html[data-style="soft"] body {
   background: var(--hero-bg);
   box-shadow: 0 22px 48px -24px color-mix(in oklch, var(--primary), transparent 25%);
 }
+/* Inner pages open with a lighter version of 总览's card. */
+[data-style="soft"] .page-hero {
+  padding: 1.35rem 1.75rem;
+  border-radius: 1.5rem;
+}
+[data-style="soft"] .page-hero h1 {
+  font-size: 1.6rem;
+}
 [data-style="soft"] .hero-card .hero-sub,
 [data-style="soft"] .hero-card .text-muted-foreground {
   color: color-mix(in oklch, var(--primary-foreground), transparent 25%);

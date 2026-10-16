@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { ContactList } from "@/components/contacts/contact-list";
+import { PageHero } from "@/components/layout/page-hero";
+import { Users } from "lucide-react";
 
 export default async function ContactsPage() {
   const user = await requireUser();
@@ -31,12 +33,7 @@ export default async function ContactsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">联系人</h1>
-        <p className="text-sm text-muted-foreground">
-          HR、内推人、面试官——记下谁、怎么联系、什么时候该跟进，到日子会提醒你
-        </p>
-      </div>
+      <PageHero title="联系人" icon={Users} description="HR、内推人、面试官——记下谁、怎么联系、什么时候该跟进，到日子会提醒你" />
       <ContactList
         contacts={contacts.map((c) => ({
           id: c.id,

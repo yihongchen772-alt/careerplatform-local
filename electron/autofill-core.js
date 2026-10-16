@@ -2314,6 +2314,36 @@ function showPageStatus(payload) {
 //   onFilled()               optional hook after a fill
 
 // Injected: the page's visible text (saved 经历 cards are plain text, not inputs).
+// 「这页没填好」: the page's form skeleton for reproducing a fill problem,
+// with what the applicant wrote taken out. Runs inside the page. Values,
+// editable text and anything long or personal-looking in text nodes are
+// dropped; labels, layout, classes and option names stay, since those are
+// what the fill engine reads.
+function formSkeleton() {
+  const PERSONAL = /@|\d{5,}|[\w.-]+\.(com|cn|net|org)\b/i;
+  const root = document.body ? document.body.cloneNode(true) : document.createElement("body");
+  root.querySelectorAll("script, style, noscript, svg, img, video, audio, canvas, iframe, link, meta, template").forEach((node) => node.remove());
+  root.querySelectorAll("input, textarea").forEach((el) => {
+    el.removeAttribute("value");
+    if (el.tagName === "TEXTAREA") el.textContent = "";
+    if (el.type === "password" || el.type === "hidden") el.remove();
+  });
+  root.querySelectorAll("[contenteditable]").forEach((el) => { el.textContent = ""; });
+  root.querySelectorAll("*").forEach((el) => {
+    for (const attr of Array.from(el.attributes)) {
+      if (/^(on|data-cp-)|^(style|src|href|srcset|value|title|alt|selected|checked)$/i.test(attr.name) || PERSONAL.test(attr.value)) el.removeAttribute(attr.name);
+    }
+  });
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const texts = [];
+  while (walker.nextNode()) texts.push(walker.currentNode);
+  for (const node of texts) {
+    const text = node.textContent.replace(/\s+/g, " ").trim();
+    node.textContent = !text ? "" : text.length > 24 || PERSONAL.test(text) ? "…" : text;
+  }
+  return root.outerHTML.slice(0, 600000);
+}
+
 function readPageText() {
   return String((document.body && document.body.innerText) || "").slice(0, 80000);
 }
@@ -3008,7 +3038,7 @@ async function applyAutofillPlan(adapter, input) {
 
 module.exports = {
   isThirdPartyField, displayLabel, basicRuleMatches, normalizePhone, englishValue, matchPhoneChoice,
-  classifyRepeatBlocks, savedRecordsOnPage, repeatsSavedEntry, previewRecordBlocks, rowsForGroup, recordReference, awardFieldKind,
+  classifyRepeatBlocks, savedRecordsOnPage, repeatsSavedEntry, previewRecordBlocks, formSkeleton, rowsForGroup, recordReference, awardFieldKind,
   profileChoices, applyAutofillPlan, validatePageFields, focusFormField, collectApplicationFields, readCurrentApplicationFields, watchApplicationFields,
   AUTOFILL_MODULES,
   fieldModule,

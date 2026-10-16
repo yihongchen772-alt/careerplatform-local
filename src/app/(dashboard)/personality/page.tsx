@@ -6,6 +6,8 @@ import { PERSONALITY_TEST_LIST } from "@/lib/personality-tests";
 import { PersonalityHistoryList } from "@/components/personality/history-list";
 import { CareerFitCard } from "@/components/personality/career-fit-card";
 import type { CareerFitAnalysis } from "@/lib/validation";
+import { PageHero } from "@/components/layout/page-hero";
+import { Brain } from "lucide-react";
 
 export default async function PersonalityPage() {
   const user = await requireUser();
@@ -20,12 +22,7 @@ export default async function PersonalityPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">性格 / 职业兴趣测试</h1>
-        <p className="text-sm text-muted-foreground">
-          自测参考版，基于公开的心理学理论结构自己撰写题目，不是官方量表——结果仅供了解自己的行为风格参考，别当成唯一依据
-        </p>
-      </div>
+      <PageHero title="性格 / 职业兴趣测试" icon={Brain} description="自测参考版，基于公开的心理学理论结构自己撰写题目，不是官方量表——结果仅供了解自己的行为风格参考，别当成唯一依据" />
 
       <div className="grid gap-4 sm:grid-cols-2">
         {PERSONALITY_TEST_LIST.map((test) => (

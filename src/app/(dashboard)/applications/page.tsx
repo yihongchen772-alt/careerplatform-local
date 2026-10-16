@@ -13,6 +13,8 @@ import { UpcomingSchedule } from "@/components/schedule/upcoming-schedule";
 import { loadUpcomingSchedule } from "@/lib/schedule-loader";
 import { applicationScheduleItems, currentStageRow, isTerminalStage, nextScheduleItem, stepView } from "@/lib/interview-schedule";
 import { currentTimeMs } from "@/lib/dates";
+import { PageHero } from "@/components/layout/page-hero";
+import { Send } from "lucide-react";
 
 export default async function ApplicationsPage() {
   const user = await requireUser();
@@ -64,19 +66,12 @@ export default async function ApplicationsPage() {
 
   return (
     <div className="mx-auto max-w-[110rem] space-y-7">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="font-semibold">投递记录</h1>
-          <p className="mt-1 text-sm text-muted-foreground">从发出申请到收到 Offer，每一次进展都在这里。</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <PortalSyncButton configuredCount={portals.length} />
-          <AddApplicationDialog
-            resumeVersions={resumeVersions}
-            defaultResumeVersionId={defaultResumeVersionId}
-          />
-        </div>
-      </header>
+      <PageHero
+        title="投递记录"
+        icon={Send}
+        description="从发出申请到收到 Offer，每一次进展都在这里。"
+        actions={<><PortalSyncButton configuredCount={portals.length} /><AddApplicationDialog resumeVersions={resumeVersions} defaultResumeVersionId={defaultResumeVersionId} /></>}
+      />
 
       {portals.length > 0 && <section className="surface-card rounded-xl p-4 text-xs sm:p-5" aria-label="官网进度同步状态">
         <div className="flex flex-wrap items-center justify-between gap-2">

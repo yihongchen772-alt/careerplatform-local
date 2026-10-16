@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { LibraryView, type LibraryFile } from "@/components/library/library-view";
+import { PageHero } from "@/components/layout/page-hero";
+import { FolderOpen } from "lucide-react";
 
 export default async function LibraryPage() {
   const user = await requireUser();
@@ -31,12 +33,7 @@ export default async function LibraryPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">资料库</h1>
-        <p className="text-sm text-muted-foreground">
-          证书、作品集、笔试真题、面试资料集中放一处，投递记录里传过的附件也会汇总到这里
-        </p>
-      </div>
+      <PageHero title="资料库" icon={FolderOpen} description="证书、作品集、笔试真题、面试资料集中放一处，投递记录里传过的附件也会汇总到这里" />
       <LibraryView files={files} />
     </div>
   );

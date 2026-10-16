@@ -3,6 +3,8 @@ import { requireUser } from "@/lib/session";
 import { Card, CardContent } from "@/components/ui/card";
 import { MockInterviewStartForm } from "@/components/mock-interview/start-form";
 import { MockInterviewSessionList } from "@/components/mock-interview/session-list";
+import { PageHero } from "@/components/layout/page-hero";
+import { MessageSquare } from "lucide-react";
 
 export default async function MockInterviewPage({
   searchParams,
@@ -46,12 +48,7 @@ export default async function MockInterviewPage({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">AI 模拟面试</h1>
-        <p className="text-sm text-muted-foreground">
-          选一份简历，AI 一问你一答，打字回答，大概 10-15 分钟一场
-        </p>
-      </div>
+      <PageHero title="AI 模拟面试" icon={MessageSquare} description="选一份简历，AI 一问你一答，打字回答，大概 10-15 分钟一场" />
 
       <MockInterviewStartForm
         resumeVersions={resumeVersions}

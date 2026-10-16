@@ -15,6 +15,7 @@ import {
 } from "@/lib/analytics";
 import { computeFunnel, computeOutcomes } from "@/lib/funnel";
 import type { SkillGapAnalysis } from "@/lib/actions/skill-gap";
+import { PageHero } from "@/components/layout/page-hero";
 
 export default async function InsightsPage() {
   const user = await requireUser();
@@ -60,12 +61,7 @@ export default async function InsightsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">投递转化率</h1>
-        <p className="text-sm text-muted-foreground">
-          看看哪个渠道、哪版简历、哪个方向更容易拿到面试，好决定精力往哪放
-        </p>
-      </div>
+      <PageHero title="投递转化率" icon={TrendingUp} description="看看哪个渠道、哪版简历、哪个方向更容易拿到面试，好决定精力往哪放" />
 
       {!hasApplications ? (
         <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed py-16 text-center text-muted-foreground">

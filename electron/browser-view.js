@@ -63,6 +63,7 @@ const {
   resolveRepeatField,
   rowDateValue,
   scanPageFields,
+  formSkeleton,
   sectionGroup,
   sectionOrdinal,
   snapshotFormStructure,
@@ -1198,6 +1199,39 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
   handle("browser:cancel-autofill", (_e, tabId) => stopFillTask(tabId ?? activeId));
 
   // Remember manually entered facts and essays; never save untouched drafts.
+  // 「这页没填好」: the current page's form structure, what the applicant wrote
+  // taken out, saved as a file they can send so the problem can be reproduced.
+  handle("browser:capture-sample", async (_e, note) => {
+    const tab = activeTab();
+    if (!tab) throw new Error("先打开一个网申页面");
+    const wc = tab.view.webContents;
+    let page;
+    try { const url = new URL(wc.getURL()); page = `${url.origin}${url.pathname}`; } catch { throw new Error("先打开一个网申页面"); }
+    const frames = [];
+    for (const frame of allFrames(wc)) {
+      try {
+        const fields = await frame.executeJavaScript(`(${scanPageFields.toString()})("s-", true)`);
+        const html = await frame.executeJavaScript(`(${formSkeleton.toString()})()`);
+        let frameUrl = "";
+        try { const u = new URL(frame.url); frameUrl = `${u.origin}${u.pathname}`; } catch { /* about:blank */ }
+        frames.push({
+          url: frameUrl,
+          // Labels and structure only: no current values or saved entries.
+          fields: (fields || []).map((f) => ({ tag: f.tag, type: f.type, label: f.label, placeholder: f.placeholder, name: f.name, section: f.section, options: f.options, required: f.required, maxLength: f.maxLength, hadValue: !!f.hasValue, savedEntries: f.savedEntries ? f.savedEntries.length : 0, blockKey: f.blockKey ? "yes" : undefined })),
+          html,
+        });
+      } catch { /* A frame that refuses scripts has no form to show. */ }
+    }
+    if (!frames.some((frame) => frame.fields.length)) throw new Error("这个页面上没找到表单");
+    const dir = path.join(app.getPath("userData"), "网申样本");
+    fs.mkdirSync(dir, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    const file = path.join(dir, `${new URL(page).hostname}-${stamp}.json`);
+    fs.writeFileSync(file, JSON.stringify({ app: app.getVersion(), page, title: wc.getTitle(), capturedAt: new Date().toISOString(), note: typeof note === "string" ? note.slice(0, 1000) : "", frames }, null, 1));
+    if (process.env.CAREERPLATFORM_TEST_MODE !== "1") shell.showItemInFolder(file);
+    return { file, fields: frames.reduce((sum, frame) => sum + frame.fields.length, 0) };
+  });
+
   handle("browser:save-corrections", async (_e, resumeVersionId, onlyUserEdited = false, positionId, variantId, discover = true) => {
     const tab = activeTab();
     if (!tab) return { saved: 0 };

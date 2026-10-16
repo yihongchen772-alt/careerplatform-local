@@ -5,6 +5,8 @@ import { AddPositionDialog } from "@/components/pool/add-position-dialog";
 import { PoolTable } from "@/components/pool/pool-table";
 import { computeConversion, type ConversionRow } from "@/lib/analytics";
 import type { InterviewPrep, GroupInterviewPrep } from "@/lib/validation";
+import { PageHero } from "@/components/layout/page-hero";
+import { ListChecks } from "lucide-react";
 
 export default async function PoolPage({ searchParams }: { searchParams: Promise<{ position?: string; prep?: string; from?: string }> }) {
   const { position: selected, prep, from } = await searchParams;
@@ -51,10 +53,7 @@ export default async function PoolPage({ searchParams }: { searchParams: Promise
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-3xl font-semibold tracking-tight">候选岗位池</h1>
-        <AddPositionDialog />
-      </div>
+      <PageHero title="候选岗位池" icon={ListChecks} description="还没投的岗位放在这里：比较匹配度和截止，准备好就一键去网申" actions={<><AddPositionDialog /></>} />
 
       {selected && <div className="flex flex-wrap gap-4 text-sm">{backTo && <a href={`/applications/${backTo}#interview`} className="text-primary underline">← 回到这条投递</a>}<a href="/pool" className="text-primary underline">返回全部候选岗位</a></div>}
       <Card>

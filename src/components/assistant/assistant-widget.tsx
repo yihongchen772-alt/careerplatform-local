@@ -133,6 +133,18 @@ export function AssistantWidget() {
     setLoaded(true);
   }, []);
 
+  // 「接着问小欧」 elsewhere (the 总览 brief): open with the question typed in.
+  useEffect(() => {
+    const ask = (event: Event) => {
+      const text = (event as CustomEvent<string>).detail;
+      setOpen(true);
+      setTab("chat");
+      if (typeof text === "string") setInput(text.slice(0, 6000));
+    };
+    window.addEventListener("xiaoou:ask", ask);
+    return () => window.removeEventListener("xiaoou:ask", ask);
+  }, []);
+
   useEffect(() => {
     if (!loaded) return;
     try {

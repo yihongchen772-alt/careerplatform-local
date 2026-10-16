@@ -316,3 +316,34 @@ test("errors name the provider and model, and a fall-over is reported", async ()
     assert.deepEqual(notices, ["m-a 额度用完了，改用 m-b 继续"]);
   } finally { restore(); }
 });
+
+test("briefs: the morning one from 5:00; Sunday's review from 17:00 that day, owed until Thursday, not after", () => {
+  const brief = loadTs("src/lib/agent/brief.ts", {
+    "@/lib/db": { db: {} }, "@/lib/action-result": actionResult, "@/lib/assistant-shared": loadTs("src/lib/assistant-shared.ts"),
+    "@/lib/agent/llm": {}, "@/lib/agent/run": {}, "@/lib/agent/tools": {}, "@/lib/agent/prompt": {}, "@/lib/agent/config": {},
+  });
+  const at = (y, m, d, h) => new Date(y, m - 1, d, h, 0);
+  assert.equal(brief.briefPeriod("daily", at(2026, 10, 17, 8)), "2026-10-17");
+  assert.equal(brief.briefDue("daily", false, at(2026, 10, 17, 4)), false);
+  assert.equal(brief.briefDue("daily", false, at(2026, 10, 17, 8)), true);
+  assert.equal(brief.briefDue("daily", true, at(2026, 10, 17, 8)), false);
+  // 2026-10-18 is a Sunday.
+  assert.equal(brief.briefPeriod("weekly", at(2026, 10, 18, 16)), "2026-10-11");
+  assert.equal(brief.briefPeriod("weekly", at(2026, 10, 18, 18)), "2026-10-18");
+  assert.equal(brief.briefPeriod("weekly", at(2026, 10, 20, 9)), "2026-10-18");
+  assert.equal(brief.briefDue("weekly", false, at(2026, 10, 18, 18)), true);
+  assert.equal(brief.briefDue("weekly", false, at(2026, 10, 19, 9)), true);
+  assert.equal(brief.briefDue("weekly", false, at(2026, 10, 23, 9)), false);
+  assert.equal(brief.briefDue("weekly", false, at(2026, 10, 18, 16)), false);
+});
+test("agent loop: an answer written beside a tool call is kept when the last reply is only a sign-off", async () => {
+  let round = 0;
+  const body = "今日简报：".padEnd(160, "要");
+  const result = await runAgent({
+    chat: async () => round++ === 0 ? turn(body, [call("propose_actions", { actions: [] })]) : turn("简报完毕，按钮在下面"),
+    request: { config: {}, system: "", messages: [{ role: "user", text: "q" }], tools: [{}] },
+    execute: async () => ({ content: "ok", label: "l", summary: "" }), describe, emit: () => {},
+  });
+  assert.ok(result.reply.startsWith(body));
+  assert.ok(result.reply.endsWith("简报完毕，按钮在下面"));
+});

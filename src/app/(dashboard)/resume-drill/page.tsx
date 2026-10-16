@@ -2,6 +2,8 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { loadResumeDrill } from "@/lib/resume-drill";
 import { ResumeDrillWorkbench } from "@/components/resume-drill/workbench";
+import { PageHero } from "@/components/layout/page-hero";
+import { Crosshair } from "lucide-react";
 
 export default async function ResumeDrillPage({
   searchParams,
@@ -33,12 +35,7 @@ export default async function ResumeDrillPage({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">简历深挖</h1>
-        <p className="text-sm text-muted-foreground">
-          面试官最爱盯着简历上的项目往深了问。AI 先把每段经历的三层追问列出来，你逐层作答，它按要点打分、告诉你下一句会被问什么
-        </p>
-      </div>
+      <PageHero title="简历深挖" icon={Crosshair} description="面试官最爱盯着简历上的项目往深了问。AI 先把每段经历的三层追问列出来，你逐层作答，它按要点打分、告诉你下一句会被问什么" />
 
       <ResumeDrillWorkbench
         resumeVersions={resumeVersions}

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireUser } from "@/lib/session";
 import { ProfileForm } from "@/components/settings/profile-form";
 import { AiSettingsForm } from "@/components/settings/ai-settings-form";
+import { AgentSettingsCard } from "@/components/settings/agent-settings-card";
 import { ProxySettingsCard } from "@/components/settings/proxy-settings-card";
 import { AppearanceForm } from "@/components/settings/appearance-form";
 import { EmailSettingsForm } from "@/components/settings/email-settings-form";
@@ -28,6 +29,8 @@ import { toMemoryView, type MemoryView } from "@/lib/application-memory";
 import { parseApplicationProfile } from "@/lib/application-profile";
 import { SETTINGS_TABS, type SettingsTab } from "@/lib/settings-tabs";
 import { db } from "@/lib/db";
+import { PageHero } from "@/components/layout/page-hero";
+import { Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import packageInfo from "../../../../package.json";
 
@@ -45,7 +48,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   return (
     <div className="mx-auto max-w-5xl">
       <SettingsHashRedirect />
-      <h1 className="text-2xl font-semibold tracking-tight">设置</h1>
+      <PageHero title="设置" icon={Settings} description="资料、AI、提醒和外观，一组一组来" />
       <div className="mt-6 flex flex-col gap-6 md:flex-row md:gap-10">
         <nav aria-label="设置分组" className="-mx-1 flex shrink-0 gap-1 overflow-x-auto md:mx-0 md:w-40 md:flex-col md:overflow-visible">
           {SETTINGS_TABS.map((item) => (
@@ -67,7 +70,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           {tab === "profile" && <ProfileSection user={user} />}
           {tab === "autofill" && <AutofillSection user={user} />}
           {tab === "memory" && <MemorySection userId={user.id} />}
-          {tab === "ai" && <AiSection userId={user.id} />}
+          {tab === "ai" && <AiSection user={user} />}
           {tab === "mail" && <MailSection user={user} />}
           {tab === "appearance" && <AppearanceForm />}
           {tab === "data" && <DataSection />}
@@ -143,11 +146,12 @@ async function MemorySection({ userId }: { userId: string }) {
   );
 }
 
-async function AiSection({ userId }: { userId: string }) {
-  const [aiKeys, appSettings] = await Promise.all([getAiKeysOverview(userId), getAppSettings()]);
+async function AiSection({ user }: { user: User }) {
+  const [aiKeys, appSettings] = await Promise.all([getAiKeysOverview(user.id), getAppSettings()]);
   return (
     <>
       <AiSettingsForm keys={aiKeys} />
+      <AgentSettingsCard keys={aiKeys} initial={{ provider: user.agentAiProvider, model: user.agentAiModel, dailyBrief: user.agentDailyBrief, weeklyReview: user.agentWeeklyReview }} />
       <ProxySettingsCard initial={appSettings} />
     </>
   );

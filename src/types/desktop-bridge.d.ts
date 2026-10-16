@@ -84,6 +84,8 @@ export type DesktopBridge = {
   autofill(resumeVersionId?: string, options?: DesktopBridgeAutofillOptions): Promise<void>;
   cancelAutofill(tabId?: number): Promise<void>;
   saveCorrections(resumeVersionId?: string, onlyUserEdited?: boolean, positionId?: string, variantId?: string, discover?: boolean): Promise<{ saved: number; pending?: number; pendingTotal?: number; draftSaved?: boolean; unchanged?: number }>;
+  /** 「这页没填好」: saves the page's form structure (no filled-in values) as a file and shows it in Finder. */
+  captureSample(note?: string): Promise<{ file: string; fields: number }>;
   clearMarks(): Promise<void>;
   capturePage(): Promise<DesktopBridgeCapturedPage>;
   exportFormStructure(): Promise<{ path: string; fields: number; frames: number }>;
