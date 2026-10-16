@@ -145,3 +145,26 @@ export async function setDefaultAiProvider(provider: AiProviderId): Promise<Acti
     return null;
   });
 }
+
+/**
+ * Switch to one model from the list in one click: that provider becomes the
+ * default and the model goes first. Gemini keeps its other models after it
+ * as the fallback order; every other provider takes exactly one model.
+ */
+export async function switchAiModel(provider: AiProviderId, model: string): Promise<ActionResult<{ model: string }>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const name = model.trim().slice(0, 200);
+    if (!name || name.includes(",")) throw new UserFacingError("模型名不对");
+    const key = await db.aiKey.findUnique({ where: { userId_provider: { userId: user.id, provider } } });
+    if (!key) throw new UserFacingError("请先配置这个服务商的 Key");
+    const rest = (key.model ?? "").split(",").map((item) => item.trim()).filter((item) => item && item !== name);
+    const value = provider === "gemini" ? [name, ...rest].join(", ") : name;
+    await db.$transaction([
+      db.aiKey.update({ where: { id: key.id }, data: { model: value } }),
+      db.user.update({ where: { id: user.id }, data: { defaultAiProvider: provider } }),
+    ]);
+    revalidatePath("/settings");
+    return { model: value };
+  });
+}

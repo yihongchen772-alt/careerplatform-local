@@ -126,7 +126,7 @@ export async function generateStructured({
       );
       clearTimeout(timeout);
     } catch {
-      throw new GeminiError("AI 请求超时，请稍后重试");
+      throw new GeminiError(`Gemini · ${model} 没有响应（超时或网络不通），请稍后重试`);
     }
 
     if (!response.ok) {
@@ -143,7 +143,7 @@ export async function generateStructured({
       if (response.status === 400 || response.status === 403) {
         throw new GeminiError("AI 密钥无效或已过期，请到账号设置里更新");
       }
-      throw new GeminiError("AI 服务暂时不可用，请稍后重试");
+      throw new GeminiError(`Gemini · ${model} 调用失败（${response.status}）：服务暂时不可用，请稍后重试，或在设置里换一个模型`);
     }
 
     const data = await response.json();
@@ -213,7 +213,7 @@ export async function generateGrounded({
       );
       clearTimeout(timeout);
     } catch {
-      throw new GeminiError("AI 请求超时，请稍后重试");
+      throw new GeminiError(`Gemini · ${model} 没有响应（超时或网络不通），请稍后重试`);
     }
 
     if (!response.ok) {
@@ -226,7 +226,7 @@ export async function generateGrounded({
       if (response.status === 400 || response.status === 403) {
         throw new GeminiError("AI 密钥无效或已过期，请到账号设置里更新");
       }
-      throw new GeminiError("AI 服务暂时不可用，请稍后重试");
+      throw new GeminiError(`Gemini · ${model} 调用失败（${response.status}）：服务暂时不可用，请稍后重试，或在设置里换一个模型`);
     }
 
     const data = await response.json();

@@ -12,7 +12,9 @@ import { ConfirmDeleteButton } from "@/components/ui/confirm-delete-button";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -20,6 +22,7 @@ import {
   upsertAiKey,
   deleteAiKey,
   setDefaultAiProvider,
+  switchAiModel,
   type AiKeyOverview,
 } from "@/lib/actions/ai-keys";
 import { listProviderModels } from "@/lib/actions/ai-models";
@@ -57,10 +60,13 @@ export function AiSettingsForm({ keys }: { keys: AiKeyOverview[] }) {
           极少，很快就会用完。
         </p>
 
+        {hasAnyKey && <ModelSwitcher keys={keys} />}
+
         <div className="space-y-2">
           {keys.map((k) => (
             <ProviderRow
-              key={k.provider}
+              // Remount after a switch above so the row shows the new model order.
+              key={`${k.provider}:${k.model ?? ""}`}
               entry={k}
               editing={editing === k.provider}
               onEdit={() => setEditing(k.provider)}
@@ -71,6 +77,88 @@ export function AiSettingsForm({ keys }: { keys: AiKeyOverview[] }) {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+const splitModels = (value: string | null) => (value ?? "").split(",").map((m) => m.trim()).filter(Boolean);
+
+/**
+ * Every model of every configured provider in one list: picking one makes it
+ * the one in use straight away, no 编辑 → 保存 round trip.
+ */
+function ModelSwitcher({ keys }: { keys: AiKeyOverview[] }) {
+  const configured = keys.filter((k) => k.configured);
+  const current = configured.find((k) => k.isDefault);
+  const currentModel = current ? splitModels(current.model)[0] ?? AI_PROVIDER_OPTIONS.find((p) => p.id === current.provider)!.defaultModel : "";
+  const [fetched, setFetched] = useState<Partial<Record<AiProviderId, string[]>>>({});
+  const [busy, setBusy] = useState(false);
+  const [fetching, setFetching] = useState(false);
+  const value = current ? `${current.provider}::${currentModel}` : "";
+
+  const options = configured.map((k) => {
+    const meta = AI_PROVIDER_OPTIONS.find((p) => p.id === k.provider)!;
+    const models = Array.from(new Set([...splitModels(k.model), ...(fetched[k.provider] ?? SEED_MODELS[k.provider])]));
+    return { provider: k.provider, label: k.label, models: models.length ? models : [meta.defaultModel] };
+  });
+
+  async function choose(next: string | null) {
+    if (!next || next === value || busy) return;
+    const [provider, model] = next.split("::") as [AiProviderId, string];
+    setBusy(true);
+    try {
+      const res = await switchAiModel(provider, model);
+      if (!res.ok) return void toast.error(res.message);
+      toast.success(`已改用 ${AI_PROVIDER_OPTIONS.find((p) => p.id === provider)!.label} · ${model}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function fetchAll() {
+    setFetching(true);
+    try {
+      const results = await Promise.all(configured.map(async (k) => [k.provider, await listProviderModels({ provider: k.provider })] as const));
+      const next: Partial<Record<AiProviderId, string[]>> = {};
+      const failed: string[] = [];
+      for (const [provider, res] of results) {
+        if (res.ok) next[provider] = res.data.models;
+        else failed.push(`${AI_PROVIDER_OPTIONS.find((p) => p.id === provider)!.label}：${res.message}`);
+      }
+      setFetched((prev) => ({ ...prev, ...next }));
+      if (failed.length) toast.error(`有的没拉到：${failed.join("；")}`);
+      else toast.success("已拉到每个服务商当前可用的全部模型");
+    } finally {
+      setFetching(false);
+    }
+  }
+
+  return (
+    <div className="space-y-1.5 rounded-md border bg-muted/30 p-3">
+      <Label className="text-xs text-muted-foreground">正在使用的模型（小欧和各项 AI 功能默认用它，选了立即生效）</Label>
+      <div className="flex flex-wrap items-center gap-2">
+        <Select value={value} onValueChange={choose} disabled={busy}>
+          <SelectTrigger className="min-w-64 flex-1">
+            <SelectValue>{() => current ? `${current.label} · ${currentModel}` : "选一个模型"}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {options.map((group) => (
+              <SelectGroup key={group.provider}>
+                <SelectLabel>{group.label}</SelectLabel>
+                {group.models.map((model) => (
+                  <SelectItem key={model} value={`${group.provider}::${model}`}>{model}</SelectItem>
+                ))}
+              </SelectGroup>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button type="button" variant="outline" size="sm" disabled={fetching} onClick={fetchAll}>
+          {fetching ? "获取中..." : "获取全部可用模型"}
+        </Button>
+      </div>
+      {current?.provider === "gemini" && splitModels(current.model).length > 1 && (
+        <p className="text-xs text-muted-foreground">Gemini 额度用完或过载时，会依次换用你勾选的其他模型：{splitModels(current.model).slice(1).join("、")}。</p>
+      )}
+    </div>
   );
 }
 

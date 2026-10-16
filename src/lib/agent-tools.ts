@@ -2,8 +2,11 @@ import { db } from "@/lib/db";
 import { getResumeContext } from "@/lib/resume-context";
 import { getSearchKey, generateGroundedText } from "@/lib/ai-file-search";
 import { UserFacingError } from "@/lib/action-result";
-import type { AgentDecision, ToolResult } from "@/lib/agent-loop";
 import { findJobs } from "@/lib/career-ops";
+
+/** One lookup for 小欧's tools (src/lib/agent/tools.ts), by name. */
+export type AgentDecision = { tool: "search_records" | "resume_context" | "research_web" | "find_jobs" | "prepare_application"; query: string; targetId: string };
+export type ToolResult = { data: string; summary: string; href?: string };
 
 function safeWebUrl(raw: string | null): string | undefined {
   const candidate = raw?.trim();
@@ -62,7 +65,6 @@ export async function executeAgentTool(userId: string, decision: AgentDecision):
         searched: found.searched,
         note: "这些是公司招聘官网上实时的在招岗位（已去掉用户候选池和投递记录里已有的）。推荐时给出公司、岗位、地点和链接；用户想要的用 add_position 加入候选池，url 填岗位链接，note 写地点和一句理由。官网上社招、校招、实习可能混在一起，注意看岗位名和要求里的工作年限。",
       }),
-      brief: `找到 ${found.total} 个还没记过的岗位（列出前 ${found.jobs.length} 个，已交给回答环节）：${found.jobs.slice(0, 10).map((job) => `${job.company}·${job.title}`).join("；")}`,
       summary: `查了 ${found.searched.length} 家公司的招聘官网，找到 ${found.total} 个还没记过的相关岗位${found.total > found.jobs.length ? `，先挑出最相关的 ${found.jobs.length} 个` : ""}${failed.length ? `；${failed.map((board) => `${board.name}${board.error ? `（${board.error}）` : ""}`).join("、")}没查到` : ""}。`,
     };
   }

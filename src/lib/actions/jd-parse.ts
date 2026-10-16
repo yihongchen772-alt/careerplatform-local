@@ -1,6 +1,6 @@
 "use server";
 
-import { fetchJobPage } from "@/lib/fetch-job-page";
+import { fetchJobPage, htmlToText } from "@/lib/fetch-job-page";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
@@ -35,25 +35,6 @@ const jdSchema = z.object({
 });
 
 export type ParsedJd = z.infer<typeof jdSchema>;
-
-// Job pages are often hundreds of KB where most bytes are inline scripts and
-// styles. Truncating raw HTML would keep the <head> and drop the actual posting,
-// so strip to visible text first, then cap length.
-function htmlToText(html: string): string {
-  return html
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
-    .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, " ")
-    .replace(/<!--[\s\S]*?-->/g, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/\s+/g, " ")
-    .trim();
-}
 
 async function fetchPageText(url: string): Promise<string> {
   let html: string;

@@ -159,7 +159,7 @@ export async function callOpenAiCompatible(
       }),
     });
   } catch {
-    throw new UserFacingError("AI 请求超时，请稍后重试");
+    throw new UserFacingError(`${provider} · ${effectiveModel} 没有响应（超时或网络不通），请稍后重试`);
   } finally {
     clearTimeout(timeout);
   }
@@ -168,12 +168,12 @@ export async function callOpenAiCompatible(
     const detail = await response.text().catch(() => "");
     console.error(`[${provider}] ${response.status}`, detail.slice(0, 500));
     if (response.status === 401 || response.status === 403) {
-      throw new UserFacingError("API Key 无效，请检查账号设置里的 AI 配置");
+      throw new UserFacingError(`${provider} · ${effectiveModel}：API Key 无效，请检查账号设置里的 AI 配置`);
     }
     if (response.status === 429) {
-      throw new UserFacingError("API 调用超限，请稍后重试");
+      throw new UserFacingError(`${provider} · ${effectiveModel}：API 调用超限（额度或频率），请稍后重试，或在设置里换一个模型`);
     }
-    throw new UserFacingError("AI 服务暂时不可用，请稍后重试");
+    throw new UserFacingError(`${provider} · ${effectiveModel} 调用失败（${response.status}）：服务暂时不可用，请稍后重试，或在设置里换一个模型`);
   }
 
   const data = await response.json();
@@ -217,7 +217,7 @@ async function callAnthropic(
       }),
     });
   } catch {
-    throw new UserFacingError("AI 请求超时，请稍后重试");
+    throw new UserFacingError(`Claude · ${model} 没有响应（超时或网络不通），请稍后重试`);
   } finally {
     clearTimeout(timeout);
   }
@@ -226,12 +226,12 @@ async function callAnthropic(
     const detail = await response.text().catch(() => "");
     console.error(`[anthropic] ${response.status}`, detail.slice(0, 500));
     if (response.status === 401) {
-      throw new UserFacingError("API Key 无效，请检查账号设置里的 AI 配置");
+      throw new UserFacingError(`Claude · ${model}：API Key 无效，请检查账号设置里的 AI 配置`);
     }
     if (response.status === 429) {
-      throw new UserFacingError("API 调用超限，请稍后重试");
+      throw new UserFacingError(`Claude · ${model}：API 调用超限（额度或频率），请稍后重试，或在设置里换一个模型`);
     }
-    throw new UserFacingError("AI 服务暂时不可用，请稍后重试");
+    throw new UserFacingError(`Claude · ${model} 调用失败（${response.status}）：服务暂时不可用，请稍后重试，或在设置里换一个模型`);
   }
 
   const data = await response.json();

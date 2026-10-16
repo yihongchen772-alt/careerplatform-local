@@ -16,48 +16,152 @@ function loadTs(relative, mocks = {}) {
   mod._compile(compiled, filename);
   return mod.exports;
 }
-const { runAgentLoop } = loadTs("src/lib/agent-loop.ts");
+class UserFacingError extends Error {}
+const actionResult = { UserFacingError };
+const { runAgent } = loadTs("src/lib/agent/run.ts", { "@/lib/action-result": actionResult });
 const decision = (tool, query = "", targetId = "") => ({ tool, query, targetId });
+const call = (name, args = {}, id = name) => ({ id, name, args });
+const turn = (text, calls = []) => ({ text, calls, raw: { text, calls } });
+const describe = (c) => `做 ${c.name}`;
 
-test("uses observations to choose the next tool, then finishes", async () => {
-  let turn = 0;
-  const result = await runAgentLoop({
-    decide: async (observations) => {
-      if (turn++ === 0) return decision("search_records", "腾讯");
-      assert.match(observations, /position-123/);
-      return decision("finish");
+test("agent loop: tool results go back to the model until it answers", async () => {
+  const seen = [];
+  let round = 0;
+  const events = [];
+  const result = await runAgent({
+    chat: async (request) => {
+      seen.push(request.messages.map((m) => m.role).join(","));
+      if (round++ === 0) return turn("先查一下", [call("search_records", { query: "腾讯" })]);
+      const toolTurn = request.messages.at(-1);
+      assert.equal(toolTurn.role, "tool");
+      assert.match(toolTurn.results[0].content, /position-123/);
+      return turn("腾讯那条在一面");
     },
-    execute: async () => ({ data: "position-123", summary: "找到 1 条" }),
+    request: { config: {}, system: "s", messages: [{ role: "user", text: "腾讯怎么样" }], tools: [{ name: "search_records" }] },
+    execute: async () => ({ content: "position-123", label: "查记录：腾讯", summary: "找到 1 条" }),
+    describe,
+    emit: (event) => events.push(event),
   });
-  assert.equal(result.steps.length, 1);
-  assert.equal(result.steps[0].status, "success");
+  assert.equal(result.reply, "腾讯那条在一面");
+  assert.deepEqual(seen, ["user", "user,assistant,tool"]);
+  assert.deepEqual(result.steps.map((step) => [step.label, step.status]), [["查记录：腾讯", "success"]]);
+  assert.deepEqual(events.map((event) => event.type === "step" ? event.step.status : event.type), ["note", "running", "success"]);
 });
-test("unknown and mutation tools never execute", async () => {
-  let executions = 0;
-  const result = await runAgentLoop({ decide: async () => decision("delete_application"), execute: async () => { executions++; } });
-  assert.equal(executions, 0);
+test("agent loop: a failed tool is reported to the model as a failure, not as no results", async () => {
+  let round = 0;
+  const result = await runAgent({
+    chat: async (request) => round++ === 0 ? turn("", [call("research_web", { question: "x" })]) : (assert.match(request.messages.at(-1).results[0].content, /执行失败：未配置搜索 Key/), turn("没查到")),
+    request: { config: {}, system: "", messages: [{ role: "user", text: "q" }], tools: [{}] },
+    execute: async () => { throw new UserFacingError("未配置搜索 Key"); },
+    describe, emit: () => {},
+  });
   assert.equal(result.steps[0].status, "error");
 });
-test("identical calls do not execute twice", async () => {
-  let executions = 0;
-  const result = await runAgentLoop({ decide: async () => decision("search_records", "百度"), execute: async () => { executions++; return { data: "[]", summary: "没有结果" }; } });
+test("agent loop: an identical call is answered from the first result, not run twice", async () => {
+  let executions = 0, round = 0;
+  await runAgent({
+    chat: async () => round++ < 2 ? turn("", [call("search_records", { query: "百度" }, `c${round}`)]) : turn("好"),
+    request: { config: {}, system: "", messages: [{ role: "user", text: "q" }], tools: [{}] },
+    execute: async () => { executions++; return { content: "[]", label: "l", summary: "s" }; },
+    describe, emit: () => {},
+  });
   assert.equal(executions, 1);
-  assert.match(result.observations, /重复/);
 });
-test("tool failures are observations, not fabricated successes", async () => {
-  let turn = 0;
-  const result = await runAgentLoop({ decide: async (observations) => {
-    if (turn++ === 0) return decision("research_web", "岗位");
-    assert.match(observations, /未配置搜索 Key/);
-    return decision("finish");
-  }, execute: async () => { throw new Error("未配置搜索 Key"); } });
-  assert.equal(result.steps[0].status, "error");
+test("agent loop: after the round budget the model must answer without tools", async () => {
+  let toolless = null;
+  const result = await runAgent({
+    maxRounds: 100,
+    chat: async (request) => { if (!request.tools.length) { toolless = request.messages.at(-1).text; return turn("就这些"); } return turn("", [call("search_records", { query: String(Math.random()) })]); },
+    request: { config: {}, system: "", messages: [{ role: "user", text: "q" }], tools: [{}] },
+    execute: async () => ({ content: "[]", label: "l", summary: "s" }),
+    describe, emit: () => {},
+  });
+  assert.equal(result.steps.length, 12);
+  assert.match(toolless, /步数用完/);
+  assert.equal(result.reply, "就这些");
 });
-test("hard budget remains four tool calls even if a larger limit is passed", async () => {
-  let turn = 0;
-  const result = await runAgentLoop({ maxSteps: 100, decide: async () => decision("search_records", String(turn++)), execute: async () => ({ data: "[]", summary: "完成" }) });
-  assert.equal(result.steps.length, 4);
-  assert.match(result.observations, /预算已用完/);
+
+// Each provider's native tool-calling format, against a recorded-shape fake API.
+function llmWith(fetchImpl) {
+  const original = global.fetch;
+  global.fetch = fetchImpl;
+  const mod = loadTs("src/lib/agent/llm.ts", { "@/lib/ai-providers": { OPENAI_COMPATIBLE_BASE_URL: { deepseek: "https://api.deepseek.com/v1" } }, "@/lib/action-result": actionResult, "@/lib/ai-provider-labels": { AI_PROVIDER_OPTIONS: [{ id: "gemini", label: "Google Gemini" }, { id: "deepseek", label: "DeepSeek" }] } });
+  return { mod, restore: () => { global.fetch = original; } };
+}
+const okJson = (body) => ({ ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) });
+const toolSpec = { name: "get_position", description: "d", parameters: { type: "object", properties: { positionId: { type: "string", description: "id" } }, required: ["positionId"] } };
+
+test("Gemini: tools as functionDeclarations, the thought signature goes back unchanged, 429 falls to the next model and stays there", async () => {
+  const bodies = [];
+  const urls = [];
+  const { mod, restore } = llmWith(async (url, init) => {
+    urls.push(url);
+    bodies.push(JSON.parse(init.body));
+    if (urls.length === 1) return { ok: false, status: 429, text: async () => "quota" };
+    if (urls.length === 2) return okJson({ candidates: [{ content: { parts: [{ functionCall: { name: "get_position", args: { positionId: "p1" } }, thoughtSignature: "SIG" }] } }] });
+    return okJson({ candidates: [{ content: { parts: [{ text: "想法", thought: true }, { text: "结论" }] } }] });
+  });
+  try {
+    const chat = mod.createChat();
+    const config = { provider: "gemini", apiKey: "k", model: "m-lite, m-flash" };
+    const first = await chat({ config, system: "sys", messages: [{ role: "user", text: "hi" }], tools: [toolSpec] });
+    assert.deepEqual(first.calls.map((c) => [c.name, c.args]), [["get_position", { positionId: "p1" }]]);
+    assert.equal(bodies[1].tools[0].functionDeclarations[0].parameters.type, "OBJECT");
+    assert.equal(bodies[1].tools[0].functionDeclarations[0].parameters.properties.positionId.type, "STRING");
+    assert.equal(bodies[1].systemInstruction.parts[0].text, "sys");
+    const second = await chat({ config, system: "sys", messages: [{ role: "user", text: "hi" }, { role: "assistant", text: "", calls: first.calls, raw: first.raw }, { role: "tool", results: [{ call: first.calls[0], content: "JD" }] }], tools: [toolSpec] });
+    assert.equal(second.text, "结论");
+    assert.match(urls[2], /m-flash/);
+    assert.equal(bodies[2].contents[1].role, "model");
+    assert.equal(bodies[2].contents[1].parts[0].thoughtSignature, "SIG");
+    assert.deepEqual(bodies[2].contents[2].parts[0].functionResponse, { name: "get_position", response: { content: "JD" } });
+  } finally { restore(); }
+});
+test("OpenAI-compatible: tool_calls and role tool messages; reasoning_content is sent back", async () => {
+  const bodies = [];
+  const { mod, restore } = llmWith(async (url, init) => {
+    bodies.push(JSON.parse(init.body));
+    assert.equal(url, "https://api.deepseek.com/v1/chat/completions");
+    return bodies.length === 1
+      ? okJson({ choices: [{ message: { role: "assistant", content: null, reasoning_content: "R", tool_calls: [{ id: "call_1", type: "function", function: { name: "get_position", arguments: "{\"positionId\":\"p1\"}" } }] } }] })
+      : okJson({ choices: [{ message: { role: "assistant", content: "好的" } }] });
+  });
+  try {
+    const chat = mod.createChat();
+    const config = { provider: "deepseek", apiKey: "k", model: "deepseek-chat" };
+    const first = await chat({ config, system: "sys", messages: [{ role: "user", text: "hi" }], tools: [toolSpec] });
+    assert.deepEqual(first.calls, [{ id: "call_1", name: "get_position", args: { positionId: "p1" } }]);
+    assert.equal(bodies[0].tools[0].function.parameters.type, "object");
+    await chat({ config, system: "sys", messages: [{ role: "user", text: "hi" }, { role: "assistant", text: "", calls: first.calls, raw: first.raw }, { role: "tool", results: [{ call: first.calls[0], content: "JD" }] }], tools: [toolSpec] });
+    assert.deepEqual(bodies[1].messages.map((m) => m.role), ["system", "user", "assistant", "tool"]);
+    assert.equal(bodies[1].messages[2].reasoning_content, "R");
+    assert.deepEqual(bodies[1].messages[3], { role: "tool", tool_call_id: "call_1", content: "JD" });
+  } finally { restore(); }
+});
+test("Anthropic: tool_use blocks come back as tool_result blocks", async () => {
+  const bodies = [];
+  const { mod, restore } = llmWith(async (url, init) => {
+    bodies.push(JSON.parse(init.body));
+    return bodies.length === 1 ? okJson({ content: [{ type: "text", text: "我看看" }, { type: "tool_use", id: "tu_1", name: "get_position", input: { positionId: "p1" } }] }) : okJson({ content: [{ type: "text", text: "结论" }] });
+  });
+  try {
+    const chat = mod.createChat();
+    const config = { provider: "anthropic", apiKey: "k", model: "claude-sonnet-4-6" };
+    const first = await chat({ config, system: "sys", messages: [{ role: "user", text: "hi" }], tools: [toolSpec] });
+    assert.equal(first.text, "我看看");
+    assert.equal(bodies[0].tools[0].input_schema.type, "object");
+    await chat({ config, system: "sys", messages: [{ role: "user", text: "hi" }, { role: "assistant", text: first.text, calls: first.calls, raw: first.raw }, { role: "tool", results: [{ call: first.calls[0], content: "JD" }] }], tools: [toolSpec] });
+    assert.deepEqual(bodies[1].messages[2].content, [{ type: "tool_result", tool_use_id: "tu_1", content: "JD" }]);
+    assert.equal(bodies[1].system, "sys");
+  } finally { restore(); }
+});
+test("history becomes alternating turns that end on a reply", () => {
+  const { mod, restore } = llmWith(async () => okJson({}));
+  try {
+    const messages = mod.historyMessages("anthropic", [{ role: "assistant", content: "欢迎" }, { role: "user", content: "a" }, { role: "user", content: "b" }, { role: "assistant", content: "c" }, { role: "user", content: "未答" }]);
+    assert.deepEqual(messages.map((m) => [m.role, m.text]), [["user", "a\nb"], ["assistant", "c"]]);
+    assert.deepEqual(messages[1].raw, [{ type: "text", text: "c" }]);
+  } finally { restore(); }
 });
 
 function toolWithDb(db, extras = {}) {
@@ -121,17 +225,94 @@ test("find_jobs passes the query and the applicant's cities, and reports boards 
   assert.match(result.data, /jobs\.bytedance\.com/);
   await assert.rejects(execute("owner", decision("find_jobs", " ")), /要找什么岗位/);
 });
-test("the planner sees a short brief; a planner failure after a found result is not a red step", async () => {
-  let turn = 0;
-  const result = await runAgentLoop({
-    decide: async (observations) => {
-      if (turn++ === 0) return decision("find_jobs", "产品经理");
-      assert.match(observations, /找到 200 个/);
-      assert.doesNotMatch(observations, /full-job-list/);
-      throw new Error("timeout");
-    },
-    execute: async () => ({ data: "full-job-list ".repeat(500), brief: "找到 200 个", summary: "找到 200 个岗位" }),
+
+function agentTools(db) {
+  return loadTs("src/lib/agent/tools.ts", {
+    "next/cache": { revalidatePath: () => {} },
+    "@/lib/db": { db },
+    "@/lib/action-result": actionResult,
+    "@/lib/agent-tools": { executeAgentTool: async () => ({ data: "{}", summary: "ok" }) },
+    "@/lib/fetch-job-page": { fetchJobPage: async () => "<p>x</p>", htmlToText: (html) => html },
+    "@/lib/stage-labels": { STAGE_LABELS: { APPLIED: "已投递" } },
+    "@/lib/validation": { applicationStageValues: ["APPLIED"] },
+    "@/lib/assistant-shared": loadTs("src/lib/assistant-shared.ts"),
   });
-  assert.deepEqual(result.steps.map((step) => step.status), ["success"]);
-  assert.match(result.observations, /full-job-list/);
+}
+test("tools: proposals are validated (empty strings dropped), never applied, and the model is told they are not done", async () => {
+  const tools = agentTools({});
+  const proposed = [];
+  const outcome = await tools.executeTool("owner", call("propose_actions", { actions: [
+    { type: "add_task", label: "加待办：准备腾讯二面", title: "准备腾讯二面", date: "2026-10-20", targetId: "", note: "" },
+    { type: "drop_database", label: "x" },
+  ] }), proposed);
+  assert.equal(proposed.length, 1);
+  assert.equal(proposed[0].targetId, undefined);
+  assert.match(outcome.content, /1 个格式不对/);
+  assert.match(outcome.content, /不能说已经办好/);
+});
+test("tools: records are read only for the current user; memory is capped", async () => {
+  let where = null;
+  const tools = agentTools({
+    application: { findFirst: async (args) => { where = args.where; return null; } },
+    agentMemory: { count: async () => 60, create: async () => assert.fail("over the cap") },
+  });
+  await assert.rejects(tools.executeTool("owner", call("get_application", { applicationId: "someone-else" }), []), /没找到这条投递/);
+  assert.deepEqual(where, { id: "someone-else", userId: "owner" });
+  await assert.rejects(tools.executeTool("owner", call("remember", { content: "不考虑外包" }), []), /记忆已满/);
+  await assert.rejects(tools.executeTool("owner", call("delete_everything", {}), []), /没有「delete_everything」这个工具/);
+});
+test("Gemini: an overloaded model is retried, then the next model gets a placeholder signature for the earlier call", async () => {
+  const bodies = [];
+  const { mod, restore } = llmWith(async (url, init) => {
+    bodies.push({ url, body: JSON.parse(init.body) });
+    if (bodies.length === 1) return okJson({ candidates: [{ content: { parts: [{ functionCall: { name: "get_position", args: {} }, thoughtSignature: "SIG-A" }] } }] });
+    if (/m-a:/.test(url)) return { ok: false, status: 503, text: async () => "overloaded", body: null };
+    return okJson({ candidates: [{ content: { parts: [{ text: "好" }] } }] });
+  });
+  const realTimeout = global.setTimeout;
+  global.setTimeout = (fn) => realTimeout(fn, 0);
+  try {
+    const chat = mod.createChat();
+    const config = { provider: "gemini", apiKey: "k", model: "m-a, m-b" };
+    const first = await chat({ config, system: "", messages: [{ role: "user", text: "hi" }], tools: [toolSpec] });
+    const second = await chat({ config, system: "", messages: [{ role: "user", text: "hi" }, { role: "assistant", text: "", calls: first.calls, raw: first.raw }, { role: "tool", results: [{ call: first.calls[0], content: "x" }] }], tools: [toolSpec] });
+    assert.equal(second.text, "好");
+    assert.equal(bodies.filter((b) => /m-a:/.test(b.url)).length, 4);
+    const last = bodies.at(-1);
+    assert.match(last.url, /m-b:/);
+    assert.equal(last.body.contents[1].parts[0].thoughtSignature, "skip_thought_signature_validator");
+  } finally { global.setTimeout = realTimeout; restore(); }
+});
+test("Gemini: speech and image models in the configured list are not used for chat", () => {
+  const { mod, restore } = llmWith(async () => okJson({}));
+  try {
+    assert.deepEqual(mod.geminiModels("gemini-3.5-flash-lite, gemini-3.8-flash-lite-tts, gemini-3-pro-image, gemini-3.8-flash"), ["gemini-3.5-flash-lite", "gemini-3.8-flash"]);
+  } finally { restore(); }
+});
+test("agent loop: a reply that fails review goes back to the model once", async () => {
+  let round = 0, reviews = 0;
+  const result = await runAgent({
+    chat: async (request) => {
+      round++;
+      if (round === 1) return turn("点下面的按钮加入候选池");
+      if (round === 2) { assert.match(request.messages.at(-1).text, /还没有调用 propose_actions/); return turn("", [call("propose_actions", { actions: [] })]); }
+      return turn("点下面的按钮加入候选池");
+    },
+    request: { config: {}, system: "", messages: [{ role: "user", text: "q" }], tools: [{}] },
+    execute: async () => ({ content: "ok", label: "提出 1 个操作", summary: "" }),
+    describe, emit: () => {},
+    review: () => { reviews++; return "你在回答里提到了按钮，但还没有调用 propose_actions"; },
+  });
+  assert.equal(reviews, 1);
+  assert.equal(round, 3);
+  assert.equal(result.reply, "点下面的按钮加入候选池");
+});
+test("errors name the provider and model, and a fall-over is reported", async () => {
+  const notices = [];
+  const { mod, restore } = llmWith(async (url) => /m-a:/.test(url) ? { ok: false, status: 429, text: async () => "" } : { ok: false, status: 401, text: async () => "" });
+  try {
+    const chat = mod.createChat((text) => notices.push(text));
+    await assert.rejects(chat({ config: { provider: "gemini", apiKey: "k", model: "m-a, m-b" }, system: "", messages: [{ role: "user", text: "hi" }], tools: [] }), /Google Gemini · m-b 调用失败（401）：Key 无效/);
+    assert.deepEqual(notices, ["m-a 额度用完了，改用 m-b 继续"]);
+  } finally { restore(); }
 });

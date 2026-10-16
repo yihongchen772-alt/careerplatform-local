@@ -26,3 +26,22 @@ export async function fetchJobPage(raw: string): Promise<string> {
   }
   throw new UserFacingError("页面跳转太多，请直接粘贴 JD 正文");
 }
+
+// Job pages are often hundreds of KB where most bytes are inline scripts and
+// styles. Truncating raw HTML would keep the <head> and drop the actual posting,
+// so strip to visible text first, then cap length.
+export function htmlToText(html: string): string {
+  return html
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/\s+/g, " ")
+    .trim();
+}
