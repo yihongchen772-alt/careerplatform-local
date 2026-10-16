@@ -330,7 +330,8 @@ test("isolated DB: batch stage change and its undo; to-dos and ICS list a step o
   const todos = buildTodos(apps, [], histories, [], [], events);
   const steps = todos.filter((todo) => todo.id.startsWith("next-") || todo.id.startsWith("event-"));
   assert.equal(steps.length, 1);
-  assert.match(steps[0].sublabel, /^今天 \d{2}:\d{2} · 还有 (2|3) 小时/);
+  // Three hours ahead is 明天 after 21:00.
+  assert.match(steps[0].sublabel, /^(?:今天|明天) \d{2}:\d{2} · 还有 (2|3) 小时/);
 
   const route = load("src/app/api/calendar-export/route.ts", mocks);
   await db.stageHistory.update({ where: { id: (await db.stageHistory.findFirst({ where: { applicationId: "one", stage: "OA" } })).id }, data: { nextDeadline: new Date("2027-01-05T00:00:00.000Z"), nextDeadlineEnd: new Date("2027-01-07T00:00:00.000Z") } });

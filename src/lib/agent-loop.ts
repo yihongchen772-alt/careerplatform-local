@@ -13,7 +13,8 @@ export type AgentStep = {
   summary: string;
   href?: string;
 };
-export type ToolResult = { data: string; summary: string; href?: string };
+/** `brief`: a short digest for choosing the next step; `data` goes to the answer. */
+export type ToolResult = { data: string; summary: string; href?: string; brief?: string };
 const labels: Record<AgentDecision["tool"], string> = {
   search_records: "查询求职记录",
   resume_context: "读取简历摘要",
@@ -31,14 +32,19 @@ export async function runAgentLoop({ decide, execute, maxSteps = 4 }: {
 }) {
   const steps: AgentStep[] = [];
   const observations: string[] = [];
+  // The planner only needs to know what came back, not every row of it: a
+  // full 30-job list made its prompt so long that choosing the next step failed.
+  const briefs: string[] = [];
   const seen = new Set<string>();
   for (let i = 0; i < Math.min(Math.max(maxSteps, 0), 4); i++) {
     let decision: AgentDecision;
     try {
-      decision = agentDecisionSchema.parse(await decide(observations.join("\n\n")));
+      decision = agentDecisionSchema.parse(await decide(briefs.join("\n\n")));
     } catch {
-      steps.push({ tool: "planner", label: "选择下一步", status: "error", summary: "工具规划失败，将根据已获取的数据回答。" });
-      observations.push("工具规划失败；不得声称尚未执行的查询或研究已完成。");
+      // After a tool already returned, answering from it is the normal end,
+      // not a failure worth a red step.
+      if (!steps.some((step) => step.status === "success")) steps.push({ tool: "planner", label: "选择下一步", status: "error", summary: "没能决定要查什么，先根据现有记录回答。" });
+      observations.push("工具规划没有继续；不得声称尚未执行的查询或研究已完成。");
       break;
     }
     if (decision.tool === "finish") break;
@@ -52,10 +58,12 @@ export async function runAgentLoop({ decide, execute, maxSteps = 4 }: {
       const result = await execute(decision);
       steps.push({ tool: decision.tool, label: labels[decision.tool], status: "success", summary: result.summary, href: result.href });
       observations.push(`${labels[decision.tool]} ${JSON.stringify(decision)}\n${result.data.slice(0, 14000)}`);
+      briefs.push(`${labels[decision.tool]} ${JSON.stringify(decision)}\n${(result.brief ?? result.data).slice(0, 3000)}`);
     } catch (error) {
       const summary = error instanceof Error ? error.message.slice(0, 300) : "工具执行失败";
       steps.push({ tool: decision.tool, label: labels[decision.tool], status: "error", summary });
       observations.push(`${labels[decision.tool]}执行失败：${summary}。不能把失败当作查询无结果。`);
+      briefs.push(observations[observations.length - 1]);
     }
   }
   if (steps.length >= Math.min(maxSteps, 4)) observations.push("本轮工具预算已用完；如仍有未完成步骤，须明确说明。");

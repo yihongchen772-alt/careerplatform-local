@@ -121,3 +121,17 @@ test("find_jobs passes the query and the applicant's cities, and reports boards 
   assert.match(result.data, /jobs\.bytedance\.com/);
   await assert.rejects(execute("owner", decision("find_jobs", " ")), /要找什么岗位/);
 });
+test("the planner sees a short brief; a planner failure after a found result is not a red step", async () => {
+  let turn = 0;
+  const result = await runAgentLoop({
+    decide: async (observations) => {
+      if (turn++ === 0) return decision("find_jobs", "产品经理");
+      assert.match(observations, /找到 200 个/);
+      assert.doesNotMatch(observations, /full-job-list/);
+      throw new Error("timeout");
+    },
+    execute: async () => ({ data: "full-job-list ".repeat(500), brief: "找到 200 个", summary: "找到 200 个岗位" }),
+  });
+  assert.deepEqual(result.steps.map((step) => step.status), ["success"]);
+  assert.match(result.observations, /full-job-list/);
+});
