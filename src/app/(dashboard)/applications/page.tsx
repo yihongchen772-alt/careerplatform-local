@@ -64,31 +64,24 @@ export default async function ApplicationsPage() {
 
   return (
     <div className="mx-auto max-w-[110rem] space-y-7">
-      <div className="relative overflow-hidden rounded-[1.8rem] border border-border/65 bg-card/75 px-5 py-6 shadow-[0_18px_55px_-42px_rgba(0,0,0,0.45)] backdrop-blur-xl sm:px-7 sm:py-8">
-        <div aria-hidden="true" className="pointer-events-none absolute -right-16 -top-28 size-72 rounded-full bg-primary/10 blur-3xl" />
-        <div className="relative flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="mb-3 flex items-center gap-2 text-[11px] font-semibold tracking-[0.2em] text-primary uppercase">
-              <span className="size-1.5 rounded-full bg-primary shadow-[0_0_12px_var(--primary)]" />
-              APPLICATION SPACE
-            </p>
-            <h1 className="text-3xl font-semibold tracking-[-0.045em] sm:text-4xl">投递记录</h1>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">从发出申请到收到 Offer，把每一次进展收在同一个清晰的工作台。</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="font-semibold">投递记录</h1>
+          <p className="mt-1 text-sm text-muted-foreground">从发出申请到收到 Offer，每一次进展都在这里。</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
           <PortalSyncButton configuredCount={portals.length} />
           <AddApplicationDialog
             resumeVersions={resumeVersions}
             defaultResumeVersionId={defaultResumeVersionId}
           />
-          </div>
         </div>
-      </div>
+      </header>
 
-      {portals.length > 0 && <section className="rounded-[1.35rem] border border-border/65 bg-card/65 p-4 text-xs shadow-sm sm:p-5" aria-label="官网进度同步状态">
+      {portals.length > 0 && <section className="surface-card rounded-xl p-4 text-xs sm:p-5" aria-label="官网进度同步状态">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div><h2 className="text-sm font-semibold">官网进度同步</h2><p className="mt-1 text-muted-foreground">{autoSyncEnabled ? `自动检查：每 ${settings.applicationSyncIntervalHours} 小时（设置变更 1 秒内生效）` : "自动检查未开启，可点上方按钮手动同步"}</p></div>
-          <Link href="/settings" className="font-medium text-primary hover:underline">同步设置</Link>
+          <Link href="/settings?tab=mail" className="font-medium text-primary hover:underline">同步设置</Link>
         </div>
         {unassigned.length > 0 && <p className="mt-3 rounded-xl border border-amber-500/25 bg-amber-500/5 p-2.5 text-amber-700 dark:text-amber-300">{unassigned.length} 条投递尚未指定进度页，不会自动同步：{unassigned.slice(0, 3).map((app, index) => <span key={app.id}>{index > 0 ? "、" : ""}<Link href={`/applications/${app.id}`} className="underline underline-offset-2">{app.company.name} · {app.title}</Link></span>)}{unassigned.length > 3 ? "等" : ""}</p>}
         <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{portals.map((portal) => <div key={portal.id} className="rounded-xl border border-border/55 bg-background/45 px-3 py-2.5">

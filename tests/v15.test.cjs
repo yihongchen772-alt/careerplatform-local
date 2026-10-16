@@ -217,3 +217,15 @@ test("any module taken one entry at a time: an entry already saved above is not 
   assert.equal(core.repeatsSavedEntry(saved, [{ label: "等级", value: "CET-6 560" }]), true);
   assert.equal(core.repeatsSavedEntry(saved, [{ label: "是否党员", value: "否" }]), false);
 });
+
+test("待核对: fragments of an 经历 block, counters, placeholders and login pages are noise", () => {
+  const pending = load("src/lib/pending-application-change.ts", noDb);
+  const noise = (questionLabel, answer, kind = "short", url = "https://campus.example.com/apply") => pending.isNoiseAnswer({ questionLabel, answer, kind }, url);
+  for (const label of ["职位名称", "工作职责", "担任职务", "所在组织", "掌握程度", "单位名称", "第 1志愿"]) assert.equal(noise(label, "某值", label === "工作职责" ? "essay" : "short"), true, label);
+  assert.equal(noise("113/2000", "一段话"), true);
+  assert.equal(noise("点击选择其他", "x"), true);
+  assert.equal(noise("请输入职位名称", "x"), true);
+  assert.equal(noise("昵称", "小陈", "short", "https://q.example.com/login"), true);
+  assert.equal(noise("本科学习成绩排名", "前 10%"), false);
+  assert.equal(noise("（简答题）用过哪些 AI 工具？举一个例子", "……", "essay"), false);
+});

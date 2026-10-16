@@ -336,7 +336,7 @@ export function AssistantWidget() {
                   把求职的事交给我：我会自己查你的记录、读 JD 和简历、上官网找岗位、联网研究，然后给你明确的建议和计划。
                   要改记录时我会给出按钮，你点了才保存；我不会替你发邮件或提交网申。
                 </p>
-                <Link href="/settings" className="inline-block text-xs text-primary underline">配置 AI 服务商和 API Key</Link>
+                <Link href="/settings?tab=ai" className="inline-block text-xs text-primary underline">配置 AI 服务商和 API Key</Link>
                 {SUGGESTIONS.map((s) => (
                   <button key={s} type="button" onClick={() => handleSend(s)} className="block w-full rounded-md border px-3 py-2 text-left text-sm hover:bg-muted">{s}</button>
                 ))}
@@ -349,7 +349,7 @@ export function AssistantWidget() {
                     {m.failedRequest && (
                       <div className="mt-1.5 flex flex-wrap gap-2">
                         <Button size="sm" variant="outline" disabled={sending || !!applying} onClick={() => retryMessage(m)}>重新发送</Button>
-                        <Link href="/settings" onClick={() => setOpen(false)} className="inline-flex h-8 items-center rounded-md px-2 text-xs text-primary underline">去设置换模型</Link>
+                        <Link href="/settings?tab=ai" onClick={() => setOpen(false)} className="inline-flex h-8 items-center rounded-md px-2 text-xs text-primary underline">去设置换模型</Link>
                       </div>
                     )}
                   </div>

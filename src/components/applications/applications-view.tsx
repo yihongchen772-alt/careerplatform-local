@@ -153,7 +153,7 @@ export function ApplicationsView({ applications, now: serverNow }: { application
               title={metric.filter === "all" ? "显示全部投递" : active ? "再点一次显示全部" : `只看${FILTER_LABELS[metric.filter]}的投递`}
               onClick={() => chooseFilter(metric.filter)}
               className={cn(
-                "group relative overflow-hidden rounded-[1.35rem] border bg-card/75 p-4 text-left shadow-[0_10px_30px_-24px_rgba(0,0,0,0.4)] backdrop-blur-xl transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_14px_34px_-22px_rgba(0,0,0,0.45)] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40 sm:p-5",
+                "surface-card group relative overflow-hidden rounded-xl p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_14px_34px_-22px_rgba(0,0,0,0.45)] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40 sm:p-5",
                 active ? "border-primary/50 ring-2 ring-primary/25" : "border-border/70"
               )}
             >
@@ -278,7 +278,7 @@ export function ApplicationsView({ applications, now: serverNow }: { application
       )}
 
       {narrowed && shown.length === 0 ? (
-        <div className="flex min-h-56 flex-col items-center justify-center rounded-[1.6rem] border border-dashed border-border/80 bg-card/55 px-6 py-10 text-center" role="status">
+        <div className="flex min-h-56 flex-col items-center justify-center rounded-xl border border-dashed border-border/80 bg-card/55 px-6 py-10 text-center" role="status">
           {term ? <SearchX className="size-6 text-muted-foreground" /> : <FilterX className="size-6 text-muted-foreground" />}
           <h3 className="mt-4 text-base font-semibold">
             {term ? `没有找到和「${term}」有关的${filter !== "all" ? `「${FILTER_LABELS[filter]}」` : ""}投递` : `暂时没有「${FILTER_LABELS[filter]}」的投递`}

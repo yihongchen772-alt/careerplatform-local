@@ -111,7 +111,7 @@ export function MockInterviewStartForm({
           <p className="text-sm text-muted-foreground">
             这是多轮对话形式的模拟面试，每一轮都要调用一次 AI，比其他一次性生成的功能耗费多很多。
             请先去{" "}
-            <a href="/settings" className="text-primary underline underline-offset-4">
+            <a href="/settings?tab=ai" className="text-primary underline underline-offset-4">
               账号设置
             </a>{" "}
             配置你自己的 AI API Key 才能用。

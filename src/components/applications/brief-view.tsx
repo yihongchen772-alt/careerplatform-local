@@ -78,7 +78,7 @@ export function BriefView({
 
   return (
     <div className="space-y-4">
-      <header className="rounded-[1.6rem] border border-border/65 bg-card/80 p-5 print:border-0 print:p-0 sm:p-6">
+      <header className="surface-card rounded-xl p-5 print:border-0 print:p-0 sm:p-6">
         <p className="flex items-center gap-2 text-xs font-semibold tracking-[0.2em] text-primary uppercase print:text-black"><NotebookPen className="size-3.5" />面试速览</p>
         <h1 className="mt-2 text-2xl font-semibold tracking-[-0.03em]">{companyName} · {round}</h1>
         <p className="mt-1 text-sm text-muted-foreground">{title}</p>

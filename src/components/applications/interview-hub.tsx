@@ -186,7 +186,7 @@ export function InterviewHub({
   ].filter((tool): tool is NonNullable<typeof tool> => !!tool);
 
   return (
-    <section id="interview" aria-label="面试与准备" className="scroll-mt-20 rounded-[1.6rem] border border-border/65 bg-card/75 p-4 shadow-[0_16px_45px_-38px_rgba(0,0,0,0.55)] backdrop-blur-xl sm:p-5">
+    <section id="interview" aria-label="面试与准备" className="surface-card scroll-mt-20 rounded-xl p-4 sm:p-5">
       <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
         <div>
           <h2 className="flex items-center gap-2 text-base font-semibold tracking-tight"><CalendarClock className="size-4 text-primary" />面试与准备</h2>

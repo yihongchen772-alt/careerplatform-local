@@ -604,7 +604,7 @@ export function EmbeddedBrowser({
       if (pendingTotal !== undefined) setPendingChangeCount(pendingTotal);
       if (draftSaved) setPageDraftStatus({ context: draftContext, message: `${new Date().toLocaleTimeString("zh-CN")} 扫描的网页内容已保存到 App` });
       if (pending > 0) {
-        toast.success(`发现 ${pending} 项可保存内容，已放入账号设置的「待核对变化」`);
+        toast.success(`发现 ${pending} 项可保存内容，已放进「设置 → 网申资料 → 待核对」`);
       } else {
         toast.info(unchanged ? "这些变化已经在待核对列表中" : "没有发现完整的新内容；未修改的 AI 草稿不会进入待核对列表");
       }
@@ -707,7 +707,7 @@ export function EmbeddedBrowser({
             </select>
           </label>
         )}
-        <button type="button" className="text-primary hover:underline" onClick={() => router.push("/settings")}>编辑网申资料 →</button>
+        <button type="button" className="text-primary hover:underline" onClick={() => router.push("/settings?tab=autofill")}>编辑网申资料 →</button>
       </section>
       <section className="space-y-2">
         <div className="flex items-baseline justify-between">
@@ -761,7 +761,7 @@ export function EmbeddedBrowser({
         <p className="leading-relaxed text-muted-foreground">{currentUrl ? pageDraftState : "打开网申页面后，填写内容会自动保存为草稿。"}{autoRemember ? "" : " · 自动发现已关闭，草稿仍自动保存"}</p>
         <div className="flex flex-wrap gap-1.5">
           <Button size="xs" variant="outline" disabled={savingCorrections || busy || !currentUrl} onClick={handleSaveCorrections}><Check />{savingCorrections ? "检测中…" : "核对本页变化"}</Button>
-          <Button size="xs" variant="ghost" onClick={() => router.push("/settings#pending-application-changes")}><NotebookPen />待核对变化{pendingChangeCount ? `（${pendingChangeCount}）` : ""}</Button>
+          <Button size="xs" variant="ghost" onClick={() => router.push("/settings?tab=autofill#pending-application-changes")}><NotebookPen />待核对变化{pendingChangeCount ? `（${pendingChangeCount}）` : ""}</Button>
         </div>
       </section>
     </div>
@@ -813,7 +813,7 @@ export function EmbeddedBrowser({
           )}
 
           {pendingChangeCount > 0 && (
-            <button type="button" onClick={() => router.push("/settings#pending-application-changes")} title="你在网页上手填或修改的内容，确认后才会用于以后填写" className="flex h-7 shrink-0 items-center gap-1 rounded-full bg-amber-500/12 px-2.5 text-xs font-medium text-amber-700 hover:bg-amber-500/20 dark:text-amber-400">
+            <button type="button" onClick={() => router.push("/settings?tab=autofill#pending-application-changes")} title="你在网页上手填或修改的内容，确认后才会用于以后填写" className="flex h-7 shrink-0 items-center gap-1 rounded-full bg-amber-500/12 px-2.5 text-xs font-medium text-amber-700 hover:bg-amber-500/20 dark:text-amber-400">
               <NotebookPen className="size-3.5" />待核对 {pendingChangeCount}
             </button>
           )}
@@ -917,7 +917,7 @@ export function EmbeddedBrowser({
               <DropdownMenuItem disabled={!currentUrl} onClick={handleScreenshot}><Camera />截图存到投递附件…</DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem disabled={savingCorrections || busy || !currentUrl} onClick={handleSaveCorrections}><Check />{savingCorrections ? "检测中…" : "核对本页变化"}</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => router.push("/settings#pending-application-changes")}><NotebookPen />打开待核对变化{pendingChangeCount ? `（${pendingChangeCount}）` : ""}</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => router.push("/settings?tab=autofill#pending-application-changes")}><NotebookPen />打开待核对变化{pendingChangeCount ? `（${pendingChangeCount}）` : ""}</DropdownMenuItem>
               <DropdownMenuItem onClick={() => bridge.clearMarks()}><Eraser />清除填写标记</DropdownMenuItem>
               <DropdownMenuItem
                 disabled={!currentUrl}
@@ -1111,7 +1111,7 @@ export function EmbeddedBrowser({
               onPreview={(extra) => handleAutofill({ mode: "preview", ...extra })}
               onApply={(options) => handleAutofill(options)}
               settings={settingsPanel}
-              onOpenProfile={() => router.push("/settings")}
+              onOpenProfile={() => router.push("/settings?tab=autofill")}
             />
           </div>
         )}

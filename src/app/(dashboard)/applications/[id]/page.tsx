@@ -112,7 +112,7 @@ export default async function ApplicationDetailPage({
 
   return (
     <div className="mx-auto max-w-[96rem] space-y-6">
-      <div className="relative overflow-hidden rounded-[1.8rem] border border-border/65 bg-card/75 p-5 shadow-[0_18px_55px_-42px_rgba(0,0,0,0.45)] backdrop-blur-xl sm:p-7">
+      <div className="surface-card relative overflow-hidden rounded-xl p-5 sm:p-7">
         <div aria-hidden="true" className="pointer-events-none absolute -right-16 -top-28 size-64 rounded-full bg-primary/10 blur-3xl" />
         <div className="relative">
         <ApplicationPager id={application.id} fallbackIds={order.map((row) => row.id)} />
@@ -277,7 +277,7 @@ export default async function ApplicationDetailPage({
 
       {/* Folded until there is an offer to compare — it is noise before that. */}
       {/* The anchor sits inside, so 「Offer」 in the section bar unfolds it. */}
-      <details className="group rounded-[1.5rem] border border-border/65 bg-card/60 open:border-transparent open:bg-transparent" open={offerStage || offerFilled}>
+      <details className="group rounded-xl border border-border/65 bg-card/60 open:border-transparent open:bg-transparent" open={offerStage || offerFilled}>
         <summary className="cursor-pointer list-none px-5 py-4 text-sm font-semibold group-open:hidden">
           Offer 信息（薪资、通勤、加班、成长）<span className="ml-2 text-xs font-normal text-muted-foreground">拿到 Offer 后再填，点开展开</span>
         </summary>

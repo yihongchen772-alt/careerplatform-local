@@ -65,7 +65,7 @@ export function UpcomingSchedule({ items, now: serverNow, applications, days = 7
 
   if (visible.length === 0) {
     return (
-      <section aria-label="接下来的面试和笔试" className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[1.4rem] border border-dashed border-border/80 bg-card/45 px-4 py-3 text-xs text-muted-foreground">
+      <section aria-label="接下来的面试和笔试" className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-dashed border-border/80 bg-card/45 px-4 py-3 text-xs text-muted-foreground">
         <CalendarClock className="size-4 text-primary" />
         <span className="font-medium text-foreground">接下来 {days} 天没有面试或笔试安排</span>
         <span>收到邀请后在投递里点「添加面试时间」，或开启邮件扫描自动写入。</span>
@@ -98,7 +98,7 @@ export function UpcomingSchedule({ items, now: serverNow, applications, days = 7
   }
 
   return (
-    <section aria-label="接下来的面试和笔试" className="rounded-[1.4rem] border border-border/65 bg-card/70 p-4 shadow-[0_10px_30px_-26px_rgba(0,0,0,0.45)] backdrop-blur-xl sm:p-5">
+    <section aria-label="接下来的面试和笔试" className="surface-card rounded-xl p-4 sm:p-5">
       <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
         <div>
           <h2 className="flex items-center gap-2 text-base font-semibold tracking-tight"><CalendarClock className="size-4 text-primary" />接下来</h2>

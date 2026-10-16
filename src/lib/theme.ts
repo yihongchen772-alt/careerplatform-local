@@ -1,8 +1,18 @@
 export type ThemeMode = "light" | "dark" | "system";
 export type ThemePalette = "indigo" | "tech" | "mono" | "titanium" | "aurora" | "champagne";
 
+/** How surfaces look, independent of color: flat and quiet, frosted glass, or the original soft cards. */
+export type ThemeStyle = "minimal" | "glass" | "classic";
+
 export const THEME_MODE_KEY = "careerplatform:theme-mode";
 export const THEME_PALETTE_KEY = "careerplatform:theme-palette";
+export const THEME_STYLE_KEY = "careerplatform:theme-style";
+
+export const STYLES: { id: ThemeStyle; label: string; description: string }[] = [
+  { id: "minimal", label: "简约", description: "平整留白，细线分隔，没有阴影和光晕" },
+  { id: "glass", label: "通透", description: "磨砂玻璃卡片，柔和的彩色光晕" },
+  { id: "classic", label: "经典", description: "原来的圆润卡片和渐变按钮" },
+];
 
 export const PALETTES: { id: ThemePalette; label: string; description: string; swatch: string; surface: string }[] = [
   { id: "indigo", label: "星云靛蓝", description: "柔和紫蓝 · 默认", swatch: "#5b5ce6", surface: "#f6f6fb" },
@@ -25,8 +35,9 @@ export function resolveIsDark(mode: ThemeMode): boolean {
 /** Applies mode+palette to <html>. Shared by the blocking no-flash script
  * (as an inline string, see layout.tsx) and the client provider — keep the
  * logic identical between the two or the first paint won't match. */
-export function applyTheme(mode: ThemeMode, palette: ThemePalette) {
+export function applyTheme(mode: ThemeMode, palette: ThemePalette, style: ThemeStyle) {
   const root = document.documentElement;
   root.classList.toggle("dark", resolveIsDark(mode));
   root.setAttribute("data-palette", palette);
+  root.setAttribute("data-style", style);
 }

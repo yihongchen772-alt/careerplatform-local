@@ -92,3 +92,17 @@ export async function ignorePendingApplicationChange(id: string, revision: numbe
     return null;
   });
 }
+
+/** 「全部忽略」 for one 网申: rows changed since they were shown are left alone. */
+export async function ignorePendingApplicationChanges(items: { id: string; revision: number }[]) {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    let ignored = 0;
+    for (const { id, revision } of items.slice(0, 200)) {
+      const changed = await db.pendingApplicationChange.updateMany({ where: { id, userId: user.id, status: "pending", revision }, data: { status: "ignored", revision: { increment: 1 } } });
+      ignored += changed.count;
+    }
+    revalidatePath("/settings");
+    return { ignored, skipped: Math.min(items.length, 200) - ignored };
+  });
+}

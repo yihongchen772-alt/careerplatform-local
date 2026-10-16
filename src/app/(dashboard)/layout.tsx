@@ -36,11 +36,11 @@ export default async function DashboardLayout({
         className="pointer-events-none fixed inset-0 z-0 overflow-hidden print:hidden"
       >
         <div
-          className="absolute -top-40 right-[-8rem] size-[36rem] rounded-full opacity-20 blur-[90px] dark:opacity-25"
+          className="ambient-glow absolute -top-40 right-[-8rem] size-[36rem] rounded-full blur-[90px]"
           style={{ background: "var(--glow-1)" }}
         />
         <div
-          className="absolute top-1/3 -left-40 size-[32rem] rounded-full opacity-10 blur-[100px] dark:opacity-15"
+          className="ambient-glow-soft absolute top-1/3 -left-40 size-[32rem] rounded-full blur-[100px]"
           style={{ background: "var(--glow-2)" }}
         />
       </div>
@@ -58,7 +58,7 @@ export default async function DashboardLayout({
         the nav, above nothing) and would paint over page content on some
         browsers' stacking-context resolution.
       */}
-      <main className="relative z-10 min-w-0 flex-1 px-4 pb-16 pt-[calc(3.5rem+env(safe-area-inset-top)+1rem)] md:p-6 md:pb-16">
+      <main className="relative z-10 min-w-0 flex-1 px-4 pb-16 pt-[calc(3.5rem+env(safe-area-inset-top)+1rem)] md:px-10 md:pb-16 md:pt-8">
         {children}
       </main>
       <div className="print:hidden"><AssistantWidget /></div>

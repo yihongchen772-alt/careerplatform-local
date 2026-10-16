@@ -22,7 +22,7 @@ export function FunnelCard({
   outcomes?: FunnelOutcomes;
 }) {
   return (
-    <Card className="rounded-[1.5rem] border-border/65 bg-card/75 shadow-[0_16px_45px_-38px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+    <Card className="surface-card rounded-xl">
       <CardHeader>
         <CardTitle>阶段覆盖</CardTitle>
         <p className="text-sm text-muted-foreground">

@@ -117,13 +117,13 @@ export function ApplicationsBoard({ applications, hits, narrowed = false, now, o
     <p className="text-xs leading-5 text-muted-foreground">这里按大类整理，不规定企业的先后顺序。卡片右上角「改进度」一键切换阶段；有面试时间的卡片会显示倒计时和「进入会议」。</p>
     {lanes.length > 0 && <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
       {lanes.map((lane) => (
-        <section key={lane.title} className="min-w-0 rounded-[1.4rem] border border-border/65 bg-card/35 p-2.5 backdrop-blur-md">
+        <section key={lane.title} className="min-w-0 rounded-xl border border-border/65 bg-card/35 p-2.5 backdrop-blur-md">
           <div className="px-2.5 pb-3 pt-1.5"><div className="flex items-center justify-between text-sm font-semibold"><span>{lane.title}</span><span className="rounded-full bg-background/80 px-2 py-0.5 text-xs tabular-nums text-muted-foreground">{lane.items.length}</span></div><p className="mt-1 text-[11px] text-muted-foreground">{lane.description}</p></div>
           <div className="space-y-2.5">{lane.items.length ? lane.items.map((app) => <ApplicationCard key={app.id} app={app} hit={hits?.get(app.id)} now={now} />) : <p className="rounded-2xl border border-dashed border-border/80 bg-background/35 px-3 py-8 text-center text-xs text-muted-foreground">暂无记录</p>}</div>
         </section>
       ))}
     </div>}
-    {outcomes.some((group) => group.items.length > 0) && <section className="space-y-3 rounded-[1.4rem] border border-border/70 bg-card/55 p-3 sm:p-4">
+    {outcomes.some((group) => group.items.length > 0) && <section className="space-y-3 rounded-xl border border-border/70 bg-card/55 p-3 sm:p-4">
       <div><h3 className="text-sm font-semibold">已结束的投递</h3><p className="mt-1 text-xs text-muted-foreground">结果不会藏起来；“未通过”与本人拒绝分开记录。</p></div>
       {outcomes.filter((group) => group.items.length > 0).map((group) => <div key={group.title} className="space-y-2"><h4 className={cn("text-xs font-semibold", group.className)}>{group.title} · {group.items.length}</h4><div className="grid gap-2 md:grid-cols-2 2xl:grid-cols-4">{group.items.map((app) => <ApplicationCard key={app.id} app={app} closed hit={hits?.get(app.id)} now={now} />)}</div></div>)}
     </section>}

@@ -32,7 +32,7 @@ export function WeeklyReviewCard({ initial }: { initial: WeeklyReviewResult | nu
   }
 
   return (
-    <Card className="rounded-[1.5rem] border-border/65 bg-card/75 shadow-[0_16px_45px_-38px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+    <Card className="surface-card rounded-xl">
       <CardHeader className="flex-row items-center justify-between space-y-0">
         <CardTitle className="flex items-center gap-1.5">
           <NotebookPen className="size-4" />

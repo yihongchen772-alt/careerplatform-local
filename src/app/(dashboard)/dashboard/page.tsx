@@ -24,6 +24,11 @@ import { loadUpcomingSchedule } from "@/lib/schedule-loader";
 import { isTerminalStage } from "@/lib/interview-schedule";
 import { currentTimeMs } from "@/lib/dates";
 
+function greeting(now: Date) {
+  const hour = now.getHours();
+  return hour < 6 ? "夜深了" : hour < 11 ? "早上好" : hour < 13 ? "中午好" : hour < 18 ? "下午好" : "晚上好";
+}
+
 export default async function DashboardPage() {
   const user = await requireUser();
   const scanHealth = await getScanHealth(user.id);
@@ -99,7 +104,7 @@ export default async function DashboardPage() {
       key: "ai",
       title: "配置一个 AI Key",
       hint: "DeepSeek / Kimi / Qwen / 智谱 / Gemini 都行，Gemini 有免费额度",
-      href: "/settings",
+      href: "/settings?tab=ai",
       done: !!dbUser?.defaultAiProvider,
     },
     {
@@ -131,22 +136,15 @@ export default async function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-[110rem] space-y-7">
-      <div className="relative overflow-hidden rounded-[1.8rem] border border-border/65 bg-card/75 px-5 py-6 shadow-[0_18px_55px_-42px_rgba(0,0,0,0.45)] backdrop-blur-xl sm:px-7 sm:py-8">
-        <div aria-hidden="true" className="pointer-events-none absolute -right-16 -top-28 size-72 rounded-full bg-primary/10 blur-3xl" />
-        <div className="relative flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="mb-3 flex items-center gap-2 text-[11px] font-semibold tracking-[0.2em] text-primary uppercase">
-              <span className="size-1.5 rounded-full bg-primary shadow-[0_0_12px_var(--primary)]" />
-              YOUR WORKSPACE
-            </p>
-            <h1 className="text-3xl font-semibold tracking-[-0.045em] sm:text-4xl">总览</h1>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">把重要进展、下一步行动和求职节奏，都放在一眼能掌握的地方。</p>
-          </div>
-          <Link href="/applications" className="inline-flex w-fit items-center gap-2 rounded-full border border-border/70 bg-background/65 px-4 py-2 text-sm font-medium transition-colors hover:bg-accent">
-            查看投递记录 <ArrowUpRight className="size-4" />
-          </Link>
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-sm text-muted-foreground">{new Date(now).toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "long" })}</p>
+          <h1 className="mt-1 font-semibold">{greeting(new Date(now))}{dbUser?.name && dbUser.name !== "我" ? `，${dbUser.name}` : ""}</h1>
         </div>
-      </div>
+        <Link href="/applications" className="inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground">
+          投递记录 <ArrowUpRight className="size-3.5" />
+        </Link>
+      </header>
 
       {scanHealth.failing && <ScanHealthBanner error={scanHealth.error} since={scanHealth.since?.toISOString() ?? null} lastOkAt={scanHealth.lastOkAt?.toISOString() ?? null} />}
       <AutoProgressBanner items={autoUpdates} schedules={autoSchedules} />
@@ -220,7 +218,7 @@ const URGENCY_STYLE: Record<Todo["urgency"], { badge: string; label: string }> =
 
 function TodoCard({ todos }: { todos: Todo[] }) {
   return (
-    <Card className="rounded-[1.5rem] border-border/65 bg-card/75 shadow-[0_16px_45px_-38px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+    <Card className="surface-card rounded-xl">
       <CardHeader className="flex-row items-center justify-between space-y-0">
         <CardTitle>待办</CardTitle>
         <SendDigestButton />
@@ -301,7 +299,7 @@ function StatCard({
 }) {
   const t = STAT_TONES[tone];
   return (
-    <Card className="overflow-hidden rounded-[1.5rem] border-border/65 bg-card/75 shadow-[0_16px_45px_-38px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+    <Card className="surface-card overflow-hidden rounded-xl">
       <CardContent className="flex items-center gap-3.5 py-5 sm:py-6">
         <div className={`flex size-11 shrink-0 items-center justify-center rounded-2xl ${t.badge}`}>
           <Icon className="size-5" />

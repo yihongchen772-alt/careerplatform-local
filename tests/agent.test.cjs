@@ -158,9 +158,9 @@ test("Anthropic: tool_use blocks come back as tool_result blocks", async () => {
 test("history becomes alternating turns that end on a reply", () => {
   const { mod, restore } = llmWith(async () => okJson({}));
   try {
-    const messages = mod.historyMessages("anthropic", [{ role: "assistant", content: "欢迎" }, { role: "user", content: "a" }, { role: "user", content: "b" }, { role: "assistant", content: "c" }, { role: "user", content: "未答" }]);
-    assert.deepEqual(messages.map((m) => [m.role, m.text]), [["user", "a\nb"], ["assistant", "c"]]);
-    assert.deepEqual(messages[1].raw, [{ type: "text", text: "c" }]);
+    const messages = mod.historyMessages("anthropic", [{ role: "assistant", content: "欢迎" }, { role: "user", content: "a" }, { role: "user", content: "b" }, { role: "assistant", content: "c" }, { role: "assistant", content: "操作已完成：记了一条投递" }, { role: "user", content: "未答" }]);
+    assert.deepEqual(messages.map((m) => [m.role, m.text]), [["user", "a\nb"], ["assistant", "c\n操作已完成：记了一条投递"]]);
+    assert.deepEqual(messages[1].raw, [{ type: "text", text: "c\n操作已完成：记了一条投递" }]);
   } finally { restore(); }
 });
 

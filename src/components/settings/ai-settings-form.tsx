@@ -43,22 +43,20 @@ export function AiSettingsForm({ keys }: { keys: AiKeyOverview[] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>AI 设置 · API 管理</CardTitle>
+        <CardTitle className="text-base font-semibold">AI 模型与 Key</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-sm text-muted-foreground">
-          {hasAnyKey
-            ? "可以同时配置多个服务商的 Key，切换默认服务商供面试攻略、模拟面试等文字类功能使用。"
-            : "这是本地单机版，没有共享额度，AI 功能都需要你自己的 API Key 才能用。"}
-          有两类功能会挑服务商：<span className="font-medium">读文件</span>
-          （简历体检、岗位匹配、截图导入）图片这几家都能读，但 PDF 只有 Gemini/Claude/OpenAI/Qwen
-          能读（Qwen 是单独走文件上传接口，不是靠图片识别）——简历是 PDF 就必须配这四家之一，
-          是图片的话 DeepSeek/Kimi/智谱/Mistral 也能用；
-          <span className="font-medium">联网搜索</span>
-          （AI 搜索公司、岗位口碑）可以用 Qwen/Gemini/Claude/OpenAI。都会优先用你的默认服务商，
-          不支持时自动换成你配了的、支持的那个。搜索优先挑 Qwen——Gemini 免费版的联网搜索额度
-          极少，很快就会用完。
+          {hasAnyKey ? "可以同时配置多家，在上面选一个正在用的。" : "本地单机版没有共享额度，AI 功能需要你自己的 API Key。"}
         </p>
+        <details className="text-sm text-muted-foreground">
+          <summary className="cursor-pointer text-xs hover:text-foreground">哪些功能用哪家？</summary>
+          <p className="mt-2 leading-6">
+            <span className="font-medium text-foreground">读文件</span>（简历体检、岗位匹配、截图导入）：图片各家都能读；PDF 只有 Gemini / Claude / OpenAI / Qwen 能读。
+            <span className="font-medium text-foreground">联网搜索</span>（AI 搜公司、岗位口碑）：Qwen / Gemini / Claude / OpenAI，优先用 Qwen，Gemini 免费版的联网额度很少。
+            都会先用正在用的那家，不支持时自动换成你配了且支持的。
+          </p>
+        </details>
 
         {hasAnyKey && <ModelSwitcher keys={keys} />}
 

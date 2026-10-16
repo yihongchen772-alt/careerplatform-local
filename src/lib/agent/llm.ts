@@ -243,6 +243,8 @@ export function historyMessages(provider: UserAiConfig["provider"], history: { r
       if (last?.role === "user") last.text += `\n${turn.content}`;
       else messages.push({ role: "user", text: turn.content });
     } else if (last?.role === "user") messages.push(textReply(provider, turn.content));
+    // "操作已完成：…" after a reply: one reply, so 小欧 knows the button was clicked.
+    else if (last?.role === "assistant") messages[messages.length - 1] = textReply(provider, `${last.text}\n${turn.content}`);
   }
   // The new message follows as a user turn, so the history must end on a reply.
   if (messages[messages.length - 1]?.role === "user") messages.pop();

@@ -99,7 +99,7 @@ export function ResumeDrillWorkbench({
         <CardContent className="pt-6">
           <p className="text-sm text-muted-foreground">
             生成追问树要读整份简历，每次作答都要 AI 评分——请先去{" "}
-            <a href="/settings" className="text-primary underline underline-offset-4">
+            <a href="/settings?tab=ai" className="text-primary underline underline-offset-4">
               账号设置
             </a>{" "}
             配置你自己的 AI API Key 才能用。

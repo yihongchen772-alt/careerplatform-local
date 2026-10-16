@@ -45,7 +45,7 @@ export function ScanHealthBanner({ error, since, lastOkAt }: { error: string | n
         >
           {busy ? "正在重试…" : "重试"}
         </Button>
-        <Link href="/settings#mail-accounts" className={buttonVariants({ size: "sm" })}>去设置</Link>
+        <Link href="/settings?tab=mail#mail-accounts" className={buttonVariants({ size: "sm" })}>去设置</Link>
       </div>
     </div>
   );

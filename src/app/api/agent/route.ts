@@ -28,25 +28,36 @@ export async function POST(request: Request) {
   const { message, history } = parsed.data;
 
   const encoder = new TextEncoder();
+  // Closing 小欧 mid-turn cancels the stream: stop writing, and stop working.
+  let open = true;
   const stream = new ReadableStream({
+    cancel() {
+      open = false;
+    },
     async start(controller) {
-      let open = true;
       const send = (event: AgentEvent | Record<string, unknown>) => {
         if (open) controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
       };
       try {
         const proposed: AssistantAction[] = [];
         const notices: string[] = [];
+        // Falling over to a backup model is worth knowing about, not hiding.
+        const chat = createChat((text) => { notices.push(text); send({ type: "note", text }); });
         const result = await runAgent({
-          // Falling over to a backup model is worth knowing about, not hiding.
-          chat: createChat((text) => { notices.push(text); send({ type: "note", text }); }),
+          chat: (turn) => {
+            if (!open) throw new UserFacingError("窗口已关闭，停止执行");
+            return chat(turn);
+          },
           request: {
             config,
             system: await buildAgentSystemPrompt(user.id),
             messages: [...historyMessages(config.provider, history.slice(-MAX_HISTORY_TURNS * 2)), { role: "user", text: message }],
             tools: AGENT_TOOLS,
           },
-          execute: (call) => executeTool(user.id, call, proposed),
+          execute: (call) => {
+            if (!open) throw new UserFacingError("窗口已关闭，停止执行");
+            return executeTool(user.id, call, proposed);
+          },
           describe: describeToolCall,
           emit: send,
           // Promising buttons without proposing them leaves the user with nothing to click.
@@ -57,8 +68,8 @@ export async function POST(request: Request) {
         if (!(error instanceof UserFacingError)) console.error("[agent]", error);
         send({ type: "error", message: error instanceof UserFacingError ? error.message : "小欧这次没跑完，请稍后重试" });
       } finally {
+        if (open) controller.close();
         open = false;
-        controller.close();
       }
     },
   });

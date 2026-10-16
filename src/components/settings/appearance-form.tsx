@@ -3,7 +3,7 @@
 import { Check, Laptop, Moon, Sun } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useThemeSettings } from "@/components/theme-provider";
-import { PALETTES, type ThemeMode } from "@/lib/theme";
+import { PALETTES, STYLES, type ThemeMode, type ThemeStyle } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
 const MODES: { id: ThemeMode; label: string; icon: typeof Sun }[] = [
@@ -12,18 +12,62 @@ const MODES: { id: ThemeMode; label: string; icon: typeof Sun }[] = [
   { id: "system", label: "跟随系统", icon: Laptop },
 ];
 
+/** A tiny window drawn the way each style draws surfaces. */
+function StylePreview({ style }: { style: ThemeStyle }) {
+  const card = style === "minimal" ? "rounded-[3px] border border-black/10 bg-white" : style === "glass" ? "rounded-md border border-white/70 bg-white/55 shadow-[0_4px_10px_-6px_rgba(0,0,0,0.25)] backdrop-blur" : "rounded-md bg-white shadow-[0_3px_8px_-4px_rgba(0,0,0,0.25)]";
+  const button = style === "minimal" ? "rounded-[3px] bg-[var(--primary)]" : "rounded-full bg-[image:var(--gradient-accent)]";
+  return (
+    <span className={cn("relative block h-20 overflow-hidden rounded-lg border border-black/5 p-2", style === "minimal" ? "bg-[#fafafa]" : "bg-[#f3f3f7]")}>
+      {style === "glass" && <span className="absolute -right-3 -top-4 size-14 rounded-full bg-[var(--glow-1)] opacity-50 blur-xl" />}
+      {style === "glass" && <span className="absolute -bottom-6 left-2 size-12 rounded-full bg-[var(--glow-2)] opacity-40 blur-xl" />}
+      <span className="relative flex h-full gap-1.5">
+        <span className={cn("w-6 space-y-1 p-1", style === "minimal" ? "border-r border-black/10" : style === "glass" ? "rounded-md bg-white/40" : "rounded-md bg-white/70")}>
+          <span className="block h-1 w-3 rounded-full bg-[var(--primary)] opacity-70" />
+          <span className="block h-1 w-4 rounded-full bg-black/10" />
+          <span className="block h-1 w-3 rounded-full bg-black/10" />
+        </span>
+        <span className="flex flex-1 flex-col gap-1.5">
+          <span className={cn("block flex-1 p-1.5", card)}>
+            <span className="block h-1.5 w-10 rounded-full bg-black/20" />
+            <span className="mt-1 block h-1 w-14 rounded-full bg-black/10" />
+          </span>
+          <span className={cn("block h-2.5 w-8 self-end", button)} />
+        </span>
+      </span>
+    </span>
+  );
+}
+
 export function AppearanceForm() {
-  const { mode, palette, setMode, setPalette } = useThemeSettings();
+  const { mode, palette, style, setMode, setPalette, setStyle } = useThemeSettings();
 
   return (
-    <Card className="border-0 bg-card/85">
+    <Card>
       <CardHeader>
-        <CardTitle className="text-lg font-semibold">外观与主题</CardTitle>
-        <p className="text-sm text-muted-foreground">为你的工作台挑一套舒服的色彩。选择后立即生效。</p>
+        <CardTitle className="text-base font-semibold">外观</CardTitle>
       </CardHeader>
       <CardContent className="space-y-7">
         <div className="space-y-3">
-          <p className="text-xs font-semibold tracking-[0.14em] text-muted-foreground uppercase">显示模式</p>
+          <p className="text-xs font-medium text-muted-foreground">界面风格</p>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {STYLES.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setStyle(item.id)}
+                aria-pressed={style === item.id}
+                className={cn("rounded-xl border p-2.5 text-left transition-colors", style === item.id ? "border-primary/60 ring-1 ring-primary/30" : "border-border hover:border-foreground/25")}
+              >
+                <StylePreview style={item.id} />
+                <span className="mt-2.5 flex items-center gap-1.5 text-sm font-medium">{item.label}{style === item.id && <Check className="size-3.5 text-primary" />}</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">{item.description}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <p className="text-xs font-medium text-muted-foreground">深浅色</p>
           <div className="grid grid-cols-3 gap-2 rounded-2xl bg-muted/60 p-1.5">
             {MODES.map((m) => {
               const Icon = m.icon;
@@ -50,8 +94,8 @@ export function AppearanceForm() {
 
         <div className="space-y-3">
           <div className="flex items-baseline justify-between gap-2">
-            <p className="text-xs font-semibold tracking-[0.14em] text-muted-foreground uppercase">主题配色</p>
-            <span className="text-xs text-muted-foreground">{PALETTES.length} 种风格</span>
+            <p className="text-xs font-medium text-muted-foreground">配色</p>
+            <span className="text-xs text-muted-foreground">{PALETTES.length} 种</span>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {PALETTES.map((p) => (

@@ -47,7 +47,7 @@ export function OnboardingCard({ steps }: { steps: OnboardingStep[] }) {
   }
 
   return (
-    <Card className="relative overflow-hidden rounded-[1.5rem] border-border/65 bg-card/75 py-0 shadow-[0_16px_45px_-38px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+    <Card className="surface-card relative overflow-hidden rounded-xl py-0">
       <details className="group">
         <summary className="flex cursor-pointer list-none items-center gap-3 px-5 py-3.5 pr-16 marker:hidden sm:pl-6 [&::-webkit-details-marker]:hidden">
           <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">

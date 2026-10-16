@@ -1,23 +1,39 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Clock3, ExternalLink, X } from "lucide-react";
+import { Check, ChevronRight, ExternalLink, Inbox, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { acceptPendingApplicationChange, ignorePendingApplicationChange } from "@/lib/actions/pending-application-change";
+import { acceptPendingApplicationChange, ignorePendingApplicationChange, ignorePendingApplicationChanges } from "@/lib/actions/pending-application-change";
 import { MEMORY_CATEGORIES, sameMemoryEntity, normalizeMemoryText, type MemoryCapture, type MemoryContent, type MemoryView } from "@/lib/application-memory";
+import { companySpecificQuestion } from "@/lib/autofill-answer-scope";
 import type { MemoryAnswer } from "@/components/settings/autofill-memory-card";
 import type { PendingAnswer, PendingApplicationChangeView } from "@/lib/pending-application-change";
 
 const contentLabels: Record<string, string> = { name: "名称", company: "公司 / 单位", school: "学校", role: "职位 / 角色", major: "专业", degree: "学历", gpa: "GPA", start: "开始时间", end: "结束时间", date: "时间", issuer: "颁发单位", level: "等级", description: "描述 / 成果", responsibilities: "职责与成果", text: "整段原文" };
 
 function sourceName(url: string) {
-  try { return new URL(url).hostname; } catch { return "网申页面"; }
+  try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return "网申页面"; }
 }
 
-export function PendingApplicationChangesCard({ initial, currentMemories, currentAnswers, currentFacts }: { initial: PendingApplicationChangeView[]; currentMemories: MemoryView[]; currentAnswers: MemoryAnswer[]; currentFacts: Record<string, string | null> }) {
+/** One 网申: the same position, or else the same site. */
+function groupKey(row: PendingApplicationChangeView) {
+  return row.contextKey?.startsWith("job:") ? row.contextKey : `site:${sourceName(row.sourceUrl)}`;
+}
+
+/** Whole 经历 and open answers first; short one-off fields fold away. */
+function isShortField(row: PendingApplicationChangeView) {
+  return row.kind === "answer" && (row.payload as PendingAnswer).kind !== "essay";
+}
+
+function preview(row: PendingApplicationChangeView) {
+  if (row.kind === "answer") return (row.payload as PendingAnswer).answer;
+  const content = (row.payload as MemoryCapture).content;
+  return [content.role || content.major || content.level, [content.start || content.date, content.end].filter(Boolean).join(" – "), content.description || content.responsibilities || content.text].filter(Boolean).join(" · ");
+}
+
+export function PendingApplicationChangesCard({ initial, currentMemories, currentAnswers, currentFacts, sources = {} }: { initial: PendingApplicationChangeView[]; currentMemories: MemoryView[]; currentAnswers: MemoryAnswer[]; currentFacts: Record<string, string | null>; sources?: Record<string, string> }) {
   const [removed, setRemoved] = useState<string[]>([]);
   const rows = initial.filter((row) => !removed.includes(`${row.id}:${row.revision}`));
   const [scope, setScope] = useState<Record<string, "local" | "global">>({});
@@ -27,7 +43,10 @@ export function PendingApplicationChangesCard({ initial, currentMemories, curren
   const [edits, setEdits] = useState<Record<string, MemoryContent>>({});
   const [answerEdits, setAnswerEdits] = useState<Record<string, string>>({});
   const [enableAutomatic, setEnableAutomatic] = useState<Record<string, boolean>>({});
+  const [open, setOpen] = useState<string | null>(null);
   const reviewKey = (row: PendingApplicationChangeView) => `${row.id}:${row.revision}`;
+  // Short facts (英文名, 成绩排名) are the same everywhere; a company question stays with that company.
+  const scopeFor = (row: PendingApplicationChangeView) => scope[reviewKey(row)] || (row.kind === "answer" && ((row.payload as PendingAnswer).kind === "essay" && companySpecificQuestion((row.payload as PendingAnswer).questionLabel)) ? "local" : "global");
   function targetFor(row: PendingApplicationChangeView) {
     if (row.kind !== "record") return undefined;
     const record = row.payload as MemoryCapture;
@@ -41,26 +60,28 @@ export function PendingApplicationChangesCard({ initial, currentMemories, curren
   }
   function answerFor(row: PendingApplicationChangeView) {
     const payload = row.payload as PendingAnswer;
-    const context = (scope[reviewKey(row)] || "local") === "global" ? null : row.contextKey;
+    const context = scopeFor(row) === "global" ? null : row.contextKey;
     return currentAnswers.find((item) => item.contextKey === context && item.kind === payload.kind && normalizeMemoryText(item.questionLabel) === normalizeMemoryText(payload.questionLabel));
   }
 
   async function accept(row: PendingApplicationChangeView) {
     setBusyId(row.id);
     try {
+      const target = targetFor(row);
+      const saved = row.kind === "answer" ? answerFor(row) : undefined;
       const res = await acceptPendingApplicationChange(row.id, {
         revision: row.revision,
-        shareAcrossCompanies: (scope[reviewKey(row)] || "local") === "global",
+        shareAcrossCompanies: scopeFor(row) === "global",
         recordPreference: recordPreference[reviewKey(row)] || "version",
-        target: targetFor(row) ? { id: targetFor(row)!.id, revision: targetFor(row)!.revision } : null,
-        expectedAnswer: row.kind === "answer" && answerFor(row) ? { id: answerFor(row)!.id, updatedAt: answerFor(row)!.updatedAt } : null,
+        target: target ? { id: target.id, revision: target.revision } : null,
+        expectedAnswer: saved ? { id: saved.id, updatedAt: saved.updatedAt } : null,
         content: row.kind === "record" ? contentFor(row) : undefined,
         answer: row.kind === "answer" ? answerEdits[reviewKey(row)] : undefined,
         enableAutomatic: enableAutomatic[reviewKey(row)] || false,
       });
       if (!res.ok) return void toast.error(res.message);
       setRemoved((current) => [...current, reviewKey(row)]);
-      toast.success(row.kind === "record" ? "已加入我的资料，之后可选择使用" : "已确认保存范围，下次可按该范围使用");
+      toast.success(row.kind === "record" ? "已加入经历库" : "已记住，以后填写会用上");
     } finally { setBusyId(""); }
   }
 
@@ -70,68 +91,110 @@ export function PendingApplicationChangesCard({ initial, currentMemories, curren
       const res = await ignorePendingApplicationChange(row.id, row.revision);
       if (!res.ok) return void toast.error(res.message);
       setRemoved((current) => [...current, reviewKey(row)]);
-      toast.success("已忽略；本次申请草稿不会受影响");
     } finally { setBusyId(""); }
   }
 
-  return <Card id="pending-application-changes" className="scroll-mt-6 md:col-span-2">
-    <CardHeader>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <CardTitle className="flex items-center gap-2"><Clock3 className="size-5" />待核对变化{rows.length ? `（${rows.length}）` : ""}</CardTitle>
+  async function ignoreAll(list: PendingApplicationChangeView[], label: string) {
+    setBusyId("all");
+    try {
+      const res = await ignorePendingApplicationChanges(list.map((row) => ({ id: row.id, revision: row.revision })));
+      if (!res.ok) return void toast.error(res.message);
+      setRemoved((current) => [...current, ...list.map(reviewKey)]);
+      toast.success(`已忽略「${label}」的 ${res.data.ignored} 条${res.data.skipped ? `；${res.data.skipped} 条刚有新变化，刷新后再看` : ""}`);
+    } finally { setBusyId(""); }
+  }
+
+  const groups = new Map<string, PendingApplicationChangeView[]>();
+  for (const row of rows) groups.set(groupKey(row), [...(groups.get(groupKey(row)) ?? []), row]);
+
+  // A render function, not a nested component: a component defined in here
+  // would remount on every keystroke and drop the textarea's focus.
+  function renderItem(row: PendingApplicationChangeView) {
+    const key = reviewKey(row);
+    const answer = row.kind === "answer" ? row.payload as PendingAnswer : null;
+    const record = row.kind === "record" ? row.payload as MemoryCapture : null;
+    const matchingMemory = targetFor(row);
+    const savedAnswer = answer ? answerFor(row) : null;
+    const fallbackAnswer = answer && !savedAnswer ? currentAnswers.find((item) => !item.contextKey && item.kind === answer.kind && normalizeMemoryText(item.questionLabel) === normalizeMemoryText(answer.questionLabel))?.answer || (answer.kind === "field" ? currentFacts[answer.questionLabel] : null) : null;
+    const expanded = open === key;
+    return (
+      <li key={key} className="py-3 first:pt-0 last:pb-0">
+        <div className="flex items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="flex flex-wrap items-center gap-x-2 text-sm font-medium">
+              {row.label}
+              <span className="text-[11px] font-normal text-muted-foreground">{record ? `新${MEMORY_CATEGORIES[record.category]}` : answer?.kind === "essay" ? "问答" : "字段"}{matchingMemory ? " · 与已有经历相似" : ""}</span>
+            </p>
+            <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">{preview(row)}</p>
+            <button type="button" onClick={() => setOpen(expanded ? null : key)} className="mt-1 inline-flex items-center gap-0.5 text-xs text-muted-foreground hover:text-foreground">
+              <ChevronRight className={`size-3 transition-transform ${expanded ? "rotate-90" : ""}`} />调整
+            </button>
+          </div>
+          <div className="flex shrink-0 gap-1">
+            <Button size="sm" variant="ghost" disabled={!!busyId} onClick={() => ignore(row)} aria-label={`忽略 ${row.label}`}><X className="size-3.5" />忽略</Button>
+            <Button size="sm" variant="outline" disabled={!!busyId} onClick={() => accept(row)}><Check className="size-3.5" />{record ? "加入经历库" : "记住"}</Button>
+          </div>
+        </div>
+        {expanded && (
+          <div className="mt-3 space-y-3 rounded-lg bg-muted/40 p-3 text-sm">
+            {answer && <Textarea aria-label={`${row.label}确认内容`} value={answerEdits[key] ?? answer.answer} onChange={(event) => setAnswerEdits((current) => ({ ...current, [key]: event.target.value }))} />}
+            {answer && <div className="flex flex-wrap gap-4">
+              <label className="flex items-center gap-2"><input type="radio" name={`scope-${row.id}`} checked={scopeFor(row) === "global"} onChange={() => setScope((current) => ({ ...current, [key]: "global" }))} />所有网申都用</label>
+              <label className="flex items-center gap-2"><input type="radio" name={`scope-${row.id}`} checked={scopeFor(row) === "local"} onChange={() => setScope((current) => ({ ...current, [key]: "local" }))} />只用于这家 / 这个岗位</label>
+            </div>}
+            {savedAnswer && <div className="rounded border bg-background p-2.5"><p className="text-xs text-muted-foreground">现在用的回答（记住后旧版仍保留在问答库）</p><p className="mt-1 whitespace-pre-wrap">{savedAnswer.answer}</p></div>}
+            {fallbackAnswer && <div className="rounded border bg-background p-2.5"><p className="text-xs text-muted-foreground">现在回退使用的通用资料</p><p className="mt-1 whitespace-pre-wrap">{fallbackAnswer}</p></div>}
+            {record && <div className="grid gap-2 sm:grid-cols-2">
+              {Object.entries(contentFor(row)).map(([field, value]) => <label key={field} className={/description|responsibilities|text/.test(field) ? "sm:col-span-2" : ""}><span className="text-xs text-muted-foreground">{contentLabels[field] || field}</span><Textarea aria-label={`${row.label} ${contentLabels[field] || field}`} rows={/description|responsibilities|text/.test(field) ? 4 : 1} value={value} onChange={(event) => setEdits((current) => ({ ...current, [key]: { ...contentFor(row), [field]: event.target.value } }))} /></label>)}
+            </div>}
+            {record && <label className="block">保存到<select aria-label={`${row.label}保存归属`} className="ml-2 rounded border bg-background p-1.5" value={matchingMemory?.id || "new"} onChange={(event) => { setTargets((current) => ({ ...current, [key]: event.target.value })); setRecordPreference((current) => ({ ...current, [key]: "version" })); setEdits((current) => { const next = { ...current }; delete next[key]; return next; }); }}><option value="new">新的一段经历</option>{currentMemories.filter((item) => item.category === record.category).map((item) => <option key={item.id} value={item.id}>{item.content.name || item.content.company || item.content.school || "整段原文"} · {item.content.start || item.content.date || "日期未填"}</option>)}</select></label>}
+            {record && matchingMemory && <div className="flex flex-wrap gap-4">
+              <label className="flex items-center gap-2"><input type="radio" name={`record-${row.id}`} checked={(recordPreference[key] || "version") === "version"} onChange={() => setRecordPreference((current) => ({ ...current, [key]: "version" }))} />另存一版，默认版不变</label>
+              <label className="flex items-center gap-2"><input type="radio" name={`record-${row.id}`} checked={recordPreference[key] === "replace"} onChange={() => setRecordPreference((current) => ({ ...current, [key]: "replace" }))} />设为默认版</label>
+            </div>}
+            {record && !matchingMemory && <label className="flex gap-2"><input type="checkbox" checked={enableAutomatic[key] || false} onChange={(event) => setEnableAutomatic((current) => ({ ...current, [key]: event.target.checked }))} />以后一键填写时自动用它（不勾只在预览里可选）</label>}
+          </div>
+        )}
+      </li>
+    );
+  }
+
+  return (
+    <section id="pending-application-changes" className="scroll-mt-6 space-y-3">
+      <div>
+        <h2 className="text-base font-semibold">待核对{rows.length ? <span className="ml-1.5 text-sm font-normal text-muted-foreground">{rows.length}</span> : null}</h2>
+        <p className="mt-0.5 text-sm text-muted-foreground">你在网申里手写的回答和经历。记住后以后会自动填；不处理也没关系，两周后自动收起。</p>
       </div>
-      <p className="text-sm text-muted-foreground">这里是网申页面上新手填或修改的内容。它们已保留，但在你确认前不会进入正式资料，也不会影响下一次自动填写。</p>
-    </CardHeader>
-    <CardContent>
-      {!rows.length ? <div className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">没有待核对内容。填写进度仍会作为本次申请草稿自动保存。</div> : <div className="space-y-3">
-        {rows.map((row) => {
-          const answer = row.kind === "answer" ? row.payload as PendingAnswer : null;
-          const record = row.kind === "record" ? row.payload as MemoryCapture : null;
-          const matchingMemory = targetFor(row);
-          const savedAnswer = answer ? answerFor(row) : null;
-          const fallbackAnswer = answer && !savedAnswer ? currentAnswers.find((item) => !item.contextKey && item.kind === answer.kind && normalizeMemoryText(item.questionLabel) === normalizeMemoryText(answer.questionLabel))?.answer || (answer.kind === "field" ? currentFacts[answer.questionLabel] : null) : null;
-          const selectedScope = scope[reviewKey(row)] || "local";
-          return <article key={reviewKey(row)} className="rounded-xl border p-4">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div className="min-w-0">
-                <h3 className="font-medium">{row.label}</h3>
-                <p className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
-                  来自 {sourceName(row.sourceUrl)} · {new Date(row.createdAt).toLocaleDateString("zh-CN")}
-                  <a href={row.sourceUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 underline">查看来源<ExternalLink className="size-3" /></a>
-                </p>
-              </div>
-              <span className="rounded-full bg-muted px-2 py-1 text-[11px] text-muted-foreground">{record ? MEMORY_CATEGORIES[record.category] : answer?.kind === "field" ? "基础字段" : "开放题"}</span>
-            </div>
-            {answer && <div className="mt-3 space-y-2 rounded-lg bg-muted/40 p-3 text-sm">
-              <p className="text-xs text-muted-foreground">准备保存的内容</p>
-              <Textarea aria-label={`${row.label}确认内容`} value={answerEdits[reviewKey(row)] ?? answer.answer} onChange={(event) => setAnswerEdits((current) => ({ ...current, [reviewKey(row)]: event.target.value }))} />
-            </div>}
-            {record && <div className="mt-3 grid gap-2 rounded-lg bg-muted/40 p-3 text-sm sm:grid-cols-2">
-              {Object.entries(contentFor(row)).map(([key, value]) => <label key={key} className={/description|responsibilities|text/.test(key) ? "sm:col-span-2" : ""}><span className="text-xs text-muted-foreground">{contentLabels[key] || key}</span><Textarea aria-label={`${row.label} ${contentLabels[key] || key}`} rows={/description|responsibilities|text/.test(key) ? 4 : 1} value={value} onChange={(event) => setEdits((current) => ({ ...current, [reviewKey(row)]: { ...contentFor(row), [key]: event.target.value } }))} /></label>)}
-            </div>}
-            {record && <label className="mt-3 block text-sm">保存到哪条经历<select aria-label={`${row.label}保存归属`} className="ml-2 rounded border bg-background p-2" value={matchingMemory?.id || "new"} onChange={(event) => { setTargets((current) => ({ ...current, [reviewKey(row)]: event.target.value })); setRecordPreference((current) => ({ ...current, [reviewKey(row)]: "version" })); setEdits((current) => { const next = { ...current }; delete next[reviewKey(row)]; return next; }); }}><option value="new">作为新的经历</option>{currentMemories.filter((item) => item.category === record.category).map((item) => <option key={item.id} value={item.id}>{item.content.name || item.content.company || item.content.school || "整段原文"} · {item.content.start || item.content.date || "日期未填"}</option>)}</select></label>}
-            {record && matchingMemory && <details className="mt-3 rounded-lg border p-3">
-              <summary className="cursor-pointer text-sm font-medium">与资料库当前默认版比较</summary>
-              <div className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{Object.entries(matchingMemory.content).filter(([, value]) => value).map(([key, value]) => `${contentLabels[key] || key}：${value}`).join("\n")}</div>
-            </details>}
-            {answer && <div className="mt-3 flex flex-wrap gap-4 text-sm">
-              <label className="flex items-center gap-2"><input type="radio" name={`scope-${row.id}`} checked={selectedScope === "local"} onChange={() => setScope((current) => ({ ...current, [reviewKey(row)]: "local" }))} />只用于当前岗位 / 网页</label>
-              <label className="flex items-center gap-2"><input type="radio" name={`scope-${row.id}`} checked={selectedScope === "global"} onChange={() => setScope((current) => ({ ...current, [reviewKey(row)]: "global" }))} />跨企业复用</label>
-            </div>}
-            {savedAnswer && <div className="mt-3 rounded border p-3 text-sm"><p className="text-xs text-muted-foreground">所选范围内当前使用的回答（确认后旧版仍保留在问答库）</p><p className="mt-1 whitespace-pre-wrap">{savedAnswer.answer}</p></div>}
-            {fallbackAnswer && <div className="mt-3 rounded border p-3 text-sm"><p className="text-xs text-muted-foreground">当前回退使用的通用资料（保存为本岗位回答后，其他岗位仍使用通用资料）</p><p className="mt-1 whitespace-pre-wrap">{fallbackAnswer}</p></div>}
-            {record && matchingMemory && <div className="mt-3 flex flex-wrap gap-4 text-sm">
-              <label className="flex items-center gap-2"><input type="radio" name={`record-${row.id}`} checked={(recordPreference[reviewKey(row)] || "version") === "version"} onChange={() => setRecordPreference((current) => ({ ...current, [reviewKey(row)]: "version" }))} />保留为另一版，当前默认不变</label>
-              <label className="flex items-center gap-2"><input type="radio" name={`record-${row.id}`} checked={recordPreference[reviewKey(row)] === "replace"} onChange={() => setRecordPreference((current) => ({ ...current, [reviewKey(row)]: "replace" }))} />设为经历库默认版</label>
-            </div>}
-            {record && <p className="mt-3 text-xs text-muted-foreground">另存版本不会补写或改动当前默认内容。网申资料方案中手动维护的同一段经历仍优先；需要更新方案时请在「网申资料」修改。</p>}
-            {record && !matchingMemory && <label className="mt-3 flex gap-2 text-sm"><input type="checkbox" checked={enableAutomatic[reviewKey(row)] || false} onChange={(event) => setEnableAutomatic((current) => ({ ...current, [reviewKey(row)]: event.target.checked }))} />同时加入默认自动填写（留空时仅在预览中手动选择）</label>}
-            <div className="mt-4 flex flex-wrap justify-end gap-2">
-              <Button size="sm" variant="ghost" disabled={!!busyId} onClick={() => ignore(row)}><X className="size-4" />仅保留本次 / 忽略</Button>
-              <Button size="sm" disabled={!!busyId} onClick={() => accept(row)}><Check className="size-4" />{record ? "加入我的资料" : "确认保存"}</Button>
-            </div>
-          </article>;
-        })}
-      </div>}
-    </CardContent>
-  </Card>;
+      {!rows.length ? (
+        <div className="flex items-center gap-2 rounded-xl border border-dashed p-5 text-sm text-muted-foreground"><Inbox className="size-4" />没有要核对的内容。</div>
+      ) : (
+        [...groups.entries()].map(([key, list]) => {
+          const label = sources[key] || sourceName(list[0].sourceUrl);
+          const main = list.filter((row) => !isShortField(row));
+          const fields = list.filter(isShortField);
+          return (
+            <article key={key} className="rounded-xl border bg-card p-4">
+              <header className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold">{label}</p>
+                  <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                    {new Date(list[0].createdAt).toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" })} · {list.length} 条
+                    <a href={list[0].sourceUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 hover:text-foreground">打开网页<ExternalLink className="size-3" /></a>
+                  </p>
+                </div>
+                <Button size="sm" variant="ghost" disabled={!!busyId} onClick={() => ignoreAll(list, label)}>全部忽略</Button>
+              </header>
+              {!!main.length && <ul className="divide-y">{main.map(renderItem)}</ul>}
+              {!!fields.length && (
+                <details className={main.length ? "mt-3 border-t pt-3" : ""} open={!main.length}>
+                  <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">其他字段 {fields.length} 个（{fields.slice(0, 3).map((row) => row.label).join("、")}{fields.length > 3 ? "…" : ""}）</summary>
+                  <ul className="mt-3 divide-y">{fields.map(renderItem)}</ul>
+                </details>
+              )}
+            </article>
+          );
+        })
+      )}
+    </section>
+  );
 }

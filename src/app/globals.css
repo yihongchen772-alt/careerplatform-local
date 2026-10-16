@@ -502,3 +502,94 @@
     letter-spacing: -0.025em;
   }
 }
+
+/* ---------- 界面风格 (data-style on <html>) ----------
+   Independent of the palette: how surfaces look. Cards, the primary button,
+   the sidebar and the ambient glow read these, so a style is only a set of
+   values here and every page follows. :root holds 简约 (the default). */
+:root,
+[data-style="minimal"] {
+  --radius: 0.5rem;
+  --surface-card: var(--card);
+  --card-edge: color-mix(in oklch, var(--foreground) 9%, transparent);
+  --card-shadow: 0 0 0 0 transparent;
+  --card-shadow-hover: 0 0 0 0 transparent;
+  --card-blur: 0px;
+  --btn-primary-bg: var(--primary);
+  --btn-primary-shadow: 0 0 0 0 transparent;
+  --btn-radius: 0.5rem;
+  --sidebar-surface: var(--background);
+  --sidebar-edge: color-mix(in oklch, var(--foreground) 8%, transparent);
+  --glow-opacity: 0;
+  --page-heading: 1.5rem;
+}
+
+[data-style="glass"] {
+  --radius: 0.875rem;
+  --surface-card: color-mix(in oklch, var(--card) 58%, transparent);
+  --card-edge: color-mix(in oklch, var(--card) 70%, var(--foreground) 6%);
+  --card-shadow: 0 1px 1px rgba(0, 0, 0, 0.02), 0 12px 32px -16px rgba(0, 0, 0, 0.18);
+  --card-shadow-hover: 0 1px 2px rgba(0, 0, 0, 0.03), 0 18px 40px -16px rgba(0, 0, 0, 0.22);
+  --card-blur: 28px;
+  --btn-primary-bg: var(--gradient-accent);
+  --btn-primary-shadow: 0 6px 18px -8px color-mix(in oklch, var(--glow-1), transparent 20%);
+  --btn-radius: 9999px;
+  --sidebar-surface: color-mix(in oklch, var(--card) 45%, transparent);
+  --sidebar-edge: color-mix(in oklch, var(--foreground) 6%, transparent);
+  --glow-opacity: 1.6;
+  --page-heading: 1.75rem;
+}
+
+[data-style="classic"] {
+  --radius: 0.75rem;
+  --surface-card: color-mix(in oklch, var(--card) 75%, transparent);
+  --card-edge: color-mix(in oklch, var(--foreground) 6%, transparent);
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.03), 0 10px 24px -12px rgba(0, 0, 0, 0.12);
+  --card-shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.04), 0 16px 32px -14px rgba(0, 0, 0, 0.16);
+  --card-blur: 24px;
+  --btn-primary-bg: var(--gradient-accent);
+  --btn-primary-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 8px 20px -6px color-mix(in oklch, var(--glow-1), transparent 25%);
+  --btn-radius: 9999px;
+  --sidebar-surface: color-mix(in oklch, var(--sidebar) 80%, transparent);
+  --sidebar-edge: color-mix(in oklch, var(--border) 60%, transparent);
+  --glow-opacity: 1;
+  --page-heading: 1.875rem;
+}
+
+/* Dark surfaces carry depth by lightness, not shadow. */
+.dark[data-style="glass"] {
+  --surface-card: color-mix(in oklch, var(--card) 62%, transparent);
+  --card-edge: color-mix(in oklch, var(--foreground) 10%, transparent);
+}
+
+@layer components {
+  .surface-card {
+    background-color: var(--surface-card);
+    box-shadow: 0 0 0 1px var(--card-edge), var(--card-shadow);
+    backdrop-filter: blur(var(--card-blur));
+    transition: box-shadow 0.3s var(--ease-apple);
+  }
+  .surface-card:hover {
+    box-shadow: 0 0 0 1px var(--card-edge), var(--card-shadow-hover);
+  }
+  .btn-primary {
+    background: var(--btn-primary-bg);
+    box-shadow: var(--btn-primary-shadow);
+  }
+  .btn-primary:hover {
+    filter: brightness(1.07);
+  }
+  .ambient-glow {
+    opacity: calc(var(--glow-opacity) * 0.2);
+  }
+  .ambient-glow-soft {
+    opacity: calc(var(--glow-opacity) * 0.1);
+  }
+}
+
+/* Page titles: one size per style instead of each page's own text-3xl
+   (unlayered on purpose, so it wins over those utilities). */
+main h1 {
+  font-size: var(--page-heading);
+  line-height: 1.2;
+}

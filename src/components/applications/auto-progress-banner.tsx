@@ -118,7 +118,7 @@ export function AutoProgressBanner({ items, schedules = [], showApplication = tr
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-sm font-semibold text-primary"><Sparkles className="size-4" />{[stageCount ? `已自动更新 ${stageCount} 条进度` : "", scheduleCount ? `${stageCount ? "，" : "已"}从邮件写入 ${scheduleCount} 个面试/笔试时间` : ""].join("")}</div>
         <div className="flex items-center gap-3 text-xs">
-          <Link href="/settings#auto-progress" className="text-muted-foreground hover:text-foreground hover:underline">自动更新设置</Link>
+          <Link href="/settings?tab=mail#auto-progress" className="text-muted-foreground hover:text-foreground hover:underline">自动更新设置</Link>
           <Button type="button" size="sm" variant="outline" disabled={busy !== null} onClick={() => dismiss(visible)}>全部知道了</Button>
         </div>
       </div>

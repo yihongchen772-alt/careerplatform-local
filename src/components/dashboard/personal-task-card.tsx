@@ -62,7 +62,7 @@ export function PersonalTaskCard({
   }
 
   return (
-    <Card className="rounded-[1.5rem] border-border/65 bg-card/75 shadow-[0_16px_45px_-38px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+    <Card className="surface-card rounded-xl">
       <CardHeader className="flex-col items-start justify-between gap-2 space-y-0 sm:flex-row sm:items-center">
         <CardTitle>我的日程</CardTitle>
         <div className="flex flex-wrap items-center gap-2">

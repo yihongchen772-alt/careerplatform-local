@@ -12,14 +12,9 @@ function Card({
       data-slot="card"
       data-size={size}
       className={cn(
-        // bg-card/75 + backdrop-blur rather than an opaque fill: with the
-        // ambient glow now sitting behind every dashboard page (see
-        // (dashboard)/layout.tsx), a fully opaque card reads as a flat white
-        // box stamped on top of the color — the exact "丑" the translucent
-        // sidebar doesn't have. Letting the glow bleed through faintly is
-        // what makes a card look like it belongs to the same surface as the
-        // page instead of a foreign rectangle glued onto it.
-        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-2xl bg-card/75 py-(--card-spacing) text-sm text-card-foreground ring-1 ring-foreground/[0.06] shadow-[0_1px_2px_rgba(0,0,0,0.03),0_10px_24px_-12px_rgba(0,0,0,0.12)] backdrop-blur-xl transition-shadow duration-300 ease-(--ease-apple) hover:shadow-[0_2px_4px_rgba(0,0,0,0.04),0_16px_32px_-14px_rgba(0,0,0,0.16)] [--card-spacing:--spacing(4)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-2xl *:[img:last-child]:rounded-b-2xl",
+        // Fill, edge, shadow and blur come from the 界面风格 (surface-card in
+        // globals.css): flat with a hairline in 简约, frosted in 通透.
+        "surface-card group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-xl py-(--card-spacing) text-sm text-card-foreground [--card-spacing:--spacing(5)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl",
         className
       )}
       {...props}
@@ -32,7 +27,7 @@ function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="card-header"
       className={cn(
-        "group/card-header @container/card-header grid auto-rows-min items-start gap-1 rounded-t-2xl px-(--card-spacing) has-data-[slot=card-action]:grid-cols-[1fr_auto] has-data-[slot=card-description]:grid-rows-[auto_auto] [.border-b]:pb-(--card-spacing)",
+        "group/card-header @container/card-header grid auto-rows-min items-start gap-1 rounded-t-xl px-(--card-spacing) has-data-[slot=card-action]:grid-cols-[1fr_auto] has-data-[slot=card-description]:grid-rows-[auto_auto] [.border-b]:pb-(--card-spacing)",
         className
       )}
       {...props}
