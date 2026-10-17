@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
  * (hero-card in globals.css), a plain heading in the others. One component so
  * every page opens the same way.
  */
-export function PageHero({ title, description, icon: Icon, actions, className, children }: { title: string; description?: React.ReactNode; icon?: LucideIcon; actions?: React.ReactNode; className?: string; children?: React.ReactNode }) {
+export function PageHero({ title, description, icon: Icon, actions, back, className, children }: { title: React.ReactNode; description?: React.ReactNode; icon?: LucideIcon; actions?: React.ReactNode; back?: React.ReactNode; className?: string; children?: React.ReactNode }) {
   return (
     <header className={cn("hero-card page-hero", className)}>
       <div aria-hidden="true" className="hero-decor pointer-events-none absolute inset-0">
@@ -14,6 +14,7 @@ export function PageHero({ title, description, icon: Icon, actions, className, c
         <span className="absolute right-[22%] -bottom-6 size-20 rotate-12 rounded-[1.6rem] bg-gradient-to-br from-white/30 to-white/5" />
         <span className="absolute right-[34%] top-5 size-3 rounded-full bg-amber-200/80" />
       </div>
+      {back && <div className="relative mb-3">{back}</div>}
       <div className="relative flex flex-wrap items-center justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3.5">
           {Icon && <span className="hero-chip hidden size-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary sm:flex"><Icon className="size-5" /></span>}

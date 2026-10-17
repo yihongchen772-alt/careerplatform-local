@@ -3,6 +3,8 @@ import { PERSONALITY_TESTS } from "@/lib/personality-tests";
 import { PersonalityTestRunner } from "@/components/personality/test-runner";
 import { requireUser } from "@/lib/session";
 import { BackLink } from "@/components/ui/back-link";
+import { PageHero } from "@/components/layout/page-hero";
+import { Brain } from "lucide-react";
 
 export default async function PersonalityTestPage({
   params,
@@ -16,11 +18,7 @@ export default async function PersonalityTestPage({
 
   return (
     <div className="space-y-6">
-      <div>
-        <BackLink href="/personality" label="返回性格测试" />
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight">{test.title}</h1>
-        <p className="text-sm text-muted-foreground">{test.subtitle}</p>
-      </div>
+      <PageHero title={test.title} description={test.subtitle} icon={Brain} back={<BackLink href="/personality" label="返回性格测试" />} />
       <PersonalityTestRunner testId={test.id} />
     </div>
   );

@@ -5,6 +5,8 @@ import { requireUser } from "@/lib/session";
 import { parseApplicationProfile } from "@/lib/application-profile";
 import { tailoredResumeSchema } from "@/lib/tailored-resume";
 import { TailoredResumeEditor } from "@/components/resumes/tailored-resume-editor";
+import { PageHero } from "@/components/layout/page-hero";
+import { FileText } from "lucide-react";
 
 export default async function TailoredResumePage({
   searchParams,
@@ -23,12 +25,7 @@ export default async function TailoredResumePage({
   if (!position) notFound();
   if (!resume) {
     return (
-      <div className="space-y-4">
-        <h1 className="text-3xl font-semibold tracking-tight">定制简历</h1>
-        <p className="text-sm text-muted-foreground">
-          还没有简历。先到 <Link href="/resumes" className="underline">简历版本</Link> 上传一份，定制简历会基于它改写。
-        </p>
-      </div>
+      <PageHero title="定制简历" icon={FileText} description={<>还没有简历。先到 <Link href="/resumes" className="underline">简历版本</Link> 上传一份，定制简历会基于它改写。</>} />
     );
   }
   const resumeVersionId = resume.id;
@@ -39,11 +36,11 @@ export default async function TailoredResumePage({
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">定制简历</h1>
-        <p className="text-sm text-muted-foreground">
-          {position.company.name} · {position.title}　基于「{resume.name}」和网申资料整理，只调整已有事实的取舍和表述。可以直接在预览里改字，改动会自动保存。
-        </p>
+      <PageHero
+        title="定制简历"
+        icon={FileText}
+        description={<>{position.company.name} · {position.title}　基于「{resume.name}」和网申资料整理，只调整已有事实的取舍和表述。可以直接在预览里改字，改动会自动保存。</>}
+      >
         {resumes.length > 1 && (
           <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
             <span className="text-muted-foreground">基于哪份简历：</span>
@@ -58,7 +55,7 @@ export default async function TailoredResumePage({
             ))}
           </div>
         )}
-      </div>
+      </PageHero>
       <TailoredResumeEditor
         key={resume.id}
         positionId={position.id}

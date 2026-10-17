@@ -280,8 +280,8 @@ export function AssistantWidget() {
   return (
     <div className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-50 flex flex-col items-end gap-3">
       {open && (
-        <div role="dialog" aria-label="小欧求职助手" className={`flex flex-col overflow-hidden rounded-2xl border bg-card shadow-xl ${wide ? "h-[calc(100vh-6rem)] w-[calc(100vw-2rem)] max-w-4xl" : "h-[38rem] max-h-[calc(100vh-6rem)] w-[calc(100vw-2rem)] max-w-lg"}`}>
-          <div className="flex items-center gap-1 border-b px-3 py-2">
+        <div role="dialog" aria-label="小欧求职助手" className={`assistant-panel flex flex-col overflow-hidden rounded-2xl border bg-card shadow-xl ${wide ? "h-[calc(100vh-6rem)] w-[calc(100vw-2rem)] max-w-4xl" : "h-[38rem] max-h-[calc(100vh-6rem)] w-[calc(100vw-2rem)] max-w-lg"}`}>
+          <div className="assistant-head flex items-center gap-1 border-b px-3 py-2">
             <div className="flex-1"><p className="text-sm font-medium">小欧</p><p className="text-[11px] text-muted-foreground">求职 agent · 规划决策 · 找岗位 · 记录进展</p></div>
             {tab === "chat" && <Button type="button" variant="ghost" size="sm" disabled={sending || !!applying || !loaded} onClick={() => { setMessages([]); nextId.current = 0; }}>新对话</Button>}
             <Button type="button" variant="ghost" size="icon" className="size-7" aria-label={wide ? "缩小" : "放大"} onClick={() => setWide((v) => !v)}>
@@ -356,7 +356,7 @@ export function AssistantWidget() {
             ) : (
               messages.map((m) => (
                 <div key={m.id} className="space-y-1.5">
-                  <div className={m.failedRequest ? "rounded-lg border border-destructive/40 bg-destructive/5 p-2.5 text-sm" : m.role === "assistant" ? "rounded-lg bg-muted p-2.5 text-sm" : "rounded-lg bg-primary/10 p-2.5 text-sm"}>
+                  <div className={m.failedRequest ? "rounded-lg border border-destructive/40 bg-destructive/5 p-2.5 text-sm" : m.role === "assistant" ? "bubble-ai rounded-lg bg-muted p-2.5 text-sm" : "bubble-user rounded-lg bg-primary/10 p-2.5 text-sm"}>
                     {m.role === "assistant" && !m.failedRequest ? <MarkdownText text={m.content} /> : <p className="whitespace-pre-wrap">{m.failedRequest && <CircleAlert className="mr-1 inline size-3.5 -translate-y-px text-destructive" />}{m.content}</p>}
                     {m.failedRequest && (
                       <div className="mt-1.5 flex flex-wrap gap-2">

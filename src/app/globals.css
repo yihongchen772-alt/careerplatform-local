@@ -776,3 +776,134 @@ main h1 {
   font-size: var(--page-heading);
   line-height: 1.2;
 }
+
+/* ---------- 柔光 for everything inside the pages ----------
+   Hand-written boxes, form fields, tables, tabs and pop-ups follow the style
+   too, so no page keeps the old hairline-and-square look. Coloured boxes
+   (warnings, highlights) keep their own colours; only plain ones change. */
+[data-style="soft"] {
+  --soft-tile: color-mix(in oklch, var(--primary) 4%, var(--card));
+  --soft-tile-strong: color-mix(in oklch, var(--primary) 8%, var(--card));
+  --soft-line: color-mix(in oklch, var(--primary) 12%, transparent);
+  --soft-field: color-mix(in oklch, var(--primary) 5%, var(--card));
+}
+.dark[data-style="soft"] {
+  --soft-tile: color-mix(in oklch, white 4%, var(--card));
+  --soft-tile-strong: color-mix(in oklch, white 7%, var(--card));
+  --soft-line: color-mix(in oklch, white 9%, transparent);
+  --soft-field: color-mix(in oklch, white 6%, var(--card));
+}
+
+/* Plain bordered boxes → soft rounded tiles. */
+[data-style="soft"] :is(main, [role="dialog"], [data-slot="sheet-content"]) :is([class~="rounded"], [class~="rounded-sm"], [class~="rounded-md"], [class~="rounded-lg"], [class~="rounded-xl"], [class~="rounded-2xl"])[class~="border"]:not([data-slot]):not(.surface-card):not([class*=" border-"]):not([class^="border-"]) {
+  border-color: var(--soft-line);
+  border-radius: 1rem;
+}
+[data-style="soft"] :is(main, [role="dialog"], [data-slot="sheet-content"]) :is([class~="rounded"], [class~="rounded-sm"], [class~="rounded-md"], [class~="rounded-lg"], [class~="rounded-xl"], [class~="rounded-2xl"])[class~="border"]:not([data-slot]):not(.surface-card):not([class*="bg-"]):not(input):not(select):not(textarea):not(a):not(button) {
+  border-color: transparent;
+  background-color: var(--soft-tile);
+}
+[data-style="soft"] main [class~="border-dashed"] {
+  border-color: color-mix(in oklch, var(--primary) 28%, transparent);
+  border-radius: 1rem;
+}
+[data-style="soft"] main :is([class~="bg-muted"], [class~="bg-muted/20"], [class~="bg-muted/30"], [class~="bg-muted/40"], [class~="bg-muted/50"], [class~="bg-muted/60"], [class~="bg-muted/70"], [class~="bg-background/50"], [class~="bg-background/60"]) {
+  background-color: var(--soft-tile-strong);
+}
+
+/* Form fields: filled, no hard outline, a brand ring on focus. */
+[data-style="soft"] :is([data-slot="input"], [data-slot="textarea"], [data-slot="select-trigger"], [data-slot="input-group"]),
+[data-style="soft"] main :is(input[type="text"], input[type="search"], input[type="number"], input[type="date"], input[type="month"], input[type="time"], input[type="datetime-local"], input:not([type]), select, textarea):not([data-slot]) {
+  background-color: var(--soft-field);
+  border-color: transparent;
+  border-radius: 0.85rem;
+}
+[data-style="soft"] :is([data-slot="input"], [data-slot="textarea"], [data-slot="select-trigger"]):focus-visible,
+[data-style="soft"] main :is(input, select, textarea):not([data-slot]):focus-visible {
+  border-color: color-mix(in oklch, var(--primary) 45%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 18%, transparent);
+}
+
+/* Tables: a tinted header row, soft row hover, no grid lines. */
+[data-style="soft"] [data-slot="table-header"] [data-slot="table-row"] {
+  background: var(--soft-tile-strong);
+  border-bottom-color: transparent;
+}
+[data-style="soft"] [data-slot="table-header"] [data-slot="table-head"]:first-child { border-top-left-radius: 0.85rem; border-bottom-left-radius: 0.85rem; }
+[data-style="soft"] [data-slot="table-header"] [data-slot="table-head"]:last-child { border-top-right-radius: 0.85rem; border-bottom-right-radius: 0.85rem; }
+[data-style="soft"] [data-slot="table-body"] [data-slot="table-row"] {
+  border-bottom-color: var(--soft-line);
+}
+[data-style="soft"] [data-slot="table-body"] [data-slot="table-row"]:hover {
+  background: var(--soft-tile);
+}
+
+/* Tabs: a pill track, the active one a white chip. */
+[data-style="soft"] [data-slot="tabs-list"] {
+  background: var(--soft-tile-strong);
+  border-radius: 9999px;
+  padding: 4px;
+}
+[data-style="soft"] [data-slot="tabs-trigger"] {
+  border-radius: 9999px;
+}
+[data-style="soft"] [data-slot="tabs-trigger"][data-active],
+[data-style="soft"] [data-slot="tabs-trigger"][aria-selected="true"] {
+  background: var(--card);
+  box-shadow: 0 2px 8px -3px color-mix(in oklch, var(--primary), transparent 65%);
+}
+
+/* Pop-ups and menus float like the cards. */
+[data-style="soft"] :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"]) {
+  border-radius: 1.75rem;
+  border: none;
+  box-shadow: 0 0 0 1px var(--soft-line), 0 30px 70px -24px color-mix(in oklch, var(--primary), transparent 55%);
+}
+[data-style="soft"] :is([data-slot="dropdown-menu-content"], [data-slot="select-content"], [data-slot="dropdown-menu-sub-content"]) {
+  border-radius: 1.1rem;
+  box-shadow: 0 0 0 1px var(--soft-line), 0 18px 40px -16px color-mix(in oklch, var(--primary), transparent 55%);
+}
+[data-style="soft"] :is([data-slot="dropdown-menu-item"], [data-slot="select-item"]) {
+  border-radius: 0.7rem;
+}
+[data-style="soft"] [data-slot="sheet-content"] {
+  border-top-right-radius: 1.5rem;
+  border-bottom-right-radius: 1.5rem;
+}
+[data-style="soft"] [data-sonner-toast] {
+  border-radius: 1rem !important;
+  box-shadow: 0 0 0 1px var(--soft-line), 0 14px 34px -14px color-mix(in oklch, var(--primary), transparent 55%) !important;
+}
+
+/* 小欧's window in 柔光: a floating panel with a gradient band on top. */
+[data-style="soft"] .assistant-panel {
+  border: none;
+  border-radius: 1.75rem;
+  box-shadow: 0 0 0 1px var(--soft-line), 0 30px 70px -24px color-mix(in oklch, var(--primary), transparent 50%);
+}
+[data-style="soft"] .assistant-head {
+  background: var(--hero-bg);
+  color: var(--primary-foreground);
+  border-bottom: none;
+}
+.dark[data-style="soft"] .assistant-head {
+  background: linear-gradient(135deg, color-mix(in oklch, var(--primary), black 45%), color-mix(in oklch, var(--glow-2), black 50%));
+  color: #fff;
+}
+[data-style="soft"] .assistant-head :is(.text-muted-foreground, [data-slot="button"]) {
+  color: inherit;
+}
+[data-style="soft"] .bubble-user {
+  background: var(--gradient-accent);
+  color: var(--primary-foreground);
+  border-radius: 1.1rem 1.1rem 0.35rem 1.1rem;
+  margin-left: 2.5rem;
+}
+.dark[data-style="soft"] .bubble-user {
+  color: oklch(0.15 0 0);
+}
+[data-style="soft"] .bubble-ai {
+  background: var(--soft-tile-strong);
+  border-radius: 1.1rem 1.1rem 1.1rem 0.35rem;
+  margin-right: 1.5rem;
+}
