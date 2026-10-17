@@ -24,16 +24,18 @@ import {
   type ExperienceRow,
   type ProjectRow,
   type AwardRow,
+  type CampusRow,
   type ProfileVariant,
 } from "@/lib/application-profile";
 import { mergeFactRows } from "@/lib/application-memory";
 
 type ResumeOption = { id: string; name: string };
 
-const emptyEducation: EducationRow = { school: "", major: "", degree: "", gpa: "", start: "", end: "" };
+const emptyEducation: EducationRow = { school: "", major: "", department: "", degree: "", gpa: "", start: "", end: "" };
 const emptyExperience: ExperienceRow = { company: "", role: "", start: "", end: "", description: "" };
 const emptyProject: ProjectRow = { name: "", role: "", start: "", end: "", description: "", responsibilities: "" };
 const emptyAward: AwardRow = { name: "", issuer: "", level: "", date: "", description: "" };
+const emptyCampus: CampusRow = { name: "", role: "", level: "", start: "", end: "", description: "" };
 
 /**
  * The 网申 facts the account profile above doesn't hold and the resume
@@ -112,7 +114,7 @@ export function ApplicationProfileCard({
       const res = await extractApplicationProfile(resumeId);
       if (!res.ok) return void toast.error(res.message);
       // Keep hand-typed rows when the resume does not contain that section.
-      setProfile((p) => ({ ...p, education: mergeFactRows("education", p.education, res.data.education, 10), awards: mergeFactRows("award", p.awards, res.data.awards, 30) }));
+      setProfile((p) => ({ ...p, education: mergeFactRows("education", p.education, res.data.education, 10), awards: mergeFactRows("award", p.awards, res.data.awards, 30), campus: mergeFactRows("award", p.campus ?? [], res.data.campus ?? [], 20) }));
       setView((v) => ({
         experiences: mergeFactRows("experience", v.experiences, res.data.experiences, 20),
         projects: mergeFactRows("project", v.projects, res.data.projects, 20),
@@ -217,6 +219,7 @@ export function ApplicationProfileCard({
             <RecordShell key={i} className="sm:grid-cols-6" startOpen={!e.school && !e.major} summary={[e.school, e.major, e.degree, [e.start, e.end].filter(Boolean).join(" – ")].filter(Boolean).join(" · ")} onDelete={() => setProfile((p) => ({ ...p, education: p.education.filter((_, j) => j !== i) }))}>
               <Field label="学校" className="sm:col-span-2"><Input value={e.school} onChange={(ev) => setEdu(i, { school: ev.target.value })} /></Field>
               <Field label="专业" className="sm:col-span-2"><Input value={e.major} onChange={(ev) => setEdu(i, { major: ev.target.value })} /></Field>
+              <Field label="院系 / 学院" className="sm:col-span-2"><Input value={e.department ?? ""} onChange={(ev) => setEdu(i, { department: ev.target.value })} placeholder="机械工程学院" /></Field>
               <Field label="学历"><Input value={e.degree} onChange={(ev) => setEdu(i, { degree: ev.target.value })} placeholder="硕士" /></Field>
               <Field label="GPA"><Input value={e.gpa} onChange={(ev) => setEdu(i, { gpa: ev.target.value })} placeholder="3.8/4.0" /></Field>
               <Field label="入学"><Input value={e.start} onChange={(ev) => setEdu(i, { start: ev.target.value })} placeholder="2025-08" /></Field>
@@ -271,6 +274,15 @@ export function ApplicationProfileCard({
           {profile.awards.map((award, i) => <RecordShell key={i} className="sm:grid-cols-2" startOpen={!award.name} summary={[award.name, award.level, award.date].filter(Boolean).join(" · ")} onDelete={() => setProfile((p) => ({ ...p, awards: p.awards.filter((_, j) => j !== i) }))}>
             {([["name", "奖项名称"], ["issuer", "颁发单位"], ["level", "等级"], ["date", "获奖时间"]] as const).map(([key, label]) => <Field key={key} label={label}><Input value={award[key]} onChange={(event) => setProfile((p) => ({ ...p, awards: p.awards.map((item, j) => j === i ? { ...item, [key]: event.target.value } : item) }))} /></Field>)}
             <Field label="补充说明" className="sm:col-span-2"><Textarea value={award.description} onChange={(event) => setProfile((p) => ({ ...p, awards: p.awards.map((item, j) => j === i ? { ...item, description: event.target.value } : item) }))} /></Field>
+          </RecordShell>)}
+        </section>
+
+        <section className="space-y-3">
+          <div className="flex items-center justify-between"><p className="text-sm font-medium">校园经历 / 学生工作（所有方案共用）</p><Button size="sm" variant="outline" disabled={(profile.campus ?? []).length >= 20} onClick={() => setProfile((p) => ({ ...p, campus: [...(p.campus ?? []), { ...emptyCampus }] }))}><Plus className="size-4" />添加一段</Button></div>
+          {!(profile.campus ?? []).length && <p className="text-xs text-muted-foreground">学生会、社团、班级职务等。很多网申有「校内任职 / 学生干部」一栏，填了就能自动填。</p>}
+          {(profile.campus ?? []).map((row, i) => <RecordShell key={i} className="sm:grid-cols-2" startOpen={!row.name} summary={[row.name, row.role, row.level, [row.start, row.end].filter(Boolean).join(" – ")].filter(Boolean).join(" · ")} onDelete={() => setProfile((p) => ({ ...p, campus: (p.campus ?? []).filter((_, j) => j !== i) }))}>
+            {([["name", "组织 / 社团", "东南大学学生会"], ["role", "担任职务", "外联部部长"], ["level", "级别", "校级 / 院级 / 班级"], ["start", "开始", "2021-09"], ["end", "结束", "2022-06"]] as const).map(([key, label, hint]) => <Field key={key} label={label}><Input value={row[key]} placeholder={hint} onChange={(event) => setProfile((p) => ({ ...p, campus: (p.campus ?? []).map((item, j) => j === i ? { ...item, [key]: event.target.value } : item) }))} /></Field>)}
+            <Field label="做了什么" className="sm:col-span-2"><Textarea rows={2} value={row.description} onChange={(event) => setProfile((p) => ({ ...p, campus: (p.campus ?? []).map((item, j) => j === i ? { ...item, description: event.target.value } : item) }))} /></Field>
           </RecordShell>)}
         </section>
 

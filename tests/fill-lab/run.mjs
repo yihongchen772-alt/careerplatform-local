@@ -1,4 +1,4 @@
-// 网申填写多场景实测台：在真实 Chromium 里用共享填写引擎填 15 个仿真表单
+// 网申填写多场景实测台：在真实 Chromium 里用共享填写引擎填 16 个仿真表单
 // （AntD 仿 Moka、Element Plus iframe 仿北森、老式表格仿大易、英文 Workday 式、
 // 手写控件、Shadow DOM、已有内容保护、自动补齐栏目、Semi 式下拉、分步向导、已保存经历卡片、长表头、各栏目一条一条填），
 // 逐字段核对结果。全部是虚构资料，不访问任何真实网站或 App 数据。
@@ -52,7 +52,7 @@ const PROFILE = {
   preferredCities: "上海", major: "统计学", degree: "硕士", gpa: "3.8/4.0",
   educationStart: "2024-09", educationEnd: "2026-06", latestCompany: "字节跳动", latestRole: "数据分析实习生",
   education: [
-    { school: "复旦大学", major: "统计学", degree: "硕士", gpa: "3.8/4.0", start: "2024-09", end: "2026-06" },
+    { school: "复旦大学", major: "统计学", department: "管理学院", degree: "硕士", gpa: "3.8/4.0", start: "2024-09", end: "2026-06" },
     { school: "南京大学", major: "数学与应用数学", degree: "本科", gpa: "3.7/4.0", start: "2020-09", end: "2024-06" },
   ],
   experiences: [
@@ -60,6 +60,8 @@ const PROFILE = {
   ],
   projects: [{ name: "校园二手交易推荐系统", role: "负责人", start: "2025-03", end: "2025-06", description: "基于协同过滤的推荐系统", responsibilities: "负责模型设计与评估" }],
   awards: [{ name: "全国大学生数学建模竞赛一等奖", issuer: "中国工业与应用数学学会", level: "国家级", date: "2023-11", description: "" }],
+  campus: [{ name: "复旦大学研究生会", role: "学术部部长", level: "校级", start: "2024-09", end: "2025-06", description: "组织学术沙龙 12 场" }],
+  researchDirection: "因果推断与增长分析", rank: "前 10%", acceptAdjust: "是", courses: "多元统计分析、机器学习、时间序列", department: "管理学院",
   library: [], summaries: {},
   politics: "共青团员", hometown: "江苏南京", ethnicity: "汉族", english: "CET-6 560", currentCity: "上海",
   targetRole: "数据分析师", selfIntro: "统计学硕士，熟悉 SQL 与 Python，做过电商增长分析。",
@@ -88,8 +90,8 @@ function fakeAi(questions) {
     if (/hear about/i.test(q.label)) return { id: q.id, answer: "Company Website" };
     // Told what this module already saved, a different entry comes back.
     const savedText = (q.saved || []).join(" ");
-    if (/活动名称/.test(q.label)) return { id: q.id, answer: savedText.includes("学生会") ? "数学建模协会" : "学生会" };
-    if (/担任角色/.test(q.label)) return { id: q.id, answer: savedText.includes("学生会") ? "副会长" : "外联部部长" };
+    if (/证书名称/.test(q.label)) return { id: q.id, answer: savedText.includes("六级") ? "计算机二级证书" : "英语六级证书" };
+    if (/颁发机构/.test(q.label)) return { id: q.id, answer: savedText.includes("六级") ? "教育部考试中心" : "全国大学英语四六级考试委员会" };
     return { id: q.id, answer: "NEEDS_MANUAL_INPUT" };
   });
 }
@@ -341,6 +343,8 @@ Object.assign(suites, {
     { label: "教育 下一段入学", read: val("#st"), expect: "2020-09" },
     { label: "实习 全部已保存", read: val("#c"), expect: "" },
     { label: "实习 不重复第一段", read: val("#r"), expect: "" },
+    { label: "校园经历 已保存，不重复", read: val("#k1"), expect: "" },
+    { label: "校园职务 不重复", read: val("#k2"), expect: "" },
   ]],
   "header-row": [[
     { label: "奖励名称（标题在长表头里）", read: val("#an"), expect: "全国大学生数学建模竞赛一等奖" },
@@ -351,14 +355,31 @@ Object.assign(suites, {
     { label: "页头有名字，姓名照填", read: val("#n1"), expect: "林晓舟" },
     { label: "语种 上面已保存英语，不重复", read: sel("#l1"), expect: "" },
     { label: "语言等级 不重复", read: val("#l2"), expect: "" },
-    { label: "校园活动 换一条（AI 知道已保存）", read: val("#c1"), expect: "数学建模协会" },
-    { label: "担任角色 跟着新的一条", read: val("#c2"), expect: "副会长" },
+    { label: "证书 换一条（AI 知道已保存）", read: val("#c1"), expect: "计算机二级证书" },
+    { label: "颁发机构 跟着新的一条", read: val("#c2"), expect: "教育部考试中心" },
   ]],
   "one-at-a-time-fresh": [[
     { label: "第一条 语种", read: sel("#l1"), expect: "英语" },
     { label: "第一条 语言等级", read: val("#l2"), expect: "CET-6 560" },
-    { label: "第一条 校园活动", read: val("#c1"), expect: "学生会" },
+    { label: "第一条 证书", read: val("#c1"), expect: "英语六级证书" },
   ], { page: "one-at-a-time", query: "?fresh" }],
+  "campus": [[
+    { label: "姓名", read: val("#b1"), expect: "林晓舟" },
+    { label: "是否学生干部（来自校园经历）", read: `document.querySelector("#b2y").checked ? "是" : document.querySelector("#b2n").checked ? "否" : ""`, expect: "是" },
+    { label: "学习成绩排名", read: val("#b3"), expect: "前 10%" },
+    { label: "是否接受岗位调剂", read: sel("#b4"), expect: "是" },
+    { label: "研究方向", read: val("#b5"), expect: "因果推断与增长分析" },
+    { label: "主修课程", read: val("#b6"), expect: "多元统计分析、机器学习、时间序列" },
+    { label: "教育 院系", read: val("#e2"), expect: "管理学院" },
+    { label: "教育 专业", read: val("#e3"), expect: "统计学" },
+    { label: "项目职务（标题挨着输入框）", read: val("#p2"), expect: "负责人" },
+    { label: "校园 组织团体名称", read: val("#c1"), expect: "复旦大学研究生会" },
+    { label: "校园 担任职务", read: val("#c2"), expect: "学术部部长" },
+    { label: "校园 干部级别", read: sel("#c3"), expect: "校级" },
+    { label: "校园 开始时间", read: val("#c4"), expect: "2024-09" },
+    { label: "校园 结束时间", read: val("#c5"), expect: "2025-06" },
+    { label: "校园 学生干部描述", read: val("#c6"), expect: "组织学术沙龙 12 场" },
+  ]],
   "wizard": [[
     { label: "第1步 姓名", read: val("#a1"), expect: "林晓舟" },
     { label: "第1步 性别", read: sel("#a4"), expect: "女" },

@@ -237,3 +237,34 @@ test("personal 日程 open inside the main app, not the sidebar-less 日历 wind
     assert.equal(source.includes("/calendar/events?id="), true, file);
   }
 });
+
+test("real portal labels filled by hand before (歌尔、中国移动、51job、智联、吉利) now come from 网申资料", () => {
+  const profile = {
+    name: "陈", education: [{ school: "新加坡国立大学", major: "机械工程", department: "工程学院", degree: "硕士" }],
+    experiences: [{ company: "NUS CLeAR Lab", role: "科研助理" }], projects: [{ name: "倒立摆", role: "负责人" }], awards: [],
+    campus: [{ name: "东南大学学生会", role: "外联部部长", level: "校级", start: "2021-09", end: "2022-06", description: "拉赞助" }],
+    researchDirection: "强化学习控制", rank: "前 10%", acceptAdjust: "是", courses: "自动控制原理", mappings: [],
+  };
+  const value = (label, section = "") => {
+    const field = { id: "x", label, section, tag: "input", type: "text", placeholder: "" };
+    const { repeats } = core.classifyRepeatBlocks([field], profile, "");
+    const info = repeats.get("x");
+    return info ? core.repeatFieldValue(field, info, profile) : core.matchFlatField(field, profile);
+  };
+  assert.equal(value("项目职务", "项目经历"), "负责人");
+  assert.equal(value("组织团体名称", "校园经历"), "东南大学学生会");
+  assert.equal(value("校内担任职务"), "外联部部长");
+  assert.equal(value("学生干部名称*"), "外联部部长");
+  assert.equal(value("干部级别", "学生工作"), "校级");
+  assert.equal(value("学生干部描述*"), "拉赞助");
+  assert.equal(value("所在组织", "在校实践"), "东南大学学生会");
+  assert.equal(value("院系"), "工程学院");
+  assert.equal(value("研究方向"), "强化学习控制");
+  assert.equal(value("学习成绩排名*"), "前 10%");
+  assert.equal(value("主修课程*"), "自动控制原理");
+  assert.equal(value("是否接受岗位调剂*"), "是");
+  assert.equal(value("是否学生干部*"), "是");
+  // An internship's 职务 stays the internship's, and a family member's 单位 is nobody's.
+  assert.equal(value("担任职务", "实习经历"), "科研助理");
+  assert.equal(value("学校名称", "教育经历"), "新加坡国立大学");
+});

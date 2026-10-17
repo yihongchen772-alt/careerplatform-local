@@ -13,7 +13,9 @@ const running = new Set(); // tabIds with an autofill in progress
 const remembering = new Set();
 
 async function settings() {
-  const stored = await chrome.storage.local.get(["token", "appBase", "resumeVersionId", "variantId", "expandBlocks", "fillModules", "positionId", "autoRemember"]);
+  const stored = await chrome.storage.local.get(["token", "appBase", "resumeVersionId", "variantId", "expandBlocks", "fillModules", "fillModulesVersion", "positionId", "autoRemember"]);
+  // Saved before 校园经历 existed: on for whoever fills 实习/工作经历 (as the popup does).
+  if (Array.isArray(stored.fillModules) && (stored.fillModulesVersion ?? 0) < 3 && stored.fillModules.includes("experience") && !stored.fillModules.includes("campus")) stored.fillModules = [...stored.fillModules, "campus"];
   return { base: stored.appBase || DEFAULT_BASE, ...stored };
 }
 

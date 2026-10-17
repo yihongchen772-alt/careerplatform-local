@@ -20,7 +20,7 @@ function updateScope() {
 
 function saveScope() {
   updateScope();
-  return chrome.storage.local.set({ fillModules: fillModules(), fillModulesVersion: 2 });
+  return chrome.storage.local.set({ fillModules: fillModules(), fillModulesVersion: 3 });
 }
 
 function send(type, payload = {}) {
@@ -142,6 +142,8 @@ async function load() {
   const prefs = await chrome.storage.local.get(["resumeVersionId", "variantId", "expandBlocks", "fillModules", "fillModulesVersion", "autoRemember"]);
   if (Array.isArray(prefs.fillModules)) {
     if (prefs.fillModulesVersion !== 2 && ["basic", "education", "experience", "project", "questions", "other", "resume"].every((id) => prefs.fillModules.includes(id))) prefs.fillModules.push("award");
+    // v3 added 校园经历: on for whoever fills 实习/工作经历 (it used to be filled as one).
+    if ((prefs.fillModulesVersion ?? 0) < 3 && prefs.fillModules.includes("experience") && !prefs.fillModules.includes("campus")) prefs.fillModules.push("campus");
     for (const input of document.querySelectorAll("[data-module]")) input.checked = prefs.fillModules.includes(input.dataset.module);
     await saveScope();
   }

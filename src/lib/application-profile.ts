@@ -6,6 +6,8 @@ import { z } from "zod";
 export const educationSchema = z.object({
   school: z.string().trim().max(80).default(""),
   major: z.string().trim().max(80).default(""),
+  /** 院系 / 学院, asked separately from the major on many forms. */
+  department: z.string().trim().max(80).default(""),
   /** 本科 / 硕士 / 博士 / 大专 … free text. */
   degree: z.string().trim().max(40).default(""),
   gpa: z.string().trim().max(40).default(""),
@@ -39,6 +41,16 @@ export const awardSchema = z.object({
   description: z.string().trim().max(3000).default(""),
 });
 
+/** 校园经历 / 学生工作: a club, student union or class role (组织、职务、级别). */
+export const campusSchema = z.object({
+  name: z.string().trim().max(120).default(""),
+  role: z.string().trim().max(80).default(""),
+  level: z.string().trim().max(40).default(""),
+  start: z.string().trim().max(20).default(""),
+  end: z.string().trim().max(20).default(""),
+  description: z.string().trim().max(3000).default(""),
+});
+
 export const EXTRA_FIELDS = [
   { key: "politics", label: "政治面貌", hint: "群众 / 共青团员 / 中共党员" },
   { key: "hometown", label: "籍贯", hint: "省 市" },
@@ -52,6 +64,11 @@ export const EXTRA_FIELDS = [
   { key: "internshipDuration", label: "可实习时长", hint: "6 个月，每周 5 天" },
   { key: "wechat", label: "微信号", hint: "" },
   { key: "address", label: "通讯地址", hint: "省 市 区 街道" },
+  // Asked on most 校招 forms and missing before (seen filled by hand on 歌尔、中国移动、51job、Moka).
+  { key: "researchDirection", label: "研究方向", hint: "强化学习控制 / 机器人运动控制" },
+  { key: "rank", label: "成绩排名", hint: "前 10% / 5/120" },
+  { key: "acceptAdjust", label: "是否接受调剂", hint: "是 / 否" },
+  { key: "courses", label: "主修课程", hint: "自动控制原理、机器人学、……", multiline: true },
   // Long text: most forms ask for it, and each direction wants its own version.
   { key: "selfIntro", label: "自我评价", hint: "3-5 句，突出与目标岗位相关的能力", multiline: true },
 ] as const;
@@ -77,6 +94,7 @@ export const applicationProfileSchema = z.object({
   experiences: z.array(experienceSchema).max(20).default([]),
   projects: z.array(projectSchema).max(20).default([]),
   awards: z.array(awardSchema).max(30).default([]),
+  campus: z.array(campusSchema).max(20).default([]),
   extras: z.record(z.string(), z.string().trim().max(1000)).default({}),
   variants: z.array(profileVariantSchema).max(8).default([]),
 });
@@ -108,8 +126,9 @@ export type EducationRow = z.infer<typeof educationSchema>;
 export type ExperienceRow = z.infer<typeof experienceSchema>;
 export type ProjectRow = z.infer<typeof projectSchema>;
 export type AwardRow = z.infer<typeof awardSchema>;
+export type CampusRow = z.infer<typeof campusSchema>;
 
-export const EMPTY_APPLICATION_PROFILE: ApplicationProfile = { education: [], experiences: [], projects: [], awards: [], extras: {}, variants: [] };
+export const EMPTY_APPLICATION_PROFILE: ApplicationProfile = { education: [], experiences: [], projects: [], awards: [], campus: [], extras: {}, variants: [] };
 
 export function parseApplicationProfile(raw: unknown): ApplicationProfile {
   const parsed = applicationProfileSchema.safeParse(raw);
@@ -144,7 +163,7 @@ export function mergeProjectRows(current: ProjectRow[], extracted: ProjectRow[])
 export function describeApplicationProfile(p: ApplicationProfile): string {
   const lines: string[] = [];
   p.education.forEach((e, i) => {
-    const bits = [e.school, e.major, e.degree, e.gpa && `GPA ${e.gpa}`, [e.start, e.end].filter(Boolean).join("~")].filter(Boolean);
+    const bits = [e.school, e.department, e.major, e.degree, e.gpa && `GPA ${e.gpa}`, [e.start, e.end].filter(Boolean).join("~")].filter(Boolean);
     if (bits.length) lines.push(`教育经历${i + 1}：${bits.join(" / ")}`);
   });
   p.experiences.forEach((x, i) => {
@@ -160,6 +179,10 @@ export function describeApplicationProfile(p: ApplicationProfile): string {
   (p.awards || []).forEach((award, i) => {
     const bits = [award.name, award.level, award.issuer, award.date, award.description].filter(Boolean);
     if (bits.length) lines.push(`获奖情况${i + 1}：${bits.join(" / ")}`);
+  });
+  (p.campus || []).forEach((row, i) => {
+    const bits = [row.name, row.role, row.level, [row.start, row.end].filter(Boolean).join("~")].filter(Boolean);
+    if (bits.length) lines.push(`校园经历${i + 1}：${bits.join(" / ")}${row.description ? `——${row.description}` : ""}`);
   });
   for (const f of EXTRA_FIELDS) {
     const v = p.extras[f.key];

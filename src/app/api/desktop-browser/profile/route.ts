@@ -66,6 +66,7 @@ export async function GET(request: Request) {
     experiences: structured.experiences,
     projects: structured.projects,
     awards: structured.awards,
+    campus: structured.campus ?? [],
     // In a direction variant the library remains available in the preview
     // selector, while automatic filling follows the variant's own order.
     library: memories,
@@ -82,6 +83,11 @@ export async function GET(request: Request) {
     internshipDuration: structured.extras.internshipDuration || null,
     wechat: structured.extras.wechat || null,
     address: structured.extras.address || null,
+    researchDirection: structured.extras.researchDirection || null,
+    rank: structured.extras.rank || null,
+    acceptAdjust: structured.extras.acceptAdjust || null,
+    courses: structured.extras.courses || null,
+    department: edu?.department || null,
     extra: [describeApplicationProfile(structured), ...Object.entries(summaries).map(([category, text]) => `${category === "experience" ? "实习/工作" : category === "project" ? "项目" : category === "award" ? "获奖" : "教育"}整段原文：${text}`)].filter(Boolean).join("\n") || null,
   });
 }

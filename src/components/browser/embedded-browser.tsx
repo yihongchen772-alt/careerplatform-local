@@ -85,6 +85,7 @@ const FILL_MODULES: { id: DesktopBridgeAutofillModule; label: string }[] = [
   { id: "experience", label: "实习 / 工作经历" },
   { id: "project", label: "项目经历" },
   { id: "award", label: "获奖情况" },
+  { id: "campus", label: "校园经历" },
   { id: "questions", label: "开放题 / 自我评价" },
   { id: "other", label: "其他字段" },
   { id: "resume", label: "简历附件" },
@@ -164,10 +165,13 @@ export function EmbeddedBrowser({
   const [variantChoice, setVariantChoice] = useState("");
   const scopePreference = useSyncExternalStore(noop, () => {
     try {
-      const saved = localStorage.getItem("careerplatform.browser.fillModules.v2");
+      const saved = localStorage.getItem("careerplatform.browser.fillModules.v3");
       if (saved !== null) return saved;
+      // v2 had no 校园经历: whoever filled 实习/工作经历 gets it too (it used to be filled as one).
+      const v2 = localStorage.getItem("careerplatform.browser.fillModules.v2");
+      if (v2 !== null) return v2.split(",").includes("experience") ? `${v2},campus` : v2;
       const old = localStorage.getItem("careerplatform.browser.fillModules");
-      return old === null || ALL_FILL_MODULES.filter((id) => id !== "award").every((id) => old.split(",").includes(id)) ? ALL_FILL_MODULES.join(",") : old;
+      return old === null || ALL_FILL_MODULES.filter((id) => id !== "award" && id !== "campus").every((id) => old.split(",").includes(id)) ? ALL_FILL_MODULES.join(",") : old;
     }
     catch { return ALL_FILL_MODULES.join(","); }
   }, () => ALL_FILL_MODULES.join(","));
@@ -176,7 +180,7 @@ export function EmbeddedBrowser({
   function setFillModules(modules: DesktopBridgeAutofillModule[]) {
     const ordered = ALL_FILL_MODULES.filter((id) => modules.includes(id));
     setScopeOverride(ordered);
-    writePreference("careerplatform.browser.fillModules.v2", ordered.join(","));
+    writePreference("careerplatform.browser.fillModules.v3", ordered.join(","));
   }
   const [resumeVersionId, setResumeVersionId] = useState(
     resumeVersions.find((r) => r.isDefault)?.id ?? resumeVersions[0]?.id ?? ""
