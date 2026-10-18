@@ -33,7 +33,7 @@ form { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1p
 #fill-scope .hint { margin: 6px 0; }
 #fill-scope label { margin: 5px 0; }
 .scope-actions { display: flex; gap: 6px; margin: 6px 0; }
-.scope-actions button { padding: 3px 8px; font-size: 12px; }
+.scope-actions button, #learned-undo { padding: 3px 8px; font-size: 12px; }
 
 #plan fieldset { margin: 8px 0; border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
 #plan textarea { width: 100%; min-height: 70px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); }

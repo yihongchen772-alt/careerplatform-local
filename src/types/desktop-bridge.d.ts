@@ -15,7 +15,7 @@ export type DesktopBridgeTabsState = { tabs: DesktopBridgeTab[]; activeId: numbe
 /** Where an autofilled value came from — matches the outline colour on the page. */
 export type DesktopBridgeFillSource = "profile" | "memory" | "ai" | "manual" | "prefilled" | "excluded";
 
-export type DesktopBridgeAutofillModule = "basic" | "education" | "experience" | "project" | "award" | "campus" | "questions" | "other" | "resume";
+export type DesktopBridgeAutofillModule = "basic" | "education" | "experience" | "project" | "award" | "campus" | "skill" | "questions" | "other" | "resume";
 
 export type FillProposal = { id: string; fieldKey: string; label: string; section?: string; value: string; selected: boolean; eligible: boolean; source: string; ref: string; required?: boolean; maxLength?: number | null; note: string; edited?: boolean; remember?: boolean };
 export type FillRecordBlock = { id: string; label: string; note: string; fieldIds: string[]; choices: { ref: string; label: string; values: Record<string, { value: string; ref: string }> }[] };
@@ -83,7 +83,7 @@ export type DesktopBridge = {
   applicationSnapshot(): Promise<ApplicationSnapshot | null>;
   autofill(resumeVersionId?: string, options?: DesktopBridgeAutofillOptions): Promise<void>;
   cancelAutofill(tabId?: number): Promise<void>;
-  saveCorrections(resumeVersionId?: string, onlyUserEdited?: boolean, positionId?: string, variantId?: string, discover?: boolean): Promise<{ saved: number; pending?: number; pendingTotal?: number; draftSaved?: boolean; unchanged?: number }>;
+  saveCorrections(resumeVersionId?: string, onlyUserEdited?: boolean, positionId?: string, variantId?: string, discover?: boolean): Promise<{ saved: number; pending?: number; pendingTotal?: number; draftSaved?: boolean; unchanged?: number; learned?: { id: string; label: string }[] }>;
   /** 「这页没填好」: saves the page's form structure (no filled-in values) as a file and shows it in Finder. */
   captureSample(note?: string): Promise<{ file: string; fields: number }>;
   clearMarks(): Promise<void>;

@@ -16,6 +16,8 @@ async function settings() {
   const stored = await chrome.storage.local.get(["token", "appBase", "resumeVersionId", "variantId", "expandBlocks", "fillModules", "fillModulesVersion", "positionId", "autoRemember"]);
   // Saved before 校园经历 existed: on for whoever fills 实习/工作经历 (as the popup does).
   if (Array.isArray(stored.fillModules) && (stored.fillModulesVersion ?? 0) < 3 && stored.fillModules.includes("experience") && !stored.fillModules.includes("campus")) stored.fillModules = [...stored.fillModules, "campus"];
+  // 专业技能 boxes were filled as 其他字段 before they had a module of their own.
+  if (Array.isArray(stored.fillModules) && (stored.fillModulesVersion ?? 0) < 4 && stored.fillModules.includes("other") && !stored.fillModules.includes("skill")) stored.fillModules = [...stored.fillModules, "skill"];
   return { base: stored.appBase || DEFAULT_BASE, ...stored };
 }
 
@@ -250,7 +252,11 @@ async function rememberAutomatically(sender, message) {
   try {
     const result = await saveTab(tabId, true);
     if (result.draftSaved || result.pendingTotal !== undefined) {
-      const status = { pending: result.pendingTotal || 0, draftSaved: result.draftSaved, url: tab.url, at: Date.now() };
+      // Everything this page wrote into 网申资料 so far, for one 撤销 in the popup.
+      const previous = (await chrome.storage.session.get(`memory-status:${tabId}`))[`memory-status:${tabId}`];
+      const earlier = previous?.url === tab.url && Array.isArray(previous.learned) ? previous.learned : [];
+      const learned = [...earlier.filter((item) => !(result.learned || []).some((next) => next.id === item.id)), ...(result.learned || [])].slice(-40);
+      const status = { pending: result.pendingTotal || 0, draftSaved: result.draftSaved, url: tab.url, at: Date.now(), learned };
       await chrome.storage.session.set({ [`memory-status:${tabId}`]: status });
       chrome.runtime.sendMessage({ type: "memory-status", tabId, status }).catch(() => {});
     }
@@ -286,6 +292,13 @@ async function submittedFields(tabId, url) {
 
 const handlers = {
   async watchMemory({ tabId, enabled }) { return watchMemory(tabId, enabled === true); },
+  async undoLearned({ tabId, ids }) {
+    const result = await jsonOrThrow(await api("undo-learned", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) }));
+    const key = `memory-status:${tabId}`;
+    const status = (await chrome.storage.session.get(key))[key];
+    if (status) await chrome.storage.session.set({ [key]: { ...status, learned: [] } });
+    return result;
+  },
   async memoryStatus({ tabId }) { const status = (await chrome.storage.session.get(`memory-status:${tabId}`))[`memory-status:${tabId}`]; const tab = await chrome.tabs.get(tabId); return status?.url === tab.url ? status : null; },
   async saveDraft({ draft }) { return jsonOrThrow(await api("application-draft", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(draft) })); },
   async context({ tabId }) { const data = await jsonOrThrow(await api("application-context")); const session = await chrome.storage.session.get(`job:${tabId}`); return { ...data, positionId: session[`job:${tabId}`] || "" }; },

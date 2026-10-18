@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/session";
 import { describeApplicationProfile, parseApplicationProfile, resolveProfileVariant } from "@/lib/application-profile";
 import { db } from "@/lib/db";
-import { profileWithMemories, toMemoryView, type MemoryView } from "@/lib/application-memory";
+import { MEMORY_CATEGORIES, profileWithMemories, toMemoryView, type MemoryCategory, type MemoryView } from "@/lib/application-memory";
 
 // Consumed by electron/browser-view.js's autofill handler (plain HTTP —
 // the Electron main process isn't part of the Next app, see
@@ -67,6 +67,7 @@ export async function GET(request: Request) {
     projects: structured.projects,
     awards: structured.awards,
     campus: structured.campus ?? [],
+    skills: structured.skills ?? [],
     // In a direction variant the library remains available in the preview
     // selector, while automatic filling follows the variant's own order.
     library: memories,
@@ -87,7 +88,12 @@ export async function GET(request: Request) {
     rank: structured.extras.rank || null,
     acceptAdjust: structured.extras.acceptAdjust || null,
     courses: structured.extras.courses || null,
+    qq: structured.extras.qq || null,
+    homepage: structured.extras.homepage || null,
+    lab: structured.extras.lab || null,
+    hobbies: structured.extras.hobbies || null,
+    thesis: structured.extras.thesis || null,
     department: edu?.department || null,
-    extra: [describeApplicationProfile(structured), ...Object.entries(summaries).map(([category, text]) => `${category === "experience" ? "实习/工作" : category === "project" ? "项目" : category === "award" ? "获奖" : "教育"}整段原文：${text}`)].filter(Boolean).join("\n") || null,
+    extra: [describeApplicationProfile(structured), ...Object.entries(summaries).map(([category, text]) => `${MEMORY_CATEGORIES[category as MemoryCategory] ?? "经历"}整段原文：${text}`)].filter(Boolean).join("\n") || null,
   });
 }

@@ -20,7 +20,7 @@ function updateScope() {
 
 function saveScope() {
   updateScope();
-  return chrome.storage.local.set({ fillModules: fillModules(), fillModulesVersion: 3 });
+  return chrome.storage.local.set({ fillModules: fillModules(), fillModulesVersion: 4 });
 }
 
 function send(type, payload = {}) {
@@ -144,6 +144,8 @@ async function load() {
     if (prefs.fillModulesVersion !== 2 && ["basic", "education", "experience", "project", "questions", "other", "resume"].every((id) => prefs.fillModules.includes(id))) prefs.fillModules.push("award");
     // v3 added 校园经历: on for whoever fills 实习/工作经历 (it used to be filled as one).
     if ((prefs.fillModulesVersion ?? 0) < 3 && prefs.fillModules.includes("experience") && !prefs.fillModules.includes("campus")) prefs.fillModules.push("campus");
+    // 专业技能 boxes were filled as 其他字段 before they had a module of their own.
+    if ((prefs.fillModulesVersion ?? 0) < 4 && prefs.fillModules.includes("other") && !prefs.fillModules.includes("skill")) prefs.fillModules.push("skill");
     for (const input of document.querySelectorAll("[data-module]")) input.checked = prefs.fillModules.includes(input.dataset.module);
     await saveScope();
   }
@@ -176,9 +178,25 @@ async function load() {
   renderSite();
 }
 
+let learnedIds = [];
 function renderMemoryStatus(status) {
   $("memory-state").textContent = status.error ? `草稿或变化保存失败：${status.error}，可点「核对本页变化」重试` : `${status.draftSaved ? "网页草稿已保存到 App；" : ""}${status.pending || 0} 项待核对变化，确认前不会用于以后填写`;
+  const learned = Array.isArray(status.learned) ? status.learned : [];
+  learnedIds = learned.map((item) => item.id);
+  $("learned-state").hidden = !learned.length;
+  $("learned-undo").hidden = !learned.length;
+  if (learned.length) $("learned-text").textContent = `已记进网申资料：${learned.slice(0, 4).map((item) => item.label).join("、")}${learned.length > 4 ? ` 等 ${learned.length} 项` : ""}（下次自动填）`;
 }
+$("learned-undo").addEventListener("click", async () => {
+  if (!learnedIds.length) return;
+  $("learned-undo").disabled = true;
+  try {
+    const result = await send("undoLearned", { ids: learnedIds });
+    learnedIds = [];
+    $("learned-text").textContent = result.kept ? `已撤销 ${result.undone} 项；${result.kept} 项之后在 App 里改过，保留了` : "已撤销，网申资料恢复原样";
+  } catch (error) { $("learned-text").textContent = `撤销失败：${error.message}`; }
+  finally { $("learned-undo").disabled = false; $("learned-undo").hidden = !learnedIds.length; }
+});
 $("auto-remember").addEventListener("change", async () => {
   const enabled = $("auto-remember").checked;
   try {

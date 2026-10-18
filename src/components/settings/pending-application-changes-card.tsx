@@ -5,13 +5,13 @@ import { Check, ChevronRight, ExternalLink, Inbox, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { acceptPendingApplicationChange, ignorePendingApplicationChange, ignorePendingApplicationChanges } from "@/lib/actions/pending-application-change";
+import { acceptPendingApplicationChange, acceptPendingIntoProfile, ignorePendingApplicationChange, ignorePendingApplicationChanges } from "@/lib/actions/pending-application-change";
 import { MEMORY_CATEGORIES, sameMemoryEntity, normalizeMemoryText, type MemoryCapture, type MemoryContent, type MemoryView } from "@/lib/application-memory";
 import { companySpecificQuestion } from "@/lib/autofill-answer-scope";
 import type { MemoryAnswer } from "@/components/settings/autofill-memory-card";
 import type { PendingAnswer, PendingApplicationChangeView } from "@/lib/pending-application-change";
 
-const contentLabels: Record<string, string> = { name: "名称", company: "公司 / 单位", school: "学校", role: "职位 / 角色", major: "专业", degree: "学历", gpa: "GPA", start: "开始时间", end: "结束时间", date: "时间", issuer: "颁发单位", level: "等级", description: "描述 / 成果", responsibilities: "职责与成果", text: "整段原文" };
+const contentLabels: Record<string, string> = { name: "名称", company: "公司 / 单位", school: "学校", department: "院系 / 部门", role: "职位 / 角色", major: "专业", degree: "学历", gpa: "GPA", start: "开始时间", end: "结束时间", date: "时间", issuer: "颁发单位", level: "等级 / 程度", category: "类别", description: "描述 / 成果", responsibilities: "职责与成果", text: "整段原文" };
 
 function sourceName(url: string) {
   try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return "网申页面"; }
@@ -22,9 +22,9 @@ function groupKey(row: PendingApplicationChangeView) {
   return row.contextKey?.startsWith("job:") ? row.contextKey : `site:${sourceName(row.sourceUrl)}`;
 }
 
-/** Whole 经历 and open answers first; short one-off fields fold away. */
+/** Whole 经历, open answers and 网申资料 fields first; other short one-off fields fold away. */
 function isShortField(row: PendingApplicationChangeView) {
-  return row.kind === "answer" && (row.payload as PendingAnswer).kind !== "essay";
+  return row.kind === "answer" && (row.payload as PendingAnswer).kind !== "essay" && !row.profileField;
 }
 
 function preview(row: PendingApplicationChangeView) {
@@ -33,7 +33,7 @@ function preview(row: PendingApplicationChangeView) {
   return [content.role || content.major || content.level, [content.start || content.date, content.end].filter(Boolean).join(" – "), content.description || content.responsibilities || content.text].filter(Boolean).join(" · ");
 }
 
-export function PendingApplicationChangesCard({ initial, currentMemories, currentAnswers, currentFacts, sources = {} }: { initial: PendingApplicationChangeView[]; currentMemories: MemoryView[]; currentAnswers: MemoryAnswer[]; currentFacts: Record<string, string | null>; sources?: Record<string, string> }) {
+export function PendingApplicationChangesCard({ initial, currentMemories, currentAnswers, currentFacts, profileValues = {}, sources = {} }: { initial: PendingApplicationChangeView[]; currentMemories: MemoryView[]; currentAnswers: MemoryAnswer[]; currentFacts: Record<string, string | null>; profileValues?: Record<string, string>; sources?: Record<string, string> }) {
   const [removed, setRemoved] = useState<string[]>([]);
   const rows = initial.filter((row) => !removed.includes(`${row.id}:${row.revision}`));
   const [scope, setScope] = useState<Record<string, "local" | "global">>({});
@@ -64,7 +64,7 @@ export function PendingApplicationChangesCard({ initial, currentMemories, curren
     return currentAnswers.find((item) => item.contextKey === context && item.kind === payload.kind && normalizeMemoryText(item.questionLabel) === normalizeMemoryText(payload.questionLabel));
   }
 
-  async function accept(row: PendingApplicationChangeView) {
+  async function accept(row: PendingApplicationChangeView, toProfile = false) {
     setBusyId(row.id);
     try {
       const target = targetFor(row);
@@ -78,10 +78,11 @@ export function PendingApplicationChangesCard({ initial, currentMemories, curren
         content: row.kind === "record" ? contentFor(row) : undefined,
         answer: row.kind === "answer" ? answerEdits[reviewKey(row)] : undefined,
         enableAutomatic: enableAutomatic[reviewKey(row)] || false,
+        toProfile,
       });
       if (!res.ok) return void toast.error(res.message);
       setRemoved((current) => [...current, reviewKey(row)]);
-      toast.success(row.kind === "record" ? "已加入经历库" : "已记住，以后填写会用上");
+      toast.success(toProfile ? `已记进网申资料「${row.profileField?.label}」，以后网申都会自动填` : row.kind === "record" ? "已加入经历库" : "已记住，以后填写会用上");
     } finally { setBusyId(""); }
   }
 
@@ -91,6 +92,22 @@ export function PendingApplicationChangesCard({ initial, currentMemories, curren
       const res = await ignorePendingApplicationChange(row.id, row.revision);
       if (!res.ok) return void toast.error(res.message);
       setRemoved((current) => [...current, reviewKey(row)]);
+    } finally { setBusyId(""); }
+  }
+
+  // Answers whose 网申资料 field is still blank: one click writes them all in.
+  // 期望城市 / 期望岗位 are usually picked for one company, so only one by one.
+  const profileReady = (list: PendingApplicationChangeView[]) => list.filter((row) => row.profileField && !["preferredCities", "targetRole"].includes(row.profileField.key) && !profileValues[row.profileField.key]?.trim());
+  async function acceptAllIntoProfile(list: PendingApplicationChangeView[]) {
+    setBusyId("all");
+    try {
+      // One answer per field: the newest one wins.
+      const seen = new Set<string>();
+      const picked = [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).filter((row) => !seen.has(row.profileField!.key) && seen.add(row.profileField!.key));
+      const res = await acceptPendingIntoProfile(picked.map((row) => ({ id: row.id, revision: row.revision })));
+      if (!res.ok) return void toast.error(res.message);
+      setRemoved((current) => [...current, ...picked.map(reviewKey)]);
+      toast.success(`已记进网申资料 ${res.data.saved} 项${res.data.skipped ? `；${res.data.skipped} 项刚有新变化，刷新后再看` : ""}，以后网申都会自动填`);
     } finally { setBusyId(""); }
   }
 
@@ -123,16 +140,19 @@ export function PendingApplicationChangesCard({ initial, currentMemories, curren
           <div className="min-w-0 flex-1">
             <p className="flex flex-wrap items-center gap-x-2 text-sm font-medium">
               {row.label}
-              <span className="text-[11px] font-normal text-muted-foreground">{record ? `新${MEMORY_CATEGORIES[record.category]}` : answer?.kind === "essay" ? "问答" : "字段"}{matchingMemory ? " · 与已有经历相似" : ""}</span>
+              <span className="text-[11px] font-normal text-muted-foreground">{record ? `新${MEMORY_CATEGORIES[record.category]}` : row.profileField ? `网申资料 · ${row.profileField.label}` : answer?.kind === "essay" ? "问答" : "字段"}{matchingMemory ? " · 与已有经历相似" : ""}</span>
             </p>
             <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">{preview(row)}</p>
+            {row.profileField && profileValues[row.profileField.key]?.trim() && <p className="mt-0.5 text-xs text-muted-foreground">网申资料里现在是「{profileValues[row.profileField.key].slice(0, 40)}」，记进去会替换它</p>}
             <button type="button" onClick={() => setOpen(expanded ? null : key)} className="mt-1 inline-flex items-center gap-0.5 text-xs text-muted-foreground hover:text-foreground">
               <ChevronRight className={`size-3 transition-transform ${expanded ? "rotate-90" : ""}`} />调整
             </button>
           </div>
           <div className="flex shrink-0 gap-1">
             <Button size="sm" variant="ghost" disabled={!!busyId} onClick={() => ignore(row)} aria-label={`忽略 ${row.label}`}><X className="size-3.5" />忽略</Button>
-            <Button size="sm" variant="outline" disabled={!!busyId} onClick={() => accept(row)}><Check className="size-3.5" />{record ? "加入经历库" : "记住"}</Button>
+            {row.profileField
+              ? <Button size="sm" variant="outline" disabled={!!busyId} onClick={() => accept(row, true)} title="写进 设置 → 网申资料，以后所有网申都按它填"><Check className="size-3.5" />记进网申资料</Button>
+              : <Button size="sm" variant="outline" disabled={!!busyId} onClick={() => accept(row)}><Check className="size-3.5" />{record ? "加入经历库" : "记住"}</Button>}
           </div>
         </div>
         {expanded && (
@@ -182,7 +202,10 @@ export function PendingApplicationChangesCard({ initial, currentMemories, curren
                     <a href={list[0].sourceUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 hover:text-foreground">打开网页<ExternalLink className="size-3" /></a>
                   </p>
                 </div>
-                <Button size="sm" variant="ghost" disabled={!!busyId} onClick={() => ignoreAll(list, label)}>全部忽略</Button>
+                <div className="flex gap-1">
+                  {profileReady(list).length > 0 && <Button size="sm" variant="outline" disabled={!!busyId} onClick={() => acceptAllIntoProfile(profileReady(list))} title="网申资料里还空着的字段，用你在这里手填的内容补上"><Check className="size-3.5" />全部记进网申资料（{new Set(profileReady(list).map((row) => row.profileField!.key)).size}）</Button>}
+                  <Button size="sm" variant="ghost" disabled={!!busyId} onClick={() => ignoreAll(list, label)}>全部忽略</Button>
+                </div>
               </header>
               {!!main.length && <ul className="divide-y">{main.map(renderItem)}</ul>}
               {!!fields.length && (

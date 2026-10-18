@@ -9,7 +9,7 @@ import { updateProfileSchema } from "@/lib/validation";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
 import { getResumeContext } from "@/lib/resume-context";
 import { callTextAi, getUserAiConfig } from "@/lib/ai-providers";
-import { applicationProfileSchema, type ApplicationProfile } from "@/lib/application-profile";
+import { applicationProfileSchema, parseApplicationProfile, type ApplicationProfile } from "@/lib/application-profile";
 
 export async function updateProfile(input: z.infer<typeof updateProfileSchema>) {
   const user = await requireUser();
@@ -40,6 +40,9 @@ export async function updateApplicationProfile(input: unknown): Promise<ActionRe
   return toActionResult(async () => {
     const user = await requireUser();
     const data = applicationProfileSchema.parse(input);
+    // The 撤销 records belong to the browser, which may have learned more
+    // while this form was open; the stored ones are kept as they are.
+    const stored = await db.user.findUnique({ where: { id: user.id }, select: { applicationProfile: true } });
     // Drop fully blank rows — an empty education row still counts as
     // "education[0]" to the keyword matcher and would fill nothing.
     const cleaned: ApplicationProfile = {
@@ -48,7 +51,9 @@ export async function updateApplicationProfile(input: unknown): Promise<ActionRe
       projects: data.projects.filter((project) => Object.values(project).some(Boolean)),
       awards: data.awards.filter((award) => Object.values(award).some(Boolean)),
       campus: data.campus.filter((row) => Object.values(row).some(Boolean)),
+      skills: data.skills.filter((row) => Object.values(row).some(Boolean)),
       extras: Object.fromEntries(Object.entries(data.extras).filter(([, v]) => v)),
+      learned: parseApplicationProfile(stored?.applicationProfile).learned,
       variants: data.variants.map((variant) => ({
         ...variant,
         resumeVersionId: variant.resumeVersionId || null,
@@ -85,11 +90,12 @@ ${resumeText}
 
 要求：
 - education：每段教育经历一条，按时间倒序（最高/最近学历在前）。school 学校全称；major 专业；department 院系/学院（写了才填）；degree 学历（本科/硕士/博士/大专）；gpa 原样（如 "3.8/4.0" 或 "85/100"）；start/end 用 yyyy-MM，没有月份就 yyyy。
-- experiences：实习/工作经历，按时间倒序。company 单位；role 职位；start/end 同上；description 一两句概括做了什么（用简历原文的关键表述）。
+- experiences：实习/工作经历，按时间倒序。company 单位；department 部门（写了才填）；role 职位；start/end 同上；description 一两句概括做了什么（用简历原文的关键表述）。
 - projects：项目经历，按时间倒序。name 项目名称；role 在项目中的角色；start/end 同上；description 项目背景、目标和内容；responsibilities 本人负责的工作与成果。只提取简历明确写出的项目，不要把实习单位当作项目。
 - awards：获奖情况。name 奖项名称；issuer 颁发单位；level 等级；date 获奖时间；description 补充说明。只提取明确写出的奖项。
 - campus：校园经历 / 学生工作（学生会、社团、班级、实验室学生职务等，不是实习也不是项目）。name 组织名称；role 担任职务；level 级别（校级/院级/班级）；start/end 同上；description 做了什么。
-- extras：politics 政治面貌、hometown 籍贯、ethnicity 民族、english 英语水平（如 CET-6 580）、currentCity 现居城市、researchDirection 研究方向、rank 成绩排名、courses 主修课程（逗号分隔）——简历里有才填。
+- skills：专业技能，每项一条。name 技能名称（如 Python、MATLAB、SolidWorks）；level 掌握程度（了解/熟悉/熟练/精通，简历写了才填）；category 类别（编程语言/软件工具/专业技能等）；description 留空。只提取简历「技能」部分明确列出的。
+- extras：politics 政治面貌、hometown 籍贯、ethnicity 民族、english 英语水平（如 CET-6 580）、currentCity 现居城市、researchDirection 研究方向、rank 成绩排名、courses 主修课程（逗号分隔）、homepage 个人主页/GitHub/作品链接、lab 实验室/课题组、hobbies 兴趣爱好、thesis 毕业论文题目——简历里有才填。
 全部用中文。`,
       thinkingBudget: 512,
       timeoutMs: 60000,
@@ -112,10 +118,10 @@ ${resumeText}
             items: {
               type: "OBJECT",
               properties: {
-                company: { type: "STRING" }, role: { type: "STRING" }, start: { type: "STRING" },
+                company: { type: "STRING" }, department: { type: "STRING" }, role: { type: "STRING" }, start: { type: "STRING" },
                 end: { type: "STRING" }, description: { type: "STRING" },
               },
-              required: ["company", "role", "start", "end", "description"],
+              required: ["company", "department", "role", "start", "end", "description"],
             },
           },
           projects: {
@@ -145,17 +151,26 @@ ${resumeText}
               required: ["name", "role", "level", "start", "end", "description"],
             },
           },
+          skills: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: { name: { type: "STRING" }, level: { type: "STRING" }, category: { type: "STRING" }, description: { type: "STRING" } },
+              required: ["name", "level", "category", "description"],
+            },
+          },
           extras: {
             type: "OBJECT",
             properties: {
               politics: { type: "STRING" }, hometown: { type: "STRING" }, ethnicity: { type: "STRING" },
               english: { type: "STRING" }, currentCity: { type: "STRING" },
               researchDirection: { type: "STRING" }, rank: { type: "STRING" }, courses: { type: "STRING" },
+              homepage: { type: "STRING" }, lab: { type: "STRING" }, hobbies: { type: "STRING" }, thesis: { type: "STRING" },
             },
-            required: ["politics", "hometown", "ethnicity", "english", "currentCity", "researchDirection", "rank", "courses"],
+            required: ["politics", "hometown", "ethnicity", "english", "currentCity", "researchDirection", "rank", "courses", "homepage", "lab", "hobbies", "thesis"],
           },
         },
-        required: ["education", "experiences", "projects", "awards", "campus", "extras"],
+        required: ["education", "experiences", "projects", "awards", "campus", "skills", "extras"],
       },
     });
     const parsed = applicationProfileSchema.safeParse(raw);

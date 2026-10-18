@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>某集团校招 · 网申（专业技能、所在部门、提示字下拉、是否题、常问字段）</title>
+<style>body{font:14px sans-serif;max-width:760px;margin:20px auto}.row{display:flex;gap:8px;align-items:center;margin:8px 0}.row>span{width:140px}.block{border:1px dashed #ccc;padding:6px 10px;margin:8px 0}
+.combo{position:relative;min-width:220px;border:1px solid #aaa;padding:4px 8px;cursor:pointer;color:#999}.combo.chosen{color:#000}.combo ul{position:absolute;left:0;top:100%;margin:0;padding:0;list-style:none;background:#fff;border:1px solid #aaa;width:100%;z-index:2}.combo li{padding:4px 8px}.combo li:hover{background:#eef}</style></head>
+<body>
+<!-- Labels taken from what was filled by hand on real portals after v1.20 (Moka、网易、中国移动、腾讯、智联、歌尔). -->
+<h3>基本信息</h3>
+<div class="row"><span>姓名</span><input id="b1"></div>
+<div class="row"><span>QQ号*</span><input id="b2"></div>
+<div class="row"><span>个人主页链接</span><input id="b3"></div>
+<div class="row"><span>个人爱好*</span><input id="b4"></div>
+<div class="row"><span>毕业论文题目*</span><input id="b5"></div>
+<div class="row"><span>实验室</span><input id="b6"></div>
+<div class="row"><span>工作地是否可接受潍坊*</span><label><input type="radio" name="wf" id="b7y">是</label><label><input type="radio" name="wf" id="b7n">否</label></div>
+<h3>教育经历</h3>
+<div class="row"><span>学校名称</span><input id="e1"></div>
+<div class="row"><span>专业</span><input id="e2"></div>
+<div class="row"><span>是否211院校</span><label><input type="radio" name="is211" id="e3y">是</label><label><input type="radio" name="is211" id="e3n">否</label></div>
+<div class="row"><span>受到奖励</span><textarea id="e4"></textarea></div>
+<div class="row"><span>校内活动</span><textarea id="e5"></textarea></div>
+<h3>实习经历</h3>
+<div class="row"><span>单位名称</span><div class="combo" id="x1" role="combobox" aria-haspopup="listbox" aria-controls="x1-list" tabindex="0"><span class="shown">输入工作单位名称</span></div></div>
+<div class="row"><span>所在部门</span><input id="x2"></div>
+<div class="row"><span>公司所属行业</span><select id="x3"><option value="">请选择</option><option>互联网</option><option>金融</option><option>科学研究（自然、工程、农业、医学等）</option></select></div>
+<div class="row"><span>职位名称</span><input id="x4"></div>
+<div class="row"><span>证明人单位</span><div class="combo" id="x5" role="combobox" aria-haspopup="listbox" aria-controls="x5-list" tabindex="0"><span class="shown">输入证明人单位</span></div></div>
+<h3>项目经历</h3>
+<div class="row"><span>项目名称</span><input id="p1"></div>
+<div class="row"><span>项目简述*</span><textarea id="p2"></textarea></div>
+<div class="row"><span>个人工作</span><textarea id="p3"></textarea></div>
+<h3>专业技能</h3>
+<div class="block">
+  <div class="row"><span>技能名称</span><input id="s1"></div>
+  <div class="row"><span>掌握程度</span><select id="s2"><option value="">请选择</option><option>一般</option><option>良好</option><option>熟练</option><option>精通</option></select></div>
+  <div class="row"><span>技能类别</span><select id="s3"><option value="">请选择</option><option>编程语言</option><option>软件工具</option><option>其他</option></select></div>
+</div>
+<div class="block">
+  <div class="row"><span>技能名称</span><input id="s4"></div>
+  <div class="row"><span>掌握程度</span><select id="s5"><option value="">请选择</option><option>一般</option><option>良好</option><option>熟练</option><option>精通</option></select></div>
+  <div class="row"><span>技能类别</span><select id="s6"><option value="">请选择</option><option>编程语言</option><option>软件工具</option><option>其他</option></select></div>
+</div>
+<h3>语言能力</h3>
+<div class="row"><span>语种</span><select id="l1"><option value="">请选择</option><option>英语</option><option>日语</option></select></div>
+<div class="row"><span>熟练程度</span><select id="l2"><option value="">请选择</option><option>一般</option><option>良好</option><option>熟练</option><option>精通</option></select></div>
+<script>
+// A searchable company box: the prompt sits where the choice will be shown.
+for (const box of document.querySelectorAll(".combo")) {
+  box.addEventListener("click", (event) => {
+    const existing = box.querySelector("ul");
+    if (existing) { if (event.target.matches("li")) { box.querySelector(".shown").textContent = event.target.textContent; box.classList.add("chosen"); } existing.remove(); return; }
+    const list = document.createElement("ul");
+    list.setAttribute("role", "listbox"); list.id = box.getAttribute("aria-controls");
+    for (const name of ["字节跳动", "腾讯", "阿里巴巴"]) { const li = document.createElement("li"); li.setAttribute("role", "option"); li.textContent = name; list.appendChild(li); }
+    box.appendChild(list);
+  });
+}
+</script>
+</body></html>

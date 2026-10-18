@@ -3,7 +3,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
-import { memoryCaptureSchema, memorySourceUrl } from "@/lib/application-memory";
+import { MEMORY_CATEGORY_IDS, memoryCaptureSchema, memorySourceUrl } from "@/lib/application-memory";
 import { stageApplicationChanges, loadVisiblePending } from "@/lib/pending-application-change";
 import { applicationDraftSchema, storeApplicationDraft } from "@/lib/application-draft-store";
 
@@ -16,12 +16,14 @@ const bodySchema = z.object({
   contextKey: z.string().max(16384).nullable(),
   sourceUrl: z.string().max(16384),
   draft: applicationDraftSchema.optional(),
-  withdrawals: z.array(z.discriminatedUnion("kind", [z.object({ kind: z.literal("answer"), fieldKey: z.string().min(1).max(2000) }), z.object({ kind: z.literal("record"), category: z.enum(["education", "experience", "project", "award"]), captureKey: z.string().min(1).max(200) })])).max(250).default([]),
+  withdrawals: z.array(z.discriminatedUnion("kind", [z.object({ kind: z.literal("answer"), fieldKey: z.string().min(1).max(2000) }), z.object({ kind: z.literal("record"), category: z.enum(MEMORY_CATEGORY_IDS), captureKey: z.string().min(1).max(200) })])).max(250).default([]),
   records: z.array(memoryCaptureSchema).max(80).default([]),
   answers: z.array(z.object({
     questionLabel: z.string().trim().min(2).max(500), answer: z.string().trim().min(1).max(10000),
     answerId: z.string().optional(), fieldKey: z.string().max(2000).optional(),
     kind: z.enum(["essay", "short", "field"]).default("essay"),
+    // Which 网申资料 field the page's own label maps to (研究方向 → researchDirection).
+    profileKey: z.string().max(40).optional(),
   })).max(250).default([]),
 }).refine((body) => body.draft || body.answers.length + body.records.length + body.withdrawals.length > 0, "没有可保存的内容");
 
@@ -41,6 +43,6 @@ export async function POST(request: Request) {
     const result = await stageApplicationChanges(tx, user.id, { ...input, sourceUrl });
     return { ...result, pendingTotal: (await loadVisiblePending(tx, user.id)).length };
   });
-  if (result.staged) revalidatePath("/settings");
-  return NextResponse.json({ saved: 0, pending: result.staged, pendingTotal: result.pendingTotal, draftSaved: !!input.draft, processed: result.processed, unchanged: result.processed - result.staged });
+  if (result.staged || result.learned.length) revalidatePath("/settings");
+  return NextResponse.json({ saved: 0, pending: result.staged, pendingTotal: result.pendingTotal, draftSaved: !!input.draft, processed: result.processed, unchanged: result.processed - result.staged - result.learned.length, learned: result.learned });
 }

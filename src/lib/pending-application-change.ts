@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import type { Prisma } from "@prisma/client";
-import { MEMORY_CATEGORIES, memoryContent, memoryIdentity, memoryValueKey, normalizeMemoryText, sameMemoryEntity, type MemoryCapture, type MemoryContent } from "@/lib/application-memory";
+import { MEMORY_CATEGORIES, MEMORY_LISTS, memoryContent, memoryIdentity, memoryValueKey, normalizeMemoryText, sameMemoryEntity, type MemoryCapture, type MemoryContent } from "@/lib/application-memory";
 import { parseApplicationProfile, resolveProfileVariant } from "@/lib/application-profile";
+import { learnFromPage, profileKeyForLabel, LEARNABLE_FACTS, type LearnedNotice } from "@/lib/profile-learning";
 
 export type PendingAnswer = {
   questionLabel: string;
@@ -9,6 +10,8 @@ export type PendingAnswer = {
   answerId?: string;
   fieldKey?: string;
   kind: "essay" | "short" | "field";
+  /** The 网申资料 field the page's label maps to, when it maps to one. */
+  profileKey?: string;
 };
 
 export type CaptureWithdrawal = { kind: "answer"; fieldKey: string } | { kind: "record"; category: MemoryCapture["category"]; captureKey: string };
@@ -22,6 +25,8 @@ export type PendingApplicationChangeView = {
   contextKey: string | null;
   createdAt: string;
   revision: number;
+  /** For a short answer that is a 网申资料 field: which one (研究方向 …). */
+  profileField?: { key: string; label: string };
 };
 
 /** Pending changes nobody looked at for this long drop out of 待核对. */
@@ -42,7 +47,7 @@ const BLOCK_PART = /^(?:(?:在校|担任|所任|所在)?(?:职位|职务|岗位|
 // What a page shows inside or next to a box, not a question: "113/2000", "请输入职位名称", "点击选择其他".
 const NOT_A_LABEL = /^(?:\d+\s*\/\s*\d+|(?:请|点击|点此|选择|输入)\S*)$/;
 // Pages where typing is about the account, not the application.
-const ACCOUNT_PAGE = /login|signin|sign-in|signup|sign-up|register|passport|sso|account|登录|注册/i;
+export const ACCOUNT_PAGE = /login|signin|sign-in|signup|sign-up|register|passport|sso|account|登录|注册/i;
 
 /**
  * Captures not worth a review: fields the 网申资料 already fills (an edit
@@ -120,19 +125,39 @@ export async function stageApplicationChanges(
   const memories = await tx.applicationMemory.findMany({ where: { userId } });
   const confirmed = await tx.autofillAnswer.findMany({ where: { userId, confirmed: true, OR: [{ contextKey: input.contextKey }, { contextKey: null }] }, orderBy: { updatedAt: "desc" } });
   const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
-  const { profile } = resolveProfileVariant(parseApplicationProfile(user.applicationProfile), input.variantId || undefined, input.resumeVersionId || undefined);
+  const base = parseApplicationProfile(user.applicationProfile);
+  const resolved = resolveProfileVariant(base, input.variantId || undefined, input.resumeVersionId || undefined);
+  // What fills a blank in 网申资料 is written in now (with 撤销), not reviewed later.
+  const learning = ACCOUNT_PAGE.test(input.sourceUrl) ? null : learnFromPage(base, { preferredCities: user.preferredCities }, {
+    answers: input.answers, records: input.records, sourceUrl: input.sourceUrl, variantActive: !!resolved.variant, effectiveExtras: resolved.profile.extras,
+    memories: memories.map((memory) => ({ category: memory.category, content: (memory.content ?? {}) as MemoryContent })),
+  });
+  if (learning?.changed) {
+    await tx.user.update({ where: { id: userId }, data: { applicationProfile: learning.profile as Prisma.InputJsonValue, ...(learning.preferredCities !== undefined ? { preferredCities: learning.preferredCities } : {}) } });
+  }
+  const { profile } = learning?.changed ? resolveProfileVariant(learning.profile, input.variantId || undefined, input.resumeVersionId || undefined) : resolved;
   const facts: Record<string, string | null> = { 姓名: user.name, 手机: user.phone, 邮箱: user.contactEmail, 性别: user.gender, 出生日期: user.birthDate, 学校: user.school, 专业: profile.education[0]?.major || null, 学历: profile.education[0]?.degree || null };
-  const rows: Array<{ kind: "answer" | "record"; label: string; payload: PendingAnswer | MemoryCapture }> = [
-    ...input.answers.filter((answer) => !isNoiseAnswer(answer, input.sourceUrl)).map((answer) => ({ kind: "answer" as const, label: answer.questionLabel, payload: answer })),
-    ...input.records.map((record) => {
-      const content = memoryContent(record.category, record.content)!;
-      const title = content.name || content.company || content.school || MEMORY_CATEGORIES[record.category];
-      return { kind: "record" as const, label: `${MEMORY_CATEGORIES[record.category]} · ${title}`, payload: { ...record, content } };
-    }),
-  ];
+  const recordRow = (record: MemoryCapture) => {
+    const content = memoryContent(record.category, record.content)!;
+    const title = content.name || content.company || content.school || MEMORY_CATEGORIES[record.category];
+    return { kind: "record" as const, label: `${MEMORY_CATEGORIES[record.category]} · ${title}`, payload: { ...record, content } };
+  };
   const slot = (kind: string, payload: PendingAnswer | MemoryCapture) => kind === "answer"
     ? [(payload as PendingAnswer).kind, (payload as PendingAnswer).fieldKey || normalizeMemoryText((payload as PendingAnswer).questionLabel)]
     : [(payload as MemoryCapture).category, (payload as MemoryCapture).captureKey || memoryIdentity((payload as MemoryCapture).category, (payload as MemoryCapture).content)];
+  // An earlier capture of what was just learned no longer needs a review.
+  const learnedSlots = [
+    ...input.answers.filter((_, i) => learning?.consumedAnswers.has(i)).map((answer) => JSON.stringify(["answer", slot("answer", answer)])),
+    ...input.records.filter((_, i) => learning?.consumedRecords.has(i)).map((record) => JSON.stringify(["record", slot("record", recordRow(record).payload)])),
+  ];
+  for (const item of pending) {
+    if (item.status !== "pending" || !learnedSlots.includes(JSON.stringify([item.kind, slot(item.kind, item.payload as PendingAnswer | MemoryCapture)]))) continue;
+    pending[pending.indexOf(item)] = await tx.pendingApplicationChange.update({ where: { id: item.id }, data: { status: "accepted", revision: { increment: 1 } } });
+  }
+  const rows: Array<{ kind: "answer" | "record"; label: string; payload: PendingAnswer | MemoryCapture }> = [
+    ...input.answers.filter((answer, i) => !learning?.consumedAnswers.has(i) && !isNoiseAnswer(answer, input.sourceUrl)).map((answer) => ({ kind: "answer" as const, label: answer.questionLabel, payload: answer })),
+    ...input.records.filter((_, i) => !learning?.consumedRecords.has(i)).map(recordRow),
+  ];
   for (const row of rows) {
     const rowSlot = JSON.stringify(slot(row.kind, row.payload));
     const key = fingerprint([scope, row.kind, rowSlot]);
@@ -148,10 +173,10 @@ export async function stageApplicationChanges(
         : answer.kind === "field" && !!facts[answer.questionLabel] && memoryValueKey(answer.questionLabel === "出生日期" ? "date" : "answer", facts[answer.questionLabel]!) === memoryValueKey(answer.questionLabel === "出生日期" ? "date" : "answer", answer.answer);
     } else {
       const record = row.payload as MemoryCapture;
-      const list = record.category === "experience" ? "experiences" : record.category === "project" ? "projects" : record.category === "award" ? "awards" : "education";
+      const list = MEMORY_LISTS[record.category].list;
       // The same internship / project / award as one in 网申资料 is already
       // known, even worded a little differently: 网申资料 is where it is kept.
-      alreadyKnown = profile[list].some((current) => sameMemoryEntity(record.category, current, record.content)) || memories.some((current) => current.category === record.category && [current.content, ...(Array.isArray(current.alternatives) ? current.alternatives.map((item) => (item as { content: MemoryContent }).content) : [])].some((content) => sameMemoryEntity(record.category, content as MemoryContent, record.content) && recordContains(content as MemoryContent, record.content)));
+      alreadyKnown = (profile[list] as MemoryContent[]).some((current) => sameMemoryEntity(record.category, current, record.content)) || memories.some((current) => current.category === record.category && [current.content, ...(Array.isArray(current.alternatives) ? current.alternatives.map((item) => (item as { content: MemoryContent }).content) : [])].some((content) => sameMemoryEntity(record.category, content as MemoryContent, record.content) && recordContains(content as MemoryContent, record.content)));
     }
     if (existing) {
       const updated = await tx.pendingApplicationChange.update({ where: { id: existing.id }, data: { label: row.label, payload: row.payload, fingerprint: key, status: alreadyKnown ? "accepted" : "pending", revision: { increment: 1 } } });
@@ -162,9 +187,16 @@ export async function stageApplicationChanges(
       staged++;
     }
   }
-  return { staged, processed: rows.length };
+  // Noise and learned captures count as handled: the page stops resending them.
+  return { staged, processed: input.answers.length + input.records.length, learned: learning?.learned ?? ([] as LearnedNotice[]) };
 }
 
 export function toPendingApplicationChangeView(row: { id: string; kind: string; label: string; payload: unknown; sourceUrl: string; contextKey: string | null; createdAt: Date; revision: number }): PendingApplicationChangeView {
-  return { id: row.id, kind: row.kind as "answer" | "record", label: row.label, payload: row.payload as PendingAnswer | MemoryCapture, sourceUrl: row.sourceUrl, contextKey: row.contextKey, createdAt: row.createdAt.toISOString(), revision: row.revision };
+  const view: PendingApplicationChangeView = { id: row.id, kind: row.kind as "answer" | "record", label: row.label, payload: row.payload as PendingAnswer | MemoryCapture, sourceUrl: row.sourceUrl, contextKey: row.contextKey, createdAt: row.createdAt.toISOString(), revision: row.revision };
+  if (view.kind === "answer") {
+    const answer = view.payload as PendingAnswer;
+    const key = answer.kind !== "essay" || answer.answer.length <= 1000 ? answer.profileKey || profileKeyForLabel(answer.questionLabel) : null;
+    if (key && Object.hasOwn(LEARNABLE_FACTS, key)) view.profileField = { key, label: LEARNABLE_FACTS[key] };
+  }
+  return view;
 }

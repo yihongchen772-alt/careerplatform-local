@@ -121,6 +121,8 @@ test('flat answers deduplicate without merging opposite questions or company sco
 
 test('browser discoveries stay pending until reviewed, then use the chosen reuse scope', async (t) => {
   const { db, post, load } = await fixture(t);
+  // 网申资料 already lists projects: a new one from a page is reviewed, not written in.
+  await db.user.update({ where: { id: 'fixture' }, data: { applicationProfile: { projects: [{ name: '已有项目', description: '资料里的项目' }] } } });
   const answer = { questionLabel: '为什么选择这家公司？', answer: '因为岗位方向与我的经历匹配。', kind: 'essay' };
   const record = { category: 'project', content: { name: '待确认项目', description: '这是本次申请中补写的描述' } };
   const staged = (await post([record], { mode: 'stage', answers: [answer] })).data;
@@ -306,6 +308,7 @@ test('another version leaves the default byte-for-byte intact; partial replaceme
 
 test('version limit never silently discards history and new records require a separate automatic-fill choice', async (t) => {
   const { db, post, remember, review, load } = await fixture(t);
+  await db.user.update({ where: { id: 'fixture' }, data: { applicationProfile: { projects: [{ name: '已有项目', description: '资料里的项目' }] } } });
   await remember([{ category: 'project', content: { name: '五版项目', description: '默认' } }]);
   let target = await db.applicationMemory.findFirst();
   const alternatives = Array.from({ length: 5 }, (_, index) => ({ content: { ...target.content, description: `历史 ${index}` }, source: '旧页' }));
@@ -383,4 +386,92 @@ test('whole-module alternative versions stay individually selectable without ena
   assert.ok(alternative);
   const mapped = { ...profile, mappings: [{ fieldKey: field.mappingKey, ref: alternative.ref }] };
   assert.equal(core.repeatFieldValue(field, core.classifyRepeatBlocks([field], mapped).repeats.get(field.id), mapped), '其他方向原文');
+});
+
+const plain = (value) => JSON.parse(JSON.stringify(value));
+
+test('hand-typed facts fill blank 网申资料 fields at once, refine from the same page, and never overwrite', async (t) => {
+  const { db, post } = await fixture(t);
+  await db.user.update({ where: { id: 'fixture' }, data: { applicationProfile: { extras: { politics: '共青团员' } } } });
+  const answer = (questionLabel, value, profileKey, kind = 'field') => ({ questionLabel, answer: value, kind, profileKey });
+  let body = (await post([], { answers: [answer('研究方向', '强化学习控制', 'researchDirection'), answer('政治面貌', '中共党员', 'politics'), answer('期望工作地点', '上海', 'preferredCities')] })).data;
+  // 期望城市 is chosen per company: never written in by itself.
+  assert.deepEqual(plain(body.learned.map((item) => item.label)), ['研究方向']);
+  let user = await db.user.findUniqueOrThrow({ where: { id: 'fixture' } });
+  assert.equal(user.applicationProfile.extras.researchDirection, '强化学习控制');
+  assert.equal(user.applicationProfile.extras.politics, '共青团员', 'a saved value is never replaced by a page');
+  assert.equal(user.preferredCities, null);
+  assert.equal(await db.pendingApplicationChange.count({ where: { status: 'pending' } }), 0);
+  // Edited again on the same page: the learned value follows.
+  body = (await post([], { answers: [answer('研究方向', '强化学习与机器人控制', 'researchDirection')] })).data;
+  assert.equal(body.learned.length, 1);
+  user = await db.user.findUniqueOrThrow({ where: { id: 'fixture' } });
+  assert.equal(user.applicationProfile.extras.researchDirection, '强化学习与机器人控制');
+  assert.equal(user.applicationProfile.learned.filter((item) => item.ref === 'extras:researchDirection').length, 1);
+  // Another company's page does not rewrite it; that answer is reviewed instead.
+  body = (await post([], { sourceUrl: 'https://company-two.example/apply', contextKey: 'page:v2:https://company-two.example/apply', answers: [answer('研究方向', '别的方向', 'researchDirection')] })).data;
+  assert.equal(body.learned.length, 0);
+  assert.equal((await db.user.findUniqueOrThrow({ where: { id: 'fixture' } })).applicationProfile.extras.researchDirection, '强化学习与机器人控制');
+  assert.equal(await db.pendingApplicationChange.count({ where: { status: 'pending' } }), 1);
+  // Placeholder text and login pages teach nothing.
+  body = (await post([], { answers: [answer('QQ号', '请输入QQ号', 'qq')] })).data;
+  assert.equal(body.learned.length, 0);
+  body = (await post([], { sourceUrl: 'https://company-three.example/login', answers: [answer('QQ号', '12345', 'qq')] })).data;
+  assert.equal(body.learned.length, 0);
+});
+
+test('a 经历 typed by hand starts an empty list, fills blanks of the same saved row, and 撤销 takes back only what is unchanged', async (t) => {
+  const { db, post, load } = await fixture(t);
+  await db.user.update({ where: { id: 'fixture' }, data: { applicationProfile: { education: [{ school: '东南大学', major: '自动化', degree: '本科', start: '2019-09', end: '2023-06' }] } } });
+  // The route used to reject 校园经历 captures (and with them the whole page).
+  assert.equal((await post([], { withdrawals: [{ kind: 'record', category: 'campus', captureKey: 'gone' }] })).status, 200);
+  const campus = (captureKey, content) => ({ category: 'campus', captureKey, content });
+  let body = (await post([campus('c1', { name: '东南大学学生会', role: '外联部部长', start: '2020-09' }), campus('c2', { name: '机器人协会', role: '会长' })])).data;
+  assert.equal(body.learned.length, 2);
+  // A later capture of the same block (description added) keeps that row in step.
+  body = (await post([campus('c1', { name: '东南大学学生会', role: '外联部部长', start: '2020-09', description: '组织校级活动 12 场' })])).data;
+  assert.equal(body.learned.length, 1);
+  let profile = (await db.user.findUniqueOrThrow({ where: { id: 'fixture' } })).applicationProfile;
+  assert.deepEqual(plain(profile.campus.map((row) => [row.name, row.description])), [['东南大学学生会', '组织校级活动 12 场'], ['机器人协会', '']]);
+  // Another site: the list is no longer empty, so a new 经历 goes to 待核对.
+  body = (await post([campus('c9', { name: '辩论队', role: '队员' })], { sourceUrl: 'https://company-two.example/apply', contextKey: 'page:v2:https://company-two.example/apply' })).data;
+  assert.equal(body.learned.length, 0); assert.equal(body.pending, 1);
+  // The same school on a page: only its blanks (院系) are taken; 专业 stays.
+  body = (await post([{ category: 'education', captureKey: 'e1', content: { school: '东南大学', major: '自动化（卓越班）', department: '自动化学院', degree: '本科' } }])).data;
+  assert.equal(body.learned.length, 1);
+  profile = (await db.user.findUniqueOrThrow({ where: { id: 'fixture' } })).applicationProfile;
+  assert.equal(profile.education[0].department, '自动化学院'); assert.equal(profile.education[0].major, '自动化');
+  // A placeholder or a yes/no answer is never the name of a row.
+  body = (await post([{ category: 'skill', captureKey: 's1', content: { name: '请输入技能名称', level: '熟练' } }, { category: 'skill', captureKey: 's2', content: { name: '否', level: '熟练' } }])).data;
+  assert.equal(body.learned.length, 0);
+
+  const learned = profile.learned.map((item) => item.id);
+  // Edited in 网申资料 since: that row is kept by 撤销.
+  profile.campus[1].role = '名誉会长';
+  await db.user.update({ where: { id: 'fixture' }, data: { applicationProfile: profile } });
+  const undo = load('src/app/api/desktop-browser/undo-learned/route.ts');
+  const result = (await undo.POST({ json: async () => ({ ids: learned }) })).data;
+  assert.deepEqual(plain(result), { undone: 2, kept: 1 });
+  profile = (await db.user.findUniqueOrThrow({ where: { id: 'fixture' } })).applicationProfile;
+  assert.deepEqual(plain(profile.campus.map((row) => row.name)), ['机器人协会']);
+  assert.equal(profile.education[0].department, '');
+  // Taken back on this page: the next capture of that block is reviewed, not written in again.
+  body = (await post([campus('c1', { name: '东南大学学生会', role: '外联部部长', start: '2020-09', description: '组织校级活动 12 场' })])).data;
+  assert.equal(body.learned.length, 0);
+});
+
+test('old 待核对 answers that are 网申资料 fields can be written in with one click', async (t) => {
+  const { db, post, load } = await fixture(t);
+  await db.user.update({ where: { id: 'fixture' }, data: { applicationProfile: { projects: [{ name: '已有项目' }] } } });
+  // Captured before the browser sent a profileKey.
+  await post([], { answers: [{ questionLabel: 'QQ号*', answer: '123456789', kind: 'field' }, { questionLabel: '接受调剂*', answer: '是', kind: 'field' }, { questionLabel: '为什么选择我们？', answer: '方向匹配', kind: 'essay' }] });
+  const { toPendingApplicationChangeView } = load('src/lib/pending-application-change.ts');
+  const views = (await db.pendingApplicationChange.findMany({ where: { status: 'pending' } })).map(toPendingApplicationChangeView);
+  assert.deepEqual(plain(views.map((view) => view.profileField?.key ?? null).sort()), ['acceptAdjust', 'qq', null].sort());
+  const actions = load('src/lib/actions/pending-application-change.ts');
+  const result = await actions.acceptPendingIntoProfile(views.filter((view) => view.profileField).map((view) => ({ id: view.id, revision: view.revision })));
+  assert.deepEqual(plain(result.data), { saved: 2, skipped: 0 });
+  const extras = (await db.user.findUniqueOrThrow({ where: { id: 'fixture' } })).applicationProfile.extras;
+  assert.equal(extras.qq, '123456789'); assert.equal(extras.acceptAdjust, '是');
+  assert.equal(await db.pendingApplicationChange.count({ where: { status: 'pending' } }), 1);
 });

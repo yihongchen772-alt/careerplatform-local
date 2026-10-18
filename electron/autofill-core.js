@@ -340,7 +340,7 @@ function scanPageFields(prefix, readOnly = false) {
   // What a component-library dropdown currently shows. Element Plus 2.x puts
   // the chosen label in its (no longer transparent) placeholder; Element UI
   // and cascaders in a read-only input; a plain listbox button in its text.
-  const PLACEHOLDER_TEXT = /^(?:请选择|请选取|请输入|select|choose|please (?:select|choose)|--|—)/i;
+  const PLACEHOLDER_TEXT = /^(?:请|点击|點擊)?(?:选择|选取|输入|填写|搜索)|^(?:select|choose|search|please (?:select|choose|enter))\b|^(?:--|—)/i;
   function ownText(node) {
     if (typeof node.cloneNode !== "function") return "";
     const copy = node.cloneNode(true);
@@ -349,11 +349,12 @@ function scanPageFields(prefix, readOnly = false) {
   }
   function selectedText(container) {
     const shown = container.querySelector(".ant-select-selection-item, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text, .el-cascader__tags");
-    if (shown && clean(shown.textContent)) return clean(shown.textContent);
+    // Some portals print their prompt ("输入工作单位名称") where the choice goes.
+    if (shown && clean(shown.textContent) && !PLACEHOLDER_TEXT.test(clean(shown.textContent))) return clean(shown.textContent);
     // Element UI and cascaders show the choice in a read-only input; Arco,
     // Semi or Fusion keep the input for searching and show it as text.
     const input = container.matches("input") ? container : container.querySelector("input:not([type='hidden'])");
-    if (input && clean(input.value)) return clean(input.value);
+    if (input && clean(input.value) && !PLACEHOLDER_TEXT.test(clean(input.value))) return clean(input.value);
     if (container.matches("input")) return "";
     const text = ownText(container);
     return !/[\p{L}\p{N}]/u.test(text) || PLACEHOLDER_TEXT.test(text) || text === clean(container.getAttribute("placeholder")) || text === clean(input?.getAttribute("placeholder")) ? "" : text;
@@ -483,14 +484,15 @@ function scanPageFields(prefix, readOnly = false) {
   const groupFor = (field) => {
     const section = field.section || "";
     const text = section || field.label || "";
-    return /校园经历|校内经历|在校经历|学生工作|学生干部|社团|校内任职|任职经历|学生会/.test(text) ? "campus" : /获奖|荣誉|奖项|奖励|award|honou?r/i.test(text) ? "award" : /项目|project/i.test(text) ? "project" : /实习|工作经历|工作经验|实践经历|internship|employment|work experience/i.test(text) ? "experience" : /教育|学习经历|本科|硕士|博士|大专|学校|education|academic/i.test(text) ? "education" : null;
+    return /校园经历|校内经历|在校经历|学生工作|学生干部|社团|校内任职|任职经历|学生会/.test(text) ? "campus" : /获奖|荣誉|奖项|奖励|award|honou?r/i.test(text) ? "award" : /(?<!语言|外语)技能(?!证书)|专业特长|(?:^|\W)skills?(?:\W|$)/i.test(text) && !/语言|外语|language/i.test(text) ? "skill" : /项目|project/i.test(text) ? "project" : /实习|工作经历|工作经验|实践经历|internship|employment|work experience/i.test(text) ? "experience" : /教育|学习经历|本科|硕士|博士|大专|学校|education|academic/i.test(text) ? "education" : null;
   };
   const isAnchor = (field, group) => {
     const text = field.label || field.placeholder || "";
     return group === "project" ? /^(?:项目)?(?:名称|名)|project[ _-]*(?:name|title)|^name$/i.test(text)
-      : group === "experience" ? /公司|单位|企业|机构|company|employer/i.test(text) && !/描述|介绍|职责/.test(text)
+      : group === "experience" ? /公司|单位|企业|机构|company|employer/i.test(text) && !/描述|介绍|职责|行业|性质|规模|类型|地址|城市|电话|部门/.test(text)
       : group === "award" ? /(?:奖项|获奖|荣誉|奖励)名称|^(?:名称|奖项|荣誉|奖励|name)$|award[ _-]*(?:name|title)/i.test(text)
       : group === "campus" ? /组织|社团|团体|协会|学生会|^(?:名称|单位)$/.test(text) && !/职务|级别|描述/.test(text)
+      : group === "skill" ? /技能(?:名称|名)|^技能$|^名称$|skill/i.test(text) && !/程度|类别|类型|等级|水平|描述|level|category/i.test(text)
       : /学校|院校|school|university/i.test(text) && !/城市|性质|排名/.test(text);
   };
   for (const field of results) {
@@ -948,7 +950,7 @@ async function fillCustomSelects(pairs, taskId) {
   const find = (selector) => { for (const root of roots) { const hit = root.querySelector(selector); if (hit) return hit; } return null; };
   const clean = (text) => String(text || "").replace(/[​-‍﻿]/g, "").replace(/\s+/g, " ").replace(/([㐀-鿿]) (?=[㐀-鿿])/g, "$1").trim();
   // Same reading as scanPageFields: what the dropdown currently shows.
-  const PLACEHOLDER_TEXT = /^(?:请选择|请选取|请输入|select|choose|please (?:select|choose)|--|—)/i;
+  const PLACEHOLDER_TEXT = /^(?:请|点击|點擊)?(?:选择|选取|输入|填写|搜索)|^(?:select|choose|search|please (?:select|choose|enter))\b|^(?:--|—)/i;
   function ownText(node) {
     if (typeof node.cloneNode !== "function") return "";
     const copy = node.cloneNode(true);
@@ -957,11 +959,12 @@ async function fillCustomSelects(pairs, taskId) {
   }
   function selectedText(container) {
     const shown = container.querySelector(".ant-select-selection-item, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text, .el-cascader__tags");
-    if (shown && clean(shown.textContent)) return clean(shown.textContent);
+    // Some portals print their prompt ("输入工作单位名称") where the choice goes.
+    if (shown && clean(shown.textContent) && !PLACEHOLDER_TEXT.test(clean(shown.textContent))) return clean(shown.textContent);
     // Element UI and cascaders show the choice in a read-only input; Arco,
     // Semi or Fusion keep the input for searching and show it as text.
     const input = container.matches("input") ? container : container.querySelector("input:not([type='hidden'])");
-    if (input && clean(input.value)) return clean(input.value);
+    if (input && clean(input.value) && !PLACEHOLDER_TEXT.test(clean(input.value))) return clean(input.value);
     if (container.matches("input")) return "";
     const text = ownText(container);
     return !/[\p{L}\p{N}]/u.test(text) || PLACEHOLDER_TEXT.test(text) || text === clean(container.getAttribute("placeholder")) || text === clean(input?.getAttribute("placeholder")) ? "" : text;
@@ -1260,7 +1263,7 @@ function readFieldValues(ids) {
     }
     return clean(radio.value);
   }
-  const PLACEHOLDER_TEXT = /^(?:请选择|请选取|请输入|select|choose|please (?:select|choose)|--|—)/i;
+  const PLACEHOLDER_TEXT = /^(?:请|点击|點擊)?(?:选择|选取|输入|填写|搜索)|^(?:select|choose|search|please (?:select|choose|enter))\b|^(?:--|—)/i;
   function fieldValue(el) {
     const tag = el.tagName.toLowerCase();
     if (tag === "select") return clean(el.options[el.selectedIndex]?.textContent);
@@ -1268,9 +1271,9 @@ function readFieldValues(ids) {
     if (el.isContentEditable && tag !== "input" && tag !== "textarea") return String(el.innerText || "").trim();
     if (tag === "input" || tag === "textarea") return String(el.value || "").trim();
     const shown = el.querySelector(".ant-select-selection-item, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text");
-    if (shown && clean(shown.textContent)) return clean(shown.textContent);
+    if (shown && clean(shown.textContent) && !PLACEHOLDER_TEXT.test(clean(shown.textContent))) return clean(shown.textContent);
     const input = el.querySelector("input:not([type='hidden'])");
-    if (input && clean(input.value)) return clean(input.value);
+    if (input && clean(input.value) && !PLACEHOLDER_TEXT.test(clean(input.value))) return clean(input.value);
     const copy = el.cloneNode(true);
     copy.querySelectorAll("[role='listbox'], [role='option'], [hidden], [aria-hidden='true'], ul, ol, svg, i, style, [class*='placeholder']:not(.el-select__placeholder), .el-select__placeholder.is-transparent").forEach((child) => child.remove());
     const text = clean(copy.textContent);
@@ -1312,7 +1315,7 @@ function clearSavedUserEdits(saved) {
     }
     return clean(radio.value);
   }
-  const PLACEHOLDER_TEXT = /^(?:请选择|请选取|请输入|select|choose|please (?:select|choose)|--|—)/i;
+  const PLACEHOLDER_TEXT = /^(?:请|点击|點擊)?(?:选择|选取|输入|填写|搜索)|^(?:select|choose|search|please (?:select|choose|enter))\b|^(?:--|—)/i;
   function fieldValue(el) {
     const tag = el.tagName.toLowerCase();
     if (tag === "select") return clean(el.options[el.selectedIndex]?.textContent);
@@ -1320,9 +1323,9 @@ function clearSavedUserEdits(saved) {
     if (el.isContentEditable && tag !== "input" && tag !== "textarea") return String(el.innerText || "").trim();
     if (tag === "input" || tag === "textarea") return String(el.value || "").trim();
     const shown = el.querySelector(".ant-select-selection-item, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text");
-    if (shown && clean(shown.textContent)) return clean(shown.textContent);
+    if (shown && clean(shown.textContent) && !PLACEHOLDER_TEXT.test(clean(shown.textContent))) return clean(shown.textContent);
     const input = el.querySelector("input:not([type='hidden'])");
-    if (input && clean(input.value)) return clean(input.value);
+    if (input && clean(input.value) && !PLACEHOLDER_TEXT.test(clean(input.value))) return clean(input.value);
     const copy = el.cloneNode(true);
     copy.querySelectorAll("[role='listbox'], [role='option'], [hidden], [aria-hidden='true'], ul, ol, svg, i, style, [class*='placeholder']:not(.el-select__placeholder), .el-select__placeholder.is-transparent").forEach((child) => child.remove());
     const text = clean(copy.textContent);
@@ -1373,28 +1376,36 @@ const BASIC_FIELD_RULES = [
   // School/major/degree/GPA/dates are per education row — see
   // resolveRepeatField below. Only the page-wide "最高学历" stays flat.
   { keys: ["最高学历", "highest degree", "highest education"], get: (p) => highestEducation(p)?.degree, degree: true },
-  { keys: ["英语", "外语", "cet", "english", "语言能力"], not: /姓名|名字|name/i, get: (p) => p.english, english: true },
-  { keys: ["政治面貌", "politic", "political", "politics"], get: (p) => p.politics },
-  { keys: ["籍贯", "户籍", "户口所在地", "hometown"], get: (p) => p.hometown },
-  { keys: ["民族", "ethnic", "ethnicity"], get: (p) => p.ethnicity },
-  { keys: ["微信", "wechat", "weixin"], get: (p) => p.wechat },
-  { keys: ["期望薪资", "期望月薪", "期望年薪", "期望薪酬", "期望待遇", "薪资要求", "薪资期望", "expected salary", "salary expectation"], get: (p) => p.expectedSalary },
-  { keys: ["到岗时间", "到岗日期", "可入职", "最早入职", "available from", "availability date", "earliest start"], get: (p) => p.availableFrom, date: true },
-  { keys: ["实习时长", "实习周期", "可实习时长", "可实习时间", "每周实习", "每周可实习", "实习天数", "internship duration"], get: (p) => p.internshipDuration },
-  { keys: ["通讯地址", "联系地址", "家庭住址", "现住址", "居住地址", "详细地址", "邮寄地址", "mailing address", "home address", "street address", "address line"], not: /e-?mail|邮箱/i, get: (p) => p.address },
+  // `learn`: the 网申资料 field a hand-typed answer here fills while it is blank.
+  { keys: ["英语", "外语", "cet", "english", "语言能力"], not: /姓名|名字|name/i, get: (p) => p.english, english: true, learn: "english" },
+  { keys: ["政治面貌", "politic", "political", "politics"], get: (p) => p.politics, learn: "politics" },
+  { keys: ["籍贯", "户籍", "户口所在地", "hometown"], not: /地址|详细|街道|门牌/, get: (p) => p.hometown, learn: "hometown" },
+  { keys: ["民族", "ethnic", "ethnicity"], get: (p) => p.ethnicity, learn: "ethnicity" },
+  { keys: ["微信", "wechat", "weixin"], get: (p) => p.wechat, learn: "wechat" },
+  { keys: ["qq", "qq号", "qq号码"], get: (p) => p.qq, learn: "qq" },
+  { keys: ["期望薪资", "期望月薪", "期望年薪", "期望薪酬", "期望待遇", "薪资要求", "薪资期望", "expected salary", "salary expectation"], get: (p) => p.expectedSalary, learn: "expectedSalary" },
+  { keys: ["到岗时间", "到岗日期", "可入职", "最早入职", "available from", "availability date", "earliest start"], get: (p) => p.availableFrom, date: true, learn: "availableFrom" },
+  { keys: ["实习时长", "实习周期", "可实习时长", "可实习时间", "每周实习", "每周可实习", "实习天数", "internship duration"], get: (p) => p.internshipDuration, learn: "internshipDuration" },
+  { keys: ["通讯地址", "联系地址", "家庭住址", "现住址", "居住地址", "详细地址", "邮寄地址", "mailing address", "home address", "street address", "address line"], not: /e-?mail|邮箱|户口|户籍|原籍/i, get: (p) => p.address, learn: "address" },
   // Preferred cities first: a bare English "City" (address blocks) is where
   // the applicant lives, not where they'd like to work.
-  { keys: ["意向城市", "期望城市", "工作城市", "意向工作地", "期望工作地", "工作地点", "意向地点", "期望地点", "工作地区", "preferred city", "preferred location", "desired location", "work location"], get: (p) => p.preferredCities },
-  { keys: ["现居", "现住", "所在城市", "常住", "居住城市", "current city", "current location", "city"], get: (p) => p.currentCity },
+  { keys: ["意向城市", "期望城市", "工作城市", "意向工作地", "期望工作地", "工作地点", "意向地点", "期望地点", "工作地区", "preferred city", "preferred location", "desired location", "work location"], not: /是否|可否|能否|接受/, get: (p) => p.preferredCities },
+  { keys: ["现居", "现住", "所在城市", "常住", "居住城市", "current city", "current location", "city"], get: (p) => p.currentCity, learn: "currentCity" },
   // 资料方案 fields: the direction-specific target role and self-assessment.
+  // No `learn` here: which city and which job is usually picked per company.
   { keys: ["期望岗位", "期望职位", "意向岗位", "意向职位", "求职意向"], get: (p) => p.targetRole },
-  { keys: ["自我评价", "个人评价", "自我描述"], get: (p) => p.selfIntro },
+  { keys: ["自我评价", "个人评价", "自我描述"], get: (p) => p.selfIntro, learn: "selfIntro" },
   // Asked on most 校招 forms; filled by hand before these were in 网申资料.
-  { keys: ["研究方向", "research direction", "research interest"], get: (p) => p.researchDirection },
-  { keys: ["成绩排名", "专业排名", "绩点排名", "年级排名", "班级排名", "排名"], not: /学校|院校|企业|公司|职位|岗位/, get: (p) => p.rank },
-  { keys: ["主修课程", "专业课程", "核心课程", "主要课程"], get: (p) => p.courses },
-  { keys: ["是否接受调剂", "服从调剂", "接受调剂", "岗位调剂", "是否服从"], get: (p) => p.acceptAdjust },
+  { keys: ["研究方向", "研究领域", "research direction", "research interest"], get: (p) => p.researchDirection, learn: "researchDirection" },
+  { keys: ["成绩排名", "专业排名", "绩点排名", "年级排名", "班级排名", "排名"], not: /学校|院校|企业|公司|职位|岗位/, get: (p) => p.rank, learn: "rank" },
+  { keys: ["主修课程", "专业课程", "核心课程", "主要课程"], get: (p) => p.courses, learn: "courses" },
+  { keys: ["是否接受调剂", "服从调剂", "接受调剂", "岗位调剂", "是否服从"], not: /工作地|城市|地点/, get: (p) => p.acceptAdjust, learn: "acceptAdjust" },
   { keys: ["是否学生干部", "是否担任学生干部", "是否担任过学生干部", "是否为学生干部"], get: (p) => (p.campus || []).some((row) => row.role) ? "是" : null },
+  // Seen filled by hand on 腾讯、网易、歌尔、中国移动 after v1.20.
+  { keys: ["个人主页", "个人网站", "作品链接", "作品集链接", "作品地址", "个人博客", "github", "portfolio", "personal website"], not: /linkedin|领英/i, get: (p) => p.homepage, learn: "homepage" },
+  { keys: ["实验室", "课题组", "所在实验室", "研究组"], not: /是否|安全|有无/, get: (p) => p.lab, learn: "lab" },
+  { keys: ["兴趣爱好", "个人爱好", "爱好特长", "爱好", "hobbies", "hobby"], get: (p) => p.hobbies, learn: "hobbies" },
+  { keys: ["毕业论文", "学位论文", "论文题目", "thesis", "dissertation"], get: (p) => p.thesis, learn: "thesis" },
 ];
 
 function basicKeyMatches(key, haystack) {
@@ -1524,23 +1535,28 @@ function sectionOrdinal(section) {
 
 /** The 网申资料 list a repeated block fills from. */
 function listKey(group) {
-  return group === "experience" ? "experiences" : group === "project" ? "projects" : group === "award" ? "awards" : group === "campus" ? "campus" : "education";
+  return group === "experience" ? "experiences" : group === "project" ? "projects" : group === "award" ? "awards" : group === "campus" ? "campus" : group === "skill" ? "skills" : "education";
 }
 
 // 校园经历 / 学生工作: student union, clubs, class roles — a list of its own,
 // not an internship (seen filled by hand on 51job、中国移动、吉利、歌尔、智联).
 const CAMPUS_SECTION = /校园经历|校内经历|在校经历|学生工作|学生干部|社团|校内(?:任职|职务|实践)|在校(?:任职|实践)|任职经历|组织经历|学生会|校园活动|campus|student (?:leadership|organi[sz]ation)|extracurricular/i;
 
+// 专业技能 / 技能特长 (技能名称、掌握程度): a list of its own on Moka、网易、
+// 中国移动、智联. 语言能力 and 技能证书 are other modules.
+const SKILL_SECTION = /(?<!语言|外语)技能(?!证书)|专业特长|(?:^|\W)skills?(?:\W|$)/i;
+
 function sectionGroup(section) {
   if (CAMPUS_SECTION.test(section)) return "campus";
   if (/获奖|荣誉|奖项|奖励|award|honou?r/i.test(section)) return "award";
+  if (SKILL_SECTION.test(section) && !/语言|外语|language/i.test(section)) return "skill";
   if (/项目|project/i.test(section)) return "project";
   if (/实习|工作经历|工作经验|实践经历|社会实践|internship|employment|work experience/i.test(section)) return "experience";
   if (/教育|学习经历|本科|硕士|研究生|博士|大专|专科|education|academic/i.test(section)) return "education";
   return null;
 }
 
-const AUTOFILL_MODULES = ["basic", "education", "experience", "project", "award", "campus", "questions", "other", "resume"];
+const AUTOFILL_MODULES = ["basic", "education", "experience", "project", "award", "campus", "skill", "questions", "other", "resume"];
 
 function fieldModule(field, repeat) {
   if (isThirdPartyField(field)) return "other";
@@ -1588,12 +1604,16 @@ function educationFieldKind(haystack, inSection, bare = "") {
   return null;
 }
 
+// 公司行业 / 单位性质 / 公司规模 / 单位地址 describe the employer; they are not its name.
+const ABOUT_EMPLOYER = /行业|性质|规模|类型|类别|地址|城市|所在地|地点|电话|网址|industry|size|type|address|city|location|phone/i;
+
 function experienceFieldKind(haystack, inSection, bare = "") {
   if (/^(?:实习经历|工作经历|工作经验|实习情况|workexperience|internshipexperience)$/.test(bare)) return "summary";
   if (inSection && /描述|内容|职责|业绩|成果|description|responsibilit|achievement/i.test(haystack)) return "description";
-  if (/实习(?:单位|公司|企业|机构)|工作单位|任职(?:单位|公司)/.test(haystack)) return "company";
+  if (/实习(?:单位|公司|企业|机构)|工作单位|任职(?:单位|公司)/.test(haystack)) return ABOUT_EMPLOYER.test(haystack) ? null : "company";
   if (!inSection) return null;
-  if (/公司|单位|企业|机构|company|employer|organi[sz]ation/i.test(haystack)) return "company";
+  if (/部门|department/i.test(haystack)) return "department";
+  if (/公司|单位|企业|机构|company|employer|organi[sz]ation/i.test(haystack)) return ABOUT_EMPLOYER.test(haystack) ? null : "company";
   if (/职位|岗位|职务|角色|title|position|role/i.test(haystack)) return "role";
   if (START_LABEL.test(haystack) && !NOT_A_DATE.test(haystack)) return "start";
   if (END_LABEL.test(haystack) && !NOT_A_DATE.test(haystack)) return "end";
@@ -1608,11 +1628,15 @@ function awardFieldKind(haystack, bare, inSection) {
   if (/等级|级别|奖级|奖等|level|grade/i.test(haystack)) return "level";
   if (/日期|时间|年月|年度|date|year/i.test(haystack)) return "date";
   if (/描述|说明|介绍|内容|description|details/i.test(haystack)) return "description";
-  if (/^(?:获奖情况|获奖经历|荣誉奖励|荣誉奖项|奖励荣誉|奖励情况|awards?|honou?rs?)$/.test(bare)) return "summary";
+  if (/^(?:获奖情况|获奖经历|荣誉奖励|荣誉奖项|奖励荣誉|奖励情况|受到(?:的)?奖励|所获(?:奖励|荣誉|奖项)|获得(?:的)?(?:奖励|荣誉|奖项)|奖惩(?:情况|经历)?|在校获奖(?:情况)?|获奖|奖励|awards?|honou?rs?)$/.test(bare)) return "summary";
   return null;
 }
 
+// One box for the whole list ("校内活动"), sometimes inside the 教育经历 block.
+const CAMPUS_SUMMARY = /^(?:校内活动|校园活动|在校活动|校园经历|校内经历|在校经历|社会工作|学生工作|社团经历|社团活动|校内职务|在校任职|学生干部经历)$/;
+
 function campusFieldKind(haystack, bare = "", inSection = false) {
+  if (CAMPUS_SUMMARY.test(bare)) return "summary";
   if (!inSection && !/校内|在校|干部|社团|学生会|组织|团体|协会|班级/.test(haystack)) return null;
   if (/是否/.test(haystack)) return null;
   if (/(?:所在|学生)?组织(?:团体)?(?:名称)?|社团|团体名称|协会|学生会/.test(haystack) && !/职务|级别|描述|职位|角色/.test(haystack)) return "name";
@@ -1633,7 +1657,7 @@ function projectFieldKind(haystack, bare = "", inSection = false) {
   if (/项目(?:开始|起始)|project[\s_-]*start/i.test(haystack)) return "start";
   if (/项目(?:结束|截止)|project[\s_-]*end/i.test(haystack)) return "end";
   if (/项目(?:职责|负责|贡献|成果)|project[\s_-]*(?:responsibilit|contribution|achievement)/i.test(haystack)) return "responsibilities";
-  if (/项目(?:描述|简介|介绍|内容)|project[\s_-]*(?:description|summary|overview)/i.test(haystack)) return "description";
+  if (/项目(?:描述|简介|介绍|内容|简述|概述|概况|背景)|project[\s_-]*(?:description|summary|overview)/i.test(haystack)) return "description";
   if (/^(?:项目经历|projectexperience)$/.test(bare)) return "summary";
   if (!inSection) return null;
   if (/^(?:名称|name|title)$/.test(bare)) return "name";
@@ -1641,8 +1665,23 @@ function projectFieldKind(haystack, bare = "", inSection = false) {
   if (/^(?:开始(?:时间|日期)?|起始(?:时间|日期)?|start(?:date)?)$/.test(bare)) return "start";
   if (/^(?:结束(?:时间|日期)?|截止(?:时间|日期)?|end(?:date)?)$/.test(bare)) return "end";
   if (RANGE_LABEL.test(bare)) return "range";
-  if (/职责|负责|贡献|成果|responsibilit|achievement/.test(bare)) return "responsibilities";
-  if (/描述|简介|介绍|内容|description/.test(bare)) return "description";
+  if (/职责|负责|贡献|成果|个人工作|本人工作|主要工作|承担|responsibilit|achievement/.test(bare)) return "responsibilities";
+  if (/描述|简介|介绍|内容|简述|概述|description/.test(bare)) return "description";
+  return null;
+}
+
+// 技能名称 / 掌握程度 / 技能类别 rows. Language levels belong to 英语, certificates elsewhere.
+function skillFieldKind(field, haystack, bare = "", inSection = false) {
+  if (/语言|外语|英语|语种|证书|language|certific/i.test(haystack)) return null;
+  if (/^(?:专业技能|技能特长|个人技能|掌握技能|技能|专业特长|skills?)$/i.test(bare)) return inSection && field.tag !== "textarea" && field.tag !== "richtext" ? "name" : "summary";
+  const named = /技能|skill/i.test(haystack);
+  if (!inSection && !named) return null;
+  if (/类别|类型|分类|category|type/i.test(haystack)) return "category";
+  if (/程度|水平|等级|熟练|level|proficiency/i.test(haystack)) return "level";
+  if (/描述|说明|介绍|详情|备注|description|detail/i.test(haystack)) return "description";
+  // 使用时长 / 年限: not something 网申资料 keeps.
+  if (/时长|年限|时间|月数|duration|years?|months?/i.test(haystack)) return null;
+  if (/名称|名$|^名|name/i.test(bare) || (inSection && /^(?:内容|技能项)$/.test(bare))) return "name";
   return null;
 }
 
@@ -1653,16 +1692,22 @@ function resolveRepeatField(field, rowIndexes) {
   // A family member's 工作单位 is not one of the applicant's internships.
   if (isSplitNameField(field) || isThirdPartyField(field)) return null;
   if (/[?？]|为什么|为何|谈谈|你(?:的|在|如何)|如何|遇到|挑战|收获|\bwhy\b|\bhow\b|tell us/i.test(field.label || "")) return null;
+  const bare = bareLabel(field);
+  // "是否 211 院校" / "有无海外经历" ask about a row; they are never its school or name.
+  if (/^(?:是否|有无|是不是)/.test(bare) || (field.options?.length && field.options.every((option) => /^(?:是|否|有|无|yes|no)$/i.test(String(option).trim())))) return null;
   const haystack = fieldHaystack(field);
   const section = String(field.section || "");
   const group = sectionGroup(section);
-  const bare = bareLabel(field);
   let info = null;
   const awardKind = awardFieldKind(haystack, bare, group === "award");
   if (awardKind) info = { group: "award", kind: awardKind };
   const projectKind = projectFieldKind(haystack, bare, group === "project");
   if (!info && projectKind) info = { group: "project", kind: projectKind };
-  if (!info && group !== "experience" && group !== "education") {
+  if (!info && (!group || group === "skill")) {
+    const kind = skillFieldKind(field, haystack, bare, group === "skill");
+    if (kind) info = { group: "skill", kind };
+  }
+  if (!info && ((group !== "experience" && group !== "education") || CAMPUS_SUMMARY.test(bare))) {
     const kind = campusFieldKind(haystack, bare, group === "campus");
     if (kind) info = { group: "campus", kind };
   }
@@ -1701,7 +1746,8 @@ function resolveRepeatField(field, rowIndexes) {
     }
     row = rowIndexes.get(block);
   }
-  return { ...info, row, degreeHint: hint, blockKey: field.blockKey || `${info.group}:${hint ? `degree${hint}` : row}` };
+  // A box for the whole list inside another module (智联's 校内活动 in 教育经历) takes all of it.
+  return { ...info, row, degreeHint: hint, foreign: !!group && group !== info.group, blockKey: field.blockKey || `${info.group}:${hint ? `degree${hint}` : row}` };
 }
 
 // Highest degree first (the order most forms and resume extraction use),
@@ -1831,7 +1877,14 @@ function repeatFieldValue(field, info, profile) {
   if (info.all && info.kind === "summary") {
     if (info.summaryText) return info.summaryText;
     const rows = rowsForGroup(profile, info.group);
-    return rows.map((_, row) => repeatFieldValue(field, { ...info, all: false, row }, profile)).filter(Boolean).join("\n\n") || profile.summaries?.[info.group] || null;
+    return rows.map((_, row) => repeatFieldValue(field, { ...info, all: false, row }, profile)).filter(Boolean).join(info.group === "skill" ? "；" : "\n\n") || profile.summaries?.[info.group] || null;
+  }
+  if (info.group === "skill") {
+    const row = profile.skills?.[info.row];
+    if (!row) return null;
+    if (info.kind === "summary") return [row.name, row.level && `（${row.level}）`, row.description && `：${row.description}`].filter(Boolean).join("");
+    if (info.kind === "level") return skillLevelOption(field, row.level);
+    return matchFieldOption(field, row[info.kind]);
   }
   if (info.group === "award") {
     const award = profile.awards?.[info.row];
@@ -1865,6 +1918,40 @@ function repeatFieldValue(field, info, profile) {
   if (!row) return null;
   if (info.kind === "summary") return [row.school, row.degree, row.major, [row.start, row.end].filter(Boolean).join(" 至 "), row.gpa && `GPA ${row.gpa}`].filter(Boolean).join("；");
   return info.kind === "degree" ? matchDegreeOption(field, row.degree) : matchFieldOption(field, rowDateValue(field, info.kind, row));
+}
+
+// 了解 < 熟悉 < 熟练 < 精通, with each portal's own words for the four steps.
+const SKILL_LEVELS = [
+  ["了解", "一般", "入门", "初级", "基础", "basic", "beginner"],
+  ["熟悉", "良好", "中级", "较熟练", "intermediate", "good"],
+  ["熟练", "掌握", "较好", "advanced", "proficient"],
+  ["精通", "专家", "高级", "expert", "master", "fluent"],
+];
+
+// The longest word decides: "较熟练" is a step below "熟练".
+function skillLevelRank(text) {
+  const value = String(text || "").toLowerCase();
+  let best = { rank: -1, length: 0 };
+  SKILL_LEVELS.forEach((words, rank) => { for (const word of words) if (value.includes(word) && word.length > best.length) best = { rank, length: word.length }; });
+  return best.rank;
+}
+
+/** Words to try in a dropdown for a saved level: the same step first, then the nearest. */
+function skillLevelAlternatives(level) {
+  const rank = skillLevelRank(level);
+  if (rank < 0) return [];
+  return [...SKILL_LEVELS[rank], ...(SKILL_LEVELS[rank - 1] || []), ...(SKILL_LEVELS[rank + 1] || [])].filter((word) => word !== level);
+}
+
+function skillLevelOption(field, level) {
+  if (!level) return null;
+  if (!field.options) return level;
+  const direct = matchFieldOption(field, level);
+  if (direct) return direct;
+  const rank = skillLevelRank(level);
+  if (rank < 0) return null;
+  const ranked = field.options.map((option) => ({ option, rank: skillLevelRank(option) })).filter((item) => item.rank >= 0).sort((a, b) => Math.abs(a.rank - rank) - Math.abs(b.rank - rank));
+  return ranked[0]?.option || null;
 }
 
 function stableMemoryHash(value) {
@@ -1933,13 +2020,13 @@ function savedRecordsOnPage(profile, pageText) {
     const match = /(\d{4})\D{0,3}(\d{1,2})/.exec(String(value || ""));
     return match ? `${match[1]}${match[2].padStart(2, "0")}` : "";
   };
-  for (const group of ["education", "experience", "project", "award", "campus"]) {
+  for (const group of ["education", "experience", "project", "award", "campus", "skill"]) {
     const rows = rowsForGroup(profile, group);
     const found = new Set();
     rows.forEach((row, index) => {
       const name = group === "education" ? row.school : group === "experience" ? row.company : row.name;
       if (!name || !has(name)) return;
-      const second = [row.major, row.role, row.level, row.degree].filter(Boolean).some(has) || [row.start, row.date].map(month).some((value) => value && text.includes(value));
+      const second = [row.major, row.role, row.level, row.degree, row.category].filter(Boolean).some(has) || [row.start, row.date].map(month).some((value) => value && text.includes(value));
       if (second) found.add(index);
     });
     // The same school twice (本科 + 硕士 at one university) cannot be told apart
@@ -2015,7 +2102,7 @@ function classifyRepeatBlocks(fields, profile, pageText = "") {
     for (const field of block.fields) {
       const info = repeats.get(field.id);
       info.row = block.row; info.unmatched = block.unmatched;
-      info.all = groupBlocks.length === 1 && block.fields.length === 1 && info.kind === "summary";
+      info.all = info.kind === "summary" && (info.foreign || (groupBlocks.length === 1 && block.fields.length === 1));
       const summaryMapping = info.all && (profile.mappings || []).find((item) => item.fieldKey === field.mappingKey && (item.ref === `summary:${block.group}` || item.ref?.startsWith(`summary:${block.group}:`)));
       if (summaryMapping) {
         info.summaryText = profileChoices(profile).find((choice) => choice.ref === summaryMapping.ref)?.value;
@@ -2034,7 +2121,7 @@ function classifyRepeatBlocks(fields, profile, pageText = "") {
 }
 
 function previewRecordBlocks(blocks, repeats, profile) {
-  const labels = { education: "教育经历", experience: "实习 / 工作", project: "项目经历", award: "获奖情况", campus: "校园经历" };
+  const labels = { education: "教育经历", experience: "实习 / 工作", project: "项目经历", award: "获奖情况", campus: "校园经历", skill: "专业技能" };
   return blocks.map((block, index) => ({
     id: block.id, label: `${labels[block.group]} · ${block.fields[0].section || `第 ${index + 1} 段`}`,
     note: block.unmatched ? "网页已有的名称或日期无法唯一匹配，请核对这段经历后选择来源" : "整段选择一条经历，已有内容保持不动",
@@ -2087,6 +2174,7 @@ function missingRepeatCounts(profile, rowIndexes) {
     ["project", "name", (profile.projects || []).length, "项目经历"],
     ["award", "name", (profile.awards || []).length, "获奖情况"],
     ["campus", "name", (profile.campus || []).length, "校园经历"],
+    ["skill", "name", (profile.skills || []).length, "专业技能"],
   ];
   return checks
     .map(([group, kind, saved, label]) => ({ group, label, saved, shown: seen(group, kind) }))
@@ -2110,6 +2198,7 @@ async function clickAddBlock(group) {
     project: /项目|project/i,
     award: /获奖|奖项|荣誉|奖励|award|honou?r/i,
     campus: /校园|校内|在校|学生工作|学生干部|社团|任职|campus/i,
+    skill: /技能|特长|skill/i,
   };
   const words = GROUP_WORDS[group];
   const ADD = /^[+＋]?\s*(?:添加|新增|增加|继续添加|再添加|add\b)/i;
@@ -2150,7 +2239,7 @@ async function clickAddBlock(group) {
 function repeatFieldGoesToAi(info, profile) {
   // A missing fact is not a prompt to invent an experience. Open questions
   // remain eligible for AI in their separate pass.
-  if (info.unmatched || info.record || info.group === "award" || info.group === "campus") return false;
+  if (info.unmatched || info.record || info.group === "award" || info.group === "campus" || info.group === "skill") return false;
   if (["description", "responsibilities", "summary"].includes(info.kind)) return false;
   const saved = info.group === "education" ? educationRows(profile) : info.group === "experience" ? profile.experiences || [] : profile.projects || [];
   return saved.length === 0 && info.row === 0 && !info.degreeHint;
@@ -2261,6 +2350,19 @@ function matchBasicField(field, profile, rowIndexes) {
   const repeat = resolveRepeatField(field, rowIndexes);
   if (repeat) return repeatFieldValue(field, repeat, profile);
   return matchFlatField(field, profile);
+}
+
+// The 网申资料 field a hand-typed answer in this box would fill: the same
+// rule that fills the box, so nothing is learned that would not be used.
+function learnableProfileKey(field) {
+  if (isThirdPartyField(field) || isNeverGuessField(field)) return null;
+  const haystack = fieldHaystack(field);
+  if (/company.?name|employer.?name|school.?name|岗位名称|公司名称|企业名称/.test(haystack)) return null;
+  const rule = BASIC_FIELD_RULES.find((item) => basicRuleMatches(item, field));
+  if (!rule || !rule.learn) return null;
+  // A score box ("英语成绩 580") holds part of the level, not the level.
+  if (rule.english && /成绩|分数|得分|score/i.test(haystack)) return null;
+  return rule.learn;
 }
 
 function isNeverGuessField(field) {
@@ -2526,7 +2628,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       const structured = repeat ? repeatFieldValue(field, repeat, profile) : null;
       if (structured) {
         const row = repeat.record || (repeat.degreeHint ? educationRows(profile).find((item) => degreeLevel(item.degree) === repeat.degreeHint) : rowsForGroup(profile, repeat.group)[repeat.row]);
-        pairs.push({ id: field.id, value: structured, source: "profile", label: field.label, tag: field.tag, ref: repeat.all && (repeat.summaryText || !rowsForGroup(profile, repeat.group).length) ? repeat.summaryRef || `summary:${repeat.group}` : row && !repeat.all ? `${recordReference(repeat.group, row)}:${repeat.kind}` : "", alternatives: degreeAlternatives(field, structured) });
+        pairs.push({ id: field.id, value: structured, source: "profile", label: field.label, tag: field.tag, ref: repeat.all && (repeat.summaryText || !rowsForGroup(profile, repeat.group).length) ? repeat.summaryRef || `summary:${repeat.group}` : row && !repeat.all ? `${recordReference(repeat.group, row)}:${repeat.kind}` : "", alternatives: repeat.group === "skill" && repeat.kind === "level" ? skillLevelAlternatives(structured) : degreeAlternatives(field, structured) });
         continue;
       }
       const rememberedValue = repeat && (repeat.group !== "education" || repeat.row > 0 || repeat.degreeHint || repeat.unmatched) ? null : matchRememberedField(field, profile.fieldMemories, pageContext);
@@ -2786,7 +2888,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
         ? `网申资料里${missingBlocks.join("、")}，没找到能自动点的「添加」按钮——请手动添加后再点一次一键填写`
         : `网申资料里${missingBlocks.join("、")}，但这页的对应栏目不够——先点页面上的「添加」再点一次一键填写，或勾选「自动补齐栏目」`);
     }
-    parts.push("手写或修改的资料会先进入待核对列表；确认前不会用于以后填写；提交前请核对所有填入内容");
+    parts.push("你手填的内容：网申资料里还空着的会直接记进去（可撤销），其余的先放进待核对；提交前请核对所有填入内容");
 
     assertActive();
     const summary = { filled: previous.filled + filled.length, manual: allDetails.filter((d) => d.source === "manual").length, preserved: Math.max(0, alreadyFilled - priorFillsOnPage) + skipped.length, excluded: allDetails.filter((d) => d.source === "excluded").length, uploaded: previous.uploaded + uploadedResumeCount };
@@ -2858,7 +2960,9 @@ async function saveCorrectionsCore(adapter, resumeVersionId, onlyUserEdited = fa
     if (!openEnded && !snapshot.userEdited) continue;
     const key = openEnded ? label : fieldMemoryKey(field);
     if (!key) continue;
-    answers.push({ questionLabel: key, fieldKey: field.mappingKey, answer: candidate.value, answerId: openEnded ? candidate.answerId : undefined, kind: openEnded ? field.tag === "textarea" || field.tag === "richtext" ? "essay" : "short" : "field" });
+    // Typed by the applicant (not a default the page showed): may fill a blank in 网申资料.
+    const profileKey = snapshot.userEdited ? learnableProfileKey(field) : null;
+    answers.push({ questionLabel: key, fieldKey: field.mappingKey, answer: candidate.value, answerId: openEnded ? candidate.answerId : undefined, kind: openEnded ? field.tag === "textarea" || field.tag === "richtext" ? "essay" : "short" : "field", ...(profileKey ? { profileKey } : {}) });
     savedFields.push({ frame, id: field.id, value: candidate.value });
   }
   for (const group of groups.values()) {
@@ -2930,16 +3034,16 @@ async function saveCorrectionsCore(adapter, resumeVersionId, onlyUserEdited = fa
     // Staging is not confirmation. Retain AI draft provenance so a later
     // capture cannot mistake an untouched generated value for a user answer.
   }
-  return { saved: body.saved ?? 0, pending: body.pending ?? 0, pendingTotal: body.pendingTotal, draftSaved: body.draftSaved, unchanged: body.unchanged ?? 0 };
+  return { saved: body.saved ?? 0, pending: body.pending ?? 0, pendingTotal: body.pendingTotal, draftSaved: body.draftSaved, unchanged: body.unchanged ?? 0, learned: Array.isArray(body.learned) ? body.learned : [] };
 }
 
 // Values are referenced from the saved profile, never reconstructed by the model.
 function profileChoices(profile) {
   const choices = [];
-  const labels = { name: "姓名", phone: "手机", email: "邮箱", gender: "性别", birthDate: "出生日期", currentCity: "现居地", targetRole: "期望岗位", selfIntro: "自我评价", politics: "政治面貌", hometown: "籍贯", ethnicity: "民族", english: "英语水平", wechat: "微信号", expectedSalary: "期望薪资", availableFrom: "最早到岗时间", internshipDuration: "可实习时长", address: "通讯地址" };
+  const labels = { name: "姓名", phone: "手机", email: "邮箱", gender: "性别", birthDate: "出生日期", currentCity: "现居地", targetRole: "期望岗位", selfIntro: "自我评价", politics: "政治面貌", hometown: "籍贯", ethnicity: "民族", english: "英语水平", wechat: "微信号", qq: "QQ 号", expectedSalary: "期望薪资", availableFrom: "最早到岗时间", internshipDuration: "可实习时长", address: "通讯地址", researchDirection: "研究方向", rank: "成绩排名", acceptAdjust: "是否接受调剂", courses: "主修课程", homepage: "个人主页 / 作品链接", lab: "实验室 / 课题组", hobbies: "兴趣爱好", thesis: "毕业论文" };
   for (const [ref, label] of Object.entries(labels)) if (profile[ref]) choices.push({ ref, label, value: String(profile[ref]) });
-  const columns = { school: "学校", major: "专业", degree: "学历", gpa: "GPA", start: "开始时间", end: "结束时间", company: "公司", role: "角色/职位", name: "名称", description: "描述", responsibilities: "职责", issuer: "颁发单位", level: "奖项等级", date: "获奖日期" };
-  for (const [group, label] of [["education", "教育"], ["experience", "工作/实习"], ["project", "项目"], ["award", "获奖"], ["campus", "校园经历"]]) {
+  const columns = { school: "学校", major: "专业", department: "院系 / 部门", degree: "学历", gpa: "GPA", start: "开始时间", end: "结束时间", company: "公司", role: "角色/职位", name: "名称", description: "描述", responsibilities: "职责", issuer: "颁发单位", level: "等级 / 程度", category: "类别", date: "获奖日期" };
+  for (const [group, label] of [["education", "教育"], ["experience", "工作/实习"], ["project", "项目"], ["award", "获奖"], ["campus", "校园经历"], ["skill", "技能"]]) {
     rowsForGroup(profile, group, true).forEach((row, index) => { for (const [key, text] of Object.entries(columns)) if (row[key]) choices.push({ ref: `${recordReference(group, row)}:${key}`, label: `${label} ${index + 1}（${row.school || row.company || row.name || row.degree || ""}）${row.__memoryLabel ? ` · ${row.__memoryLabel}` : ""} · ${text}`, value: String(row[key]) }); });
     const text = (profile.library || []).find((entry) => entry.category === group && entry.content.text)?.content.text || profile.summaries?.[group];
     if (text) choices.push({ ref: `summary:${group}`, label: `${label} · 整段原文`, value: String(text) });
@@ -3140,6 +3244,7 @@ module.exports = {
   isForbiddenMemoryField,
   isNeverGuessField,
   isOpenEndedQuestionField,
+  learnableProfileKey,
   isSensitiveMemoryField,
   isSplitNameField,
   markResumeFileInputs,
@@ -3162,6 +3267,9 @@ module.exports = {
   scanPageFields,
   sectionGroup,
   sectionOrdinal,
+  skillFieldKind,
+  skillLevelAlternatives,
+  skillLevelOption,
   snapshotFormStructure,
   trackUserEdits,
 };

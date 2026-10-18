@@ -6,6 +6,9 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { toActionResult, UserFacingError } from "@/lib/action-result";
 import { normalizeMemoryText, memoryCaptureSchema, memoryContent, memoryIdentity, toMemoryView, type MemorySource } from "@/lib/application-memory";
+import { parseApplicationProfile } from "@/lib/application-profile";
+import { LEARNABLE_FACTS, profileKeyForLabel } from "@/lib/profile-learning";
+import type { Prisma } from "@prisma/client";
 
 const acceptSchema = z.object({
   revision: z.number().int().nonnegative(),
@@ -16,7 +19,24 @@ const acceptSchema = z.object({
   content: z.record(z.string(), z.string().max(10000)).optional(),
   answer: z.string().trim().min(1).max(10000).optional(),
   enableAutomatic: z.boolean().default(false),
+  /** A short answer that is a 网申资料 field (研究方向 …): write it there. */
+  toProfile: z.boolean().default(false),
 });
+
+/** Writes a reviewed answer into its 网申资料 field. Returns false when the label maps to none. */
+async function answerToProfile(tx: Prisma.TransactionClient, userId: string, payload: { questionLabel: string; profileKey?: string }, value: string) {
+  const key = payload.profileKey && Object.hasOwn(LEARNABLE_FACTS, payload.profileKey) ? payload.profileKey : profileKeyForLabel(payload.questionLabel);
+  if (!key || !Object.hasOwn(LEARNABLE_FACTS, key) || value.length > 1000) return false;
+  if (key === "preferredCities") {
+    await tx.user.update({ where: { id: userId }, data: { preferredCities: value } });
+    return true;
+  }
+  const user = await tx.user.findUniqueOrThrow({ where: { id: userId }, select: { applicationProfile: true } });
+  const profile = parseApplicationProfile(user.applicationProfile);
+  profile.extras = { ...profile.extras, [key]: value };
+  await tx.user.update({ where: { id: userId }, data: { applicationProfile: profile as Prisma.InputJsonValue } });
+  return true;
+}
 
 export async function acceptPendingApplicationChange(id: string, input: z.input<typeof acceptSchema>) {
   return toActionResult(async () => {
@@ -62,6 +82,10 @@ export async function acceptPendingApplicationChange(id: string, input: z.input<
           const sources = view.sources.some((item) => item.url === row.sourceUrl) ? view.sources : [...view.sources, source].slice(-10);
           memory = await tx.applicationMemory.update({ where: { id: existing.id }, data: { content: selected, identity, alternatives, sources, revision: { increment: 1 } } });
         }
+      } else if (row.kind === "answer" && choice.toProfile) {
+        const answer = z.object({ questionLabel: z.string().trim().min(2).max(500), answer: z.string().trim().min(1).max(10000), profileKey: z.string().max(40).optional() }).safeParse(row.payload);
+        if (!answer.success) throw new UserFacingError("这条字段内容不完整");
+        if (!await answerToProfile(tx, user.id, answer.data, choice.answer || answer.data.answer)) throw new UserFacingError("这一项对不上网申资料里的字段，请用「记住」");
       } else if (row.kind === "answer") {
         const answer = z.object({ questionLabel: z.string().trim().min(2).max(500), answer: z.string().trim().min(1).max(10000), kind: z.enum(["essay", "short", "field"]) }).safeParse(row.payload);
         if (!answer.success) throw new UserFacingError("这条字段或回答内容不完整");
@@ -90,6 +114,27 @@ export async function ignorePendingApplicationChange(id: string, revision: numbe
     if (!changed.count) throw new UserFacingError("这条内容已有新变化，请刷新后重新核对");
     revalidatePath("/settings");
     return null;
+  });
+}
+
+/** 「全部记进网申资料」: answers that map to a blank 网申资料 field. */
+export async function acceptPendingIntoProfile(items: { id: string; revision: number }[]) {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const result = await db.$transaction(async (tx) => {
+      let saved = 0;
+      for (const { id, revision } of items.slice(0, 100)) {
+        const row = await tx.pendingApplicationChange.findFirst({ where: { id, userId: user.id, status: "pending", revision, kind: "answer" } });
+        const payload = row?.payload as { questionLabel?: string; answer?: string; profileKey?: string } | undefined;
+        if (!row || !payload?.questionLabel || !payload.answer) continue;
+        if (!await answerToProfile(tx, user.id, { questionLabel: payload.questionLabel, profileKey: payload.profileKey }, payload.answer.trim())) continue;
+        await tx.pendingApplicationChange.update({ where: { id: row.id }, data: { status: "accepted", revision: { increment: 1 } } });
+        saved++;
+      }
+      return { saved, skipped: Math.min(items.length, 100) - saved };
+    });
+    revalidatePath("/settings");
+    return result;
   });
 }
 

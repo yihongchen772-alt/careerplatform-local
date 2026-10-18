@@ -19,6 +19,8 @@ export const educationSchema = z.object({
 export const experienceSchema = z.object({
   company: z.string().trim().max(80).default(""),
   role: z.string().trim().max(80).default(""),
+  /** 所在部门, asked beside the employer on 国企 / 运营商 forms. */
+  department: z.string().trim().max(80).default(""),
   start: z.string().trim().max(20).default(""),
   end: z.string().trim().max(20).default(""),
   description: z.string().trim().max(5000).default(""),
@@ -51,6 +53,15 @@ export const campusSchema = z.object({
   description: z.string().trim().max(3000).default(""),
 });
 
+/** 专业技能 / 技能特长: one skill per row (技能名称、掌握程度、类别). */
+export const skillSchema = z.object({
+  name: z.string().trim().max(80).default(""),
+  /** 了解 / 熟悉 / 熟练 / 精通 … matched to the nearest option on the page. */
+  level: z.string().trim().max(40).default(""),
+  category: z.string().trim().max(40).default(""),
+  description: z.string().trim().max(1000).default(""),
+});
+
 export const EXTRA_FIELDS = [
   { key: "politics", label: "政治面貌", hint: "群众 / 共青团员 / 中共党员" },
   { key: "hometown", label: "籍贯", hint: "省 市" },
@@ -69,9 +80,35 @@ export const EXTRA_FIELDS = [
   { key: "rank", label: "成绩排名", hint: "前 10% / 5/120" },
   { key: "acceptAdjust", label: "是否接受调剂", hint: "是 / 否" },
   { key: "courses", label: "主修课程", hint: "自动控制原理、机器人学、……", multiline: true },
+  // Seen filled by hand on 腾讯、网易、歌尔、中国移动 after v1.20.
+  { key: "qq", label: "QQ 号", hint: "" },
+  { key: "homepage", label: "个人主页 / 作品链接", hint: "GitHub / 作品集 / 博客链接" },
+  { key: "lab", label: "实验室 / 课题组", hint: "智能控制实验室" },
+  { key: "hobbies", label: "兴趣爱好", hint: "篮球、摄影" },
+  { key: "thesis", label: "毕业论文", hint: "题目，可加一两句简介", multiline: true },
   // Long text: most forms ask for it, and each direction wants its own version.
   { key: "selfIntro", label: "自我评价", hint: "3-5 句，突出与目标岗位相关的能力", multiline: true },
 ] as const;
+
+/**
+ * One fact the 网申浏览器 learned from a page the applicant filled by hand:
+ * a blank 常问字段, a new 校园经历 row, or blanks of a saved row. `state` is
+ * what was written (the value, or the row as JSON), so 撤销 only takes back
+ * what is still exactly as learned.
+ */
+export const learnedEntrySchema = z.object({
+  id: z.string().max(40),
+  kind: z.enum(["fact", "add", "fill"]),
+  ref: z.string().max(80),
+  label: z.string().max(200),
+  state: z.string().max(12000),
+  added: z.record(z.string(), z.string().max(10000)).default({}),
+  source: z.string().max(1000),
+  captureKey: z.string().max(200).default(""),
+  at: z.string().max(40),
+  undone: z.boolean().default(false),
+});
+export type LearnedEntry = z.infer<typeof learnedEntrySchema>;
 
 /**
  * 资料方案: a named alternative for a different direction (数据 vs 产品 …).
@@ -95,8 +132,11 @@ export const applicationProfileSchema = z.object({
   projects: z.array(projectSchema).max(20).default([]),
   awards: z.array(awardSchema).max(30).default([]),
   campus: z.array(campusSchema).max(20).default([]),
+  skills: z.array(skillSchema).max(30).default([]),
   extras: z.record(z.string(), z.string().trim().max(1000)).default({}),
   variants: z.array(profileVariantSchema).max(8).default([]),
+  /** What the 网申浏览器 wrote in by itself from hand-filled pages (for 撤销). */
+  learned: z.array(learnedEntrySchema).max(80).default([]),
 });
 
 export type ApplicationProfile = z.infer<typeof applicationProfileSchema>;
@@ -127,12 +167,19 @@ export type ExperienceRow = z.infer<typeof experienceSchema>;
 export type ProjectRow = z.infer<typeof projectSchema>;
 export type AwardRow = z.infer<typeof awardSchema>;
 export type CampusRow = z.infer<typeof campusSchema>;
+export type SkillRow = z.infer<typeof skillSchema>;
 
-export const EMPTY_APPLICATION_PROFILE: ApplicationProfile = { education: [], experiences: [], projects: [], awards: [], campus: [], extras: {}, variants: [] };
+export const EMPTY_APPLICATION_PROFILE: ApplicationProfile = { education: [], experiences: [], projects: [], awards: [], campus: [], skills: [], extras: {}, variants: [], learned: [] };
 
 export function parseApplicationProfile(raw: unknown): ApplicationProfile {
   const parsed = applicationProfileSchema.safeParse(raw);
-  return parsed.success ? parsed.data : EMPTY_APPLICATION_PROFILE;
+  if (parsed.success) return parsed.data;
+  // A bad 撤销 record must never hide (and then, on save, erase) the profile.
+  if (raw && typeof raw === "object" && "learned" in raw) {
+    const retry = applicationProfileSchema.safeParse({ ...raw, learned: [] });
+    if (retry.success) return retry.data;
+  }
+  return EMPTY_APPLICATION_PROFILE;
 }
 
 /** Resume extraction may add facts, but must not erase projects edited by hand. */
@@ -167,7 +214,7 @@ export function describeApplicationProfile(p: ApplicationProfile): string {
     if (bits.length) lines.push(`教育经历${i + 1}：${bits.join(" / ")}`);
   });
   p.experiences.forEach((x, i) => {
-    const bits = [x.company, x.role, [x.start, x.end].filter(Boolean).join("~")].filter(Boolean);
+    const bits = [x.company, x.department, x.role, [x.start, x.end].filter(Boolean).join("~")].filter(Boolean);
     if (bits.length) lines.push(`实习/工作经历${i + 1}：${bits.join(" / ")}${x.description ? `——${x.description}` : ""}`);
   });
   p.projects.forEach((project, i) => {
@@ -184,6 +231,8 @@ export function describeApplicationProfile(p: ApplicationProfile): string {
     const bits = [row.name, row.role, row.level, [row.start, row.end].filter(Boolean).join("~")].filter(Boolean);
     if (bits.length) lines.push(`校园经历${i + 1}：${bits.join(" / ")}${row.description ? `——${row.description}` : ""}`);
   });
+  const skills = (p.skills || []).filter((row) => row.name).map((row) => [row.name, row.level && `（${row.level}）`].filter(Boolean).join(""));
+  if (skills.length) lines.push(`专业技能：${skills.join("、")}`);
   for (const f of EXTRA_FIELDS) {
     const v = p.extras[f.key];
     if (v) lines.push(`${f.label}：${v}`);

@@ -129,7 +129,7 @@ async function AutofillSection({ user }: { user: User }) {
   const sources = Object.fromEntries(positions.map((position) => [`job:v1:${position.id}`, `${position.company.name} · ${position.title}`]));
   return (
     <>
-      <PendingApplicationChangesCard initial={pendingChanges.map(toPendingApplicationChangeView)} sources={sources} currentMemories={memoryViews} currentAnswers={answers} currentFacts={{ 姓名: user.name, 手机: user.phone, 邮箱: user.contactEmail, 学校: user.school, 性别: user.gender, 出生日期: user.birthDate }} />
+      <PendingApplicationChangesCard initial={pendingChanges.map(toPendingApplicationChangeView)} sources={sources} currentMemories={memoryViews} currentAnswers={answers} currentFacts={{ 姓名: user.name, 手机: user.phone, 邮箱: user.contactEmail, 学校: user.school, 性别: user.gender, 出生日期: user.birthDate }} profileValues={{ ...parseApplicationProfile(user.applicationProfile).extras, preferredCities: user.preferredCities ?? "" }} />
       <ApplicationProfileCard initial={parseApplicationProfile(user.applicationProfile)} resumeVersions={resumeVersions} />
     </>
   );

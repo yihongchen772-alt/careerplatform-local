@@ -86,6 +86,7 @@ const FILL_MODULES: { id: DesktopBridgeAutofillModule; label: string }[] = [
   { id: "project", label: "项目经历" },
   { id: "award", label: "获奖情况" },
   { id: "campus", label: "校园经历" },
+  { id: "skill", label: "专业技能" },
   { id: "questions", label: "开放题 / 自我评价" },
   { id: "other", label: "其他字段" },
   { id: "resume", label: "简历附件" },
@@ -141,6 +142,8 @@ export function EmbeddedBrowser({
   const [browserHeight, setBrowserHeight] = useState(650);
   const autoSavingRef = useRef(false);
   const autoSaveErrorRef = useRef(false);
+  // What this page wrote into 网申资料 so far: one notice, one 撤销 for all of it.
+  const learnedRef = useRef<{ url: string; items: { id: string; label: string }[] }>({ url: "", items: [] });
   const [capturing, setCapturing] = useState(false);
   const [captureInitial, setCaptureInitial] = useState<PositionFormInitial | null>(null);
   const [captureOpen, setCaptureOpen] = useState(false);
@@ -165,13 +168,19 @@ export function EmbeddedBrowser({
   const [variantChoice, setVariantChoice] = useState("");
   const scopePreference = useSyncExternalStore(noop, () => {
     try {
-      const saved = localStorage.getItem("careerplatform.browser.fillModules.v3");
+      const saved = localStorage.getItem("careerplatform.browser.fillModules.v4");
       if (saved !== null) return saved;
-      // v2 had no 校园经历: whoever filled 实习/工作经历 gets it too (it used to be filled as one).
-      const v2 = localStorage.getItem("careerplatform.browser.fillModules.v2");
-      if (v2 !== null) return v2.split(",").includes("experience") ? `${v2},campus` : v2;
-      const old = localStorage.getItem("careerplatform.browser.fillModules");
-      return old === null || ALL_FILL_MODULES.filter((id) => id !== "award" && id !== "campus").every((id) => old.split(",").includes(id)) ? ALL_FILL_MODULES.join(",") : old;
+      const legacy = (() => {
+        const v3 = localStorage.getItem("careerplatform.browser.fillModules.v3");
+        if (v3 !== null) return v3;
+        // v2 had no 校园经历: whoever filled 实习/工作经历 gets it too (it used to be filled as one).
+        const v2 = localStorage.getItem("careerplatform.browser.fillModules.v2");
+        if (v2 !== null) return v2.split(",").includes("experience") ? `${v2},campus` : v2;
+        const old = localStorage.getItem("careerplatform.browser.fillModules");
+        return old === null || ALL_FILL_MODULES.filter((id) => id !== "award" && id !== "campus" && id !== "skill").every((id) => old.split(",").includes(id)) ? ALL_FILL_MODULES.join(",") : old;
+      })();
+      // v3 had no 专业技能: those boxes were filled as 其他字段.
+      return legacy.split(",").includes("other") ? `${legacy},skill` : legacy;
     }
     catch { return ALL_FILL_MODULES.join(","); }
   }, () => ALL_FILL_MODULES.join(","));
@@ -180,7 +189,7 @@ export function EmbeddedBrowser({
   function setFillModules(modules: DesktopBridgeAutofillModule[]) {
     const ordered = ALL_FILL_MODULES.filter((id) => modules.includes(id));
     setScopeOverride(ordered);
-    writePreference("careerplatform.browser.fillModules.v3", ordered.join(","));
+    writePreference("careerplatform.browser.fillModules.v4", ordered.join(","));
   }
   const [resumeVersionId, setResumeVersionId] = useState(
     resumeVersions.find((r) => r.isDefault)?.id ?? resumeVersions[0]?.id ?? ""
@@ -479,14 +488,40 @@ export function EmbeddedBrowser({
     };
   }, [expanded]);
 
+  const undoLearned = useCallback(async (items: { id: string; label: string }[]) => {
+    learnedRef.current = { url: learnedRef.current.url, items: [] };
+    try {
+      const res = await fetch("/api/desktop-browser/undo-learned", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: items.map((item) => item.id) }) });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "撤销失败");
+      toast.info(body.kept ? `已撤销 ${body.undone} 项；${body.kept} 项之后在网申资料里改过，保留了` : `已撤销，网申资料恢复原样`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "撤销失败");
+    }
+  }, []);
+
+  const announceLearned = useCallback((items: { id: string; label: string }[], url: string) => {
+    const earlier = learnedRef.current.url === url ? learnedRef.current.items : [];
+    const all = [...earlier.filter((item) => !items.some((next) => next.id === item.id)), ...items];
+    learnedRef.current = { url, items: all };
+    const names = all.map((item) => item.label);
+    toast.success(`已记进网申资料：${names.slice(0, 4).join("、")}${names.length > 4 ? ` 等 ${names.length} 项` : ""}`, {
+      id: "profile-learned",
+      description: "你在网页上手填的，网申资料里原本空着；下次网申会自动填。",
+      duration: 12000,
+      action: { label: "撤销", onClick: () => void undoLearned(all) },
+    });
+  }, [undoLearned]);
+
   useEffect(() => {
     if (!bridge || !currentUrl || autofilling || savingCorrections) return;
     const timer = window.setInterval(async () => {
       if (autoSavingRef.current) return;
       autoSavingRef.current = true;
       try {
-        const { pendingTotal, draftSaved } = await bridge.saveCorrections(resumeVersionId || undefined, true, positionId || "", variantChoice, autoRemember);
+        const { pendingTotal, draftSaved, learned } = await bridge.saveCorrections(resumeVersionId || undefined, true, positionId || "", variantChoice, autoRemember);
         if (pendingTotal !== undefined) setPendingChangeCount(pendingTotal);
+        if (learned?.length) announceLearned(learned, currentUrl);
         if (draftSaved) setPageDraftStatus({ context: draftContext, message: `${new Date().toLocaleTimeString("zh-CN")} 扫描的网页内容已保存到 App` });
         autoSaveErrorRef.current = false;
       } catch {
@@ -498,7 +533,7 @@ export function EmbeddedBrowser({
       }
     }, 2500);
     return () => window.clearInterval(timer);
-  }, [bridge, autoRemember, currentUrl, autofilling, savingCorrections, resumeVersionId, positionId, variantChoice, draftContext]);
+  }, [bridge, autoRemember, currentUrl, autofilling, savingCorrections, resumeVersionId, positionId, variantChoice, draftContext, announceLearned]);
 
   // Keyboard shortcuts while focus is in our own chrome (the guest page's
   // shortcuts are forwarded by the main process and arrive via onShortcut).
@@ -571,14 +606,13 @@ export function EmbeddedBrowser({
     if (!bridge || savingCorrections) return;
     setSavingCorrections(true);
     try {
-      const { pending = 0, pendingTotal, draftSaved, unchanged } = await bridge.saveCorrections(resumeVersionId || undefined, false, positionId || "", variantChoice);
+      const { pending = 0, pendingTotal, draftSaved, unchanged, learned } = await bridge.saveCorrections(resumeVersionId || undefined, false, positionId || "", variantChoice);
       if (pendingTotal !== undefined) setPendingChangeCount(pendingTotal);
       if (draftSaved) setPageDraftStatus({ context: draftContext, message: `${new Date().toLocaleTimeString("zh-CN")} 扫描的网页内容已保存到 App` });
-      if (pending > 0) {
-        toast.success(`发现 ${pending} 项可保存内容，已放进「设置 → 网申资料 → 待核对」`);
-      } else {
-        toast.info(unchanged ? "这些变化已经在待核对列表中" : "没有发现完整的新内容；未修改的 AI 草稿不会进入待核对列表");
-      }
+      // What was written into 网申资料 gets its own notice (with 撤销).
+      if (learned?.length && currentUrl) announceLearned(learned, currentUrl);
+      if (pending > 0) toast.success(`发现 ${pending} 项可保存内容，已放进「设置 → 网申资料 → 待核对」`);
+      else if (!learned?.length) toast.info(unchanged ? "这些变化已经在待核对列表中" : "没有发现完整的新内容；未修改的 AI 草稿不会进入待核对列表");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "保存修改失败");
     } finally {
@@ -703,7 +737,7 @@ export function EmbeddedBrowser({
         {[
           { checked: autoFill, set: setAutoFillEveryPage, title: "每页自动填", hint: "网申分好几页时，每翻到一页有空表单就自动填，不用每页点一次。" },
           { checked: expandBlocks, set: setExpandBlocks, title: "自动补齐栏目", hint: "资料里的教育 / 实习 / 项目比页面栏目多时，自动点页面上的「添加」再接着填；只点文字明确的添加按钮，不会点提交。" },
-          { checked: autoRemember, set: setAutoRememberAnswers, title: "自动发现待核对变化", hint: "发现你手填或修改的经历与回答，先放进待核对列表；确认前不会用于以后填写。" },
+          { checked: autoRemember, set: setAutoRememberAnswers, title: "记住我手填的内容", hint: "网申资料里还空着的（研究方向、校园经历、技能…）直接记进去，可撤销；其他手填或修改的经历与回答先放进待核对。" },
         ].map((item) => (
           <label key={item.title} className="flex items-start gap-2 rounded-md p-1.5 hover:bg-muted">
             <input type="checkbox" className="mt-0.5" checked={item.checked} onChange={(e) => item.set(e.target.checked)} />

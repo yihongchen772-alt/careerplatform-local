@@ -1,18 +1,34 @@
 import { z } from "zod";
-import { educationSchema, experienceSchema, projectSchema, awardSchema, type ApplicationProfile } from "@/lib/application-profile";
+import { educationSchema, experienceSchema, projectSchema, awardSchema, campusSchema, skillSchema, type ApplicationProfile } from "@/lib/application-profile";
 
-export const MEMORY_CATEGORIES = { education: "教育经历", experience: "实习 / 工作", project: "项目经历", award: "获奖情况" } as const;
+export const MEMORY_CATEGORIES = { education: "教育经历", experience: "实习 / 工作", project: "项目经历", award: "获奖情况", campus: "校园经历", skill: "专业技能" } as const;
 export type MemoryCategory = keyof typeof MEMORY_CATEGORIES;
+export const MEMORY_CATEGORY_IDS = Object.keys(MEMORY_CATEGORIES) as [MemoryCategory, ...MemoryCategory[]];
 export type MemoryContent = Record<string, string>;
-export const recordSchemas = { education: educationSchema, experience: experienceSchema, project: projectSchema, award: awardSchema };
+export const recordSchemas = { education: educationSchema, experience: experienceSchema, project: projectSchema, award: awardSchema, campus: campusSchema, skill: skillSchema };
+
+/** The 网申资料 list a category's rows live in, and how many it keeps. */
+export const MEMORY_LISTS = {
+  education: { list: "education", limit: 10 },
+  experience: { list: "experiences", limit: 20 },
+  project: { list: "projects", limit: 20 },
+  award: { list: "awards", limit: 30 },
+  campus: { list: "campus", limit: 20 },
+  skill: { list: "skills", limit: 30 },
+} as const satisfies Record<MemoryCategory, { list: keyof ApplicationProfile; limit: number }>;
+
+/** What names a row: the school, the employer, or the entry's own name. */
+export function memoryAnchor(category: MemoryCategory): "school" | "company" | "name" {
+  return category === "education" ? "school" : category === "experience" ? "company" : "name";
+}
 const summarySchema = z.object({ text: z.string().trim().min(2).max(10000) });
 export const memoryCaptureSchema = z.object({
-  category: z.enum(["education", "experience", "project", "award"]),
+  category: z.enum(MEMORY_CATEGORY_IDS),
   content: z.record(z.string().max(40), z.string().trim().max(10000)),
   captureKey: z.string().max(200).default(""),
 }).superRefine((item, ctx) => {
   const parsed = item.content.text ? summarySchema.safeParse(item.content) : recordSchemas[item.category].safeParse(item.content);
-  const anchor = item.category === "experience" ? "company" : item.category === "education" ? "school" : "name";
+  const anchor = memoryAnchor(item.category);
   if (!parsed.success || (!item.content.text && !item.content[anchor]?.trim())) ctx.addIssue({ code: "custom", message: "经历需要名称或整段原文，且每个字段须符合长度要求" });
 });
 export type MemoryCapture = z.infer<typeof memoryCaptureSchema>;
@@ -36,6 +52,8 @@ export function memoryValueKey(key: string, value: string): string {
 function identityParts(category: MemoryCategory, content: MemoryContent) {
   const keys = category === "education" ? ["school", "degree", "start"]
     : category === "experience" ? ["company", "role", "start"]
+    : category === "campus" ? ["name", "role", "start"]
+    : category === "skill" ? ["name"]
     : category === "project" ? ["name", "start"] : ["name", "date"];
   return keys.map((key) => memoryValueKey(key, content[key] || ""));
 }
@@ -110,14 +128,14 @@ export function mergeMemoryContent(category: MemoryCategory, current: MemoryCont
 /** Explicit direction variants retain their chosen internships/projects.
  * Default facts get the enabled library appended, without duplicate entities. */
 export function profileWithMemories(profile: ApplicationProfile, memories: MemoryView[], hasVariant: boolean): ApplicationProfile {
-  const result = { ...profile, education: [...profile.education], experiences: [...profile.experiences], projects: [...profile.projects], awards: [...profile.awards] };
+  const result = { ...profile, education: [...profile.education], experiences: [...profile.experiences], projects: [...profile.projects], awards: [...profile.awards], campus: [...(profile.campus ?? [])], skills: [...(profile.skills ?? [])] };
   for (const memory of memories) {
     if (!memory.enabled || memory.content.text || (hasVariant && ["experience", "project"].includes(memory.category))) continue;
-    const list = memory.category === "experience" ? "experiences" : memory.category === "project" ? "projects" : memory.category === "award" ? "awards" : "education";
+    const { list, limit } = MEMORY_LISTS[memory.category];
     const rows = result[list] as MemoryContent[];
     const matches = rows.map((row, i) => sameMemoryEntity(memory.category, row, memory.content) ? i : -1).filter((i) => i >= 0);
     if (matches.length === 1) rows[matches[0]] = { ...memory.content, ...Object.fromEntries(Object.entries(rows[matches[0]]).filter(([, value]) => value)) };
-    else if (!matches.length && rows.length < (list === "education" ? 10 : list === "awards" ? 30 : 20)) rows.push({ ...memory.content });
+    else if (!matches.length && rows.length < limit) rows.push({ ...memory.content });
   }
   return result;
 }

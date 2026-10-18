@@ -173,9 +173,11 @@ test("prefilled blocks, loose fields and unrelated labels keep rows aligned", ()
   // A date below the second school belongs to that school even if the
   // first block did not expose its own date field.
   assert.equal(matchBasicField(field("毕业时间", "教育经历"), savedProfile, rows), "2025-06");
-  for (const label of ["专业排名", "学校所在城市", "英语成绩", "专业技能", "期望工作城市", "专业课程", "GPA排名", "离职原因", "入职部门"]) {
+  for (const label of ["专业排名", "学校所在城市", "英语成绩", "期望工作城市", "专业课程", "GPA排名", "离职原因", "入职部门"]) {
     assert.equal(resolveRepeatField(field(label), new Map()), null, label);
   }
+  // "专业技能" is the 技能 list in one box, not the education row's 专业.
+  assert.deepEqual([resolveRepeatField(field("专业技能"), new Map())].map((info) => info && `${info.group}:${info.kind}`), ["skill:summary"]);
   // A score box gets the score, a level box the level.
   assert.equal(matchBasicField(field("英语成绩"), { ...savedProfile, english: "CET-6 580" }, new Map()), "580");
   assert.equal(matchBasicField(field("英语水平"), { ...savedProfile, english: "CET-6 580" }, new Map()), "CET-6 580");
