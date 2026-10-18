@@ -26,6 +26,7 @@ import {
   type AwardRow,
   type CampusRow,
   type SkillRow,
+  type LanguageRow,
   type ProfileVariant,
 } from "@/lib/application-profile";
 import { mergeFactRows } from "@/lib/application-memory";
@@ -38,6 +39,7 @@ const emptyProject: ProjectRow = { name: "", role: "", start: "", end: "", descr
 const emptyAward: AwardRow = { name: "", issuer: "", level: "", date: "", description: "" };
 const emptyCampus: CampusRow = { name: "", role: "", level: "", start: "", end: "", description: "" };
 const emptySkill: SkillRow = { name: "", level: "", category: "", description: "" };
+const emptyLanguage: LanguageRow = { name: "", language: "", score: "", date: "" };
 
 /**
  * The 网申 facts the account profile above doesn't hold and the resume
@@ -116,7 +118,7 @@ export function ApplicationProfileCard({
       const res = await extractApplicationProfile(resumeId);
       if (!res.ok) return void toast.error(res.message);
       // Keep hand-typed rows when the resume does not contain that section.
-      setProfile((p) => ({ ...p, education: mergeFactRows("education", p.education, res.data.education, 10), awards: mergeFactRows("award", p.awards, res.data.awards, 30), campus: mergeFactRows("campus", p.campus ?? [], res.data.campus ?? [], 20), skills: mergeFactRows("skill", p.skills ?? [], res.data.skills ?? [], 30) }));
+      setProfile((p) => ({ ...p, education: mergeFactRows("education", p.education, res.data.education, 10), awards: mergeFactRows("award", p.awards, res.data.awards, 30), campus: mergeFactRows("campus", p.campus ?? [], res.data.campus ?? [], 20), skills: mergeFactRows("skill", p.skills ?? [], res.data.skills ?? [], 30), languages: mergeFactRows("language", p.languages ?? [], res.data.languages ?? [], 10) }));
       setView((v) => ({
         experiences: mergeFactRows("experience", v.experiences, res.data.experiences, 20),
         projects: mergeFactRows("project", v.projects, res.data.projects, 20),
@@ -295,6 +297,14 @@ export function ApplicationProfileCard({
           {(profile.skills ?? []).map((row, i) => <RecordShell key={i} className="sm:grid-cols-3" startOpen={!row.name} summary={[row.name, row.level, row.category].filter(Boolean).join(" · ")} onDelete={() => setProfile((p) => ({ ...p, skills: (p.skills ?? []).filter((_, j) => j !== i) }))}>
             {([["name", "技能名称", "Python"], ["level", "掌握程度", "了解 / 熟悉 / 熟练 / 精通"], ["category", "类别", "编程语言 / 软件工具"]] as const).map(([key, label, hint]) => <Field key={key} label={label}><Input value={row[key]} placeholder={hint} onChange={(event) => setProfile((p) => ({ ...p, skills: (p.skills ?? []).map((item, j) => j === i ? { ...item, [key]: event.target.value } : item) }))} /></Field>)}
             <Field label="补充说明（可选）" className="sm:col-span-3"><Input value={row.description} placeholder="用它做过什么" onChange={(event) => setProfile((p) => ({ ...p, skills: (p.skills ?? []).map((item, j) => j === i ? { ...item, description: event.target.value } : item) }))} /></Field>
+          </RecordShell>)}
+        </section>
+
+        <section className="space-y-3">
+          <div className="flex items-center justify-between"><p className="text-sm font-medium">语言成绩（所有方案共用）</p><Button size="sm" variant="outline" disabled={(profile.languages ?? []).length >= 10} onClick={() => setProfile((p) => ({ ...p, languages: [...(p.languages ?? []), { ...emptyLanguage }] }))}><Plus className="size-4" />添加考试</Button></div>
+          {!(profile.languages ?? []).length && <p className="text-xs text-muted-foreground">四六级、雅思、托福等，一门考试一条。网申里的「语言分数 / 雅思成绩 / 考试类型」会按这里填；下面「英语水平」空着时也用它。</p>}
+          {(profile.languages ?? []).map((row, i) => <RecordShell key={i} className="sm:grid-cols-4" startOpen={!row.name} summary={[row.language, row.name, row.score, row.date].filter(Boolean).join(" · ")} onDelete={() => setProfile((p) => ({ ...p, languages: (p.languages ?? []).filter((_, j) => j !== i) }))}>
+            {([["name", "考试 / 证书", "CET-6 / 雅思"], ["score", "分数", "580 / 7.0"], ["language", "语种", "英语（可不填）"], ["date", "考试时间", "2023-06"]] as const).map(([key, label, hint]) => <Field key={key} label={label}><Input value={row[key]} placeholder={hint} onChange={(event) => setProfile((p) => ({ ...p, languages: (p.languages ?? []).map((item, j) => j === i ? { ...item, [key]: event.target.value } : item) }))} /></Field>)}
           </RecordShell>)}
         </section>
 

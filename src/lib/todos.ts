@@ -18,6 +18,8 @@ export type Todo = {
   href: string;
   /** Lower sorts first. */
   order: number;
+  /** A 投递 with no news for this many days (shown folded together on 总览). */
+  staleDays?: number;
 };
 
 const NEXT_STEP_WINDOW_DAYS = 7;
@@ -169,6 +171,7 @@ export function buildTodos(
       urgency: "overdue",
       href: `/applications/${app.id}`,
       order: -app.daysStale,
+      staleDays: app.daysStale,
     });
   }
 

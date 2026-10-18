@@ -83,9 +83,12 @@ export type DesktopBridge = {
   applicationSnapshot(): Promise<ApplicationSnapshot | null>;
   autofill(resumeVersionId?: string, options?: DesktopBridgeAutofillOptions): Promise<void>;
   cancelAutofill(tabId?: number): Promise<void>;
-  saveCorrections(resumeVersionId?: string, onlyUserEdited?: boolean, positionId?: string, variantId?: string, discover?: boolean): Promise<{ saved: number; pending?: number; pendingTotal?: number; draftSaved?: boolean; unchanged?: number; learned?: { id: string; label: string }[] }>;
+  saveCorrections(resumeVersionId?: string, onlyUserEdited?: boolean, positionId?: string, variantId?: string, discover?: boolean): Promise<{ saved: number; handTyped?: number; pending?: number; pendingTotal?: number; draftSaved?: boolean; unchanged?: number; learned?: { id: string; label: string }[] }>;
   /** 「这页没填好」: saves the page's form structure (no filled-in values) as a file and shows it in Finder. */
   captureSample(note?: string): Promise<{ file: string; fields: number }>;
+  /** 填写统计.json: per site, how much 一键填写 filled and how much was typed by hand afterwards. */
+  fillStats(): Promise<{ stats: Record<string, { fills: number; filled: number; manual: number; typed: number; samples: number; lastAt?: string }>; samples: number }>;
+  openSamples(): Promise<void>;
   clearMarks(): Promise<void>;
   capturePage(): Promise<DesktopBridgeCapturedPage>;
   exportFormStructure(): Promise<{ path: string; fields: number; frames: number }>;

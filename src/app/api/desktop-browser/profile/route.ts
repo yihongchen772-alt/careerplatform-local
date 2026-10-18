@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/session";
-import { describeApplicationProfile, parseApplicationProfile, resolveProfileVariant } from "@/lib/application-profile";
+import { describeApplicationProfile, englishFromLanguages, parseApplicationProfile, resolveProfileVariant } from "@/lib/application-profile";
 import { db } from "@/lib/db";
 import { MEMORY_CATEGORIES, profileWithMemories, toMemoryView, type MemoryCategory, type MemoryView } from "@/lib/application-memory";
 
@@ -68,6 +68,7 @@ export async function GET(request: Request) {
     awards: structured.awards,
     campus: structured.campus ?? [],
     skills: structured.skills ?? [],
+    languages: structured.languages ?? [],
     // In a direction variant the library remains available in the preview
     // selector, while automatic filling follows the variant's own order.
     library: memories,
@@ -75,8 +76,9 @@ export async function GET(request: Request) {
     politics: structured.extras.politics || null,
     hometown: structured.extras.hometown || null,
     ethnicity: structured.extras.ethnicity || null,
-    english: structured.extras.english || null,
+    english: structured.extras.english || englishFromLanguages(structured.languages ?? []) || null,
     currentCity: structured.extras.currentCity || null,
+    country: structured.extras.country || null,
     targetRole: structured.extras.targetRole || null,
     selfIntro: structured.extras.selfIntro || null,
     expectedSalary: structured.extras.expectedSalary || null,

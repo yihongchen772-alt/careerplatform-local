@@ -44,7 +44,9 @@ test("look-alike labels are not filled with the wrong fact", () => {
   assert.equal(core.matchFlatField(field("", { name: "mobilePhone" }), profile), "13812345678");
   assert.equal(core.matchFlatField(field("电子邮件"), profile), "linxz@example.invalid");
   assert.equal(core.matchFlatField(field("Email Address"), profile), "linxz@example.invalid");
-  assert.equal(core.matchFlatField(field("City"), profile), "上海");
+  // An English label wants the English place name (Microsoft's "City, state, or country/region").
+  assert.equal(core.matchFlatField(field("City"), profile), "Shanghai");
+  assert.equal(core.matchFlatField(field("现居城市"), profile), "上海");
   assert.equal(core.matchFlatField(field("意向工作地点"), profile), "上海");
   assert.equal(core.matchFlatField(field("Political Status", { options: ["中共党员", "共青团员", "群众"] }), profile), "共青团员");
 });

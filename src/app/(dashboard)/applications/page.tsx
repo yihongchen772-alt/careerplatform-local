@@ -73,19 +73,6 @@ export default async function ApplicationsPage() {
         actions={<><PortalSyncButton configuredCount={portals.length} /><AddApplicationDialog resumeVersions={resumeVersions} defaultResumeVersionId={defaultResumeVersionId} /></>}
       />
 
-      {portals.length > 0 && <section className="surface-card rounded-xl p-4 text-xs sm:p-5" aria-label="官网进度同步状态">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div><h2 className="text-sm font-semibold">官网进度同步</h2><p className="mt-1 text-muted-foreground">{autoSyncEnabled ? `自动检查：每 ${settings.applicationSyncIntervalHours} 小时（设置变更 1 秒内生效）` : "自动检查未开启，可点上方按钮手动同步"}</p></div>
-          <Link href="/settings?tab=mail" className="font-medium text-primary hover:underline">同步设置</Link>
-        </div>
-        {unassigned.length > 0 && <p className="mt-3 rounded-xl border border-amber-500/25 bg-amber-500/5 p-2.5 text-amber-700 dark:text-amber-300">{unassigned.length} 条投递尚未指定进度页，不会自动同步：{unassigned.slice(0, 3).map((app, index) => <span key={app.id}>{index > 0 ? "、" : ""}<Link href={`/applications/${app.id}`} className="underline underline-offset-2">{app.company.name} · {app.title}</Link></span>)}{unassigned.length > 3 ? "等" : ""}</p>}
-        <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{portals.map((portal) => <div key={portal.id} className="rounded-xl border border-border/55 bg-background/45 px-3 py-2.5">
-          <p className="font-medium">{portal.company.name}{portal.label ? ` · ${portal.label}` : ""}</p>
-          <p className="mt-1 text-muted-foreground">{portal.lastSuccessfulAt ? `上次成功：${portal.lastSuccessfulAt.toLocaleString("zh-CN")}` : "尚无成功同步记录"}</p>
-          {portal.lastError && <p className="mt-1 text-destructive">上次失败：{portal.lastError}</p>}
-        </div>)}</div>
-      </section>}
-
       {scanHealth.failing && <ScanHealthBanner error={scanHealth.error} since={scanHealth.since?.toISOString() ?? null} lastOkAt={scanHealth.lastOkAt?.toISOString() ?? null} />}
       <AutoProgressBanner items={autoUpdates} schedules={autoSchedules} />
 
@@ -119,6 +106,19 @@ export default async function ApplicationsPage() {
           };
         })}
       />
+
+      {portals.length > 0 && <section className="surface-card rounded-xl p-4 text-xs sm:p-5" aria-label="官网进度同步状态">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div><h2 className="text-sm font-semibold">官网进度同步</h2><p className="mt-1 text-muted-foreground">{autoSyncEnabled ? `自动检查：每 ${settings.applicationSyncIntervalHours} 小时（设置变更 1 秒内生效）` : "自动检查未开启，可点上方按钮手动同步"}</p></div>
+          <Link href="/settings?tab=mail" className="font-medium text-primary hover:underline">同步设置</Link>
+        </div>
+        {unassigned.length > 0 && <p className="mt-3 rounded-xl border border-amber-500/25 bg-amber-500/5 p-2.5 text-amber-700 dark:text-amber-300">{unassigned.length} 条投递尚未指定进度页，不会自动同步：{unassigned.slice(0, 3).map((app, index) => <span key={app.id}>{index > 0 ? "、" : ""}<Link href={`/applications/${app.id}`} className="underline underline-offset-2">{app.company.name} · {app.title}</Link></span>)}{unassigned.length > 3 ? "等" : ""}</p>}
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{portals.map((portal) => <div key={portal.id} className="rounded-xl border border-border/55 bg-background/45 px-3 py-2.5">
+          <p className="font-medium">{portal.company.name}{portal.label ? ` · ${portal.label}` : ""}</p>
+          <p className="mt-1 text-muted-foreground">{portal.lastSuccessfulAt ? `上次成功：${portal.lastSuccessfulAt.toLocaleString("zh-CN")}` : "尚无成功同步记录"}</p>
+          {portal.lastError && <p className="mt-1 text-destructive">上次失败：{portal.lastError}</p>}
+        </div>)}</div>
+      </section>}
     </div>
   );
 }

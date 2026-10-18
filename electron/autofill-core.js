@@ -484,7 +484,7 @@ function scanPageFields(prefix, readOnly = false) {
   const groupFor = (field) => {
     const section = field.section || "";
     const text = section || field.label || "";
-    return /校园经历|校内经历|在校经历|学生工作|学生干部|社团|校内任职|任职经历|学生会/.test(text) ? "campus" : /获奖|荣誉|奖项|奖励|award|honou?r/i.test(text) ? "award" : /(?<!语言|外语)技能(?!证书)|专业特长|(?:^|\W)skills?(?:\W|$)/i.test(text) && !/语言|外语|language/i.test(text) ? "skill" : /项目|project/i.test(text) ? "project" : /实习|工作经历|工作经验|实践经历|internship|employment|work experience/i.test(text) ? "experience" : /教育|学习经历|本科|硕士|博士|大专|学校|education|academic/i.test(text) ? "education" : null;
+    return /校园经历|校内经历|在校经历|学生工作|学生干部|社团|校内任职|任职经历|学生会/.test(text) ? "campus" : /获奖|荣誉|奖项|奖励|award|honou?r/i.test(text) ? "award" : /(?<!语言|外语)技能(?!证书)|专业特长|(?:^|\W)skills?(?:\W|$)/i.test(text) && !/语言|外语|language/i.test(text) ? "skill" : /项目|project/i.test(text) ? "project" : /实习|工作经历|工作经验|实践经历|internship|employment|work experience/i.test(text) ? "experience" : /教育|学习经历|本科|硕士|博士|大专|学校|education|academic/i.test(text) ? "education" : /语言(?:能力|成绩|水平|证书|技能|考试)|外语(?:能力|水平|成绩|证书|技能|考试)|英语(?:能力|水平|成绩|考试)(?:情况)?$|^(?:外语|语言)$|language(?:s|\s*skills?|\s*proficiency|\s*tests?)?$/i.test(text) ? "language" : null;
   };
   const isAnchor = (field, group) => {
     const text = field.label || field.placeholder || "";
@@ -493,6 +493,7 @@ function scanPageFields(prefix, readOnly = false) {
       : group === "award" ? /(?:奖项|获奖|荣誉|奖励)名称|^(?:名称|奖项|荣誉|奖励|name)$|award[ _-]*(?:name|title)/i.test(text)
       : group === "campus" ? /组织|社团|团体|协会|学生会|^(?:名称|单位)$/.test(text) && !/职务|级别|描述/.test(text)
       : group === "skill" ? /技能(?:名称|名)|^技能$|^名称$|skill/i.test(text) && !/程度|类别|类型|等级|水平|描述|level|category/i.test(text)
+      : group === "language" ? /考试|证书|exam|test|certificat/i.test(text) && !/分数|成绩|时间|日期|score|date/i.test(text)
       : /学校|院校|school|university/i.test(text) && !/城市|性质|排名/.test(text);
   };
   for (const field of results) {
@@ -1390,7 +1391,9 @@ const BASIC_FIELD_RULES = [
   // Preferred cities first: a bare English "City" (address blocks) is where
   // the applicant lives, not where they'd like to work.
   { keys: ["意向城市", "期望城市", "工作城市", "意向工作地", "期望工作地", "工作地点", "意向地点", "期望地点", "工作地区", "preferred city", "preferred location", "desired location", "work location"], not: /是否|可否|能否|接受/, get: (p) => p.preferredCities },
-  { keys: ["现居", "现住", "所在城市", "常住", "居住城市", "current city", "current location", "city"], get: (p) => p.currentCity, learn: "currentCity" },
+  // English portals (Microsoft, Workday …): country of residence, before the bare "city" rule.
+  { keys: ["country/region", "country / region", "country or region", "country of residence", "country", "所在国家", "居住国家", "国家/地区", "国家或地区"], not: /code|区号|代码|phone|dial|birth|出生|citizenship|nationality|国籍|issu|签发|city|城市|state of/i, get: (p) => p.country || countryFromCity(p.currentCity), learn: "country", english: false, englishName: true },
+  { keys: ["现居", "现住", "所在城市", "常住", "居住城市", "current city", "current location", "city"], get: (p) => p.currentCity, learn: "currentCity", englishName: true },
   // 资料方案 fields: the direction-specific target role and self-assessment.
   // No `learn` here: which city and which job is usually picked per company.
   { keys: ["期望岗位", "期望职位", "意向岗位", "意向职位", "求职意向"], get: (p) => p.targetRole },
@@ -1535,7 +1538,7 @@ function sectionOrdinal(section) {
 
 /** The 网申资料 list a repeated block fills from. */
 function listKey(group) {
-  return group === "experience" ? "experiences" : group === "project" ? "projects" : group === "award" ? "awards" : group === "campus" ? "campus" : group === "skill" ? "skills" : "education";
+  return group === "experience" ? "experiences" : group === "project" ? "projects" : group === "award" ? "awards" : group === "campus" ? "campus" : group === "skill" ? "skills" : group === "language" ? "languages" : "education";
 }
 
 // 校园经历 / 学生工作: student union, clubs, class roles — a list of its own,
@@ -1546,6 +1549,11 @@ const CAMPUS_SECTION = /校园经历|校内经历|在校经历|学生工作|学�
 // 中国移动、智联. 语言能力 and 技能证书 are other modules.
 const SKILL_SECTION = /(?<!语言|外语)技能(?!证书)|专业特长|(?:^|\W)skills?(?:\W|$)/i;
 
+// 语言能力 / 外语水平 (语种、考试、分数): one exam per row, 网申资料's 语言成绩.
+const LANGUAGE_SECTION = /语言(?:能力|成绩|水平|证书|技能|考试)|外语(?:能力|水平|成绩|证书|技能|考试)|英语(?:能力|水平|成绩|考试)(?:情况)?$|^(?:外语|语言)$|language(?:s|\s*skills?|\s*proficiency|\s*tests?)?$/i;
+// An exam named in the label itself ("雅思成绩", "IELTS") asks for that exam's row.
+const EXAM_WORDS = /ielts|雅思|toefl|托福|cet\s*-?\s*[46]|(?<!专业|专业英语)[四六]级|专[四八]|专业(?:英语)?[四八]级|tem\s*-?\s*[48]|\bgre\b|gmat|托业|toeic|jlpt|日语能力/i;
+
 function sectionGroup(section) {
   if (CAMPUS_SECTION.test(section)) return "campus";
   if (/获奖|荣誉|奖项|奖励|award|honou?r/i.test(section)) return "award";
@@ -1553,6 +1561,7 @@ function sectionGroup(section) {
   if (/项目|project/i.test(section)) return "project";
   if (/实习|工作经历|工作经验|实践经历|社会实践|internship|employment|work experience/i.test(section)) return "experience";
   if (/教育|学习经历|本科|硕士|研究生|博士|大专|专科|education|academic/i.test(section)) return "education";
+  if (LANGUAGE_SECTION.test(section)) return "language";
   return null;
 }
 
@@ -1560,6 +1569,8 @@ const AUTOFILL_MODULES = ["basic", "education", "experience", "project", "award"
 
 function fieldModule(field, repeat) {
   if (isThirdPartyField(field)) return "other";
+  // 语言成绩 fills with the 基本信息 it grew out of (英语水平), not a module of its own.
+  if (repeat?.group === "language" || (!repeat && sectionGroup(field.section || "") === "language")) return "basic";
   if (/自我评价|个人评价|自我描述|个人优势|求职动机|职业规划/i.test(field.label || "")) return "questions";
   if (repeat) return repeat.group;
   const group = sectionGroup(field.section || "");
@@ -1670,6 +1681,30 @@ function projectFieldKind(haystack, bare = "", inSection = false) {
   return null;
 }
 
+const EXAM_NAMES = { cet4: "CET-4", cet6: "CET-6", tem4: "专业四级", tem8: "专业八级", ielts: "雅思", toefl: "托福", gre: "GRE", gmat: "GMAT", toeic: "托业", jlpt: "日语能力考试" };
+
+function examKey(text) {
+  const value = String(text || "");
+  for (const [key, pattern] of [["tem8", /tem\s*-?\s*8|专业?(?:英语)?八级|专八/i], ["tem4", /tem\s*-?\s*4|专业(?:英语)?四级|专四/i], ["cet6", /cet\s*-?\s*6|六级/i], ["cet4", /cet\s*-?\s*4|四级/i], ["ielts", /ielts|雅思/i], ["toefl", /toefl|托福/i], ["gre", /\bgre\b/i], ["gmat", /gmat/i], ["toeic", /toeic|托业/i], ["jlpt", /jlpt|日语能力|日语\s*n[1-5]/i]]) if (pattern.test(value)) return key;
+  return "";
+}
+
+// 语种 / 考试类型 / 分数 / 考试时间 inside a 语言能力 block, or a box named after
+// one exam ("六级成绩", "IELTS") anywhere — that box asks for the score.
+function languageFieldKind(field, haystack, bare = "", inSection = false) {
+  if (/^(?:语言能力|外语能力|外语水平|语言水平|语言成绩|外语成绩|英语水平|languages?|languageskills?|languageproficiency)$/i.test(bare)) return inSection && (field.tag === "textarea" || field.tag === "richtext") ? "summary" : null;
+  const named = EXAM_WORDS.test(bare);
+  // "语言分数" ×2 without a heading (海尔): each box is a row's score.
+  const looseScore = /^(?:语言|外语|英语)(?:考试)?(?:分数|成绩|得分)$/.test(bare);
+  if (!inSection && !named && !looseScore) return null;
+  if (/是否|有无|证书编号|编号|准考证|number|\bid\b/i.test(haystack)) return null;
+  if (/时间|日期|年月|年份|date|when|year/i.test(haystack)) return "date";
+  if (/成绩|分数|得分|总分|分值|score|marks?\b|result|grade/i.test(haystack) || (named && !field.options)) return "score";
+  if (/语种|^语言$|^外语$|^language$|language(?:type|name)/i.test(bare)) return "language";
+  if (/考试|证书|等级|级别|水平|类型|类别|名称|exam|test|certificat|level|type|name/i.test(haystack) || named) return "name";
+  return null;
+}
+
 // 技能名称 / 掌握程度 / 技能类别 rows. Language levels belong to 英语, certificates elsewhere.
 function skillFieldKind(field, haystack, bare = "", inSection = false) {
   if (/语言|外语|英语|语种|证书|language|certific/i.test(haystack)) return null;
@@ -1699,9 +1734,11 @@ function resolveRepeatField(field, rowIndexes) {
   const section = String(field.section || "");
   const group = sectionGroup(section);
   let info = null;
-  const awardKind = awardFieldKind(haystack, bare, group === "award");
+  const languageKind = !group || group === "language" ? languageFieldKind(field, haystack, bare, group === "language") : null;
+  if (languageKind) info = { group: "language", kind: languageKind, exam: examKey(bare) };
+  const awardKind = info ? null : awardFieldKind(haystack, bare, group === "award");
   if (awardKind) info = { group: "award", kind: awardKind };
-  const projectKind = projectFieldKind(haystack, bare, group === "project");
+  const projectKind = info ? null : projectFieldKind(haystack, bare, group === "project");
   if (!info && projectKind) info = { group: "project", kind: projectKind };
   if (!info && (!group || group === "skill")) {
     const kind = skillFieldKind(field, haystack, bare, group === "skill");
@@ -1879,6 +1916,24 @@ function repeatFieldValue(field, info, profile) {
     const rows = rowsForGroup(profile, info.group);
     return rows.map((_, row) => repeatFieldValue(field, { ...info, all: false, row }, profile)).filter(Boolean).join(info.group === "skill" ? "；" : "\n\n") || profile.summaries?.[info.group] || null;
   }
+  if (info.group === "language") {
+    const rows = languageRows(profile);
+    // "雅思成绩" takes the 雅思 row whatever its position; none saved, nothing.
+    const row = info.exam ? rows.find((item) => examKey(item.name) === info.exam) : rows[info.row];
+    if (!row) return null;
+    if (info.kind === "summary") return rows.map((item) => [item.name, item.score].filter(Boolean).join(" ")).join("；");
+    if (info.kind === "date") return formatDateForField(field, row.date) || null;
+    if (info.kind === "score") return field.options ? matchFieldOption(field, row.score) : row.score || null;
+    if (info.kind === "language") {
+      const language = row.language || (examKey(row.name) && examKey(row.name) !== "jlpt" ? "英语" : "");
+      if (!language) return null;
+      if (field.options) return field.options.find((option) => option === language) || field.options.find((option) => option.includes(language) || (/英语/.test(language) && /^english$/i.test(option))) || null;
+      return /[㐀-鿿]/.test(field.label || "") || !/英语/.test(language) ? language : "English";
+    }
+    if (field.options) return englishValue({ ...field, label: "等级", placeholder: "", section: "" }, row.name);
+    // A 等级 / 水平 text box takes the level with its score ("CET-6 560"); 考试 / 证书名称 just the name.
+    return /等级|水平|level/i.test(fieldHaystack(field)) ? [row.name, row.score].filter(Boolean).join(" ") : row.name;
+  }
   if (info.group === "skill") {
     const row = profile.skills?.[info.row];
     if (!row) return null;
@@ -1962,7 +2017,7 @@ function stableMemoryHash(value) {
 
 function rowsForGroup(profile, group, includeLibrary = false) {
   const list = listKey(group);
-  const rows = group === "education" ? educationRows(profile) : [...(profile[list] || [])];
+  const rows = group === "education" ? educationRows(profile) : group === "language" ? languageRows(profile) : [...(profile[list] || [])];
   if (includeLibrary) for (const entry of profile.library || []) {
     if (entry.category !== group || entry.content.text) continue;
     for (const [index, content] of [entry.content, ...(entry.alternatives || []).map((item) => item.content)].entries()) {
@@ -1973,6 +2028,17 @@ function rowsForGroup(profile, group, includeLibrary = false) {
     }
   }
   return rows;
+}
+
+// 语言成绩 rows; with none saved, the single 英语水平 text read as exams ("CET-6 580，雅思 7.0").
+function languageRows(profile) {
+  const saved = (profile.languages || []).filter((row) => row && row.name);
+  if (saved.length) return saved.map((row) => ({ ...row }));
+  return String(profile.english || "").split(/[，,；;、\/]|\s{2,}/).map((part) => part.trim()).filter(Boolean).map((part) => {
+    const score = /(?:^|[\s：:])(\d{1,3}(?:\.\d)?)\s*分?$/.exec(part);
+    const name = (score ? part.slice(0, score.index) : part).replace(/[：:\s]+$/, "").trim();
+    return examKey(name) ? { name, language: "", score: score ? score[1] : "", date: "" } : null;
+  }).filter(Boolean);
 }
 
 function recordReference(group, row) {
@@ -2020,13 +2086,13 @@ function savedRecordsOnPage(profile, pageText) {
     const match = /(\d{4})\D{0,3}(\d{1,2})/.exec(String(value || ""));
     return match ? `${match[1]}${match[2].padStart(2, "0")}` : "";
   };
-  for (const group of ["education", "experience", "project", "award", "campus", "skill"]) {
+  for (const group of ["education", "experience", "project", "award", "campus", "skill", "language"]) {
     const rows = rowsForGroup(profile, group);
     const found = new Set();
     rows.forEach((row, index) => {
       const name = group === "education" ? row.school : group === "experience" ? row.company : row.name;
       if (!name || !has(name)) return;
-      const second = [row.major, row.role, row.level, row.degree, row.category].filter(Boolean).some(has) || [row.start, row.date].map(month).some((value) => value && text.includes(value));
+      const second = [row.major, row.role, row.level, row.degree, row.category, row.score].filter(Boolean).some(has) || [row.start, row.date].map(month).some((value) => value && text.includes(value));
       if (second) found.add(index);
     });
     // The same school twice (本科 + 硕士 at one university) cannot be told apart
@@ -2121,7 +2187,7 @@ function classifyRepeatBlocks(fields, profile, pageText = "") {
 }
 
 function previewRecordBlocks(blocks, repeats, profile) {
-  const labels = { education: "教育经历", experience: "实习 / 工作", project: "项目经历", award: "获奖情况", campus: "校园经历", skill: "专业技能" };
+  const labels = { education: "教育经历", experience: "实习 / 工作", project: "项目经历", award: "获奖情况", campus: "校园经历", skill: "专业技能", language: "语言成绩" };
   return blocks.map((block, index) => ({
     id: block.id, label: `${labels[block.group]} · ${block.fields[0].section || `第 ${index + 1} 段`}`,
     note: block.unmatched ? "网页已有的名称或日期无法唯一匹配，请核对这段经历后选择来源" : "整段选择一条经历，已有内容保持不动",
@@ -2175,6 +2241,7 @@ function missingRepeatCounts(profile, rowIndexes) {
     ["award", "name", (profile.awards || []).length, "获奖情况"],
     ["campus", "name", (profile.campus || []).length, "校园经历"],
     ["skill", "name", (profile.skills || []).length, "专业技能"],
+    ["language", "name", (profile.languages || []).length, "语言成绩"],
   ];
   return checks
     .map(([group, kind, saved, label]) => ({ group, label, saved, shown: seen(group, kind) }))
@@ -2199,6 +2266,7 @@ async function clickAddBlock(group) {
     award: /获奖|奖项|荣誉|奖励|award|honou?r/i,
     campus: /校园|校内|在校|学生工作|学生干部|社团|任职|campus/i,
     skill: /技能|特长|skill/i,
+    language: /语言|外语|英语|language/i,
   };
   const words = GROUP_WORDS[group];
   const ADD = /^[+＋]?\s*(?:添加|新增|增加|继续添加|再添加|add\b)/i;
@@ -2239,7 +2307,7 @@ async function clickAddBlock(group) {
 function repeatFieldGoesToAi(info, profile) {
   // A missing fact is not a prompt to invent an experience. Open questions
   // remain eligible for AI in their separate pass.
-  if (info.unmatched || info.record || info.group === "award" || info.group === "campus" || info.group === "skill") return false;
+  if (info.unmatched || info.record || info.group === "award" || info.group === "campus" || info.group === "skill" || info.group === "language") return false;
   if (["description", "responsibilities", "summary"].includes(info.kind)) return false;
   const saved = info.group === "education" ? educationRows(profile) : info.group === "experience" ? profile.experiences || [] : profile.projects || [];
   return saved.length === 0 && info.row === 0 && !info.degreeHint;
@@ -2310,6 +2378,32 @@ function matchPhoneChoice(field, profile) {
   return null;
 }
 
+// Places as an English form wants them: "上海" → "Shanghai", "新加坡" → "Singapore".
+const PLACE_NAMES = { 中国: "China", 中国大陆: "China", 新加坡: "Singapore", 香港: "Hong Kong", 澳门: "Macao", 台湾: "Taiwan", 美国: "United States", 英国: "United Kingdom", 日本: "Japan", 韩国: "South Korea", 马来西亚: "Malaysia", 澳大利亚: "Australia", 加拿大: "Canada", 德国: "Germany", 法国: "France",
+  北京: "Beijing", 上海: "Shanghai", 深圳: "Shenzhen", 广州: "Guangzhou", 杭州: "Hangzhou", 南京: "Nanjing", 苏州: "Suzhou", 成都: "Chengdu", 武汉: "Wuhan", 西安: "Xi'an", 天津: "Tianjin", 重庆: "Chongqing", 长沙: "Changsha", 厦门: "Xiamen", 青岛: "Qingdao", 合肥: "Hefei", 无锡: "Wuxi", 宁波: "Ningbo", 郑州: "Zhengzhou", 济南: "Jinan", 大连: "Dalian", 沈阳: "Shenyang", 珠海: "Zhuhai", 东莞: "Dongguan", 佛山: "Foshan", 福州: "Fuzhou", 昆明: "Kunming", 南昌: "Nanchang", 常州: "Changzhou", 潍坊: "Weifang", 烟台: "Yantai" };
+const OVERSEAS_PLACES = { 新加坡: "新加坡", 香港: "香港", 澳门: "澳门", 台湾: "台湾", 美国: "美国", 英国: "英国", 日本: "日本", 韩国: "韩国", 马来西亚: "马来西亚", 澳大利亚: "澳大利亚", 加拿大: "加拿大", 德国: "德国", 法国: "法国" };
+
+/** The country a saved 现居城市 is in: 新加坡 → 新加坡, a mainland city → 中国. */
+function countryFromCity(city) {
+  const text = String(city || "").replace(/[市省]$/, "").trim();
+  if (!text) return null;
+  const overseas = Object.keys(OVERSEAS_PLACES).find((name) => text.includes(name));
+  if (overseas) return overseas;
+  return Object.keys(PLACE_NAMES).some((name) => !OVERSEAS_PLACES[name] && text.includes(name)) ? "中国" : null;
+}
+
+function placeForField(field, value) {
+  const text = String(value || "").trim();
+  if (!/[㐀-鿿]/.test(text)) return text;
+  const own = `${field.label || ""}${field.placeholder || ""}`;
+  const english = (/[a-z]/i.test(own) && !/[㐀-鿿]/.test(own)) || (field.options?.length && field.options.every((option) => !/[㐀-鿿]/.test(option)));
+  if (!english) return text;
+  const name = Object.keys(PLACE_NAMES).sort((a, b) => b.length - a.length).find((key) => text.replace(/[市省]$/, "") === key || text.startsWith(key));
+  if (!name) return text;
+  if (field.options) return field.options.find((option) => option.toLowerCase() === PLACE_NAMES[name].toLowerCase()) || field.options.find((option) => option.toLowerCase().startsWith(PLACE_NAMES[name].toLowerCase())) || PLACE_NAMES[name];
+  return PLACE_NAMES[name];
+}
+
 function matchFlatField(field, profile) {
   if (isThirdPartyField(field)) return null;
   const haystack = fieldHaystack(field);
@@ -2336,6 +2430,7 @@ function matchFlatField(field, profile) {
     if (rule.exactDay && !dateParts(value)?.d && dateFormatFor(field).precision === "day" && !field.options) continue;
     if (rule.date) value = formatDateForField(field, value) || (field.options ? value : "");
     if (!value) continue;
+    if (rule.englishName) value = placeForField(field, value);
     // A choice field still has to hit one of its own options.
     const matched = rule.degree ? matchDegreeOption(field, value) : matchFieldOption(field, value);
     if (matched) return matched;
@@ -2993,6 +3088,11 @@ async function saveCorrectionsCore(adapter, resumeVersionId, onlyUserEdited = fa
       else if (content[info.kind] !== value) continue;
       members.push({ frame, id: field.id, value });
     }
+    // "IELTS 6.5" typed into a box named after the exam: the exam is the row's name.
+    if (group.category === "language" && !content.name) {
+      const exam = group.fields.map(({ info }) => info.exam).find(Boolean);
+      if (exam && EXAM_NAMES[exam]) content.name = EXAM_NAMES[exam];
+    }
     const anchor = group.category === "education" ? "school" : group.category === "experience" ? "company" : "name";
     if (!content[anchor] || !Object.entries(content).some(([key, value]) => key !== anchor && value)) {
       withdrawals.push({ kind: "record", category: group.category, captureKey });
@@ -3014,6 +3114,8 @@ async function saveCorrectionsCore(adapter, resumeVersionId, onlyUserEdited = fa
   const draft = { contextKey, url: pageUrl, positionId: adapter.jobId?.(), resumeVersionId, variantId,
     fields: fields.filter((field) => !isForbiddenMemoryField(field) && snapshots[field.id] && String(snapshots[field.id].value || "").length <= 20000).map((field) => ({ label: field.label || field.placeholder || field.name || "字段", fieldKey: field.mappingKey, section: field.section, value: String(snapshots[field.id].value || ""), selected: false, remember: false, edited: !!snapshots[field.id].userEdited, captured: true })) };
   const signature = JSON.stringify(draft);
+  // Boxes the applicant typed in that 一键填写 left to them (essays are theirs to write anyway).
+  const handTyped = discover ? answers.filter((answer) => answer.kind === "field").length + records.reduce((sum, record) => sum + (record.content.text ? 1 : Object.values(record.content).filter(Boolean).length), 0) : 0;
   if (!discover) { answers.length = 0; records.length = 0; withdrawals.length = 0; savedFields.length = 0; emptyEdits.length = 0; }
   if (!answers.length && !records.length && !withdrawals.length && (!draft.fields.length || adapter.getDraftSignature?.() === signature)) return { saved: 0, draftSaved: draft.fields.length > 0 && adapter.getDraftSignature?.() === signature };
   savedFields.push(...emptyEdits);
@@ -3034,16 +3136,16 @@ async function saveCorrectionsCore(adapter, resumeVersionId, onlyUserEdited = fa
     // Staging is not confirmation. Retain AI draft provenance so a later
     // capture cannot mistake an untouched generated value for a user answer.
   }
-  return { saved: body.saved ?? 0, pending: body.pending ?? 0, pendingTotal: body.pendingTotal, draftSaved: body.draftSaved, unchanged: body.unchanged ?? 0, learned: Array.isArray(body.learned) ? body.learned : [] };
+  return { handTyped, saved: body.saved ?? 0, pending: body.pending ?? 0, pendingTotal: body.pendingTotal, draftSaved: body.draftSaved, unchanged: body.unchanged ?? 0, learned: Array.isArray(body.learned) ? body.learned : [] };
 }
 
 // Values are referenced from the saved profile, never reconstructed by the model.
 function profileChoices(profile) {
   const choices = [];
-  const labels = { name: "姓名", phone: "手机", email: "邮箱", gender: "性别", birthDate: "出生日期", currentCity: "现居地", targetRole: "期望岗位", selfIntro: "自我评价", politics: "政治面貌", hometown: "籍贯", ethnicity: "民族", english: "英语水平", wechat: "微信号", qq: "QQ 号", expectedSalary: "期望薪资", availableFrom: "最早到岗时间", internshipDuration: "可实习时长", address: "通讯地址", researchDirection: "研究方向", rank: "成绩排名", acceptAdjust: "是否接受调剂", courses: "主修课程", homepage: "个人主页 / 作品链接", lab: "实验室 / 课题组", hobbies: "兴趣爱好", thesis: "毕业论文" };
+  const labels = { name: "姓名", phone: "手机", email: "邮箱", gender: "性别", birthDate: "出生日期", currentCity: "现居地", country: "所在国家 / 地区", targetRole: "期望岗位", selfIntro: "自我评价", politics: "政治面貌", hometown: "籍贯", ethnicity: "民族", english: "英语水平", wechat: "微信号", qq: "QQ 号", expectedSalary: "期望薪资", availableFrom: "最早到岗时间", internshipDuration: "可实习时长", address: "通讯地址", researchDirection: "研究方向", rank: "成绩排名", acceptAdjust: "是否接受调剂", courses: "主修课程", homepage: "个人主页 / 作品链接", lab: "实验室 / 课题组", hobbies: "兴趣爱好", thesis: "毕业论文" };
   for (const [ref, label] of Object.entries(labels)) if (profile[ref]) choices.push({ ref, label, value: String(profile[ref]) });
-  const columns = { school: "学校", major: "专业", department: "院系 / 部门", degree: "学历", gpa: "GPA", start: "开始时间", end: "结束时间", company: "公司", role: "角色/职位", name: "名称", description: "描述", responsibilities: "职责", issuer: "颁发单位", level: "等级 / 程度", category: "类别", date: "获奖日期" };
-  for (const [group, label] of [["education", "教育"], ["experience", "工作/实习"], ["project", "项目"], ["award", "获奖"], ["campus", "校园经历"], ["skill", "技能"]]) {
+  const columns = { school: "学校", major: "专业", department: "院系 / 部门", degree: "学历", gpa: "GPA", start: "开始时间", end: "结束时间", company: "公司", role: "角色/职位", name: "名称", description: "描述", responsibilities: "职责", issuer: "颁发单位", level: "等级 / 程度", category: "类别", date: "日期", language: "语种", score: "分数" };
+  for (const [group, label] of [["education", "教育"], ["experience", "工作/实习"], ["project", "项目"], ["award", "获奖"], ["campus", "校园经历"], ["skill", "技能"], ["language", "语言"]]) {
     rowsForGroup(profile, group, true).forEach((row, index) => { for (const [key, text] of Object.entries(columns)) if (row[key]) choices.push({ ref: `${recordReference(group, row)}:${key}`, label: `${label} ${index + 1}（${row.school || row.company || row.name || row.degree || ""}）${row.__memoryLabel ? ` · ${row.__memoryLabel}` : ""} · ${text}`, value: String(row[key]) }); });
     const text = (profile.library || []).find((entry) => entry.category === group && entry.content.text)?.content.text || profile.summaries?.[group];
     if (text) choices.push({ ref: `summary:${group}`, label: `${label} · 整段原文`, value: String(text) });
@@ -3268,6 +3370,11 @@ module.exports = {
   sectionGroup,
   sectionOrdinal,
   skillFieldKind,
+  countryFromCity,
+  placeForField,
+  languageFieldKind,
+  languageRows,
+  examKey,
   skillLevelAlternatives,
   skillLevelOption,
   snapshotFormStructure,

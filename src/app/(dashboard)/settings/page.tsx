@@ -25,6 +25,9 @@ import { ApplicationMemoryCard } from "@/components/settings/application-memory-
 import { PendingApplicationChangesCard } from "@/components/settings/pending-application-changes-card";
 import { SettingsHashRedirect } from "@/components/settings/settings-hash-redirect";
 import { loadVisiblePending, toPendingApplicationChangeView } from "@/lib/pending-application-change";
+import { learnFromBacklog, loadBacklogNotices } from "@/lib/profile-backlog";
+import { LearnedBacklogBanner } from "@/components/settings/learned-backlog-banner";
+import { FillStatsCard } from "@/components/settings/fill-stats-card";
 import { toMemoryView, type MemoryView } from "@/lib/application-memory";
 import { parseApplicationProfile } from "@/lib/application-profile";
 import { SETTINGS_TABS, type SettingsTab } from "@/lib/settings-tabs";
@@ -117,7 +120,10 @@ async function loadMemories(userId: string) {
   };
 }
 
-async function AutofillSection({ user }: { user: User }) {
+async function AutofillSection({ user: loaded }: { user: User }) {
+  // Old 待核对 captures that fill a blank are learned first (with 撤销).
+  const backlog = await db.$transaction((tx) => learnFromBacklog(tx, loaded.id)).catch((error) => { console.error("[backlog]", error); return []; }).then(() => loadBacklogNotices(loaded.id));
+  const user = backlog.length ? await db.user.findUniqueOrThrow({ where: { id: loaded.id } }) : loaded;
   const [resumeVersions, { memoryViews, answers }, pendingChanges] = await Promise.all([
     db.resumeVersion.findMany({ where: { userId: user.id }, select: { id: true, name: true }, orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }] }),
     loadMemories(user.id),
@@ -129,8 +135,10 @@ async function AutofillSection({ user }: { user: User }) {
   const sources = Object.fromEntries(positions.map((position) => [`job:v1:${position.id}`, `${position.company.name} · ${position.title}`]));
   return (
     <>
+      <LearnedBacklogBanner notices={backlog} />
       <PendingApplicationChangesCard initial={pendingChanges.map(toPendingApplicationChangeView)} sources={sources} currentMemories={memoryViews} currentAnswers={answers} currentFacts={{ 姓名: user.name, 手机: user.phone, 邮箱: user.contactEmail, 学校: user.school, 性别: user.gender, 出生日期: user.birthDate }} profileValues={{ ...parseApplicationProfile(user.applicationProfile).extras, preferredCities: user.preferredCities ?? "" }} />
       <ApplicationProfileCard initial={parseApplicationProfile(user.applicationProfile)} resumeVersions={resumeVersions} />
+      <FillStatsCard />
     </>
   );
 }

@@ -180,7 +180,7 @@ function TaskRow({
             .filter(Boolean)
             .join(" · ")}
         </p>
-        {task.note && <p className="mt-1 text-xs [overflow-wrap:anywhere]">{task.note}</p>}
+        {task.note && <TaskNote note={task.note} />}
         {task.mailEventDraft ? <MailEventDialog taskId={task.id} initial={task.mailEventDraft} eventId={task.mailEventId} /> : null}
       </div>
       <div className="flex shrink-0 gap-1">
@@ -205,5 +205,22 @@ function TaskRow({
         />
       </div>
     </div>
+  );
+}
+
+// Tasks made from a mail carry the mail's subject / sender / inbox below the
+// summary; on the card only the summary shows, the rest on hover.
+const MAIL_META = /^(?:邮件主题|来自|收件箱|发件人)[：:]/;
+
+function TaskNote({ note }: { note: string }) {
+  const lines = note.split("\n").map((line) => line.trim());
+  const meta = lines.filter((line) => MAIL_META.test(line));
+  const text = lines.filter((line) => line && !MAIL_META.test(line)).join(" ");
+  if (!text && !meta.length) return null;
+  return (
+    <p className="mt-1 text-xs [overflow-wrap:anywhere]" title={meta.length ? meta.join("\n") : undefined}>
+      {text || meta.find((line) => line.startsWith("邮件主题"))?.replace(MAIL_META, "")}
+      {meta.length > 0 && text && <span className="ml-1 text-muted-foreground">· 来自邮件</span>}
+    </p>
   );
 }

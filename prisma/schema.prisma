@@ -96,6 +96,8 @@ model User {
   /// 每天早上的简报 / 周日的复盘, written when the app is opened.
   agentDailyBrief       Boolean   @default(true)
   agentWeeklyReview     Boolean   @default(true)
+  /// What 小欧 filled in by itself from the applications and resume (求职方向/城市/技能), for 撤销.
+  agentInferred         Json?
   // This build has no cloud sync — a user running the app on two machines
   // (e.g. Windows + Mac) has two entirely independent local databases, kept
   // in step only by manually exporting/importing a backup. Tracked so the
@@ -144,6 +146,7 @@ model User {
   aiKeys                  AiKey[]
   agentMemories           AgentMemory[]
   agentBriefs             AgentBrief[]
+  agentConversations      AgentConversation[]
   jobLeads                JobLead[]
   questionBanks           QuestionBank[]
   examSessions            ExamSession[]
@@ -1318,6 +1321,19 @@ model ApplicationDraft {
 
 /// One thing 小欧 remembers about the user across conversations (a goal,
 /// a preference, a company they ruled out). Shown and deletable in its panel.
+/// One 小欧 chat thread: the messages as shown (role, text, steps, buttons).
+model AgentConversation {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  messages  Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, updatedAt])
+}
+
 model AgentMemory {
   id        String   @id @default(cuid())
   userId    String

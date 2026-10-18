@@ -30,7 +30,7 @@ function copyChoices(profile: Record<string, unknown>) {
   const choices: { label: string; value: string }[] = [];
   const labels: Record<string, string> = { name: "姓名", phone: "手机", email: "邮箱", gender: "性别", birthDate: "出生日期", currentCity: "现居地", selfIntro: "自我评价", targetRole: "期望岗位", politics: "政治面貌", hometown: "籍贯", ethnicity: "民族", english: "英语水平", expectedSalary: "期望薪资", availableFrom: "最早到岗时间", internshipDuration: "可实习时长", wechat: "微信号", address: "通讯地址" };
   for (const [key, label] of Object.entries(labels)) if (typeof profile[key] === "string" && profile[key]) choices.push({ label, value: profile[key] as string });
-  const columns: Record<string, string> = { school: "学校", company: "公司", name: "名称", role: "职位 / 角色", start: "开始", end: "结束", major: "专业", degree: "学历", description: "描述", responsibilities: "职责与成果", issuer: "颁发单位", level: "等级", date: "获奖时间" };
+  const columns: Record<string, string> = { school: "学校", company: "公司", name: "名称", role: "职位 / 角色", start: "开始", end: "结束", major: "专业", degree: "学历", description: "描述", responsibilities: "职责与成果", issuer: "颁发单位", level: "等级", date: "获奖时间", score: "分数", language: "语种" };
   for (const [key, label] of [["education", "教育"], ["experiences", "工作/实习"], ["projects", "项目"], ["awards", "获奖"]]) if (Array.isArray(profile[key])) (profile[key] as Record<string, string>[]).forEach((row, i) => {
     for (const [name, value] of Object.entries(row)) if (typeof value === "string" && value) choices.push({ label: `${label} ${i + 1} · ${columns[name] || name}`, value });
   });

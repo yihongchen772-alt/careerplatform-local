@@ -2,13 +2,16 @@ import Link from "next/link";
 import { ArrowUpRight, Clock, Send, Trophy, XCircle, type LucideIcon } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { buildTodos, type Todo } from "@/lib/todos";
+import { Card, CardContent } from "@/components/ui/card";
+import { buildTodos } from "@/lib/todos";
+import { TodoCard } from "@/components/dashboard/todo-card";
+import { InferredProfileBanner } from "@/components/dashboard/inferred-profile-banner";
+import { loadInferredNotice } from "@/lib/agent/infer-profile";
+import { LearnedBacklogBanner } from "@/components/settings/learned-backlog-banner";
+import { learnFromBacklog, loadBacklogNotices } from "@/lib/profile-backlog";
 import { computeFunnel, computeOutcomes } from "@/lib/funnel";
 import { FunnelCard } from "@/components/insights/funnel-card";
 import { PersonalTaskCard } from "@/components/dashboard/personal-task-card";
-import { SendDigestButton } from "@/components/dashboard/send-digest-button";
 import { DailyDigestCard } from "@/components/dashboard/daily-digest-card";
 import { getTodayDigest } from "@/lib/actions/daily-digest";
 import { WeeklyReviewCard } from "@/components/dashboard/weekly-review-card";
@@ -35,11 +38,14 @@ export default async function DashboardPage() {
   const user = await requireUser();
   const scanHealth = await getScanHealth(user.id);
   const now = currentTimeMs();
-  const [autoUpdates, autoSchedules, upcoming, briefs] = await Promise.all([
+  // 待核对 captures that fill a blank in 网申资料 are learned here too (with 撤销).
+  const backlog = await db.$transaction((tx) => learnFromBacklog(tx, user.id)).catch((error) => { console.error("[backlog]", error); return []; }).then(() => loadBacklogNotices(user.id));
+  const [autoUpdates, autoSchedules, upcoming, briefs, inferred] = await Promise.all([
     loadAutoProgressItems(user.id),
     loadAutoScheduleItems(user.id),
     loadUpcomingSchedule(user.id, new Date(now)),
     loadBriefState(user.id, new Date(now)),
+    loadInferredNotice(user.id),
   ]);
 
   const [applications, positions, stageHistories, personalTasks, allPositions, contacts] =
@@ -100,7 +106,7 @@ export default async function DashboardPage() {
   const weeklyReview = await getWeeklyReview();
 
   const [dbUser, resumeCount, leadCount] = await Promise.all([
-    db.user.findUnique({ where: { id: user.id }, select: { name: true, phone: true, contactEmail: true, defaultAiProvider: true } }),
+    db.user.findUnique({ where: { id: user.id }, select: { name: true, phone: true, contactEmail: true, defaultAiProvider: true, agentWeeklyReview: true } }),
     db.resumeVersion.count({ where: { userId: user.id } }),
     db.jobLead.count({ where: { userId: user.id } }),
   ]);
@@ -168,12 +174,12 @@ export default async function DashboardPage() {
         </div>
       </header>
 
-      <AgentBriefCard {...briefs} />
-
+      <InferredProfileBanner due={inferred.due} initial={inferred.record} />
+      <LearnedBacklogBanner notices={backlog} showLink />
       {scanHealth.failing && <ScanHealthBanner error={scanHealth.error} since={scanHealth.since?.toISOString() ?? null} lastOkAt={scanHealth.lastOkAt?.toISOString() ?? null} />}
       <AutoProgressBanner items={autoUpdates} schedules={autoSchedules} />
 
-      {/* Today's interviews, one click from their meeting links. */}
+      {/* Today's interviews, one click from their meeting links — what to act on first. */}
       {applications.length > 0 && (
         <UpcomingSchedule
           items={upcoming}
@@ -181,6 +187,8 @@ export default async function DashboardPage() {
           applications={applications.filter((a) => !isTerminalStage(a.currentStage)).map((a) => ({ id: a.id, companyName: a.company.name, title: a.title, aliases: a.company.aliases.map((entry) => entry.alias) }))}
         />
       )}
+
+      <AgentBriefCard {...briefs} />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
         <StatCard label="总投递数" value={total} icon={Send} tone="brand" />
@@ -217,7 +225,8 @@ export default async function DashboardPage() {
             positions={positionOptions}
             applications={applicationOptions}
           />
-          <WeeklyReviewCard initial={weeklyReview} />
+          {/* 小欧's 周复盘 above covers the week once it is on; the older card only without it. */}
+          {!(dbUser?.agentWeeklyReview && dbUser.defaultAiProvider) && <WeeklyReviewCard initial={weeklyReview} />}
         </div>
       </div>
 
@@ -231,62 +240,6 @@ export default async function DashboardPage() {
 
       <OnboardingCard steps={onboardingSteps} />
     </div>
-  );
-}
-
-const URGENCY_STYLE: Record<Todo["urgency"], { badge: string; label: string }> = {
-  overdue: { badge: "destructive", label: "已逾期" },
-  urgent: { badge: "destructive", label: "很急" },
-  soon: { badge: "secondary", label: "临近" },
-};
-
-function TodoCard({ todos }: { todos: Todo[] }) {
-  return (
-    <Card className="surface-card rounded-xl">
-      <CardHeader className="flex-row items-center justify-between space-y-0">
-        <CardTitle>待办</CardTitle>
-        <SendDigestButton />
-      </CardHeader>
-      <CardContent className="space-y-2">
-        {todos.length === 0 ? (
-          <div className="rounded-xl border border-border/50 bg-background/30 px-4 py-5">
-            <p className="text-sm font-medium">暂无待处理事项</p>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">有新的截止时间或阶段更新时，会自动出现在这里。</p>
-          </div>
-        ) : (
-          <>
-            {todos.map((todo) => {
-              const style = URGENCY_STYLE[todo.urgency];
-              return (
-                <Link
-                  key={todo.id}
-                  href={todo.href}
-                  className="flex flex-col gap-1 rounded-xl border border-border/60 bg-background/35 p-3 text-sm transition-colors hover:bg-muted/60 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate font-medium">{todo.label}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {todo.sublabel}
-                    </p>
-                  </div>
-                  <Badge
-                    variant={
-                      style.badge as "destructive" | "secondary"
-                    }
-                    className="self-start sm:self-auto"
-                  >
-                    {style.label}
-                  </Badge>
-                </Link>
-              );
-            })}
-            <p className="pt-1 text-xs text-muted-foreground">
-              处理完对应记录（更新阶段、标记已投）后，这里会自动消失
-            </p>
-          </>
-        )}
-      </CardContent>
-    </Card>
   );
 }
 

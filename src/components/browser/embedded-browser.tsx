@@ -38,6 +38,7 @@ import { Omnibox, type QuickLinks } from "@/components/browser/omnibox";
 import { Infobar } from "@/components/browser/infobar";
 import { LoginOfferInfobar, PasswordKeyButton, PasswordManagerDialog, useSavedLogins } from "@/components/browser/passwords";
 import { NewTabPage } from "@/components/browser/new-tab-page";
+import { AgentChat, type AgentPageContext } from "@/components/assistant/agent-chat";
 import type {
   DesktopBridgeAutofillModule,
   DesktopBridgeAutofillOptions,
@@ -92,6 +93,15 @@ const FILL_MODULES: { id: DesktopBridgeAutofillModule; label: string }[] = [
   { id: "resume", label: "简历附件" },
 ];
 const ALL_FILL_MODULES = FILL_MODULES.map(({ id }) => id);
+
+// A 网申 box asking something to write, not a fact: what 小欧 can draft.
+const OPEN_QUESTION = /[?？]|请(?:简述|描述|介绍|谈谈|说明|列举|举例)|为什么|为何|如何|怎样|谈谈|简述|描述|介绍一下|你的|你在|经历中|why|how|describe|tell us|explain/i;
+const AGENT_PAGE_QUESTIONS = ["这个岗位值得投吗？", "帮我写这页的开放题", "这家公司怎么样？", "这个岗位面试会问什么？"];
+const AGENT_PAGE_SUGGESTIONS = [
+  "这个岗位和我的经历匹配吗？给个结论和理由",
+  "按我的真实经历，写这页的开放题，按字数要求",
+  "查一下这家公司最近的情况和校招面经",
+];
 
 function ToolbarIcon({ label, shortcut, className, ...props }: React.ComponentProps<"button"> & { label: string; shortcut?: string }) {
   return (
@@ -227,6 +237,8 @@ export function EmbeddedBrowser({
   const [panelOverride, setPanelOverride] = useState<boolean | null>(null);
   const assistantOpen = panelOverride ?? panelPreference;
   const [assistantTab, setAssistantTab] = useState<AssistantTab>("preview");
+  const [agentOpen, setAgentOpen] = useState(false);
+  const [agentAsk, setAgentAsk] = useState<string | null>(null);
   // Latest values for the long-lived IPC listener below, updated in an
   // effect (the lint rule forbids touching refs during render).
   const positionId = tabsState.activeId === null ? "" : jobBindings[tabsState.activeId] || "";
@@ -236,6 +248,26 @@ export function EmbeddedBrowser({
   }, [positionId, resumeVersionId, autoFill, autofilling, expandBlocks, variantChoice, fillModules]);
 
   const bridge = useDesktopBridge();
+  // What 小欧 sees of the open page: title, address, visible text and the open questions on it.
+  const agentPageContext = useCallback(async (): Promise<AgentPageContext | null> => {
+    const snapshot = await bridge?.applicationSnapshot().catch(() => null);
+    if (!snapshot?.url || !/^https?:/i.test(snapshot.url)) return null;
+    const questions = snapshot.fields
+      .filter((field) => field.label.length >= 6 && OPEN_QUESTION.test(field.label))
+      .slice(0, 20)
+      .map((field) => ({ label: field.label.slice(0, 500), value: (field.value || "").slice(0, 3000) }));
+    return { url: snapshot.url.slice(0, 2000), title: (snapshot.title || "").slice(0, 300), text: (snapshot.text || "").slice(0, 6000), questions, positionId: positionId || snapshot.positionId || undefined };
+  }, [bridge, positionId]);
+
+  // 「接着问小欧」 from elsewhere opens 小欧 here, beside the page.
+  useEffect(() => {
+    const ask = (event: Event) => {
+      const text = (event as CustomEvent<string>).detail;
+      openAgent(typeof text === "string" ? text : undefined);
+    };
+    window.addEventListener("xiaoou:ask", ask);
+    return () => window.removeEventListener("xiaoou:ask", ask);
+  }, []);
   const mod = useModKey();
   const [passwordsOpen, setPasswordsOpen] = useState(false);
   const savedLogins = useSavedLogins(bridge);
@@ -270,12 +302,19 @@ export function EmbeddedBrowser({
   }
   function openPanel(tab?: AssistantTab) {
     if (tab) setAssistantTab(tab);
+    setAgentOpen(false);
     setPanelOverride(true);
     writePreference("careerplatform.browser.sidePanel", "1");
   }
   function closePanel() {
     setPanelOverride(false);
     writePreference("careerplatform.browser.sidePanel", "0");
+  }
+  // 小欧 in the side panel (like Gemini in Chrome): one panel at a time.
+  function openAgent(text?: string) {
+    setPanelOverride(false);
+    setAgentOpen(true);
+    if (text) setAgentAsk(text);
   }
   function setAutoFillEveryPage(next: boolean) {
     setAutoFillOverride(next);
@@ -893,6 +932,14 @@ export function EmbeddedBrowser({
           )}
 
           <ToolbarIcon
+            label={agentOpen ? "关闭小欧" : "问小欧（看着这个页面回答）"}
+            onClick={() => (agentOpen ? setAgentOpen(false) : openAgent())}
+            className={cn(agentOpen && "bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary")}
+          >
+            <Sparkles />
+          </ToolbarIcon>
+
+          <ToolbarIcon
             label={assistantOpen ? "关闭填写助手" : "打开填写助手（侧边栏）"}
             onClick={() => (assistantOpen ? closePanel() : openPanel())}
             className={cn(assistantOpen && "bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary")}
@@ -1108,6 +1155,26 @@ export function EmbeddedBrowser({
             <p className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">关掉菜单或弹窗后网页就会回来</p>
           )}
         </div>
+
+        {agentOpen && (
+          <div className="flex w-[min(400px,40vw)] min-w-[320px] shrink-0 flex-col border-l bg-card" onPointerEnter={refreshFrame}>
+            <AgentChat
+              askText={agentAsk}
+              onAskConsumed={() => setAgentAsk(null)}
+              pageContext={agentPageContext}
+              quickQuestions={AGENT_PAGE_QUESTIONS}
+              suggestions={AGENT_PAGE_SUGGESTIONS}
+              intro={<p className="text-sm text-muted-foreground">我能看到你正在看的这个页面：问我这个岗位值不值得投、这家公司怎么样，或者让我按你的经历写这页的开放题（写好点复制，粘贴进去）。</p>}
+              header={(
+                <div className="flex items-center gap-2 border-b px-3 py-2">
+                  <Sparkles className="size-4 text-primary" />
+                  <div className="min-w-0 flex-1"><p className="text-sm font-medium">小欧</p><p className="truncate text-[11px] text-muted-foreground">{currentUrl ? `看着：${activeTab?.title || currentUrl}` : "打开一个网页后，小欧能看着它回答"}</p></div>
+                  <ToolbarIcon label="关闭小欧" onClick={() => setAgentOpen(false)}><X /></ToolbarIcon>
+                </div>
+              )}
+            />
+          </div>
+        )}
 
         {assistantOpen && (
           <div className="flex shrink-0" onPointerEnter={refreshFrame}>

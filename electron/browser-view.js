@@ -1068,6 +1068,20 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
   // Settings → 浏览器插件: put an unpacked copy of the extension in a stable,
   // visible folder Chrome can keep loading across app updates, and show it,
   // for chrome://extensions → 加载已解压的扩展程序.
+  handle("browser:fill-stats", () => {
+    const dir = sampleDir();
+    let stats = {};
+    try { stats = JSON.parse(fs.readFileSync(path.join(dir, "填写统计.json"), "utf8")) || {}; } catch { stats = {}; }
+    let samples = 0;
+    try { samples = fs.readdirSync(dir).filter((name) => name.endsWith(".json") && name !== "填写统计.json").length; } catch { samples = 0; }
+    return { stats, samples };
+  });
+  handle("browser:open-samples", () => {
+    const dir = sampleDir();
+    fs.mkdirSync(dir, { recursive: true });
+    shell.openPath(dir);
+  });
+
   handle("browser:open-extension-folder", () => {
     const dir = syncChromeExtension({ force: true });
     // The picker's "go to folder" (⌘⇧G / address bar) takes a pasted path.
@@ -1172,7 +1186,8 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     try {
       for (const frame of allFrames(tab.view.webContents)) await frame.executeJavaScript(`document.documentElement.setAttribute("data-cp-task", ${JSON.stringify(task.id)})`).catch(() => {});
       if (options?.mode === "apply") await applyAutofillPlan(electronAdapter(tab, task), options);
-      else { tab.archiveUrl = tab.view.webContents.getURL(); tab.positionId = options?.positionId; tab.resumeVersionId = resumeVersionId; tab.variantId = options?.variantId; await runAutofillCore(electronAdapter(tab, task), resumeVersionId, options || {}); }
+      else { tab.archiveUrl = tab.view.webContents.getURL(); tab.positionId = options?.positionId; tab.resumeVersionId = resumeVersionId; tab.variantId = options?.variantId; const result = await runAutofillCore(electronAdapter(tab, task), resumeVersionId, options || {});
+        if (result?.phase === "done" && result.summary) { tab.filledAt = Date.now(); recordFillStats(tab.archiveUrl, { fills: 1, filled: result.summary.filled || 0, manual: result.summary.manual || 0 }); } }
     } finally { fillingTabs.delete(tab.id); fillTasks.delete(tab.id); }
   });
 
@@ -1204,32 +1219,9 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
   handle("browser:capture-sample", async (_e, note) => {
     const tab = activeTab();
     if (!tab) throw new Error("先打开一个网申页面");
-    const wc = tab.view.webContents;
-    let page;
-    try { const url = new URL(wc.getURL()); page = `${url.origin}${url.pathname}`; } catch { throw new Error("先打开一个网申页面"); }
-    const frames = [];
-    for (const frame of allFrames(wc)) {
-      try {
-        const fields = await frame.executeJavaScript(`(${scanPageFields.toString()})("s-", true)`);
-        const html = await frame.executeJavaScript(`(${formSkeleton.toString()})()`);
-        let frameUrl = "";
-        try { const u = new URL(frame.url); frameUrl = `${u.origin}${u.pathname}`; } catch { /* about:blank */ }
-        frames.push({
-          url: frameUrl,
-          // Labels and structure only: no current values or saved entries.
-          fields: (fields || []).map((f) => ({ tag: f.tag, type: f.type, label: f.label, placeholder: f.placeholder, name: f.name, section: f.section, options: f.options, required: f.required, maxLength: f.maxLength, hadValue: !!f.hasValue, savedEntries: f.savedEntries ? f.savedEntries.length : 0, blockKey: f.blockKey ? "yes" : undefined })),
-          html,
-        });
-      } catch { /* A frame that refuses scripts has no form to show. */ }
-    }
-    if (!frames.some((frame) => frame.fields.length)) throw new Error("这个页面上没找到表单");
-    const dir = path.join(app.getPath("userData"), "网申样本");
-    fs.mkdirSync(dir, { recursive: true });
-    const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-    const file = path.join(dir, `${new URL(page).hostname}-${stamp}.json`);
-    fs.writeFileSync(file, JSON.stringify({ app: app.getVersion(), page, title: wc.getTitle(), capturedAt: new Date().toISOString(), note: typeof note === "string" ? note.slice(0, 1000) : "", frames }, null, 1));
-    if (process.env.CAREERPLATFORM_TEST_MODE !== "1") shell.showItemInFolder(file);
-    return { file, fields: frames.reduce((sum, frame) => sum + frame.fields.length, 0) };
+    const result = await captureSample(tab, note);
+    if (process.env.CAREERPLATFORM_TEST_MODE !== "1") shell.showItemInFolder(result.file);
+    return result;
   });
 
   handle("browser:save-corrections", async (_e, resumeVersionId, onlyUserEdited = false, positionId, variantId, discover = true) => {
@@ -1239,11 +1231,80 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     if (savingAnswersForTabs.has(tab.id)) return { saved: 0 };
     savingAnswersForTabs.add(tab.id);
     try {
-      return await saveCorrectionsCore(electronAdapter(tab), resumeVersionId, onlyUserEdited, variantId ?? tab.variantId, discover !== false);
+      const result = await saveCorrectionsCore(electronAdapter(tab), resumeVersionId, onlyUserEdited, variantId ?? tab.variantId, discover !== false);
+      // Several boxes typed by hand after 一键填写 = boxes it missed: keep the
+      // page's structure (never the values) so the next round can fix them.
+      if (result.handTyped >= AUTO_SAMPLE_TYPED && tab.filledAt && Date.now() - tab.filledAt < 6 * 3_600_000) {
+        captureSample(tab, `自动保存：一键填写后手填了 ${result.handTyped} 个字段`, { auto: true }).catch(() => {});
+      }
+      if (result.handTyped) recordFillStats(tab.view.webContents.getURL(), { typed: result.handTyped });
+      return result;
     } finally {
       savingAnswersForTabs.delete(tab.id);
     }
   });
+}
+
+// 网申样本: form structures saved for fixing autofill — by 「这页没填好」 or
+// by themselves when a filled page still needed several boxes typed in.
+const AUTO_SAMPLE_TYPED = 3;
+const AUTO_SAMPLE_LIMIT = 120;
+const sampleDir = () => path.join(app.getPath("userData"), "网申样本");
+
+async function captureSample(tab, note, { auto = false } = {}) {
+  const wc = tab.view.webContents;
+  let page;
+  try { const url = new URL(wc.getURL()); page = `${url.origin}${url.pathname}`; } catch { throw new Error("先打开一个网申页面"); }
+  const dir = sampleDir();
+  const host = new URL(page).hostname;
+  const day = new Date().toISOString().slice(0, 10);
+  // One automatic sample per page a day; a click on 「这页没填好」 always saves.
+  const key = crypto.createHash("sha1").update(page).digest("hex").slice(0, 8);
+  if (auto && fs.existsSync(dir) && fs.readdirSync(dir).some((name) => name.startsWith(`auto-${day}-${host}-${key}`))) return { file: "", fields: 0, skipped: true };
+  const frames = [];
+  for (const frame of allFrames(wc)) {
+    try {
+      const fields = await frame.executeJavaScript(`(${scanPageFields.toString()})("s-", true)`);
+      const html = await frame.executeJavaScript(`(${formSkeleton.toString()})()`);
+      let frameUrl = "";
+      try { const u = new URL(frame.url); frameUrl = `${u.origin}${u.pathname}`; } catch { /* about:blank */ }
+      frames.push({
+        url: frameUrl,
+        // Labels and structure only: no current values or saved entries.
+        fields: (fields || []).map((f) => ({ tag: f.tag, type: f.type, label: f.label, placeholder: f.placeholder, name: f.name, section: f.section, options: f.options, required: f.required, maxLength: f.maxLength, hadValue: !!f.hasValue, savedEntries: f.savedEntries ? f.savedEntries.length : 0, blockKey: f.blockKey ? "yes" : undefined })),
+        html,
+      });
+    } catch { /* A frame that refuses scripts has no form to show. */ }
+  }
+  if (!frames.some((frame) => frame.fields.length)) throw new Error("这个页面上没找到表单");
+  fs.mkdirSync(dir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const file = path.join(dir, auto ? `auto-${day}-${host}-${key}.json` : `${host}-${stamp}.json`);
+  fs.writeFileSync(file, JSON.stringify({ app: app.getVersion(), page, title: wc.getTitle(), capturedAt: new Date().toISOString(), auto, note: typeof note === "string" ? note.slice(0, 1000) : "", frames }, null, 1));
+  if (auto) {
+    const autos = fs.readdirSync(dir).filter((name) => name.startsWith("auto-")).sort();
+    for (const name of autos.slice(0, Math.max(0, autos.length - AUTO_SAMPLE_LIMIT))) fs.rmSync(path.join(dir, name), { force: true });
+    recordFillStats(page, { samples: 1 });
+  }
+  return { file, fields: frames.reduce((sum, frame) => sum + frame.fields.length, 0) };
+}
+
+/** Per-site counts (填写统计.json): how much 一键填写 filled and how much was still typed by hand. */
+function recordFillStats(rawUrl, patch) {
+  try {
+    const host = new URL(rawUrl).hostname;
+    if (!host) return;
+    const dir = sampleDir();
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, "填写统计.json");
+    let stats = {};
+    try { stats = JSON.parse(fs.readFileSync(file, "utf8")) || {}; } catch { stats = {}; }
+    const row = stats[host] || { fills: 0, filled: 0, manual: 0, typed: 0, samples: 0 };
+    for (const [key, value] of Object.entries(patch)) row[key] = (row[key] || 0) + value;
+    row.lastAt = new Date().toISOString();
+    stats[host] = row;
+    fs.writeFileSync(file, JSON.stringify(stats, null, 1));
+  } catch { /* Statistics never get in the way of filling. */ }
 }
 
 module.exports = { setupBrowserViewIpc, syncChromeExtension };

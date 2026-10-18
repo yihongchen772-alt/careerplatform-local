@@ -1,18 +1,21 @@
 import { Fragment, type ReactNode } from "react";
 import Link from "next/link";
 
-// The small Markdown subset 小欧 writes (headings, lists, **bold**, links),
+// The small Markdown subset 小欧 writes (headings, lists, **bold**, *italic*,
+// `code`, --- rules, links),
 // built as React elements: model output is never injected as HTML.
 
 function inline(text: string, keyPrefix: string): ReactNode[] {
   const nodes: ReactNode[] = [];
-  const pattern = /\*\*([^*]+)\*\*|\[([^\]]+)\]\(([^)\s]+)\)|(https?:\/\/[^\s)）\]，。、]+)/g;
+  const pattern = /\*\*([^*]+)\*\*|\[([^\]]+)\]\(([^)\s]+)\)|(https?:\/\/[^\s)）\]，。、]+)|(?<![*\w])\*(?!\s)([^*\n]+?)\*(?![*\w])|`([^`\n]+)`/g;
   let last = 0;
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text))) {
     if (match.index > last) nodes.push(text.slice(last, match.index));
     const key = `${keyPrefix}-${match.index}`;
     if (match[1]) nodes.push(<strong key={key}>{match[1]}</strong>);
+    else if (match[5]) nodes.push(<em key={key} className="text-muted-foreground">{match[5]}</em>);
+    else if (match[6]) nodes.push(<code key={key} className="rounded bg-muted px-1 text-[0.9em]">{match[6]}</code>);
     else {
       const label = match[2] ?? match[4];
       const href = match[3] ?? match[4];
@@ -46,6 +49,7 @@ export function MarkdownText({ text, className }: { text: string; className?: st
       continue;
     }
     flush();
+    if (/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line)) { blocks.push(<hr key={blocks.length} className="my-2 border-border/60" />); continue; }
     const heading = /^#{1,6}\s+(.*)$/.exec(line);
     if (heading) blocks.push(<p key={blocks.length} className="pt-1 font-semibold">{inline(heading[1], `h${blocks.length}`)}</p>);
     else if (line.trim()) blocks.push(<p key={blocks.length}>{inline(line, `p${blocks.length}`)}</p>);

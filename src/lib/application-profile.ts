@@ -62,12 +62,24 @@ export const skillSchema = z.object({
   description: z.string().trim().max(1000).default(""),
 });
 
+/** 语言成绩: one exam per row (CET-6 580, 雅思 7.0) — forms ask for the score on its own. */
+export const languageSchema = z.object({
+  /** The exam or certificate: CET-6 / 雅思 / 托福 / 日语 N2 … */
+  name: z.string().trim().max(60).default(""),
+  /** 语种, 英语 when left blank. */
+  language: z.string().trim().max(20).default(""),
+  score: z.string().trim().max(20).default(""),
+  date: z.string().trim().max(20).default(""),
+});
+
 export const EXTRA_FIELDS = [
   { key: "politics", label: "政治面貌", hint: "群众 / 共青团员 / 中共党员" },
   { key: "hometown", label: "籍贯", hint: "省 市" },
   { key: "ethnicity", label: "民族", hint: "汉族" },
   { key: "english", label: "英语水平", hint: "CET-6 580 / 雅思 7.0" },
   { key: "currentCity", label: "现居城市", hint: "" },
+  // English portals ask for the country of residence; blank = worked out from 现居城市.
+  { key: "country", label: "所在国家 / 地区", hint: "空着按现居城市判断，如 中国 / 新加坡" },
   { key: "targetRole", label: "期望岗位", hint: "数据分析 / 产品经理" },
   // Asked on most 国企 / 银行 forms; free text, filled as typed.
   { key: "expectedSalary", label: "期望薪资", hint: "面议 / 15k-20k" },
@@ -107,6 +119,8 @@ export const learnedEntrySchema = z.object({
   captureKey: z.string().max(200).default(""),
   at: z.string().max(40),
   undone: z.boolean().default(false),
+  /** False for what the 待核对 backlog wrote, until its notice is closed. */
+  seen: z.boolean().default(true),
 });
 export type LearnedEntry = z.infer<typeof learnedEntrySchema>;
 
@@ -133,6 +147,7 @@ export const applicationProfileSchema = z.object({
   awards: z.array(awardSchema).max(30).default([]),
   campus: z.array(campusSchema).max(20).default([]),
   skills: z.array(skillSchema).max(30).default([]),
+  languages: z.array(languageSchema).max(10).default([]),
   extras: z.record(z.string(), z.string().trim().max(1000)).default({}),
   variants: z.array(profileVariantSchema).max(8).default([]),
   /** What the 网申浏览器 wrote in by itself from hand-filled pages (for 撤销). */
@@ -168,8 +183,9 @@ export type ProjectRow = z.infer<typeof projectSchema>;
 export type AwardRow = z.infer<typeof awardSchema>;
 export type CampusRow = z.infer<typeof campusSchema>;
 export type SkillRow = z.infer<typeof skillSchema>;
+export type LanguageRow = z.infer<typeof languageSchema>;
 
-export const EMPTY_APPLICATION_PROFILE: ApplicationProfile = { education: [], experiences: [], projects: [], awards: [], campus: [], skills: [], extras: {}, variants: [], learned: [] };
+export const EMPTY_APPLICATION_PROFILE: ApplicationProfile = { education: [], experiences: [], projects: [], awards: [], campus: [], skills: [], languages: [], extras: {}, variants: [], learned: [] };
 
 export function parseApplicationProfile(raw: unknown): ApplicationProfile {
   const parsed = applicationProfileSchema.safeParse(raw);
@@ -233,9 +249,21 @@ export function describeApplicationProfile(p: ApplicationProfile): string {
   });
   const skills = (p.skills || []).filter((row) => row.name).map((row) => [row.name, row.level && `（${row.level}）`].filter(Boolean).join(""));
   if (skills.length) lines.push(`专业技能：${skills.join("、")}`);
+  const languages = (p.languages || []).filter((row) => row.name).map(languageLine);
+  if (languages.length) lines.push(`语言成绩：${languages.join("、")}`);
   for (const f of EXTRA_FIELDS) {
     const v = p.extras[f.key];
     if (v) lines.push(`${f.label}：${v}`);
   }
   return lines.join("\n");
+}
+
+/** "CET-6 580（2023-06）" — one exam as forms and the AI read it. */
+export function languageLine(row: LanguageRow): string {
+  return [row.language && !/英语|english/i.test(row.language) && !row.name.includes(row.language) ? row.language : "", row.name, row.score].filter(Boolean).join(" ") + (row.date ? `（${row.date}）` : "");
+}
+
+/** What the single 英语水平 box shows when it was left blank: the English exams. */
+export function englishFromLanguages(rows: LanguageRow[]): string {
+  return rows.filter((row) => row.name && (!row.language || /英语|english/i.test(row.language))).map((row) => [row.name, row.score].filter(Boolean).join(" ")).join("，");
 }

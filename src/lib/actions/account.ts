@@ -52,6 +52,7 @@ export async function updateApplicationProfile(input: unknown): Promise<ActionRe
       awards: data.awards.filter((award) => Object.values(award).some(Boolean)),
       campus: data.campus.filter((row) => Object.values(row).some(Boolean)),
       skills: data.skills.filter((row) => Object.values(row).some(Boolean)),
+      languages: data.languages.filter((row) => row.name),
       extras: Object.fromEntries(Object.entries(data.extras).filter(([, v]) => v)),
       learned: parseApplicationProfile(stored?.applicationProfile).learned,
       variants: data.variants.map((variant) => ({
@@ -95,6 +96,7 @@ ${resumeText}
 - awards：获奖情况。name 奖项名称；issuer 颁发单位；level 等级；date 获奖时间；description 补充说明。只提取明确写出的奖项。
 - campus：校园经历 / 学生工作（学生会、社团、班级、实验室学生职务等，不是实习也不是项目）。name 组织名称；role 担任职务；level 级别（校级/院级/班级）；start/end 同上；description 做了什么。
 - skills：专业技能，每项一条。name 技能名称（如 Python、MATLAB、SolidWorks）；level 掌握程度（了解/熟悉/熟练/精通，简历写了才填）；category 类别（编程语言/软件工具/专业技能等）；description 留空。只提取简历「技能」部分明确列出的。
+- languages：语言成绩，每门考试一条。name 考试/证书（CET-4、CET-6、雅思、托福、日语 N2 等）；language 语种（英语可留空）；score 分数；date 考试时间 yyyy-MM。只提取简历写了的。
 - extras：politics 政治面貌、hometown 籍贯、ethnicity 民族、english 英语水平（如 CET-6 580）、currentCity 现居城市、researchDirection 研究方向、rank 成绩排名、courses 主修课程（逗号分隔）、homepage 个人主页/GitHub/作品链接、lab 实验室/课题组、hobbies 兴趣爱好、thesis 毕业论文题目——简历里有才填。
 全部用中文。`,
       thinkingBudget: 512,
@@ -159,6 +161,14 @@ ${resumeText}
               required: ["name", "level", "category", "description"],
             },
           },
+          languages: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: { name: { type: "STRING" }, language: { type: "STRING" }, score: { type: "STRING" }, date: { type: "STRING" } },
+              required: ["name", "language", "score", "date"],
+            },
+          },
           extras: {
             type: "OBJECT",
             properties: {
@@ -170,7 +180,7 @@ ${resumeText}
             required: ["politics", "hometown", "ethnicity", "english", "currentCity", "researchDirection", "rank", "courses", "homepage", "lab", "hobbies", "thesis"],
           },
         },
-        required: ["education", "experiences", "projects", "awards", "campus", "skills", "extras"],
+        required: ["education", "experiences", "projects", "awards", "campus", "skills", "languages", "extras"],
       },
     });
     const parsed = applicationProfileSchema.safeParse(raw);

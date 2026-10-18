@@ -29,7 +29,7 @@ const PLACEHOLDER = /^(?:请|点击|點擊)?(?:选择|选取|输入|填写|搜�
 // A 是 / 否 answer can be a fact (是否接受调剂) but never the name of a 经历.
 const NOT_A_NAME = /^(?:是|否|有|无|暂无|yes|no|n\/?a|none|其他|其它)$/i;
 
-const FIELD_LABELS: Record<string, string> = { school: "学校", major: "专业", department: "院系 / 部门", degree: "学历", gpa: "GPA", start: "开始时间", end: "结束时间", company: "单位", role: "职务", name: "名称", level: "级别", date: "时间", issuer: "颁发单位", description: "描述", responsibilities: "职责", category: "类别" };
+const FIELD_LABELS: Record<string, string> = { school: "学校", major: "专业", department: "院系 / 部门", degree: "学历", gpa: "GPA", start: "开始时间", end: "结束时间", company: "单位", role: "职务", name: "名称", level: "级别", date: "时间", issuer: "颁发单位", description: "描述", responsibilities: "职责", category: "类别", score: "分数", language: "语种" };
 
 /** Label → 网申资料 field for answers captured before the browser sent one (old 待核对 rows). */
 const LABEL_KEYS: Array<[RegExp, string, RegExp?]> = [
@@ -51,7 +51,8 @@ const LABEL_KEYS: Array<[RegExp, string, RegExp?]> = [
   [/实习时长|实习周期|可实习时间/, "internshipDuration"],
   [/通讯地址|联系地址|现住址|居住地址|邮寄地址/, "address"],
   [/意向城市|期望城市|期望工作地|意向工作地|期望工作城市|意向地点/, "preferredCities"],
-  [/现居|所在城市|居住城市/, "currentCity"],
+  [/^country(?:\/?(?:or)?region)?(?:ofresidence)?$|^所在国家|^居住国家|^国家(?:\/|或)?地区$/i, "country"],
+  [/现居|所在城市|居住城市|^currentcity$|^city$/i, "currentCity"],
   [/期望岗位|期望职位|意向岗位|意向职位/, "targetRole"],
 ];
 
@@ -141,7 +142,7 @@ export function learnFromPage(base: ApplicationProfile, user: { preferredCities:
     };
     if (!shown.trim()) {
       write(value);
-      const created: LearnedEntry = { id: randomUUID(), kind: "fact", ref, label: LEARNABLE_FACTS[key], state: value, added: {}, source: input.sourceUrl, captureKey: "", at, undone: false };
+      const created: LearnedEntry = { id: randomUUID(), kind: "fact", ref, label: LEARNABLE_FACTS[key], state: value, added: {}, source: input.sourceUrl, captureKey: "", at, undone: false, seen: true };
       profile.learned.push(created);
       notice(created);
       consumedAnswers.add(index);
@@ -199,7 +200,7 @@ export function learnFromPage(base: ApplicationProfile, user: { preferredCities:
         const next = { ...row, ...added };
         rows[matches[0]] = next;
         retarget(rowState(row), rowState(next));
-        const created: LearnedEntry = { id: randomUUID(), kind: "fill", ref, label: `${rowTitle(category, next)}的${Object.keys(added).map((key) => FIELD_LABELS[key] || key).join("、")}`, state: rowState(next), added, source: input.sourceUrl, captureKey: record.captureKey || "", at, undone: false };
+        const created: LearnedEntry = { id: randomUUID(), kind: "fill", ref, label: `${rowTitle(category, next)}的${Object.keys(added).map((key) => FIELD_LABELS[key] || key).join("、")}`, state: rowState(next), added, source: input.sourceUrl, captureKey: record.captureKey || "", at, undone: false, seen: true };
         profile.learned.push(created);
         changed = true;
         notice(created);
@@ -214,7 +215,7 @@ export function learnFromPage(base: ApplicationProfile, user: { preferredCities:
     if ((rows.length && !seededHere) || rows.length >= limit) continue;
     const row = cleaned;
     rows.push(row);
-    const created: LearnedEntry = { id: randomUUID(), kind: "add", ref, label: rowTitle(category, row), state: rowState(row), added: {}, source: input.sourceUrl, captureKey: record.captureKey || "", at, undone: false };
+    const created: LearnedEntry = { id: randomUUID(), kind: "add", ref, label: rowTitle(category, row), state: rowState(row), added: {}, source: input.sourceUrl, captureKey: record.captureKey || "", at, undone: false, seen: true };
     profile.learned.push(created);
     changed = true;
     notice(created);

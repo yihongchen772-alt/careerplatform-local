@@ -30,6 +30,8 @@ export function AgentBriefCard({ daily, weekly, dailyDue, weeklyDue }: { daily: 
   const [writing, setWriting] = useState<BriefKind | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [applied, setApplied] = useState<string[]>([]);
+  // Long briefs open folded to their first lines; the buttons stay in view.
+  const [expanded, setExpanded] = useState(false);
   const started = useRef(false);
 
   async function write(kind: BriefKind, again = false) {
@@ -96,7 +98,17 @@ export function AgentBriefCard({ daily, weekly, dailyDue, weeklyDue }: { daily: 
           <p className="text-sm text-destructive">{failed}</p>
         ) : brief ? (
           <>
-            <MarkdownText text={brief.content} className="text-sm leading-6" />
+            {(() => {
+              const long = brief.content.length > 260 || brief.content.split("\n").filter((line) => line.trim()).length > 7;
+              return (
+                <div className="relative">
+                  <div className={cn(long && !expanded && "max-h-40 overflow-hidden [mask-image:linear-gradient(to_bottom,black_65%,transparent)]")}>
+                    <MarkdownText text={brief.content} className="text-sm leading-6" />
+                  </div>
+                  {long && <button type="button" className="mt-1 text-xs font-medium text-primary hover:underline" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>{expanded ? "收起" : "展开全文"}</button>}
+                </div>
+              );
+            })()}
             {!!brief.actions.length && (
               <div className="flex flex-wrap gap-2 pt-1">
                 {brief.actions.map((action, index) => {
