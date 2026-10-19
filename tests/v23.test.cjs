@@ -50,3 +50,12 @@ test("待核对 boxes 网申资料 now fills by itself are cleared; others stay"
   assert.equal(backlog.coveredByProfile(answer("校内活动", "学生会"), { campus: [], awards: [] }), false);
   assert.equal(backlog.coveredByProfile(answer("英文名", "Zoe"), profile), false);
 });
+
+test("zhiye (石头科技) 获奖项 / 实践名称 name their rows", () => {
+  const f = (label, section) => ({ id: `${label}-${Math.random()}`, label, placeholder: "请输入", name: "", tag: "input", type: "text", section });
+  const kind = (info) => (info ? `${info.group}:${info.kind}:${info.row}` : null);
+  const rows = new Map();
+  assert.deepEqual(["获奖项", "获奖级别", "获奖时间", "获奖项"].map((label) => kind(core.resolveRepeatField(f(label, "获奖情况"), rows))), ["award:name:0", "award:level:0", "award:date:0", "award:name:1"]);
+  assert.equal(kind(core.resolveRepeatField(f("实践名称", "在校实践"), new Map())), "campus:name:0");
+  assert.equal(kind(core.resolveRepeatField(f("所获奖项", ""), new Map())), "award:name:0");
+});

@@ -815,6 +815,12 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
   );
   handle("browser:open-external", () => withActive((wc) => openSafeExternalUrl(wc.getURL())));
   handle("browser:copy-url", () => withActive((wc) => clipboard.writeText(wc.getURL())));
+  // Copy buttons in the App's panels: the page view has the focus, so the
+  // renderer's navigator.clipboard is refused there.
+  handle("browser:copy-text", (_e, text) => {
+    if (typeof text !== "string" || text.length > 200000) throw new Error("复制的内容不对");
+    clipboard.writeText(text);
+  });
   handle("browser:history", () => readHistory());
   handle("browser:clear-history", () => {
     fs.rmSync(historyFile(), { force: true });

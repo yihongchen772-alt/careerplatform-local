@@ -89,6 +89,8 @@ export type DesktopBridge = {
   /** 填写统计.json: per site, how much 一键填写 filled and how much was typed by hand afterwards. */
   fillStats(): Promise<{ stats: Record<string, { fills: number; filled: number; manual: number; typed: number; samples: number; lastAt?: string }>; samples: number }>;
   openSamples(): Promise<void>;
+  /** Writes text to the system clipboard (navigator.clipboard fails while the page view has focus). */
+  copyText(text: string): Promise<void>;
   /** 小欧's 「填进这一栏」: writes an answer into the box with this question label. */
   fillField(label: string, value: string, overwrite?: boolean): Promise<{ ok: boolean; needsConfirm?: boolean; reason?: string }>;
   clearMarks(): Promise<void>;

@@ -432,6 +432,15 @@ Object.assign(suites, {
     { label: "英文名", read: val("#e1"), expect: "Zoe Lin" },
     { label: "是否有交换生经历(无→否)", read: `document.querySelector("#x1y").checked ? "是" : document.querySelector("#x1n").checked ? "否" : ""`, expect: "否" },
   ]],
+  "zhiye-awards": [[
+    { label: "实践名称", read: val("#p1"), expect: "复旦大学研究生会" },
+    { label: "担任职务", read: val("#p2"), expect: "学术部部长" },
+    { label: "实践描述", read: val("#p3"), expect: "组织学术沙龙 12 场" },
+    { label: "获奖项", read: val("#a1"), expect: "全国大学生数学建模竞赛一等奖" },
+    { label: "获奖级别", read: sel("#a2"), expect: "国家级" },
+    { label: "获奖时间", read: val("#a3"), expect: /^2023[-./年]?11/ },
+    { label: "第二组获奖项(只存了一个奖，不重复)", read: val("#a4"), expect: "" },
+  ]],
   "wizard": [[
     { label: "第1步 姓名", read: val("#a1"), expect: "林晓舟" },
     { label: "第1步 性别", read: sel("#a4"), expect: "女" },

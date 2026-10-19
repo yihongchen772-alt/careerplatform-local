@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { generateCoverLetter } from "@/lib/actions/cover-letter";
+import { copyText } from "@/lib/copy-text";
 
 type ResumeOption = { id: string; name: string };
 
@@ -62,7 +63,7 @@ export function CoverLetterDialog({
   async function copyLetter() {
     if (!letter) return;
     try {
-      await navigator.clipboard.writeText(letter);
+      await copyText(letter);
       toast.success("已复制到剪贴板");
     } catch {
       toast.error("复制失败，请手动选中文字复制");

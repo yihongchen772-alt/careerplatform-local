@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { DesktopBridge, DesktopBridgeAutofillOptions, DesktopBridgeAutofillStatus, DesktopBridgeFillSource, FillPlan } from "@/types/desktop-bridge";
+import { copyText } from "@/lib/copy-text";
 
 export type AssistantTab = "preview" | "result" | "cards" | "settings";
 
@@ -129,7 +130,7 @@ export function ApplicationAssistant({ bridge, status, busy, hasPage, resumeId, 
 
       {tab === "cards" && <>
         <p className="text-xs text-muted-foreground">网页不支持自动填时，点一下复制，再粘贴到网页里。</p>
-        <div className="space-y-1.5">{cards.map((c, i) => <button key={i} type="button" className="block w-full rounded-md border p-2 text-left text-xs transition-colors hover:bg-muted" onClick={() => navigator.clipboard.writeText(c.value).then(() => toast.success(`已复制「${c.label}」`)).catch(() => toast.error("复制失败"))}><span className="font-medium">{c.label}</span><p className="mt-0.5 line-clamp-3 whitespace-pre-wrap text-muted-foreground">{c.value}</p></button>)}</div>
+        <div className="space-y-1.5">{cards.map((c, i) => <button key={i} type="button" className="block w-full rounded-md border p-2 text-left text-xs transition-colors hover:bg-muted" onClick={() => copyText(c.value).then(() => toast.success(`已复制「${c.label}」`)).catch(() => toast.error("复制失败"))}><span className="font-medium">{c.label}</span><p className="mt-0.5 line-clamp-3 whitespace-pre-wrap text-muted-foreground">{c.value}</p></button>)}</div>
         {cards.length === 0 && <p className="text-xs text-muted-foreground">还没有网申资料。<button type="button" className="text-primary hover:underline" onClick={onOpenProfile}>去账号设置填写</button></p>}
       </>}
 

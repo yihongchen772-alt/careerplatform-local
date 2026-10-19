@@ -6,6 +6,7 @@ import { Copy, FolderOpen, KeyRound, Puzzle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createExtensionPairing, revokeExtensionPairing, type ExtensionPairing } from "@/lib/actions/extension";
+import { copyText } from "@/lib/copy-text";
 
 const noop = () => () => {};
 
@@ -104,7 +105,7 @@ export function ExtensionCard({ initial }: { initial: ExtensionPairing }) {
                 size="sm"
                 variant="outline"
                 onClick={async () => {
-                  await navigator.clipboard.writeText(token);
+                  await copyText(token);
                   toast.success("配对码已复制");
                 }}
               >

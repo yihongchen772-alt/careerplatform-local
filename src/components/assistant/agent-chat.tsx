@@ -15,6 +15,7 @@ import type { AgentStep } from "@/lib/agent/run";
 import { VoiceInput } from "./voice-input";
 import { MarkdownText } from "./markdown-text";
 import { cn } from "@/lib/utils";
+import { copyText } from "@/lib/copy-text";
 
 type DisplayMessage = AssistantChatMessage & {
   id: number;
@@ -359,7 +360,7 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
 
   async function copy(text: string) {
     try {
-      await navigator.clipboard.writeText(text);
+      await copyText(text);
       toast.success("已复制，可以直接粘贴到网申里");
     } catch {
       toast.error("复制失败，请手动选中文字复制");

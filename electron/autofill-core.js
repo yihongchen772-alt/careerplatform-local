@@ -490,8 +490,8 @@ function scanPageFields(prefix, readOnly = false) {
     const text = field.label || field.placeholder || "";
     return group === "project" ? /^(?:项目)?(?:名称|名)|project[ _-]*(?:name|title)|^name$/i.test(text)
       : group === "experience" ? /公司|单位|企业|机构|company|employer/i.test(text) && !/描述|介绍|职责|行业|性质|规模|类型|地址|城市|电话|部门/.test(text)
-      : group === "award" ? /(?:奖项|获奖|荣誉|奖励)名称|^(?:名称|奖项|荣誉|奖励|name)$|award[ _-]*(?:name|title)/i.test(text)
-      : group === "campus" ? /组织|社团|团体|协会|学生会|^(?:名称|单位)$/.test(text) && !/职务|级别|描述/.test(text)
+      : group === "award" ? /(?:奖项|获奖|荣誉|奖励)名称|^(?:名称|奖项|荣誉|奖励|name)$|^(?:获奖项目?|所获奖项|获得奖项)$|award[ _-]*(?:name|title)/i.test(text)
+      : group === "campus" ? (/组织|社团|团体|协会|学生会|^(?:名称|单位)$/.test(text) || /^实践(?:名称|项目|单位)$/.test(text)) && !/职务|级别|描述/.test(text)
       : group === "skill" ? /技能(?:名称|名)|^技能$|^名称$|skill/i.test(text) && !/程度|类别|类型|等级|水平|描述|level|category/i.test(text)
       : group === "language" ? /考试|证书|exam|test|certificat/i.test(text) && !/分数|成绩|时间|日期|score|date/i.test(text)
       : /学校|院校|school|university/i.test(text) && !/城市|性质|排名/.test(text);
@@ -1637,7 +1637,8 @@ function experienceFieldKind(haystack, inSection, bare = "") {
 }
 
 function awardFieldKind(haystack, bare, inSection) {
-  if (/(?:奖项|获奖|荣誉|奖励)名称|award[ _-]*(?:name|title)/i.test(haystack) || (inSection && /^(?:名称|奖项|荣誉|奖励|name|title)$/.test(bare))) return "name";
+  // 「获奖项」「获奖项目」「所获奖项」 (zhiye / 石头科技) name the award as well.
+  if (/(?:奖项|获奖|荣誉|奖励)名称|award[ _-]*(?:name|title)/i.test(haystack) || /^(?:获奖项目?|所获奖项|获得奖项|奖项名|荣誉称号)$/.test(bare) || (inSection && /^(?:名称|奖项|荣誉|奖励|name|title)$/.test(bare))) return "name";
   if (!inSection && !/获奖|奖项|荣誉|奖励|颁奖|award/i.test(haystack)) return null;
   if (/颁发|颁奖|授予|单位|机构|issuer|organi[sz]ation/i.test(haystack)) return "issuer";
   if (/等级|级别|奖级|奖等|level|grade/i.test(haystack)) return "level";
@@ -1662,7 +1663,7 @@ function campusFieldKind(haystack, bare = "", inSection = false) {
   if (START_LABEL.test(haystack)) return "start";
   if (END_LABEL.test(haystack)) return "end";
   if (/描述|内容|职责|成就|成果|主要工作|说明|description|details/i.test(haystack)) return "description";
-  if (/^(?:名称|组织|单位)$|活动(?:名称)?$/.test(bare)) return "name";
+  if (/^(?:名称|组织|单位)$|活动(?:名称)?$|^实践(?:名称|项目|单位)$/.test(bare)) return "name";
   return null;
 }
 

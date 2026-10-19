@@ -94,6 +94,10 @@ export async function generateStructured({
   parts.push({ text: prompt });
 
   const models = candidateModels(modelOverride);
+  // 503 / 5xx is Gemini overloaded at peak hours: wait and retry the same
+  // model twice, then go on to the next one in the list (网申 AI 作答 gave
+  // up on the first 503 before).
+  let retries = 0;
   for (let i = 0; i < models.length; i++) {
     const model = models[i];
     let response: Response;
@@ -142,6 +146,11 @@ export async function generateStructured({
       }
       if (response.status === 400 || response.status === 403) {
         throw new GeminiError("AI 密钥无效或已过期，请到账号设置里更新");
+      }
+      if (response.status >= 500) {
+        if (retries < 2) { retries++; await new Promise((resolve) => setTimeout(resolve, 1500 * retries)); i--; continue; }
+        retries = 0;
+        if (i < models.length - 1) continue;
       }
       throw new GeminiError(`Gemini · ${model} 调用失败（${response.status}）：服务暂时不可用，请稍后重试，或在设置里换一个模型`);
     }

@@ -36,6 +36,7 @@ import { MeetingActions } from "@/components/schedule/meeting-actions";
 import { ScheduleFields, scheduleDraftFrom, scheduleFromDraft, type ScheduleDraft } from "@/components/schedule/schedule-fields";
 import { completeStep } from "@/components/schedule/step-actions";
 import { useNow } from "@/components/schedule/use-now";
+import { copyText } from "@/lib/copy-text";
 
 export type HubRow = {
   id: string;
@@ -427,7 +428,7 @@ function AfterStep({ applicationId, companyName, jobTitle, currentStage, step, r
         <div className="space-y-2 rounded-xl border border-amber-500/30 bg-amber-500/[0.05] p-3 text-xs">
           <p className="font-medium text-amber-800 dark:text-amber-200">等了一周多还没消息，可以发封邮件问问进度。</p>
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" className="h-7 gap-1 rounded-full px-2.5 text-xs" onClick={() => navigator.clipboard.writeText(communicationDraft("followup", companyName, jobTitle)).then(() => toast.success("已复制跟进邮件，补上称呼和日期再发"), () => toast.error("复制失败"))}>
+            <Button size="sm" variant="outline" className="h-7 gap-1 rounded-full px-2.5 text-xs" onClick={() => copyText(communicationDraft("followup", companyName, jobTitle)).then(() => toast.success("已复制跟进邮件，补上称呼和日期再发"), () => toast.error("复制失败"))}>
               <Copy className="size-3.5" />复制跟进邮件
             </Button>
             <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={busy !== null} onClick={async () => { const result = await markFollowedUp(row.id); if (!result.ok) toast.error(result.message); else { toast.success("已记下，一周内不再提醒"); router.refresh(); } }}>我已跟进</Button>

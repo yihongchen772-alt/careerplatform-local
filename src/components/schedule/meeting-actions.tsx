@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { extractMeetingNumber, extractMeetingUrl } from "@/lib/interview-schedule";
+import { copyText as writeClipboard } from "@/lib/copy-text";
 
 /**
  * 「进入会议」 opens the link in the system browser (the App sends any new
@@ -32,7 +33,7 @@ export function MeetingActions({ info, size = "sm", className, compact = false, 
         className={cn("gap-1 rounded-full", height)}
         title={copyText}
         onClick={() => {
-          void navigator.clipboard.writeText(copyText).then(
+          void writeClipboard(copyText).then(
             () => toast.success(number ? `已复制会议号 ${number}` : "已复制会议信息"),
             () => toast.error("复制失败，请手动选中复制")
           );

@@ -59,6 +59,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   getTabs: () => ipcRenderer.invoke("browser:get-tabs"),
   openExternal: () => ipcRenderer.invoke("browser:open-external"),
   copyUrl: () => ipcRenderer.invoke("browser:copy-url"),
+  copyText: (text) => ipcRenderer.invoke("browser:copy-text", text),
   history: () => ipcRenderer.invoke("browser:history"),
   clearHistory: () => ipcRenderer.invoke("browser:clear-history"),
   showDownload: (file) => ipcRenderer.invoke("browser:show-download", file),
