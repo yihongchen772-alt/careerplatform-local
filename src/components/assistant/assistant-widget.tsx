@@ -24,11 +24,23 @@ export function isBrowserRoute(pathname: string | null) {
  */
 export function AssistantWidget() {
   const pathname = usePathname();
-  const [open, setOpen] = useState(false);
+  const [open, setOpenState] = useState(false);
+  // Mounted from the first open on and only hidden after: closing the panel
+  // while 小欧 is still working must not throw that turn away.
+  const [mounted, setMounted] = useState(false);
+  // A reply that came in while the panel was closed: a dot on the button.
+  const [unread, setUnread] = useState(false);
+  const setOpen = (next: boolean | ((value: boolean) => boolean)) => {
+    const result = typeof next === "function" ? next(openRef.current) : next;
+    if (result) { setMounted(true); setUnread(false); }
+    setOpenState(result);
+  };
   const [wide, setWide] = useState(false);
   const [width, setWidth] = useState(460);
   const [askText, setAskText] = useState<string | null>(null);
   const dragging = useRef(false);
+  const openRef = useRef(open);
+  useEffect(() => { openRef.current = open; }, [open]);
   const inBrowser = isBrowserRoute(pathname);
 
   useEffect(() => {
@@ -71,13 +83,14 @@ export function AssistantWidget() {
 
   return (
     <>
-      {open && (
-        <div role="dialog" aria-label="小欧求职助手" style={{ width: panelWidth }} className="assistant-panel fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-4 top-4 z-50 flex flex-col overflow-hidden rounded-2xl border bg-card shadow-xl">
+      {mounted && (
+        <div role="dialog" aria-label="小欧求职助手" aria-hidden={!open} style={{ width: panelWidth }} className="assistant-panel fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-4 top-4 z-50 flex flex-col overflow-hidden rounded-2xl border bg-card shadow-xl data-[closed=true]:hidden" data-closed={!open}>
           {!wide && <div role="separator" aria-orientation="vertical" aria-label="拖动调整宽度" title="拖动调整宽度" onPointerDown={startDrag} className="absolute inset-y-0 left-0 z-10 w-1.5 cursor-col-resize hover:bg-primary/20" />}
           <AgentChat
             askText={askText}
             onAskConsumed={() => setAskText(null)}
             onNavigate={() => setOpen(false)}
+            onReply={() => { if (!openRef.current) setUnread(true); }}
             header={(
               <div className="assistant-head flex items-center gap-1 border-b px-3 py-2">
                 <div className="flex-1"><p className="text-sm font-medium">小欧</p><p className="text-[11px] text-muted-foreground">求职 agent · 规划决策 · 找岗位 · 记录进展</p></div>
@@ -95,6 +108,7 @@ export function AssistantWidget() {
 
       <Button type="button" size="icon" className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-50 size-12 rounded-full shadow-lg" aria-label={open ? "关闭小欧" : "打开小欧"} onClick={() => setOpen((v) => !v)}>
         {open ? <X className="size-5" /> : <Sparkles className="size-5" />}
+        {unread && !open && <span aria-label="小欧回复了" className="absolute right-0.5 top-0.5 size-3 rounded-full border-2 border-background bg-rose-500" />}
       </Button>
     </>
   );

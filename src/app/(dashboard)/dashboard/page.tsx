@@ -106,7 +106,7 @@ export default async function DashboardPage() {
   const weeklyReview = await getWeeklyReview();
 
   const [dbUser, resumeCount, leadCount] = await Promise.all([
-    db.user.findUnique({ where: { id: user.id }, select: { name: true, phone: true, contactEmail: true, defaultAiProvider: true, agentWeeklyReview: true } }),
+    db.user.findUnique({ where: { id: user.id }, select: { name: true, phone: true, contactEmail: true, defaultAiProvider: true, agentWeeklyReview: true, agentDailyBrief: true } }),
     db.resumeVersion.count({ where: { userId: user.id } }),
     db.jobLead.count({ where: { userId: user.id } }),
   ]);
@@ -205,7 +205,8 @@ export default async function DashboardPage() {
       </div>
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] xl:items-start">
         <div className="space-y-5">
-          <DailyDigestCard initial={dailyDigest} />
+          {/* 小欧's 今日简报 at the top says the same; the older digest only without it. */}
+          {!(dbUser?.agentDailyBrief && dbUser.defaultAiProvider) && <DailyDigestCard initial={dailyDigest} />}
           <TodoCard todos={todos} />
         </div>
         <div className="space-y-5">

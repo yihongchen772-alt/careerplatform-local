@@ -237,7 +237,10 @@ export function EmbeddedBrowser({
   const [panelOverride, setPanelOverride] = useState<boolean | null>(null);
   const assistantOpen = panelOverride ?? panelPreference;
   const [assistantTab, setAssistantTab] = useState<AssistantTab>("preview");
-  const [agentOpen, setAgentOpen] = useState(false);
+  const [agentOpen, setAgentOpenState] = useState(false);
+  // Kept mounted (hidden) once opened, so closing it mid-answer loses nothing.
+  const [agentMounted, setAgentMounted] = useState(false);
+  const setAgentOpen = (next: boolean) => { if (next) setAgentMounted(true); setAgentOpenState(next); };
   const [agentAsk, setAgentAsk] = useState<string | null>(null);
   // Latest values for the long-lived IPC listener below, updated in an
   // effect (the lint rule forbids touching refs during render).
@@ -267,6 +270,8 @@ export function EmbeddedBrowser({
     };
     window.addEventListener("xiaoou:ask", ask);
     return () => window.removeEventListener("xiaoou:ask", ask);
+    // Registered once; openAgent only calls state setters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const mod = useModKey();
   const [passwordsOpen, setPasswordsOpen] = useState(false);
@@ -1156,8 +1161,8 @@ export function EmbeddedBrowser({
           )}
         </div>
 
-        {agentOpen && (
-          <div className="flex w-[min(400px,40vw)] min-w-[320px] shrink-0 flex-col border-l bg-card" onPointerEnter={refreshFrame}>
+        {agentMounted && (
+          <div className={cn("flex w-[min(400px,40vw)] min-w-[320px] shrink-0 flex-col border-l bg-card", !agentOpen && "hidden")} onPointerEnter={refreshFrame}>
             <AgentChat
               askText={agentAsk}
               onAskConsumed={() => setAgentAsk(null)}

@@ -115,7 +115,7 @@ function toDisplay(stored: Array<Record<string, unknown>>, keepActions: boolean)
 }
 
 function toStored(messages: DisplayMessage[]) {
-  return messages.map(({ role, content, actions, applied, steps, notices, failedRequest }) => ({ role, content: content.slice(0, 16000), ...(actions?.length ? { actions } : {}), ...(applied?.length ? { applied } : {}), ...(steps?.length ? { steps: steps.map((step) => ({ ...step, label: step.label.slice(0, 300), summary: step.summary.slice(0, 400) })) } : {}), ...(notices?.length ? { notices } : {}), ...(failedRequest ? { failedRequest } : {}) }));
+  return messages.map(({ role, content, actions, applied, steps, notices, failedRequest }) => ({ role, content: content.slice(0, 16000), ...(actions?.length ? { actions } : {}), ...(applied?.length ? { applied } : {}), ...(steps?.length ? { steps: steps.map((step) => ({ ...step, label: step.label.slice(0, 300), summary: step.summary.slice(0, 400) })) } : {}), ...(notices?.length ? { notices } : {}), ...(failedRequest ? { failedRequest: { message: failedRequest.message, history: failedRequest.history.slice(-20) } } : {}) }));
 }
 
 function when(iso: string) {
@@ -128,7 +128,7 @@ function when(iso: string) {
  * 小欧's conversation, plan and memory — the floating window on every page
  * and the 网申浏览器's side panel (with the open page as context) both show this.
  */
-export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIONS, quickQuestions = DEFAULT_QUICK_QUESTIONS, intro, askText, onAskConsumed, onNavigate, className }: {
+export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIONS, quickQuestions = DEFAULT_QUICK_QUESTIONS, intro, askText, onAskConsumed, onNavigate, onReply, className }: {
   header: ReactNode;
   pageContext?: () => Promise<AgentPageContext | null>;
   suggestions?: string[];
@@ -138,6 +138,8 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
   askText?: string | null;
   onAskConsumed?: () => void;
   onNavigate?: () => void;
+  /** A turn finished (answered or failed) — for a dot when the panel is closed. */
+  onReply?: () => void;
   className?: string;
 }) {
   const [tab, setTab] = useState<Tab>("chat");
@@ -157,6 +159,9 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
   const busyRef = useRef(false);
   const threadRef = useRef<string | null>(null);
   const dirty = useRef(false);
+  // Bumped by 新对话 / opening a thread: a save still on its way for the
+  // previous thread must not bind the new one to that thread's id.
+  const generation = useRef(0);
 
   useEffect(() => { threadRef.current = threadId; }, [threadId]);
 
@@ -199,8 +204,12 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
     if (!loaded || sending || !messages.length || !dirty.current) return;
     const timer = setTimeout(async () => {
       dirty.current = false;
+      const started = generation.current;
       const res = await saveAgentConversation({ id: threadRef.current, messages: toStored(messages) });
-      if (res.ok) setThreadId(res.data.id);
+      if (res.ok && generation.current === started) {
+        threadRef.current = res.data.id;
+        setThreadId(res.data.id);
+      }
     }, 500);
     return () => clearTimeout(timer);
   }, [messages, loaded, sending]);
@@ -233,6 +242,8 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
   }
 
   function newChat() {
+    generation.current++;
+    threadRef.current = null;
     setMessages([]);
     nextId.current = 0;
     setThreadId(null);
@@ -240,6 +251,7 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
   }
 
   async function openThread(id: string) {
+    generation.current++;
     const res = await loadAgentConversation(id);
     if (!res.ok || !res.data) return void toast.error(res.ok ? "这段对话不在了" : res.message);
     // Buttons from an old thread are not offered again: the records have moved on.
@@ -303,6 +315,7 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
     setSending(true);
     try {
       const res = await runTurn(content, history);
+      onReply?.();
       if (res.ok) addMessage("assistant", res.reply, res.actions, res.steps, res.notices);
       else {
         // A failed call should be noticed even with the window scrolled away.
