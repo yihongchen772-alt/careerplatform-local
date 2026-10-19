@@ -86,6 +86,9 @@ export const EXTRA_FIELDS = [
   { key: "availableFrom", label: "最早到岗时间", hint: "2026-07 / 随时" },
   { key: "internshipDuration", label: "可实习时长", hint: "6 个月，每周 5 天" },
   { key: "wechat", label: "微信号", hint: "" },
+  // Seen typed by hand on 海尔 / 外企 forms after v1.22.
+  { key: "englishName", label: "英文名", hint: "Eason / Yihong Chen" },
+  { key: "exchange", label: "交换 / 海外经历", hint: "无 / 2023 春 某大学交换一学期" },
   { key: "address", label: "通讯地址", hint: "省 市 区 街道" },
   // Asked on most 校招 forms and missing before (seen filled by hand on 歌尔、中国移动、51job、Moka).
   { key: "researchDirection", label: "研究方向", hint: "强化学习控制 / 机器人运动控制" },

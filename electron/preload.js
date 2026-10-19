@@ -40,6 +40,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   saveCorrections: (resumeVersionId, onlyUserEdited, positionId, variantId, discover) => ipcRenderer.invoke("browser:save-corrections", resumeVersionId, onlyUserEdited, positionId, variantId, discover),
   captureSample: (note) => ipcRenderer.invoke("browser:capture-sample", note),
   fillStats: () => ipcRenderer.invoke("browser:fill-stats"),
+  fillField: (label, value, overwrite) => ipcRenderer.invoke("browser:fill-field", label, value, overwrite),
   openSamples: () => ipcRenderer.invoke("browser:open-samples"),
   clearMarks: () => ipcRenderer.invoke("browser:clear-marks"),
   capturePage: () => ipcRenderer.invoke("browser:capture-page"),

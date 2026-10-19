@@ -262,6 +262,24 @@ export function EmbeddedBrowser({
     return { url: snapshot.url.slice(0, 2000), title: (snapshot.title || "").slice(0, 300), text: (snapshot.text || "").slice(0, 6000), questions, positionId: positionId || snapshot.positionId || undefined };
   }, [bridge, positionId]);
 
+  // 小欧's 「填进这一栏」: text already in that box is replaced only after asking.
+  const fillDraft = useCallback(async (draft: { question: string; answer: string }) => {
+    if (!bridge?.fillField) return false;
+    try {
+      let res = await bridge.fillField(draft.question, draft.answer);
+      if (res.needsConfirm) {
+        if (!window.confirm("这一栏已经有内容了，用小欧写的替换掉吗？")) return false;
+        res = await bridge.fillField(draft.question, draft.answer, true);
+      }
+      if (!res.ok) { toast.error(res.reason || "没填进去，可以复制后自己粘贴"); return false; }
+      toast.success("已填进去（紫框标出），提交前再看一眼");
+      return true;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "没填进去");
+      return false;
+    }
+  }, [bridge]);
+
   // 「接着问小欧」 from elsewhere opens 小欧 here, beside the page.
   useEffect(() => {
     const ask = (event: Event) => {
@@ -1167,6 +1185,7 @@ export function EmbeddedBrowser({
               askText={agentAsk}
               onAskConsumed={() => setAgentAsk(null)}
               pageContext={agentPageContext}
+              onFillField={fillDraft}
               quickQuestions={AGENT_PAGE_QUESTIONS}
               suggestions={AGENT_PAGE_SUGGESTIONS}
               intro={<p className="text-sm text-muted-foreground">我能看到你正在看的这个页面：问我这个岗位值不值得投、这家公司怎么样，或者让我按你的经历写这页的开放题（写好点复制，粘贴进去）。</p>}

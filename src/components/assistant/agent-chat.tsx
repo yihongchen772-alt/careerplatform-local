@@ -25,12 +25,17 @@ type DisplayMessage = AssistantChatMessage & {
   /** Backup models used this turn ("…过载，改用 …"). */
   notices?: string[];
   failedRequest?: { message: string; history: AssistantChatMessage[] };
+  /** Answers drafted for the open page's questions (「填进这一栏」), and which went in. */
+  drafts?: PageDraft[];
+  filled?: number[];
 };
+
+export type PageDraft = { question: string; answer: string };
 
 /** The 网申 page open beside 小欧 (网申浏览器's side panel). */
 export type AgentPageContext = { url: string; title: string; text: string; questions: { label: string; value: string }[]; positionId?: string };
 
-type TurnResult = { ok: true; reply: string; actions: AssistantAction[]; steps: AgentStep[]; notices: string[] } | { ok: false; message: string };
+type TurnResult = { ok: true; reply: string; actions: AssistantAction[]; drafts: PageDraft[]; steps: AgentStep[]; notices: string[] } | { ok: false; message: string };
 type Tab = "chat" | "history" | "plan" | "memory";
 
 /** Where the chat lived before it was kept in the database (moved over once). */
@@ -95,7 +100,7 @@ async function streamTurn(message: string, history: AssistantChatMessage[], page
     for (const line of lines) {
       if (!line.trim()) continue;
       const event = JSON.parse(line);
-      if (event.type === "done") return { ok: true, reply: event.reply, actions: event.actions ?? [], steps: event.steps ?? [], notices: event.notices ?? [] };
+      if (event.type === "done") return { ok: true, reply: event.reply, actions: event.actions ?? [], drafts: event.drafts ?? [], steps: event.steps ?? [], notices: event.notices ?? [] };
       if (event.type === "error") return { ok: false, message: event.message };
       onEvent(event);
     }
@@ -110,12 +115,13 @@ function toDisplay(stored: Array<Record<string, unknown>>, keepActions: boolean)
       id, role: m.role as "user" | "assistant", content: String(m.content ?? ""), actions, applied: Array.isArray(m.applied) ? (m.applied as number[]) : [],
       steps: Array.isArray(m.steps) ? (m.steps as AgentStep[]) : undefined, notices: Array.isArray(m.notices) ? (m.notices as string[]) : undefined,
       failedRequest: m.failedRequest as DisplayMessage["failedRequest"],
+      drafts: Array.isArray(m.drafts) ? (m.drafts as PageDraft[]) : undefined, filled: Array.isArray(m.filled) ? (m.filled as number[]) : [],
     };
   });
 }
 
 function toStored(messages: DisplayMessage[]) {
-  return messages.map(({ role, content, actions, applied, steps, notices, failedRequest }) => ({ role, content: content.slice(0, 16000), ...(actions?.length ? { actions } : {}), ...(applied?.length ? { applied } : {}), ...(steps?.length ? { steps: steps.map((step) => ({ ...step, label: step.label.slice(0, 300), summary: step.summary.slice(0, 400) })) } : {}), ...(notices?.length ? { notices } : {}), ...(failedRequest ? { failedRequest: { message: failedRequest.message, history: failedRequest.history.slice(-20) } } : {}) }));
+  return messages.map(({ role, content, actions, applied, steps, notices, failedRequest, drafts, filled }) => ({ role, ...(drafts?.length ? { drafts, filled: filled ?? [] } : {}), content: content.slice(0, 16000), ...(actions?.length ? { actions } : {}), ...(applied?.length ? { applied } : {}), ...(steps?.length ? { steps: steps.map((step) => ({ ...step, label: step.label.slice(0, 300), summary: step.summary.slice(0, 400) })) } : {}), ...(notices?.length ? { notices } : {}), ...(failedRequest ? { failedRequest: { message: failedRequest.message, history: failedRequest.history.slice(-20) } } : {}) }));
 }
 
 function when(iso: string) {
@@ -128,7 +134,7 @@ function when(iso: string) {
  * 小欧's conversation, plan and memory — the floating window on every page
  * and the 网申浏览器's side panel (with the open page as context) both show this.
  */
-export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIONS, quickQuestions = DEFAULT_QUICK_QUESTIONS, intro, askText, onAskConsumed, onNavigate, onReply, className }: {
+export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIONS, quickQuestions = DEFAULT_QUICK_QUESTIONS, intro, askText, onAskConsumed, onNavigate, onReply, onFillField, className }: {
   header: ReactNode;
   pageContext?: () => Promise<AgentPageContext | null>;
   suggestions?: string[];
@@ -140,6 +146,8 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
   onNavigate?: () => void;
   /** A turn finished (answered or failed) — for a dot when the panel is closed. */
   onReply?: () => void;
+  /** 网申浏览器 only: writes a drafted answer into the page box with that question. */
+  onFillField?: (draft: PageDraft) => Promise<boolean>;
   className?: string;
 }) {
   const [tab, setTab] = useState<Tab>("chat");
@@ -236,9 +244,9 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
     setMessages(next);
   }
 
-  function addMessage(role: "user" | "assistant", content: string, actions?: AssistantAction[], steps?: AgentStep[], notices?: string[]) {
+  function addMessage(role: "user" | "assistant", content: string, actions?: AssistantAction[], steps?: AgentStep[], notices?: string[], drafts?: PageDraft[]) {
     const id = nextId.current++;
-    update((prev) => [...prev, { id, role, content, actions, steps, notices, applied: [] }]);
+    update((prev) => [...prev, { id, role, content, actions, steps, notices, applied: [], drafts: drafts?.length ? drafts : undefined, filled: [] }]);
   }
 
   function newChat() {
@@ -294,7 +302,7 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
       const res = await runTurn(message.failedRequest.message, message.failedRequest.history);
       if (!res.ok) toast.error(res.message);
       update((prev) => prev.map((m) => m.id !== message.id ? m : res.ok
-        ? { id: m.id, role: "assistant", content: res.reply, actions: res.actions, steps: res.steps, notices: res.notices, applied: [] }
+        ? { id: m.id, role: "assistant", content: res.reply, actions: res.actions, steps: res.steps, notices: res.notices, applied: [], drafts: res.drafts.length ? res.drafts : undefined, filled: [] }
         : { ...m, content: res.message }));
     } finally {
       busyRef.current = false;
@@ -316,7 +324,7 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
     try {
       const res = await runTurn(content, history);
       onReply?.();
-      if (res.ok) addMessage("assistant", res.reply, res.actions, res.steps, res.notices);
+      if (res.ok) addMessage("assistant", res.reply, res.actions, res.steps, res.notices, res.drafts);
       else {
         // A failed call should be noticed even with the window scrolled away.
         toast.error(res.message);
@@ -356,6 +364,12 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
     } catch {
       toast.error("复制失败，请手动选中文字复制");
     }
+  }
+
+  async function fillDraft(messageId: number, index: number, draft: PageDraft) {
+    if (!onFillField) return;
+    const ok = await onFillField(draft);
+    if (ok) update((prev) => prev.map((m) => (m.id === messageId ? { ...m, filled: [...(m.filled ?? []), index] } : m)));
   }
 
   async function savePlan() {
@@ -486,6 +500,21 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
                       <ol className="mt-2 space-y-1.5">{m.steps.map((step) => <StepLine key={step.id} step={step} onNavigate={onNavigate} />)}</ol>
                     </details>
                   )}
+
+                  {m.drafts?.map((draft, i) => {
+                    const done = m.filled?.includes(i);
+                    return (
+                      <div key={`d${i}`} className="space-y-1.5 rounded-lg border border-primary/30 bg-primary/5 p-2.5 text-xs">
+                        <p className="font-medium text-foreground">{draft.question}</p>
+                        <p className="max-h-40 overflow-y-auto whitespace-pre-wrap text-sm leading-6">{draft.answer}</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {onFillField && <Button size="sm" variant={done ? "outline" : "default"} onClick={() => fillDraft(m.id, i, draft)}>{done ? <><Check className="size-3.5" />已填进去（再填一次）</> : "填进这一栏"}</Button>}
+                          <Button size="sm" variant="ghost" onClick={() => copy(draft.answer)}><Copy className="size-3.5" />复制</Button>
+                          <span className="text-muted-foreground">{draft.answer.replace(/\s/g, "").length} 字</span>
+                        </div>
+                      </div>
+                    );
+                  })}
 
                   {m.actions?.map((action, i) => {
                     const done = m.applied?.includes(i);

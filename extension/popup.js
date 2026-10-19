@@ -419,3 +419,114 @@ $("resume").addEventListener("change", loadAssistant); $("variant").addEventList
 chrome.tabs.onActivated.addListener(() => { renderPlan(null); load(); });
 
 load();
+
+
+// ✨ 问小欧: the App's agent, with this tab as context. The chat stays for
+// this tab while the side panel is open (chrome.storage.session).
+const agentKey = () => `agent:${tab && tab.id}`;
+let agentHistory = [];
+let agentBusy = false;
+
+function agentBubble(kind, text) {
+  const div = document.createElement("div");
+  div.className = `bubble ${kind}`;
+  div.textContent = text;
+  $("agent-log").appendChild(div);
+  div.scrollIntoView({ block: "end" });
+  return div;
+}
+
+function agentDraft(draft) {
+  const box = document.createElement("div");
+  box.className = "draft";
+  const q = document.createElement("div"); q.className = "q"; q.textContent = draft.question;
+  const a = document.createElement("div"); a.className = "a"; a.textContent = draft.answer;
+  const row = document.createElement("div"); row.className = "row";
+  const fill = document.createElement("button"); fill.type = "button"; fill.className = "primary"; fill.textContent = "填进这一栏";
+  fill.addEventListener("click", async () => {
+    try {
+      let res = await send("fillField", { label: draft.question, value: draft.answer });
+      if (res.needsConfirm) {
+        if (!confirm("这一栏已经有内容了，用小欧写的替换掉吗？")) return;
+        res = await send("fillField", { label: draft.question, value: draft.answer, overwrite: true });
+      }
+      if (!res.ok) return message(res.reason || "没填进去，可以复制后自己粘贴", "error");
+      fill.textContent = "已填进去（再填一次）";
+      message("已填进去（紫框标出），提交前再看一眼");
+    } catch (error) { message(error.message, "error"); }
+  });
+  const copy = document.createElement("button"); copy.type = "button"; copy.textContent = "复制";
+  copy.addEventListener("click", () => navigator.clipboard.writeText(draft.answer).then(() => message("已复制")).catch(() => message("复制失败", "error")));
+  row.append(fill, copy);
+  box.append(q, a, row);
+  $("agent-log").appendChild(box);
+}
+
+function renderAgent() {
+  $("agent-log").textContent = "";
+  for (const item of agentHistory) {
+    agentBubble(item.role === "user" ? "user" : "ai", item.content);
+    for (const draft of item.drafts || []) agentDraft(draft);
+  }
+}
+
+async function loadAgent() {
+  if (!tab) return;
+  agentHistory = (await chrome.storage.session.get(agentKey()))[agentKey()] || [];
+  renderAgent();
+}
+
+async function askAgent(text) {
+  const content = String(text || "").trim();
+  if (!content || agentBusy) return;
+  agentBusy = true;
+  $("agent-send").disabled = true;
+  const history = agentHistory.map(({ role, content }) => ({ role, content })).slice(-20);
+  agentHistory.push({ role: "user", content });
+  agentBubble("user", content);
+  const working = agentBubble("working", "小欧在想该怎么做…");
+  try {
+    const page = await send("pageContext").catch(() => null);
+    const { appBase, token } = await chrome.storage.local.get(["appBase", "token"]);
+    const res = await fetch(`${appBase || "http://localhost:3210"}/api/extension/agent`, { method: "POST", headers: { "Content-Type": "application/json", "x-jobcompass-token": token || "" }, body: JSON.stringify({ message: content, history, ...(page ? { page } : {}) }) });
+    if (!res.ok || !res.body) throw new Error((await res.json().catch(() => ({}))).error || "小欧暂时连不上，请确认求职罗盘 App 开着");
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "", done = null;
+    while (!done) {
+      const chunk = await reader.read();
+      buffer += decoder.decode(chunk.value, { stream: !chunk.done });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const event = JSON.parse(line);
+        if (event.type === "step" && event.step) working.textContent = `小欧正在做：${event.step.label}`;
+        else if (event.type === "note" && event.text) working.textContent = event.text;
+        else if (event.type === "done" || event.type === "error") done = event;
+      }
+      if (chunk.done && !done) throw new Error("连接中断，本次请求未完成");
+    }
+    working.remove();
+    if (done.type === "error") throw new Error(done.message);
+    const reply = { role: "assistant", content: done.reply, drafts: done.drafts || [] };
+    agentHistory.push(reply);
+    agentBubble("ai", reply.content);
+    for (const draft of reply.drafts) agentDraft(draft);
+    if (done.actions && done.actions.length) agentBubble("working", "小欧建议改的记录（记投递、改进度等）请在求职罗盘 App 里的小欧点按钮确认。");
+  } catch (error) {
+    working.remove();
+    agentBubble("error", error.message || "小欧这次没跑完");
+    agentHistory.pop();
+  } finally {
+    agentBusy = false;
+    $("agent-send").disabled = false;
+    chrome.storage.session.set({ [agentKey()]: agentHistory.slice(-40) }).catch(() => {});
+  }
+}
+
+$("agent-send").addEventListener("click", () => { const text = $("agent-input").value; $("agent-input").value = ""; askAgent(text); });
+$("agent-input").addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); $("agent-send").click(); } });
+$("agent-clear").addEventListener("click", () => { agentHistory = []; renderAgent(); chrome.storage.session.remove(agentKey()).catch(() => {}); });
+for (const chip of document.querySelectorAll("[data-ask]")) chip.addEventListener("click", () => askAgent(chip.dataset.ask));
+$("agent").addEventListener("toggle", () => { if ($("agent").open) loadAgent(); });

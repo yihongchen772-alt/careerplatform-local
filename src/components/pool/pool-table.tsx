@@ -1,6 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useStoredChoice } from "@/components/applications/use-stored-choice";
+import { askXiaoOu } from "@/components/dashboard/agent-brief-card";
+import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -208,6 +211,8 @@ function toEditInitial(p: PoolPosition) {
   };
 }
 
+const POOL_SCOPES = ["todo", "applied", "all"] as const;
+
 export function PoolTable({
   positions,
   resumeVersions,
@@ -234,6 +239,10 @@ export function PoolTable({
   const [city, setCity] = useState(ALL);
   const [track, setTrack] = useState(ALL);
   const [sort, setSort] = useState<SortKey>("score");
+  // 候选池 is for what is still to apply to; applied ones are one click away.
+  const [scope, setScope] = useStoredChoice("careerplatform.pool.scope", POOL_SCOPES, "todo");
+  const todoCount = positions.filter((p) => p.status !== "APPLIED").length;
+  const appliedCount = positions.length - todoCount;
 
   const cities = useMemo(
     () => [...new Set(positions.map((p) => p.location).filter(Boolean))].sort() as string[],
@@ -247,6 +256,8 @@ export function PoolTable({
   const sorted = useMemo(() => {
     const needle = q.trim().toLowerCase();
     const filtered = positions.filter((p) => {
+      if (scope === "todo" && p.status === "APPLIED") return false;
+      if (scope === "applied" && p.status !== "APPLIED") return false;
       if (city !== ALL && p.location !== city) return false;
       if (track !== ALL && p.track !== track) return false;
       if (!needle) return true;
@@ -268,7 +279,7 @@ export function PoolTable({
       }
       return 0;
     });
-  }, [positions, q, city, track, sort, historyByTrack]);
+  }, [positions, q, city, track, sort, historyByTrack, scope]);
   // A column of dashes says nothing; only shown once some position has a salary.
   const anySalary = sorted.some((p) => p.salaryMin || p.salaryMax);
   const markable = sorted.filter((p) => p.status !== "APPLIED");
@@ -308,6 +319,11 @@ export function PoolTable({
     <>
       {positions.length > 0 && (
         <div className="mb-3 flex flex-wrap items-center gap-2">
+          <div className="inline-flex shrink-0 gap-1 rounded-full border border-border/70 bg-card/75 p-1" role="group" aria-label="看哪些岗位">
+            {([["todo", "还没投", todoCount], ["applied", "已投递", appliedCount], ["all", "全部", positions.length]] as const).map(([id, label, count]) => (
+              <button key={id} type="button" aria-pressed={scope === id} onClick={() => { setScope(id); setSelected(new Set()); }} className={cn("h-7 rounded-full px-3 text-xs font-medium transition-colors", scope === id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}>{label} {count}</button>
+            ))}
+          </div>
           <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -494,7 +510,9 @@ export function PoolTable({
             <span className="text-sm">
               {positions.length === 0
                 ? "候选池为空，先添加一个感兴趣的岗位吧"
-                : "当前筛选条件下没有岗位"}
+                : scope === "todo" && todoCount === 0
+                  ? <>还没投的岗位都在这里。现在 {appliedCount} 个都投过了——<Link href="/leads" className="text-primary underline">去秋招信息库挑</Link>，或者<button type="button" className="text-primary underline" onClick={() => askXiaoOu("按我的方向和意向城市，去官网找几个新岗位")}>让小欧找几个新岗位</button>。</>
+                  : "当前筛选条件下没有岗位"}
             </span>
           </div>
         )}

@@ -79,6 +79,8 @@ export async function GET(request: Request) {
     english: structured.extras.english || englishFromLanguages(structured.languages ?? []) || null,
     currentCity: structured.extras.currentCity || null,
     country: structured.extras.country || null,
+    englishName: structured.extras.englishName || null,
+    exchange: structured.extras.exchange || null,
     targetRole: structured.extras.targetRole || null,
     selfIntro: structured.extras.selfIntro || null,
     expectedSalary: structured.extras.expectedSalary || null,

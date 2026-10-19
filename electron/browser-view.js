@@ -1068,6 +1068,29 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
   // Settings → 浏览器插件: put an unpacked copy of the extension in a stable,
   // visible folder Chrome can keep loading across app updates, and show it,
   // for chrome://extensions → 加载已解压的扩展程序.
+  // 小欧's 「填进这一栏」: one drafted answer into the page box with that
+  // question. A box already holding text is only replaced when asked.
+  handle("browser:fill-field", async (_e, label, value, overwrite = false) => {
+    const tab = activeTab();
+    if (!tab) throw new Error("先打开网申页面");
+    if (typeof label !== "string" || typeof value !== "string" || !value.trim() || value.length > 20000) throw new Error("回答内容不对");
+    const { fields, frameById } = await scanAllFrames(tab.view.webContents);
+    const norm = (text) => String(text || "").normalize("NFKC").replace(/[\s*＊:：?？。.，,、（）()「」“”"'【】\[\]]/g, "").toLowerCase();
+    const want = norm(label);
+    const boxes = fields.filter((field) => ["input", "textarea", "richtext"].includes(field.tag) && !field.options && !["date", "month", "number", "email", "tel"].includes(field.type));
+    const field = boxes.find((item) => norm(item.label) === want)
+      || boxes.find((item) => { const own = norm(item.label); return own.length >= 6 && (own.includes(want.slice(0, 24)) || want.includes(own)); });
+    if (!field) return { ok: false, reason: "没在页面上找到这道题，可能换页了；可以复制后自己粘贴" };
+    if (field.hasValue && !overwrite) return { ok: false, needsConfirm: true };
+    const frame = frameById.get(field.id);
+    if (field.hasValue) {
+      await frame.executeJavaScript(`(() => { const el = document.querySelector('[data-cp-fill-id="${field.id}"]'); if (!el) return; el.removeAttribute("data-cp-user-edited"); const setter = Object.getOwnPropertyDescriptor(el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype, "value"); if (setter && "value" in el) { setter.set.call(el, ""); el.dispatchEvent(new Event("input", { bubbles: true })); } else if (el.isContentEditable) { el.textContent = ""; } })()`).catch(() => {});
+    }
+    const result = await frame.executeJavaScript(`(${fillFields.toString()})(${JSON.stringify([{ id: field.id, value, source: "ai", label: field.label, tag: field.tag }])})`);
+    await frame.executeJavaScript(`(${focusFormField.toString()})(${JSON.stringify(field.id)})`).catch(() => {});
+    return { ok: !!result?.filled?.includes(field.id), reason: result?.filled?.includes(field.id) ? undefined : "这一栏没填进去，可以复制后自己粘贴" };
+  });
+
   handle("browser:fill-stats", () => {
     const dir = sampleDir();
     let stats = {};

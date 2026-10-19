@@ -38,3 +38,16 @@ form { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1p
 #plan fieldset { margin: 8px 0; border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
 #plan textarea { width: 100%; min-height: 70px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); }
 #profile-cards button { display: block; width: 100%; margin: 6px 0; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+#agent-log { display: flex; flex-direction: column; gap: 6px; max-height: 420px; overflow-y: auto; margin: 6px 0; }
+.bubble { border-radius: 8px; padding: 6px 8px; white-space: pre-wrap; line-height: 1.5; }
+.bubble.user { background: #eef2ff; align-self: flex-end; max-width: 90%; }
+.bubble.ai { background: #f4f4f5; }
+.bubble.error { background: #fef2f2; color: #b91c1c; }
+.bubble.working { color: #71717a; font-size: 12px; }
+.draft { border: 1px solid #c7d2fe; background: #f5f7ff; border-radius: 8px; padding: 6px 8px; }
+.draft .q { font-weight: 600; margin-bottom: 4px; }
+.draft .a { white-space: pre-wrap; max-height: 160px; overflow-y: auto; line-height: 1.5; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+.chip { font-size: 12px; padding: 2px 8px; border-radius: 999px; }
+#agent-input { width: 100%; box-sizing: border-box; }

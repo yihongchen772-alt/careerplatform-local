@@ -829,6 +829,8 @@ main h1 {
   background: var(--soft-tile-strong);
   border-bottom-color: transparent;
 }
+/* A sticky 操作 column keeps the tint (over an opaque card, for rows scrolling beneath). */
+[data-style="soft"] [data-slot="table-header"] [data-slot="table-head"].sticky { background: linear-gradient(var(--soft-tile-strong), var(--soft-tile-strong)), var(--card); }
 [data-style="soft"] [data-slot="table-header"] [data-slot="table-head"]:first-child { border-top-left-radius: 0.85rem; border-bottom-left-radius: 0.85rem; }
 [data-style="soft"] [data-slot="table-header"] [data-slot="table-head"]:last-child { border-top-right-radius: 0.85rem; border-bottom-right-radius: 0.85rem; }
 [data-style="soft"] [data-slot="table-body"] [data-slot="table-row"] {

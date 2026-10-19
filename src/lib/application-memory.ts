@@ -43,6 +43,8 @@ export function normalizeMemoryText(value: string): string {
 
 export function memoryValueKey(key: string, value: string): string {
   const text = normalizeMemoryText(value);
+  // 「新加坡国立大学（NUS）」 and 「新加坡国立大学」 are one school.
+  if (key === "school" || key === "company") return text.replace(/\s*[（(][^）)]*[）)]\s*/g, "").trim() || text;
   if (!["start", "end", "date"].includes(key)) return text;
   if (/^(?:至今|现在|目前|present|current|now)$/.test(text)) return "present";
   const match = /^(\d{4})(?:[年./-](\d{1,2})(?:月)?(?:[月./-](\d{1,2})(?:日)?)?)?$/.exec(text);

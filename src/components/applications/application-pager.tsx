@@ -35,7 +35,8 @@ export function ApplicationPager({ id, fallbackIds }: { id: string; fallbackIds:
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [previous, next, router]);
 
-  const step = "inline-flex h-7 items-center gap-0.5 rounded-full border border-border/70 bg-background/60 px-2.5 text-xs font-medium transition-colors";
+  // currentColor-based so it reads on the gradient 页头 (white text) and on plain ones alike.
+  const step = "inline-flex h-7 items-center gap-0.5 rounded-full border border-current/25 bg-current/10 px-2.5 text-xs font-medium text-current transition-colors";
   return (
     <div className="flex flex-wrap items-center justify-between gap-2">
       <Link href={order.href} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
@@ -44,9 +45,9 @@ export function ApplicationPager({ id, fallbackIds }: { id: string; fallbackIds:
       </Link>
       {index >= 0 && order.ids.length > 1 && (
         <nav className="flex items-center gap-1.5" aria-label="上一条 / 下一条投递">
-          {previous ? <Link href={`/applications/${previous}`} className={cn(step, "hover:bg-muted")} title="上一条（←）"><ChevronLeft className="size-3.5" />上一条</Link> : <span className={cn(step, "opacity-40")}><ChevronLeft className="size-3.5" />上一条</span>}
-          <span className="px-1 text-xs tabular-nums text-muted-foreground">{index + 1} / {order.ids.length}</span>
-          {next ? <Link href={`/applications/${next}`} className={cn(step, "hover:bg-muted")} title="下一条（→）">下一条<ChevronRight className="size-3.5" /></Link> : <span className={cn(step, "opacity-40")}>下一条<ChevronRight className="size-3.5" /></span>}
+          {previous ? <Link href={`/applications/${previous}`} className={cn(step, "hover:bg-current/20")} title="上一条（←）"><ChevronLeft className="size-3.5" />上一条</Link> : <span className={cn(step, "opacity-40")}><ChevronLeft className="size-3.5" />上一条</span>}
+          <span className="px-1 text-xs tabular-nums opacity-75">{index + 1} / {order.ids.length}</span>
+          {next ? <Link href={`/applications/${next}`} className={cn(step, "hover:bg-current/20")} title="下一条（→）">下一条<ChevronRight className="size-3.5" /></Link> : <span className={cn(step, "opacity-40")}>下一条<ChevronRight className="size-3.5" /></span>}
         </nav>
       )}
     </div>

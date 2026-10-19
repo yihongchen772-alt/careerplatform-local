@@ -46,6 +46,8 @@ const LABEL_KEYS: Array<[RegExp, string, RegExp?]> = [
   [/籍贯|户口所在地/, "hometown", /地址|详细/],
   [/民族/, "ethnicity"],
   [/微信/, "wechat"],
+  [/英文名|英文姓名|englishname/i, "englishName", /拼音|姓氏/],
+  [/交换生?经历|海外交换|交换学习|海外(?:学习)?经历/, "exchange", /是否接受|愿意|意向/],
   [/期望(?:月|年)?薪|薪资要求|薪资期望|期望待遇/, "expectedSalary"],
   [/到岗|可入职|最早入职/, "availableFrom"],
   [/实习时长|实习周期|可实习时间/, "internshipDuration"],

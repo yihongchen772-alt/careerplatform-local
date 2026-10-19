@@ -21,6 +21,8 @@ const messageSchema = z.object({
   applied: z.array(z.number().int()).max(12).optional(),
   steps: z.array(stepSchema).max(40).optional(),
   notices: z.array(z.string().max(300)).max(6).optional(),
+  drafts: z.array(z.object({ question: z.string().max(500), answer: z.string().max(6000) })).max(20).optional(),
+  filled: z.array(z.number().int()).max(20).optional(),
   failedRequest: z.object({ message: z.string().max(6000), history: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(16000) })).max(100) }).optional(),
 });
 export type StoredAgentMessage = z.infer<typeof messageSchema>;

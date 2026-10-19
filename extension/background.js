@@ -171,12 +171,18 @@ async function fillTab(tabId, options) {
     task.positionId = options.positionId ?? session[`job:${tabId}`];
     if (options.mode === "apply") return await core.applyAutofillPlan(adapter, options);
     await chrome.storage.session.set({ [`archive:${tabId}`]: { resumeVersionId: resumeVersionId || undefined, variantId: options.variantId ?? prefs.variantId, positionId: task.positionId, contextKey: task.positionId ? `job:v1:${task.positionId}` : core.portalContext(adapter.url()) } });
-    return await core.runAutofillCore(adapter, resumeVersionId || undefined, {
+    const result = await core.runAutofillCore(adapter, resumeVersionId || undefined, {
       mode: options.mode, questionIds: options.questionIds, previewEdits: options.previewEdits, positionId: task.positionId, regenerate: options.regenerate, answerLength: options.answerLength,
       variantId: options.variantId ?? prefs.variantId ?? undefined,
       expandBlocks: options.expandBlocks ?? !!prefs.expandBlocks,
       modules: options.modules ?? prefs.fillModules,
     });
+    // 填写统计: what this fill did, and when (a later hand-typed page saves a sample).
+    if (result?.phase === "done" && result.summary) {
+      chrome.storage.session.set({ [`filled-at:${tabId}`]: Date.now() }).catch(() => {});
+      api("fill-stats", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: adapter.url(), fills: 1, filled: result.summary.filled || 0, manual: result.summary.manual || 0 }) }).catch(() => {});
+    }
+    return result;
   } catch (err) {
     const status = { phase: "error", message: task.reason || err.message || "填写失败" };
     broadcast(tabId, status);
@@ -188,6 +194,75 @@ async function fillTab(tabId, options) {
     running.delete(tabId);
     tasks.delete(tabId);
   }
+}
+
+// Several boxes typed by hand after 一键填写 = boxes it missed: the page's
+// structure (never the values) goes to 网申样本 in the App, one per page a day.
+const AUTO_SAMPLE_TYPED = 3;
+
+async function captureSample(tabId, note) {
+  const tab = await chrome.tabs.get(tabId);
+  const url = new URL(tab.url);
+  const frames = [];
+  for (const frameId of await tabFrames(tabId)) {
+    try {
+      const fields = (await runInFrame(tabId, frameId, core.scanPageFields, ["s-", true])) || [];
+      const html = await runInFrame(tabId, frameId, core.formSkeleton);
+      frames.push({
+        url: frameId === 0 ? `${url.origin}${url.pathname}` : "",
+        fields: fields.map((f) => ({ tag: f.tag, type: f.type, label: f.label, placeholder: f.placeholder, name: f.name, section: f.section, options: f.options, required: f.required, maxLength: f.maxLength, hadValue: !!f.hasValue, savedEntries: f.savedEntries ? f.savedEntries.length : 0, blockKey: f.blockKey ? "yes" : undefined })),
+        html: typeof html === "string" ? html.slice(0, 400000) : undefined,
+      });
+    } catch { /* A frame that refuses scripts has no form to show. */ }
+  }
+  if (!frames.some((frame) => frame.fields.length)) return;
+  return jsonOrThrow(await api("sample", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ page: `${url.origin}${url.pathname}`, title: (tab.title || "").slice(0, 300), note, frames: frames.slice(0, 20) }) }));
+}
+
+// A 网申 box asking something to write, not a fact: what 小欧 can draft.
+const OPEN_QUESTION = /[?？]|请(?:简述|描述|介绍|谈谈|说明|列举|举例)|为什么|为何|如何|怎样|谈谈|简述|描述|介绍一下|你的|你在|经历中|why|how|describe|tell us|explain/i;
+
+/** What 小欧 sees of the tab: title, address, visible text and the open questions on it. */
+async function pageContext(tabId) {
+  const tab = await chrome.tabs.get(tabId);
+  if (!/^https?:/i.test(tab.url || "")) return null;
+  const text = (await runInFrame(tabId, 0, () => (document.body ? document.body.innerText : "").replace(/\s+\n/g, "\n").slice(0, 6000)).catch(() => "")) || "";
+  const questions = [];
+  for (const frameId of await tabFrames(tabId)) {
+    const fields = (await runInFrame(tabId, frameId, core.scanPageFields, ["s-", true]).catch(() => [])) || [];
+    for (const field of fields) if ((field.label || "").length >= 6 && OPEN_QUESTION.test(field.label) && questions.length < 20) questions.push({ label: field.label.slice(0, 500), value: String(field.currentValue || "").slice(0, 3000) });
+  }
+  const positionId = (await chrome.storage.session.get(`job:${tabId}`))[`job:${tabId}`] || undefined;
+  return { url: tab.url.slice(0, 2000), title: (tab.title || "").slice(0, 300), text, questions, positionId };
+}
+
+/** 小欧's 「填进这一栏」: the drafted answer into the box with that question. */
+async function fillField(tabId, label, value, overwrite) {
+  const norm = (text) => String(text || "").normalize("NFKC").replace(/[\s*＊:：?？。.，,、（）()「」“”"'【】[\]]/g, "").toLowerCase();
+  const want = norm(label);
+  const run = Date.now().toString(36).slice(-4);
+  const frames = await tabFrames(tabId);
+  for (const [index, frameId] of frames.entries()) {
+    const fields = (await runInFrame(tabId, frameId, core.scanPageFields, [`x${index}${run}-`]).catch(() => [])) || [];
+    const boxes = fields.filter((field) => ["input", "textarea", "richtext"].includes(field.tag) && !field.options && !["date", "month", "number", "email", "tel"].includes(field.type));
+    const field = boxes.find((item) => norm(item.label) === want) || boxes.find((item) => { const own = norm(item.label); return own.length >= 6 && (own.includes(want.slice(0, 24)) || want.includes(own)); });
+    if (!field) continue;
+    if (field.hasValue && !overwrite) return { ok: false, needsConfirm: true };
+    if (field.hasValue) {
+      await runInFrame(tabId, frameId, (id) => {
+        const el = document.querySelector(`[data-cp-fill-id="${id}"]`);
+        if (!el) return;
+        el.removeAttribute("data-cp-user-edited");
+        const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+        const setter = Object.getOwnPropertyDescriptor(proto, "value");
+        if (setter && "value" in el) { setter.set.call(el, ""); el.dispatchEvent(new Event("input", { bubbles: true })); } else if (el.isContentEditable) el.textContent = "";
+      }, [field.id]).catch(() => {});
+    }
+    const result = await runInFrame(tabId, frameId, core.fillFields, [[{ id: field.id, value, source: "ai", label: field.label, tag: field.tag }]]);
+    await runInFrame(tabId, frameId, core.focusFormField, [field.id]).catch(() => {});
+    return result?.filled?.includes(field.id) ? { ok: true } : { ok: false, reason: "这一栏没填进去，可以复制后自己粘贴" };
+  }
+  return { ok: false, reason: "没在页面上找到这道题，可能换页了；可以复制后自己粘贴" };
 }
 
 function cancelFill(tabId, reason = "已停止填写，已填入的内容保留") {
@@ -205,7 +280,14 @@ async function saveTab(tabId, onlyUserEdited = false) {
   try {
     const context = await adapterFor(tabId); dispose = context.dispose;
     const { resumeVersionId, variantId, autoRemember } = await settings();
-    return await core.saveCorrectionsCore(context.adapter, resumeVersionId || undefined, onlyUserEdited, variantId || undefined, !onlyUserEdited || autoRemember !== false);
+    const result = await core.saveCorrectionsCore(context.adapter, resumeVersionId || undefined, onlyUserEdited, variantId || undefined, !onlyUserEdited || autoRemember !== false);
+    if (result?.handTyped) {
+      const url = context.adapter.url();
+      api("fill-stats", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url, typed: result.handTyped }) }).catch(() => {});
+      const filledAt = (await chrome.storage.session.get(`filled-at:${tabId}`))[`filled-at:${tabId}`];
+      if (result.handTyped >= AUTO_SAMPLE_TYPED && filledAt && Date.now() - filledAt < 6 * 3_600_000) captureSample(tabId, `自动保存（插件）：一键填写后手填了 ${result.handTyped} 个字段`).catch(() => {});
+    }
+    return result;
   } finally {
     dispose?.(); remembering.delete(tabId);
   }
@@ -291,6 +373,11 @@ async function submittedFields(tabId, url) {
 }
 
 const handlers = {
+  async pageContext({ tabId }) { return pageContext(tabId); },
+  async fillField({ tabId, label, value, overwrite }) {
+    if (typeof label !== "string" || typeof value !== "string" || !value.trim() || value.length > 20000) throw new Error("回答内容不对");
+    return fillField(tabId, label, value, overwrite === true);
+  },
   async watchMemory({ tabId, enabled }) { return watchMemory(tabId, enabled === true); },
   async undoLearned({ tabId, ids }) {
     const result = await jsonOrThrow(await api("undo-learned", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) }));

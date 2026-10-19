@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,6 +37,15 @@ export function AddStageForm({
   const [schedule, setSchedule] = useState<ScheduleDraft>(EMPTY_SCHEDULE);
   const [pendingFiles, setPendingFiles] = useState<{ url: string; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
+  // The whole form stood open on every 投递 although 改进度 covers most
+  // updates; it opens on demand (or from a 「记录进展」 link to #add-stage).
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const check = () => { if (window.location.hash === "#add-stage") setOpen(true); };
+    check();
+    window.addEventListener("hashchange", check);
+    return () => window.removeEventListener("hashchange", check);
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -77,9 +87,23 @@ export function AddStageForm({
     }
   }
 
+  if (!open) {
+    return (
+      <div id="add-stage" className="scroll-mt-24 rounded-md border p-4">
+        <button type="button" onClick={() => setOpen(true)} className="flex w-full items-center gap-3 text-left" aria-expanded={false}>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-medium">记录企业进展</span>
+            <span className="mt-0.5 block text-xs text-muted-foreground">进了一面、收到测评、被拒了…… 一般点页头的「改进度」就够；要写面试形式、面试官、复盘笔记或附件时在这里记。</span>
+          </span>
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium">手动记一轮<ChevronDown className="size-3.5" /></span>
+        </button>
+      </div>
+    );
+  }
+
   return (
     <form id="add-stage" onSubmit={handleSubmit} className="scroll-mt-24 space-y-3 rounded-md border p-4">
-      <p className="text-sm font-medium">记录企业进展</p>
+      <div className="flex items-center justify-between gap-2"><p className="text-sm font-medium">记录企业进展</p><button type="button" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setOpen(false)}>收起</button></div>
       <p className="text-xs text-muted-foreground">企业流程不固定。先选宽泛类别，再写官网或邮件里的实际阶段；可跳步、重复或直接记录未通过。</p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {["REJECTED", "WITHDRAWN", "CANCELLED"].includes(stage) && <label className="space-y-1 text-sm">在哪个阶段结束<select className="block w-full rounded border bg-background p-2" value={endedStage} onChange={(e) => setEndedStage(e.target.value)}><option value="">未记录</option>{Object.entries(STAGE_LABELS).filter(([key]) => !["REJECTED", "WITHDRAWN", "CANCELLED", "ACCEPTED", "DECLINED"].includes(key)).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>}

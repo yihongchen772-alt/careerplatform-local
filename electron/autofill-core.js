@@ -1371,6 +1371,8 @@ const BASIC_FIELD_RULES = [
   { keys: ["姓名", "真实姓名", "name"], not: /拼音|英文|外文|曾用名|别名|昵称|用户名|账号|登录|签名|pinyin|english|romani[sz]|alias|nick|preferred|user ?name|login|account|school|university|college|company|employer|organi[sz]ation|project|award|course|program|position|job|file/i, get: (p) => p.name },
   { keys: ["手机", "电话", "联系电话", "联系方式", "phone", "mobile", "tel", "telephone", "cell"], not: /固定电话|座机|固话|家庭电话|办公电话|单位电话|传真|区号|分机|国家|地区代码|类型|landline|home phone|work phone|office phone|fax|area code|country|dialing|extension|device|type/i, get: (p) => p.phone, phone: true },
   { keys: ["邮箱", "电子邮件", "邮件地址", "email", "e-mail"], not: /mailing|postal|邮编|邮政/i, get: (p) => p.email },
+  // A free 英文名 box (Eason / Yihong Chen) — not a first / last name split, which stays manual.
+  { keys: ["英文名", "英文姓名", "英文名字", "english name"], not: /拼音|姓氏|first|last|given|family|surname/i, get: (p) => p.englishName, learn: "englishName" },
   { keys: ["性别", "gender", "sex"], get: (p) => p.gender },
   // exactDay: a birthday is never padded to the 1st the way 入学时间 is.
   { keys: ["出生日期", "出生年月", "生日", "birth", "birthday", "birthdate"], not: /地点|出生地|place|city|country|province|省份|籍贯/i, get: (p) => p.birthDate, date: true, exactDay: true },
@@ -1403,6 +1405,8 @@ const BASIC_FIELD_RULES = [
   { keys: ["成绩排名", "专业排名", "绩点排名", "年级排名", "班级排名", "排名"], not: /学校|院校|企业|公司|职位|岗位/, get: (p) => p.rank, learn: "rank" },
   { keys: ["主修课程", "专业课程", "核心课程", "主要课程"], get: (p) => p.courses, learn: "courses" },
   { keys: ["是否接受调剂", "服从调剂", "接受调剂", "岗位调剂", "是否服从"], not: /工作地|城市|地点/, get: (p) => p.acceptAdjust, learn: "acceptAdjust" },
+  // 是否有交换生经历 (是 / 否) or a box for the exchange itself.
+  { keys: ["交换生经历", "交换经历", "海外交换", "交换学习", "海外经历", "海外学习经历"], not: /是否接受|愿意|意向/, get: (p) => p.exchange, learn: "exchange", yesNo: true },
   { keys: ["是否学生干部", "是否担任学生干部", "是否担任过学生干部", "是否为学生干部"], get: (p) => (p.campus || []).some((row) => row.role) ? "是" : null },
   // Seen filled by hand on 腾讯、网易、歌尔、中国移动 after v1.20.
   { keys: ["个人主页", "个人网站", "作品链接", "作品集链接", "作品地址", "个人博客", "github", "portfolio", "personal website"], not: /linkedin|领英/i, get: (p) => p.homepage, learn: "homepage" },
@@ -2431,6 +2435,13 @@ function matchFlatField(field, profile) {
     if (rule.date) value = formatDateForField(field, value) || (field.options ? value : "");
     if (!value) continue;
     if (rule.englishName) value = placeForField(field, value);
+    // A yes / no choice takes 否 for 「无」 and 是 for anything describing one.
+    if (rule.yesNo && field.options?.length && field.options.every((option) => /^(?:是|否|有|无|没有|yes|no)$/i.test(String(option).trim()))) {
+      const none = /^(?:无|否|没有|暂无|no|none|n\/?a)$/i.test(String(value).trim());
+      const found = field.options.find((option) => (none ? /^(?:否|无|没有|no)$/i : /^(?:是|有|yes)$/i).test(String(option).trim()));
+      if (found) return found;
+      continue;
+    }
     // A choice field still has to hit one of its own options.
     const matched = rule.degree ? matchDegreeOption(field, value) : matchFieldOption(field, value);
     if (matched) return matched;
@@ -3142,7 +3153,7 @@ async function saveCorrectionsCore(adapter, resumeVersionId, onlyUserEdited = fa
 // Values are referenced from the saved profile, never reconstructed by the model.
 function profileChoices(profile) {
   const choices = [];
-  const labels = { name: "姓名", phone: "手机", email: "邮箱", gender: "性别", birthDate: "出生日期", currentCity: "现居地", country: "所在国家 / 地区", targetRole: "期望岗位", selfIntro: "自我评价", politics: "政治面貌", hometown: "籍贯", ethnicity: "民族", english: "英语水平", wechat: "微信号", qq: "QQ 号", expectedSalary: "期望薪资", availableFrom: "最早到岗时间", internshipDuration: "可实习时长", address: "通讯地址", researchDirection: "研究方向", rank: "成绩排名", acceptAdjust: "是否接受调剂", courses: "主修课程", homepage: "个人主页 / 作品链接", lab: "实验室 / 课题组", hobbies: "兴趣爱好", thesis: "毕业论文" };
+  const labels = { name: "姓名", phone: "手机", email: "邮箱", gender: "性别", birthDate: "出生日期", currentCity: "现居地", country: "所在国家 / 地区", englishName: "英文名", exchange: "交换 / 海外经历", targetRole: "期望岗位", selfIntro: "自我评价", politics: "政治面貌", hometown: "籍贯", ethnicity: "民族", english: "英语水平", wechat: "微信号", qq: "QQ 号", expectedSalary: "期望薪资", availableFrom: "最早到岗时间", internshipDuration: "可实习时长", address: "通讯地址", researchDirection: "研究方向", rank: "成绩排名", acceptAdjust: "是否接受调剂", courses: "主修课程", homepage: "个人主页 / 作品链接", lab: "实验室 / 课题组", hobbies: "兴趣爱好", thesis: "毕业论文" };
   for (const [ref, label] of Object.entries(labels)) if (profile[ref]) choices.push({ ref, label, value: String(profile[ref]) });
   const columns = { school: "学校", major: "专业", department: "院系 / 部门", degree: "学历", gpa: "GPA", start: "开始时间", end: "结束时间", company: "公司", role: "角色/职位", name: "名称", description: "描述", responsibilities: "职责", issuer: "颁发单位", level: "等级 / 程度", category: "类别", date: "日期", language: "语种", score: "分数" };
   for (const [group, label] of [["education", "教育"], ["experience", "工作/实习"], ["project", "项目"], ["award", "获奖"], ["campus", "校园经历"], ["skill", "技能"], ["language", "语言"]]) {

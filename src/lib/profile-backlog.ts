@@ -74,6 +74,20 @@ export async function markBacklogSeen(userId: string, ids: string[]) {
   });
 }
 
+// Boxes 网申资料 now fills by itself (from 校园经历 / 获奖情况 rows): nothing to review.
+const CADRE_QUESTION = /^是否(?:担任|为)?(?:过)?学生干部$/;
+const CAMPUS_BOX = /^(?:校内活动|校园活动|在校活动|校园经历|校内经历|在校经历|学生工作|社团经历|学生干部经历)$/;
+const AWARD_BOX = /^(?:受到(?:的)?奖励|获奖情况|获奖经历|所获(?:奖励|荣誉|奖项)|荣誉奖励|奖励情况)$/;
+
+export function coveredByProfile(row: { kind: string; label: string; payload: unknown }, profile: { campus: Array<{ role?: string; name?: string }>; awards: unknown[] }) {
+  if (row.kind !== "answer") return false;
+  const label = bare((row.payload as PendingAnswer).questionLabel || row.label);
+  if (CADRE_QUESTION.test(label)) return profile.campus.some((item) => item.role || item.name);
+  if (CAMPUS_BOX.test(label)) return profile.campus.length > 0;
+  if (AWARD_BOX.test(label)) return profile.awards.length > 0;
+  return false;
+}
+
 /** Runs the backlog once per load; rows it learned from become 已记住 (accepted). */
 export async function learnFromBacklog(tx: Prisma.TransactionClient, userId: string): Promise<LearnedNotice[]> {
   const pending = (await tx.pendingApplicationChange.findMany({ where: visiblePendingWhere(userId), orderBy: { createdAt: "asc" } }))
@@ -109,6 +123,7 @@ export async function learnFromBacklog(tx: Prisma.TransactionClient, userId: str
     learned.push(...result.learned);
     changed = true;
   }
+  for (const row of pending) if (!consumed.has(row.id) && coveredByProfile(row, profile)) consumed.add(row.id);
   if (changed) await tx.user.update({ where: { id: userId }, data: { applicationProfile: profile as Prisma.InputJsonValue, preferredCities } });
   if (consumed.size) await tx.pendingApplicationChange.updateMany({ where: { id: { in: [...consumed] }, status: "pending" }, data: { status: "accepted", revision: { increment: 1 } } });
   return learned;

@@ -64,7 +64,7 @@ const PROFILE = {
   skills: [{ name: "Python", level: "熟练", category: "编程语言", description: "" }, { name: "Tableau", level: "熟悉", category: "软件工具", description: "" }],
   languages: [{ name: "CET-6", language: "", score: "560", date: "2023-06" }, { name: "雅思", language: "英语", score: "7.0", date: "2024-03" }],
   researchDirection: "因果推断与增长分析", rank: "前 10%", acceptAdjust: "是", courses: "多元统计分析、机器学习、时间序列", department: "管理学院",
-  qq: "123456789", homepage: "https://github.com/linxz-example", hobbies: "摄影、羽毛球", thesis: "基于因果推断的用户增长归因研究", lab: "统计学习实验室",
+  qq: "123456789", englishName: "Zoe Lin", exchange: "无", homepage: "https://github.com/linxz-example", hobbies: "摄影、羽毛球", thesis: "基于因果推断的用户增长归因研究", lab: "统计学习实验室",
   library: [], summaries: {},
   politics: "共青团员", hometown: "江苏南京", ethnicity: "汉族", english: "CET-6 560", currentCity: "上海",
   targetRole: "数据分析师", selfIntro: "统计学硕士，熟悉 SQL 与 Python，做过电商增长分析。",
@@ -251,7 +251,7 @@ const suites = {
   "workday-en": [[
     { label: "First Name", read: val("#fn"), expect: "" },
     { label: "Last Name", read: val("#ln"), expect: "" },
-    { label: "English Name", read: val("#en"), expect: "" },
+    { label: "English Name(存了英文名才填，不填中文名)", read: val("#en"), expect: "Zoe Lin" },
     { label: "Email", read: val("#em"), expect: "linxz@example.invalid" },
     { label: "Phone Device", read: sel("#pdt"), expect: /^(?:Mobile)?$/ },
     { label: "Country Code", read: sel("#cc"), expect: /^(?:China \(\+86\))?$/ },
@@ -429,6 +429,8 @@ Object.assign(suites, {
     { label: "是否担任学生干部", read: `document.querySelector("#c1y").checked ? "是" : document.querySelector("#c1n").checked ? "否" : ""`, expect: "是" },
     { label: "干部名称", read: val("#c2"), expect: "学术部部长" },
     { label: "干部层级", read: sel("#c3"), expect: "校级" },
+    { label: "英文名", read: val("#e1"), expect: "Zoe Lin" },
+    { label: "是否有交换生经历(无→否)", read: `document.querySelector("#x1y").checked ? "是" : document.querySelector("#x1n").checked ? "否" : ""`, expect: "否" },
   ]],
   "wizard": [[
     { label: "第1步 姓名", read: val("#a1"), expect: "林晓舟" },
