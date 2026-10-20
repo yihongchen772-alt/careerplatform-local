@@ -72,6 +72,11 @@ function readPreference(key: string, fallback: string) {
   try { return localStorage.getItem(key) ?? fallback; }
   catch { return fallback; }
 }
+const SCOPE_HOST_KEY = "careerplatform.browser.fillModules.host";
+function hostOf(url: string | null | undefined) {
+  try { return url ? new URL(url).hostname || null : null; } catch { return null; }
+}
+
 function writePreference(key: string, value: string) {
   try { localStorage.setItem(key, value); }
   catch { /* per-device preference only */ }
@@ -200,6 +205,8 @@ export function EmbeddedBrowser({
     const ordered = ALL_FILL_MODULES.filter((id) => modules.includes(id));
     setScopeOverride(ordered);
     writePreference("careerplatform.browser.fillModules.v4", ordered.join(","));
+    // A narrowed scope belongs to the site it was chosen on (see the effect below).
+    writePreference(SCOPE_HOST_KEY, ordered.length === ALL_FILL_MODULES.length ? "" : hostOf(currentUrlRef.current) ?? "");
   }
   const [resumeVersionId, setResumeVersionId] = useState(
     resumeVersions.find((r) => r.isDefault)?.id ?? resumeVersions[0]?.id ?? ""
@@ -297,6 +304,21 @@ export function EmbeddedBrowser({
   const activeLogin = tabsState.activeId === null ? null : savedLogins.states[tabsState.activeId] ?? null;
   const activeTab = tabsState.tabs.find((t) => t.id === tabsState.activeId) ?? null;
   const currentUrl = activeTab?.url && activeTab.url !== "about:blank" ? activeTab.url : null;
+  // 「只填所选模块」 used to stay on for every site afterwards: picking 获奖 once
+  // on one portal left the next ones filling nothing (范围外 126 项). A narrowed
+  // scope now lasts on its own site only; another site starts from 全部模块.
+  const pageHost = hostOf(currentUrl);
+  useEffect(() => {
+    if (!pageHost || fillModules.length === ALL_FILL_MODULES.length) return;
+    let chosenOn = "";
+    try { chosenOn = localStorage.getItem(SCOPE_HOST_KEY) ?? ""; } catch { /* per-viewer preference */ }
+    if (chosenOn === pageHost) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset when the page moves to another site
+    setFillModules([...ALL_FILL_MODULES]);
+    toast.info("换了网站，填写范围已恢复为全部模块");
+    // Only when the site changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageHost]);
   const draftContext = JSON.stringify([tabsState.activeId, currentUrl, positionId, resumeVersionId, variantChoice]);
   const pageDraftState = pageDraftStatus.context === draftContext ? pageDraftStatus.message : "网页填写草稿等待保存";
   // Overlays from elsewhere in the App (⌘K search, the 小欧 chat panel, any
@@ -1088,7 +1110,10 @@ export function EmbeddedBrowser({
             icon={status.phase === "error" ? <TriangleAlert /> : status.summary?.manual ? <ListChecks /> : <Check />}
             onClose={dismissStatus}
             closeLabel="收起填写结果"
-            actions={status.details?.length ? <Button size="xs" variant="outline" onClick={() => openPanel("result")}>{status.summary?.manual ? "查看待手填" : "查看结果"}</Button> : undefined}
+            actions={status.details?.length || status.summary?.excluded ? <>
+              {!!status.summary?.excluded && <Button size="xs" onClick={() => { setFillModules([...ALL_FILL_MODULES]); handleAutofill({ modules: [...ALL_FILL_MODULES] }); }} disabled={busy}>全部模块再填一次</Button>}
+              {!!status.details?.length && <Button size="xs" variant="outline" onClick={() => openPanel("result")}>{status.summary?.manual ? "查看待手填" : "查看结果"}</Button>}
+            </> : undefined}
           >
             <span title={status.message}>
               {status.summary

@@ -180,6 +180,7 @@ async function fillTab(tabId, options) {
     // 填写统计: what this fill did, and when (a later hand-typed page saves a sample).
     if (result?.phase === "done" && result.summary) {
       chrome.storage.session.set({ [`filled-at:${tabId}`]: Date.now() }).catch(() => {});
+      chrome.storage.session.remove(`typed:${tabId}`).catch(() => {});
       api("fill-stats", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: adapter.url(), fills: 1, filled: result.summary.filled || 0, manual: result.summary.manual || 0 }) }).catch(() => {});
     }
     return result;
@@ -285,7 +286,15 @@ async function saveTab(tabId, onlyUserEdited = false) {
       const url = context.adapter.url();
       api("fill-stats", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url, typed: result.handTyped }) }).catch(() => {});
       const filledAt = (await chrome.storage.session.get(`filled-at:${tabId}`))[`filled-at:${tabId}`];
-      if (result.handTyped >= AUTO_SAMPLE_TYPED && filledAt && Date.now() - filledAt < 6 * 3_600_000) captureSample(tabId, `自动保存（插件）：一键填写后手填了 ${result.handTyped} 个字段`).catch(() => {});
+      if (filledAt && Date.now() - filledAt < 6 * 3_600_000) {
+        // Counted per page since the fill: captures run on every blur, one box at a time.
+        const key = `typed:${tabId}`;
+        const page = url.split("#")[0];
+        const before = (await chrome.storage.session.get(key))[key];
+        const typed = (before && before.page === page ? before.count : 0) + result.handTyped;
+        await chrome.storage.session.set({ [key]: { page, count: typed } });
+        if (typed >= AUTO_SAMPLE_TYPED) captureSample(tabId, `自动保存（插件）：一键填写后手填了 ${typed} 个字段`).catch(() => {});
+      }
     }
     return result;
   } finally {

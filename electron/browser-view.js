@@ -1216,7 +1216,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       for (const frame of allFrames(tab.view.webContents)) await frame.executeJavaScript(`document.documentElement.setAttribute("data-cp-task", ${JSON.stringify(task.id)})`).catch(() => {});
       if (options?.mode === "apply") await applyAutofillPlan(electronAdapter(tab, task), options);
       else { tab.archiveUrl = tab.view.webContents.getURL(); tab.positionId = options?.positionId; tab.resumeVersionId = resumeVersionId; tab.variantId = options?.variantId; const result = await runAutofillCore(electronAdapter(tab, task), resumeVersionId, options || {});
-        if (result?.phase === "done" && result.summary) { tab.filledAt = Date.now(); recordFillStats(tab.archiveUrl, { fills: 1, filled: result.summary.filled || 0, manual: result.summary.manual || 0 }); } }
+        if (result?.phase === "done" && result.summary) { tab.filledAt = Date.now(); tab.typedSinceFill = 0; tab.typedPage = tab.view.webContents.getURL().split("#")[0]; recordFillStats(tab.archiveUrl, { fills: 1, filled: result.summary.filled || 0, manual: result.summary.manual || 0 }); } }
     } finally { fillingTabs.delete(tab.id); fillTasks.delete(tab.id); }
   });
 
@@ -1263,8 +1263,12 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       const result = await saveCorrectionsCore(electronAdapter(tab), resumeVersionId, onlyUserEdited, variantId ?? tab.variantId, discover !== false);
       // Several boxes typed by hand after 一键填写 = boxes it missed: keep the
       // page's structure (never the values) so the next round can fix them.
-      if (result.handTyped >= AUTO_SAMPLE_TYPED && tab.filledAt && Date.now() - tab.filledAt < 6 * 3_600_000) {
-        captureSample(tab, `自动保存：一键填写后手填了 ${result.handTyped} 个字段`, { auto: true }).catch(() => {});
+      // Counted per page since the fill: captures run on every blur, one box at a time.
+      if (result.handTyped && tab.filledAt && Date.now() - tab.filledAt < 6 * 3_600_000) {
+        const page = tab.view.webContents.getURL().split("#")[0];
+        if (tab.typedPage !== page) { tab.typedPage = page; tab.typedSinceFill = 0; }
+        tab.typedSinceFill = (tab.typedSinceFill || 0) + result.handTyped;
+        if (tab.typedSinceFill >= AUTO_SAMPLE_TYPED) captureSample(tab, `自动保存：一键填写后手填了 ${tab.typedSinceFill} 个字段`, { auto: true }).catch(() => {});
       }
       if (result.handTyped) recordFillStats(tab.view.webContents.getURL(), { typed: result.handTyped });
       return result;
