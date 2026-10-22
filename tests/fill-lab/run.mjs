@@ -456,6 +456,17 @@ Object.assign(suites, {
     p.awards = [...p.awards, { name: "国家奖学金", issuer: "教育部", level: "国家级", date: "2023-10", description: "" }, { name: "校级优秀学生干部", issuer: "", level: "校级", date: "2023-12", description: "" }];
     p.projects[0].link = "https://github.com/linxz-example/recsys";
   } }],
+  "feishu-ud": [[
+    { label: "姓名", read: val("#name"), expect: "林晓舟" },
+    { label: "邮箱", read: val("#email"), expect: "linxz@example.invalid" },
+    { label: "年龄(由出生日期算)", read: val("#age"), expect: /^2[3-9]$/ },
+    { label: "性别(下拉)", read: `document.querySelector("#gender-sel .ud__select__selector__selectItem").textContent`, expect: "女" },
+    { label: "学校", read: val("#school"), expect: "复旦大学" },
+    { label: "专业", read: val("#major"), expect: "统计学" },
+    { label: "起止时间 开始", read: val("#start"), expect: /^2024[-./年]?0?9/ },
+    { label: "起止时间 结束", read: val("#end"), expect: /^2026[-./年]?0?6/ },
+    { label: "学历(下拉)", read: `document.querySelector("#degree-sel .ud__select__selector__selectItem").textContent`, expect: "硕士" },
+  ], { wait: 800 }],
   "wizard": [[
     { label: "第1步 姓名", read: val("#a1"), expect: "林晓舟" },
     { label: "第1步 性别", read: sel("#a4"), expect: "女" },

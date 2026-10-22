@@ -99,11 +99,11 @@ function scanPageFields(prefix, readOnly = false) {
   function labelFromFormItem(el) {
     let container = parentOf(el);
     let depth = 0;
-    // 8, not fewer: an AntD date picker with a "至今" checkbox beside it sits
-    // seven wrappers below its .ant-form-item-label.
-    while (container && depth < 8) {
+    // 10, not fewer: an AntD date picker with a "至今" checkbox beside it sits
+    // seven wrappers below its .ant-form-item-label, 飞书招聘's date range nine.
+    while (container && depth < 10) {
       const cls = (container.className || "").toString().toLowerCase();
-      if (/form-item|form-group|field|form-row|input-group|form-cell|form-control-wrap|el-form/.test(cls) || portal?.wrapper.test(cls)) {
+      if (/form-item|formily-item(?![-\w])|form-group|field|form-row|input-group|form-cell|form-control-wrap|el-form/.test(cls) || portal?.wrapper.test(cls)) {
         // A label wrapping its own checkbox ("至今") belongs to that checkbox.
         const explicit = Array.from(container.querySelectorAll(portal?.label || "label, .ant-form-item-label, .el-form-item__label, [class*='label']"))
           .find((node) => !node.contains(el) && !node.querySelector("input, select, textarea") && !isOptionText(node));
@@ -183,6 +183,9 @@ function scanPageFields(prefix, readOnly = false) {
     }
     const fromFormItem = labelFromFormItem(el);
     if (fromFormItem) return fromFormItem;
+    // 飞书招聘 tags every box with its field's name.
+    const fieldName = clean(el.getAttribute("data-form-field-i18n-name"));
+    if (fieldName) return fieldName;
     const fromTable = labelFromTable(el);
     if (fromTable) return fromTable;
     const fromRow = labelFromSiblingRow(el);
@@ -270,7 +273,8 @@ function scanPageFields(prefix, readOnly = false) {
   function sectionFor(el) {
     let node = el;
     let depth = 0;
-    while (node && node !== document.body && depth < 12) {
+    // 20: 飞书招聘's 教育经历 box sits 17 wrappers below its module title.
+    while (node && node !== document.body && depth < 20) {
       let sibling = node.previousElementSibling;
       let textHops = 0;
       let scanned = 0;
@@ -348,7 +352,7 @@ function scanPageFields(prefix, readOnly = false) {
     return clean(copy.textContent);
   }
   function selectedText(container) {
-    const shown = container.querySelector(".ant-select-selection-item, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text, .el-cascader__tags");
+    const shown = container.querySelector(".ant-select-selection-item, .ud__select__selector__selectItem, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text, .el-cascader__tags");
     // Some portals print their prompt ("输入工作单位名称") where the choice goes.
     if (shown && clean(shown.textContent) && !PLACEHOLDER_TEXT.test(clean(shown.textContent))) return clean(shown.textContent);
     // Element UI and cascaders show the choice in a read-only input; Arco,
@@ -369,7 +373,7 @@ function scanPageFields(prefix, readOnly = false) {
     // Element Plus date inputs are read-only comboboxes too; they're typed into.
     // A language switcher or site search in the page header is not the form.
     if (el.closest(PICKER) || el.closest(SITE_CHROME)) return;
-    const container = el.closest(".ant-select, .el-select, .el-cascader") || el;
+    const container = el.closest(".ant-select, .el-select, .el-cascader, .ud__select__selector") || el;
     // An AutoComplete accepts free text: its input is filled like any other.
     if (customContainers.has(container) || container.classList.contains("ant-select-auto-complete")) return;
     if (!isVisible(container)) return;
@@ -500,7 +504,8 @@ function scanPageFields(prefix, readOnly = false) {
     const group = groupFor(field), el = nodes.get(field.id);
     if (!group || !el) continue;
     let candidate = null;
-    for (let node = parentOf(el), depth = 0; node && node !== document.body && depth < 12; node = parentOf(node), depth++) {
+    // 18: 飞书招聘 puts a date range 13 wrappers below the block that holds its 学校.
+    for (let node = parentOf(el), depth = 0; node && node !== document.body && depth < 18; node = parentOf(node), depth++) {
       const children = results.filter((item) => inside(node, nodes.get(item.id)));
       if (children.some((item) => groupFor(item) !== group)) break;
       const members = children;
@@ -522,6 +527,16 @@ function scanPageFields(prefix, readOnly = false) {
       field.required = !!el.required || el.getAttribute("aria-required") === "true" || !!el.closest(".ant-form-item-required, .is-required") || !!el.closest(".ant-form-item")?.querySelector(".ant-form-item-required");
       field.maxLength = el.maxLength > 0 ? el.maxLength : null;
       field.pattern = el.getAttribute("pattern") || "";
+      // 飞书招聘's 起止时间: two plain boxes in one range picker, no 开始 / 结束 placeholders.
+      if (el.matches("input") && !/开始|结束|起|止|start|end|from|to/i.test(field.placeholder || "")) {
+        const rangeSelector = "[class*='range-picker' i], [class*='date-range' i], [class*='daterange' i]";
+        // The nearest wrapper holds one box; the range picker is the first one around two.
+        for (let box = el.closest(rangeSelector); box; box = box.parentElement?.closest(rangeSelector)) {
+          const boxes = Array.from(box.querySelectorAll("input:not([type='hidden'])"));
+          if (boxes.length === 2) { field.rangePart = boxes[0] === el ? "start" : "end"; break; }
+          if (boxes.length > 2) break;
+        }
+      }
       field.min = el.getAttribute("min"); field.max = el.getAttribute("max");
       const checkedAria = field.tag === "radio" && !members ? Array.from(el.querySelectorAll("[role='radio']")).find((choice) => choice.getAttribute("aria-checked") === "true") : null;
       field.currentValue = field.hasValue ? (field.tag === "select" ? clean(el.options[el.selectedIndex]?.textContent)
@@ -584,7 +599,7 @@ function snapshotFormStructure(secrets) {
     if (el.tagName === "TEXTAREA") el.textContent = "";
   });
   // Component-library dropdowns show the chosen value as plain text.
-  clone.querySelectorAll(".ant-select-selection-item, .el-select__selected-item, .ant-select-selection-item-content, .el-tag, .ant-upload-list").forEach((el) => { el.textContent = "[已选内容]"; });
+  clone.querySelectorAll(".ant-select-selection-item, .ud__select__selector__selectItem, .el-select__selected-item, .ant-select-selection-item-content, .el-tag, .ant-upload-list").forEach((el) => { el.textContent = "[已选内容]"; });
   clone.querySelectorAll("*").forEach((el) => {
     for (const attr of Array.from(el.attributes)) {
       if (/^on/i.test(attr.name) || (attr.name.startsWith("data-cp-") && attr.name !== "data-cp-fill-id")) el.removeAttribute(attr.name);
@@ -959,7 +974,7 @@ async function fillCustomSelects(pairs, taskId) {
     return clean(copy.textContent);
   }
   function selectedText(container) {
-    const shown = container.querySelector(".ant-select-selection-item, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text, .el-cascader__tags");
+    const shown = container.querySelector(".ant-select-selection-item, .ud__select__selector__selectItem, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text, .el-cascader__tags");
     // Some portals print their prompt ("输入工作单位名称") where the choice goes.
     if (shown && clean(shown.textContent) && !PLACEHOLDER_TEXT.test(clean(shown.textContent))) return clean(shown.textContent);
     // Element UI and cascaders show the choice in a read-only input; Arco,
@@ -989,7 +1004,8 @@ async function fillCustomSelects(pairs, taskId) {
       ".ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option:not(.ant-select-item-option-disabled), " +
         ".el-select-dropdown:not([style*='display: none']) .el-select-dropdown__item:not(.is-disabled), " +
         ".ivu-select-dropdown .ivu-select-item:not(.ivu-select-item-disabled), .arco-select-option:not(.arco-select-option-disabled), .t-select-option:not(.t-is-disabled), " +
-        "[role='listbox'] [role='option']:not([aria-disabled='true'])"
+        "[role='listbox'] [role='option']:not([aria-disabled='true']), " +
+        ".ud__select__dropdown:not([class*='dropdown-hidden']) .ud__select__list__item:not([class*='item-disabled'])"
     );
     return Array.from(nodes).filter(visible);
   }
@@ -1213,10 +1229,10 @@ function trackUserEdits() {
   document.addEventListener("input", mark, true);
   document.addEventListener("change", mark, true);
   let selected = null;
-  const shownValue = (el) => (el.querySelector(".ant-select-selection-item, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent)")?.textContent || el.value || (el.matches("button, [role='combobox']") ? el.textContent : "") || "").trim();
+  const shownValue = (el) => (el.querySelector(".ant-select-selection-item, .ud__select__selector__selectItem, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent)")?.textContent || el.value || (el.matches("button, [role='combobox']") ? el.textContent : "") || "").trim();
   document.addEventListener("pointerdown", (event) => {
     if (!event.isTrusted) return;
-    const el = origin(event)?.closest?.(".ant-select, .el-select, .el-cascader, [role='combobox'], button[aria-haspopup='listbox']");
+    const el = origin(event)?.closest?.(".ant-select, .el-select, .el-cascader, .ud__select__selector, [role='combobox'], button[aria-haspopup='listbox']");
     if (el) selected = { el, at: Date.now(), value: shownValue(el) };
   }, true);
   document.addEventListener("click", (event) => {
@@ -1271,7 +1287,7 @@ function readFieldValues(ids) {
     if (el.getAttribute("role") === "radiogroup") return clean(el.querySelector("[role='radio'][aria-checked='true']")?.textContent);
     if (el.isContentEditable && tag !== "input" && tag !== "textarea") return String(el.innerText || "").trim();
     if (tag === "input" || tag === "textarea") return String(el.value || "").trim();
-    const shown = el.querySelector(".ant-select-selection-item, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text");
+    const shown = el.querySelector(".ant-select-selection-item, .ud__select__selector__selectItem, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text");
     if (shown && clean(shown.textContent) && !PLACEHOLDER_TEXT.test(clean(shown.textContent))) return clean(shown.textContent);
     const input = el.querySelector("input:not([type='hidden'])");
     if (input && clean(input.value) && !PLACEHOLDER_TEXT.test(clean(input.value))) return clean(input.value);
@@ -1323,7 +1339,7 @@ function clearSavedUserEdits(saved) {
     if (el.getAttribute("role") === "radiogroup") return clean(el.querySelector("[role='radio'][aria-checked='true']")?.textContent);
     if (el.isContentEditable && tag !== "input" && tag !== "textarea") return String(el.innerText || "").trim();
     if (tag === "input" || tag === "textarea") return String(el.value || "").trim();
-    const shown = el.querySelector(".ant-select-selection-item, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text");
+    const shown = el.querySelector(".ant-select-selection-item, .ud__select__selector__selectItem, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text");
     if (shown && clean(shown.textContent) && !PLACEHOLDER_TEXT.test(clean(shown.textContent))) return clean(shown.textContent);
     const input = el.querySelector("input:not([type='hidden'])");
     if (input && clean(input.value) && !PLACEHOLDER_TEXT.test(clean(input.value))) return clean(input.value);
@@ -1375,6 +1391,8 @@ const BASIC_FIELD_RULES = [
   { keys: ["英文名", "英文姓名", "英文名字", "english name"], not: /拼音|姓氏|first|last|given|family|surname/i, get: (p) => p.englishName, learn: "englishName" },
   { keys: ["性别", "gender", "sex"], get: (p) => p.gender },
   // exactDay: a birthday is never padded to the 1st the way 入学时间 is.
+  // 年龄 is the birth date, counted to today (飞书招聘 asks for it as a required number).
+  { keys: ["年龄", "周岁"], not: /是否|要求|范围|以上|以下|不超过|不低于|家庭|配偶|子女|父|母|紧急|推荐人|age range/i, get: (p) => ageFromBirthDate(p.birthDate) },
   { keys: ["出生日期", "出生年月", "生日", "birth", "birthday", "birthdate"], not: /地点|出生地|place|city|country|province|省份|籍贯/i, get: (p) => p.birthDate, date: true, exactDay: true },
   // School/major/degree/GPA/dates are per education row — see
   // resolveRepeatField below. Only the page-wide "最高学历" stays flat.
@@ -1779,6 +1797,7 @@ function resolveRepeatField(field, rowIndexes) {
     if (kind) info = { group: "experience", kind };
   }
   if (!info) return null;
+  if (field.rangePart && info.kind === "range") info = { ...info, kind: field.rangePart };
   // A stray "预计毕业时间" in 基本信息 must not push the education blocks
   // below it down a row, so in-block and loose fields count separately.
   const pickTag = info.pick ? `:${info.pick}` : "";
@@ -1855,6 +1874,15 @@ function matchDegreeOption(field, value) {
 }
 
 const UNTIL_NOW = /^(?:至今|今|现在|目前|在读|在职|present|now|current|ongoing)$/i;
+
+function ageFromBirthDate(raw, now = new Date()) {
+  const parts = dateParts(raw);
+  if (!parts?.y) return null;
+  const month = Number(parts.m) || 1, day = Number(parts.d) || 1;
+  let age = now.getFullYear() - Number(parts.y);
+  if (now.getMonth() + 1 < month || (now.getMonth() + 1 === month && now.getDate() < day)) age--;
+  return age >= 14 && age <= 80 ? String(age) : null;
+}
 
 function dateParts(raw) {
   const m = /(\d{4})(?:\s*[-./年]\s*(\d{1,2}))?(?:\s*[-./月]\s*(\d{1,2}))?/.exec(String(raw || ""));
@@ -3247,7 +3275,7 @@ function readCurrentApplicationFields() {
     if (!(radios ? radios.some((r) => (r.closest("label") || r).getBoundingClientRect().width) : el.getBoundingClientRect().width)) continue;
     const label = el.getAttribute("data-cp-fill-label") || el.getAttribute("aria-label") || (el.id && el.getRootNode().querySelector('label[for="' + CSS.escape(el.id) + '"]')?.textContent) || el.closest(".ant-form-item, .el-form-item, .form-group")?.querySelector("label, [class*='label']")?.textContent || el.name || el.placeholder || "字段";
     if (/密码|验证码|证件|身份证|银行卡|护照|家庭住址|password|captcha|passport|social security|bank account/i.test(label)) continue;
-    let value = el.value || el.querySelector?.(".ant-select-selection-item, .el-select__selected-item:not(.el-select__input-wrapper)")?.textContent || "";
+    let value = el.value || el.querySelector?.(".ant-select-selection-item, .ud__select__selector__selectItem, .el-select__selected-item:not(.el-select__input-wrapper)")?.textContent || "";
     if (radios) {
       const checked = radios.find((r) => r.checked);
       value = checked?.closest("label")?.textContent || checked?.value || "";
@@ -3361,6 +3389,7 @@ module.exports = {
   countFillableFields,
   dateFormatFor,
   dateParts,
+  ageFromBirthDate,
   dateRangeValue,
   degreeAlternatives,
   degreeLevel,

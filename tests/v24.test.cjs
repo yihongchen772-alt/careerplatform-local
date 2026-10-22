@@ -77,3 +77,19 @@ test("手填计数只算你自己敲的框，不算一键填写填进去的", as
   assert.equal(posted.records[0].content.link, "https://example.invalid/a");
   assert.equal(posted.records[0].content.name, "甲项目");
 });
+
+test("年龄 is counted from the birth date; requirements and other people's ages are not filled", () => {
+  assert.equal(core.ageFromBirthDate("2002-03-15", new Date("2026-10-23")), "24");
+  assert.equal(core.ageFromBirthDate("2002-12-31", new Date("2026-10-23")), "23");
+  assert.equal(core.ageFromBirthDate("", new Date("2026-10-23")), null);
+  const age = (label) => core.matchFlatField(f(label, ""), { birthDate: "2002-03-15" });
+  assert.match(age("年龄*"), /^2[3-9]$/);
+  for (const label of ["年龄要求", "配偶年龄", "是否满18周岁", "父亲年龄"]) assert.equal(age(label), null, label);
+});
+
+test("飞书招聘 form items: the label is the item's own, even for selects and date ranges nested deeper", async () => {
+  // Rendered in a real browser by tests/fill-lab (feishu-ud); here the class test itself.
+  const source = fs.readFileSync(path.resolve(__dirname, "../electron/autofill-core.js"), "utf8");
+  assert.match(source, /formily-item\(\?!\[-\\w\]\)/, "a form item is ud-formily-item itself, not its -control / -label children");
+  assert.match(source, /\.ud__select__list__item/, "飞书 dropdown options are not role=option");
+});
