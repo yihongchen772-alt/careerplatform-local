@@ -29,7 +29,7 @@ const PLACEHOLDER = /^(?:请|点击|點擊)?(?:选择|选取|输入|填写|搜�
 // A 是 / 否 answer can be a fact (是否接受调剂) but never the name of a 经历.
 const NOT_A_NAME = /^(?:是|否|有|无|暂无|yes|no|n\/?a|none|其他|其它)$/i;
 
-const FIELD_LABELS: Record<string, string> = { school: "学校", major: "专业", department: "院系 / 部门", degree: "学历", gpa: "GPA", start: "开始时间", end: "结束时间", company: "单位", role: "职务", name: "名称", level: "级别", date: "时间", issuer: "颁发单位", description: "描述", responsibilities: "职责", category: "类别", score: "分数", language: "语种" };
+const FIELD_LABELS: Record<string, string> = { school: "学校", major: "专业", department: "院系 / 部门", degree: "学历", gpa: "GPA", start: "开始时间", end: "结束时间", company: "单位", role: "职务", name: "名称", level: "级别", date: "时间", issuer: "颁发单位", description: "描述", responsibilities: "职责", link: "项目链接", category: "类别", score: "分数", language: "语种" };
 
 /** Label → 网申资料 field for answers captured before the browser sent one (old 待核对 rows). */
 const LABEL_KEYS: Array<[RegExp, string, RegExp?]> = [

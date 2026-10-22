@@ -11,7 +11,7 @@ import { updateApplicationMemory, deleteApplicationMemory, mergeApplicationMemor
 import { MEMORY_CATEGORIES, type MemoryView, type MemoryContent } from "@/lib/application-memory";
 import { cn } from "@/lib/utils";
 
-const columns: Record<string, string> = { name: "名称", company: "公司 / 单位", school: "学校", role: "职位 / 角色", major: "专业", degree: "学历", gpa: "GPA", start: "开始时间", end: "结束时间", date: "获奖时间", issuer: "颁发单位", level: "奖项等级", description: "描述 / 成果", responsibilities: "个人职责与成果", text: "整段原文", score: "分数", language: "语种" };
+const columns: Record<string, string> = { name: "名称", company: "公司 / 单位", school: "学校", role: "职位 / 角色", major: "专业", degree: "学历", gpa: "GPA", start: "开始时间", end: "结束时间", date: "获奖时间", issuer: "颁发单位", level: "奖项等级", description: "描述 / 成果", responsibilities: "个人职责与成果", link: "项目链接", text: "整段原文", score: "分数", language: "语种" };
 const memoryTitle = (row: MemoryView) => row.content.name || row.content.company || row.content.school || `${MEMORY_CATEGORIES[row.category]}（整段原文）`;
 type Draft = { content: MemoryContent; enabled: boolean; revision: number };
 

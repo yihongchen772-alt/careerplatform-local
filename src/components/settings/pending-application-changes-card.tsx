@@ -11,7 +11,7 @@ import { companySpecificQuestion } from "@/lib/autofill-answer-scope";
 import type { MemoryAnswer } from "@/components/settings/autofill-memory-card";
 import type { PendingAnswer, PendingApplicationChangeView } from "@/lib/pending-application-change";
 
-const contentLabels: Record<string, string> = { name: "名称", company: "公司 / 单位", school: "学校", department: "院系 / 部门", role: "职位 / 角色", major: "专业", degree: "学历", gpa: "GPA", start: "开始时间", end: "结束时间", date: "时间", issuer: "颁发单位", level: "等级 / 程度", category: "类别", description: "描述 / 成果", responsibilities: "职责与成果", text: "整段原文", score: "分数", language: "语种" };
+const contentLabels: Record<string, string> = { name: "名称", company: "公司 / 单位", school: "学校", department: "院系 / 部门", role: "职位 / 角色", major: "专业", degree: "学历", gpa: "GPA", start: "开始时间", end: "结束时间", date: "时间", issuer: "颁发单位", level: "等级 / 程度", category: "类别", description: "描述 / 成果", responsibilities: "职责与成果", link: "项目链接", text: "整段原文", score: "分数", language: "语种" };
 
 function sourceName(url: string) {
   try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return "网申页面"; }

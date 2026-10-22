@@ -99,7 +99,7 @@ function fakeAi(questions) {
   });
 }
 
-async function runPage(browser, name, checks, { wait = 600, options = {}, page: pageName, query = "", between } = {}) {
+async function runPage(browser, name, checks, { wait = 600, options = {}, page: pageName, query = "", between, profile: patchProfile } = {}) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -118,7 +118,7 @@ async function runPage(browser, name, checks, { wait = 600, options = {}, page: 
     frames: async () => page.frames(),
     run: (frame, fn, args = []) => frame.evaluate(`(${fn.toString()})(${args.map((a) => JSON.stringify(a)).join(",")})`),
     api: async (apiName, init) => {
-      if (apiName.startsWith("profile")) return { ok: true, json: async () => structuredClone(PROFILE) };
+      if (apiName.startsWith("profile")) return { ok: true, json: async () => { const copy = structuredClone(PROFILE); if (patchProfile) patchProfile(copy); return copy; } };
       if (apiName === "answer-questions") {
         const body = JSON.parse(init.body);
         aiQuestions.push(...body.questions);
@@ -441,6 +441,21 @@ Object.assign(suites, {
     { label: "获奖时间", read: val("#a3"), expect: /^2023[-./年]?11/ },
     { label: "第二组获奖项(只存了一个奖，不重复)", read: val("#a4"), expect: "" },
   ]],
+  "jd-meituan-v24": [[
+    { label: "考试分数", read: val("#s1"), expect: "560" },
+    { label: "语言考试成绩(考试名+分数)", read: val("#s2"), expect: "CET-6 560" },
+    { label: "奖学金名称只取奖学金", read: val("#a1"), expect: "国家奖学金" },
+    { label: "评优表彰名称只取荣誉称号", read: val("#a2"), expect: "校级优秀学生干部" },
+    { label: "校园经历名称", read: val("#c1"), expect: "复旦大学研究生会" },
+    { label: "校园经历角色", read: val("#c2"), expect: "学术部部长" },
+    { label: "校园经历描述", read: val("#c3"), expect: "组织学术沙龙 12 场" },
+    { label: "项目名称", read: val("#p1"), expect: "校园二手交易推荐系统" },
+    { label: "项目链接", read: val("#p2"), expect: "https://github.com/linxz-example/recsys" },
+    { label: "第二个项目没有就不填", read: val("#p4"), expect: "" },
+  ], { profile: (p) => {
+    p.awards = [...p.awards, { name: "国家奖学金", issuer: "教育部", level: "国家级", date: "2023-10", description: "" }, { name: "校级优秀学生干部", issuer: "", level: "校级", date: "2023-12", description: "" }];
+    p.projects[0].link = "https://github.com/linxz-example/recsys";
+  } }],
   "wizard": [[
     { label: "第1步 姓名", read: val("#a1"), expect: "林晓舟" },
     { label: "第1步 性别", read: sel("#a4"), expect: "女" },

@@ -33,6 +33,7 @@ export const projectSchema = z.object({
   end: z.string().trim().max(20).default(""),
   description: z.string().trim().max(5000).default(""),
   responsibilities: z.string().trim().max(5000).default(""),
+  link: z.string().trim().max(500).default(""),
 });
 
 export const awardSchema = z.object({
@@ -219,6 +220,7 @@ export function mergeProjectRows(current: ProjectRow[], extracted: ProjectRow[])
         end: saved.end || project.end,
         description: saved.description || project.description,
         responsibilities: saved.responsibilities || project.responsibilities,
+        link: saved.link || project.link,
       };
     }
   }
