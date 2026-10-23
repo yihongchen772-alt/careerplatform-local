@@ -35,7 +35,7 @@ type ResumeOption = { id: string; name: string };
 
 const emptyEducation: EducationRow = { school: "", major: "", department: "", degree: "", gpa: "", start: "", end: "" };
 const emptyExperience: ExperienceRow = { company: "", role: "", department: "", start: "", end: "", description: "" };
-const emptyProject: ProjectRow = { name: "", role: "", start: "", end: "", description: "", responsibilities: "", link: "" };
+const emptyProject: ProjectRow = { name: "", role: "", start: "", end: "", description: "", responsibilities: "", link: "", teamSize: "" };
 const emptyAward: AwardRow = { name: "", issuer: "", level: "", date: "", description: "" };
 const emptyCampus: CampusRow = { name: "", role: "", level: "", start: "", end: "", description: "" };
 const emptySkill: SkillRow = { name: "", level: "", category: "", description: "" };
@@ -247,7 +247,8 @@ export function ApplicationProfileCard({
               <Field label="我的角色" className="sm:col-span-2"><Input value={project.role} onChange={(ev) => setProject(i, { role: ev.target.value })} placeholder="项目负责人 / 核心成员" /></Field>
               <Field label="开始"><Input value={project.start} onChange={(ev) => setProject(i, { start: ev.target.value })} placeholder="2025-06" /></Field>
               <Field label="结束"><Input value={project.end} onChange={(ev) => setProject(i, { end: ev.target.value })} placeholder="2025-09" /></Field>
-              <Field label="项目链接（网申要填时用，没有就留空）" className="sm:col-span-4"><Input value={project.link ?? ""} onChange={(ev) => setProject(i, { link: ev.target.value })} placeholder="https://github.com/…" /></Field>
+              <Field label="项目链接（网申要填时用，没有就留空）" className="sm:col-span-3"><Input value={project.link ?? ""} onChange={(ev) => setProject(i, { link: ev.target.value })} placeholder="https://github.com/…" /></Field>
+              <Field label="参加人数（有的网申要填）" className="sm:col-span-1"><Input value={project.teamSize ?? ""} onChange={(ev) => setProject(i, { teamSize: ev.target.value })} placeholder="4" /></Field>
               <Field label="项目描述" className="sm:col-span-4"><Textarea rows={2} value={project.description} onChange={(ev) => setProject(i, { description: ev.target.value })} placeholder="项目背景、目标、做了什么" /></Field>
               <Field label="个人职责与成果" className="sm:col-span-4"><Textarea rows={3} value={project.responsibilities} onChange={(ev) => setProject(i, { responsibilities: ev.target.value })} placeholder="你具体负责什么，取得了什么结果" /></Field>
             </RecordShell>

@@ -93,3 +93,17 @@ test("飞书招聘 form items: the label is the item's own, even for selects and
   assert.match(source, /formily-item\(\?!\[-\\w\]\)/, "a form item is ud-formily-item itself, not its -control / -label children");
   assert.match(source, /\.ud__select__list__item/, "飞书 dropdown options are not role=option");
 });
+
+test("中车 (hotjob) 项目经验: 担任职位/角色、参加人数 name their project fields; 评价内容 is the self-evaluation", () => {
+  const rows = new Map();
+  const role = f("担任职位/角色", "项目经验"), size = f("参加人数", "项目经验"), duty = f("职责与业绩", "项目经验");
+  const kinds = [role, size, duty].map((field) => kind(core.resolveRepeatField(field, rows)));
+  assert.deepEqual(kinds, ["project:role:0", "project:teamSize:0", "project:responsibilities:0"]);
+  const profile = { projects: [{ name: "甲项目", role: "负责人", teamSize: "4" }], selfIntro: "统计学硕士" };
+  assert.equal(core.repeatFieldValue(size, core.resolveRepeatField(size, new Map()), profile), "4");
+  assert.equal(core.repeatFieldValue(role, core.resolveRepeatField(role, new Map()), profile), "负责人");
+  assert.equal(core.repeatFieldGoesToAi(core.resolveRepeatField(size, new Map()), { projects: [] }), false);
+  assert.equal(core.matchFlatField(f("评价内容*", "自我评价及附件简历必填", { tag: "textarea" }), profile), "统计学硕士");
+  const schema = load("src/lib/application-profile.ts").projectSchema;
+  assert.equal(schema.parse({ name: "甲项目", teamSize: " 4 " }).teamSize, "4");
+});

@@ -1417,7 +1417,7 @@ const BASIC_FIELD_RULES = [
   // 资料方案 fields: the direction-specific target role and self-assessment.
   // No `learn` here: which city and which job is usually picked per company.
   { keys: ["期望岗位", "期望职位", "意向岗位", "意向职位", "求职意向"], get: (p) => p.targetRole },
-  { keys: ["自我评价", "个人评价", "自我描述"], get: (p) => p.selfIntro, learn: "selfIntro" },
+  { keys: ["自我评价", "个人评价", "自我描述", "评价内容"], get: (p) => p.selfIntro, learn: "selfIntro" },
   // Asked on most 校招 forms; filled by hand before these were in 网申资料.
   { keys: ["研究方向", "研究领域", "research direction", "research interest"], get: (p) => p.researchDirection, learn: "researchDirection" },
   { keys: ["成绩排名", "专业排名", "绩点排名", "年级排名", "班级排名", "排名"], not: /学校|院校|企业|公司|职位|岗位/, get: (p) => p.rank, learn: "rank" },
@@ -1700,12 +1700,13 @@ function projectFieldKind(haystack, bare = "", inSection = false) {
   if (/项目(?:结束|截止)|project[\s_-]*end/i.test(haystack)) return "end";
   if (/项目(?:职责|负责|贡献|成果)|project[\s_-]*(?:responsibilit|contribution|achievement)/i.test(haystack)) return "responsibilities";
   if (/项目(?:描述|简介|介绍|内容|简述|概述|概况|背景)|project[\s_-]*(?:description|summary|overview)/i.test(haystack)) return "description";
+  if (/参加人数|团队(?:规模|人数)|项目(?:人数|规模|成员数)|team[\s_-]*size/i.test(haystack)) return "teamSize";
   if (/项目(?:链接|网址|地址)|project[\s_-]*(?:link|url)|demo[\s_-]*(?:link|url)/i.test(haystack)) return "link";
   if (/^(?:项目经历|projectexperience)$/.test(bare)) return "summary";
   if (!inSection) return null;
   if (/^(?:链接|网址|地址|link|url)$/.test(bare)) return "link";
   if (/^(?:名称|name|title)$/.test(bare)) return "name";
-  if (/^(?:角色|担任角色|职务|担任职务|role)$/.test(bare)) return "role";
+  if (/^(?:担任)?(?:角色|职务|职位)(?:[/／](?:角色|职务|职位))?$|^role$/.test(bare)) return "role";
   if (/^(?:开始(?:时间|日期)?|起始(?:时间|日期)?|start(?:date)?)$/.test(bare)) return "start";
   if (/^(?:结束(?:时间|日期)?|截止(?:时间|日期)?|end(?:date)?)$/.test(bare)) return "end";
   if (RANGE_LABEL.test(bare)) return "range";
@@ -2356,7 +2357,7 @@ function repeatFieldGoesToAi(info, profile) {
   // A missing fact is not a prompt to invent an experience. Open questions
   // remain eligible for AI in their separate pass.
   if (info.unmatched || info.record || info.group === "award" || info.group === "campus" || info.group === "skill" || info.group === "language") return false;
-  if (["description", "responsibilities", "summary", "link"].includes(info.kind)) return false;
+  if (["description", "responsibilities", "summary", "link", "teamSize"].includes(info.kind)) return false;
   const saved = info.group === "education" ? educationRows(profile) : info.group === "experience" ? profile.experiences || [] : profile.projects || [];
   return saved.length === 0 && info.row === 0 && !info.degreeHint;
 }
@@ -3205,7 +3206,7 @@ function profileChoices(profile) {
   const choices = [];
   const labels = { name: "姓名", phone: "手机", email: "邮箱", gender: "性别", birthDate: "出生日期", currentCity: "现居地", country: "所在国家 / 地区", englishName: "英文名", exchange: "交换 / 海外经历", targetRole: "期望岗位", selfIntro: "自我评价", politics: "政治面貌", hometown: "籍贯", ethnicity: "民族", english: "英语水平", wechat: "微信号", qq: "QQ 号", expectedSalary: "期望薪资", availableFrom: "最早到岗时间", internshipDuration: "可实习时长", address: "通讯地址", researchDirection: "研究方向", rank: "成绩排名", acceptAdjust: "是否接受调剂", courses: "主修课程", homepage: "个人主页 / 作品链接", lab: "实验室 / 课题组", hobbies: "兴趣爱好", thesis: "毕业论文" };
   for (const [ref, label] of Object.entries(labels)) if (profile[ref]) choices.push({ ref, label, value: String(profile[ref]) });
-  const columns = { school: "学校", major: "专业", department: "院系 / 部门", degree: "学历", gpa: "GPA", start: "开始时间", end: "结束时间", company: "公司", role: "角色/职位", name: "名称", description: "描述", responsibilities: "职责", link: "项目链接", issuer: "颁发单位", level: "等级 / 程度", category: "类别", date: "日期", language: "语种", score: "分数" };
+  const columns = { school: "学校", major: "专业", department: "院系 / 部门", degree: "学历", gpa: "GPA", start: "开始时间", end: "结束时间", company: "公司", role: "角色/职位", name: "名称", description: "描述", responsibilities: "职责", link: "项目链接", teamSize: "参加人数", issuer: "颁发单位", level: "等级 / 程度", category: "类别", date: "日期", language: "语种", score: "分数" };
   for (const [group, label] of [["education", "教育"], ["experience", "工作/实习"], ["project", "项目"], ["award", "获奖"], ["campus", "校园经历"], ["skill", "技能"], ["language", "语言"]]) {
     rowsForGroup(profile, group, true).forEach((row, index) => { for (const [key, text] of Object.entries(columns)) if (row[key]) choices.push({ ref: `${recordReference(group, row)}:${key}`, label: `${label} ${index + 1}（${row.school || row.company || row.name || row.degree || ""}）${row.__memoryLabel ? ` · ${row.__memoryLabel}` : ""} · ${text}`, value: String(row[key]) }); });
     const text = (profile.library || []).find((entry) => entry.category === group && entry.content.text)?.content.text || profile.summaries?.[group];
