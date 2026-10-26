@@ -664,6 +664,8 @@ model Application {
   appliedDate      DateTime
   referrer         String?
   source           String?
+  /// City set by hand; otherwise the list reads the 岗位's location or the title.
+  city             String?
   currentStage     ApplicationStage @default(APPLIED)
   /// Company's own wording for the current step, separate from the broad stage.
   currentStageLabel String?

@@ -121,6 +121,8 @@ export const applicationCoreUpdateSchema = z.object({
   referrer: z.string().optional(),
   source: z.string().optional(),
   resumeVersionId: z.string().optional().nullable(),
+  /** City set by hand; empty goes back to reading it from the 岗位 or title. */
+  city: z.string().trim().max(40).optional().nullable(),
 });
 
 export const offerUpdateSchema = z.object({

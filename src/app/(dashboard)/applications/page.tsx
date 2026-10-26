@@ -12,6 +12,7 @@ import { loadAutoProgressItems, loadAutoScheduleItems } from "@/lib/auto-progres
 import { UpcomingSchedule } from "@/components/schedule/upcoming-schedule";
 import { loadUpcomingSchedule } from "@/lib/schedule-loader";
 import { applicationScheduleItems, currentStageRow, isTerminalStage, nextScheduleItem, stepView } from "@/lib/interview-schedule";
+import { applicationCities } from "@/lib/application-city";
 import { currentTimeMs } from "@/lib/dates";
 import { PageHero } from "@/components/layout/page-hero";
 import { Send } from "lucide-react";
@@ -27,6 +28,8 @@ export default async function ApplicationsPage() {
       include: {
         // Aliases too, so the search finds 字节跳动 by "ByteDance" or "头条".
         company: { include: { aliases: { select: { alias: true } } } },
+        // Where the job is, for grouping and filtering by city.
+        position: { select: { location: true } },
         // Only the entry matching the application's current stage is still
         // relevant to "what's next" — earlier stages' deadlines are history.
         // Deliberately NOT `orderBy: enteredAt desc, take: 1`: the very
@@ -86,7 +89,7 @@ export default async function ApplicationsPage() {
 
       <ApplicationsView
         now={now}
-        applications={applications.map(({ stageHistory, ...a }) => {
+        applications={applications.map(({ stageHistory, position, ...a }) => {
           // The step's time or deadline that matters now: live, else the
           // next one ahead, else the current step's (past) one.
           const nextSchedule = nextScheduleItem(applicationScheduleItems({ id: a.id, title: a.title, companyName: a.company.name, currentStage: a.currentStage, currentStageDate: a.currentStageDate }, stageHistory, now), now);
@@ -96,6 +99,7 @@ export default async function ApplicationsPage() {
           const step = current && !isTerminalStage(a.currentStage) ? stepView(current, now) : null;
           return {
             ...a,
+            cities: applicationCities({ city: a.city, location: position?.location, title: a.title, companyName: a.company.name }),
             appliedDate: a.appliedDate.toISOString(),
             currentStageDate: a.currentStageDate.toISOString(),
             terminatedAtStage: current?.terminatedAtStage ?? null,

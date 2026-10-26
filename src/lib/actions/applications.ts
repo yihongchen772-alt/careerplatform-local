@@ -162,6 +162,8 @@ export async function updateApplication(
       referrer: data.referrer || null,
       source: data.source || null,
       resumeVersionId: data.resumeVersionId || null,
+      // Left alone when the caller does not send one.
+      ...(data.city !== undefined ? { city: data.city || null } : {}),
     },
   });
 

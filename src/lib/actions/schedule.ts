@@ -287,6 +287,37 @@ export async function bulkUpdateStage(applicationIds: string[], stage: string): 
   });
 }
 
+/**
+ * Sets the city of several 投递 at once ("" clears it, back to what the 岗位
+ * or title says). Returns what each one had so 撤销 can put it back.
+ */
+export async function bulkSetCity(applicationIds: string[], city: string): Promise<ActionResult<{ before: { id: string; city: string | null }[] }>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const ids = z.array(z.string().min(1)).min(1).max(500).safeParse(applicationIds);
+    const value = z.string().trim().max(40).safeParse(city);
+    if (!ids.success || !value.success) throw new UserFacingError("请先选择投递，城市最多 40 个字");
+    const apps = await db.application.findMany({ where: { id: { in: ids.data }, userId: user.id }, select: { id: true, city: true } });
+    await db.application.updateMany({ where: { id: { in: apps.map((app) => app.id) }, userId: user.id }, data: { city: value.data || null } });
+    revalidate(apps.map((app) => app.id));
+    return { before: apps.map((app) => ({ id: app.id, city: app.city })) };
+  });
+}
+
+/** Puts back the cities bulkSetCity replaced. */
+export async function undoBulkCity(before: { id: string; city: string | null }[]): Promise<ActionResult<null>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const rows = z.array(z.object({ id: z.string().min(1), city: z.string().max(40).nullable() })).max(500).safeParse(before);
+    if (!rows.success) throw new UserFacingError("请刷新后重试");
+    await db.$transaction(async (tx) => {
+      for (const row of rows.data) await tx.application.updateMany({ where: { id: row.id, userId: user.id }, data: { city: row.city } });
+    }, { timeout: 30000 });
+    revalidate(rows.data.map((row) => row.id));
+    return null;
+  });
+}
+
 /** Takes back the rows one bulkUpdateStage made; each 投递 returns to where it was. */
 export async function undoBulkStage(stageHistoryIds: string[]): Promise<ActionResult<null>> {
   return toActionResult(async () => {

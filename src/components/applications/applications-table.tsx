@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronDown, Download, Send, Trash2, X } from "lucide-react";
@@ -38,7 +38,7 @@ import { todayKey } from "@/lib/dates";
 import { toast } from "sonner";
 import { ConfirmDeleteButton } from "@/components/ui/confirm-delete-button";
 import { deleteApplication } from "@/lib/actions/applications";
-import { bulkDeleteApplications, bulkUpdateStage, undoBulkStage } from "@/lib/actions/schedule";
+import { bulkDeleteApplications, bulkSetCity, bulkUpdateStage, undoBulkCity, undoBulkStage } from "@/lib/actions/schedule";
 import { applicationStageStyle } from "@/lib/application-stage-style";
 import { QuickStageMenu } from "@/components/applications/quick-stage-menu";
 import { Highlight } from "@/components/applications/highlight";
@@ -47,6 +47,10 @@ import { rememberListOrder } from "@/components/applications/list-order";
 import { deleteLater } from "@/components/applications/pending-deletes";
 import { ProgressLine } from "@/components/schedule/next-schedule";
 import { compareCompanyNames, type ApplicationHits } from "@/lib/application-search";
+import { groupApplications, type Group, type GroupKind } from "@/lib/application-groups";
+import { cityHint } from "@/lib/application-city";
+import { GroupHeader, groupSummary } from "@/components/applications/group-header";
+import { BulkCityDialog } from "@/components/applications/bulk-city-dialog";
 import { absoluteWhen, isUpcoming, itemStartMs, type ScheduleItem, type StepView } from "@/lib/interview-schedule";
 import { cn } from "@/lib/utils";
 import type { ApplicationStage } from "@prisma/client";
@@ -62,6 +66,8 @@ export type ApplicationRow = {
   currentStageDate: string;
   referrer: string | null;
   source: string | null;
+  /** Cities this 投递 is in: set by hand, else the 岗位's, else the title's. */
+  cities: string[];
   salaryMin: number | null;
   salaryMax: number | null;
   /** The step's time or deadline that matters now (see nextScheduleItem). */
@@ -96,8 +102,11 @@ export function ApplicationsTable({
   hits,
   now,
   orderLabel = "",
+  groupBy = "none",
 }: {
   applications: ApplicationRow[];
+  /** Lay the rows out in sections by company, city or week. */
+  groupBy?: GroupKind;
   /** The search's matches, when the list shows search results. */
   hits?: Map<string, ApplicationHits> | null;
   now: number;
@@ -110,6 +119,9 @@ export function ApplicationsTable({
   // Deleted in a batch, waiting out the 撤销 window.
   const [hidden, setHidden] = useState<Set<string>>(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  // Sections folded away; starts over when the grouping changes.
+  const [folded, setFolded] = useState<{ kind: GroupKind; keys: Set<string> }>({ kind: groupBy, keys: new Set() });
+  const foldedKeys = folded.kind === groupBy ? folded.keys : new Set<string>();
 
   const filtered = useMemo(() => {
     const list = (stageFilter === "ALL" ? [...applications] : applications.filter((a) => a.currentStage === stageFilter)).filter((a) => !hidden.has(a.id));
@@ -126,8 +138,11 @@ export function ApplicationsTable({
     return list;
   }, [applications, stageFilter, sort, hidden, now]);
 
-  // The order a 投递's page steps through: this list, as sorted here.
-  const orderKey = filtered.map((app) => app.id).join(",");
+  const grouped = groupBy !== "none";
+  const sections = useMemo<Group<ApplicationRow>[]>(() => groupApplications(filtered, groupBy, now, (app) => app.company.name), [filtered, groupBy, now]);
+
+  // The order a 投递's page steps through: this list, as sorted and grouped here.
+  const orderKey = sections.flatMap((section) => section.items).map((app) => app.id).join(",");
   useEffect(() => {
     rememberListOrder({ ids: orderKey ? orderKey.split(",") : [], href: `${window.location.pathname}${window.location.search}`, label: orderLabel });
   }, [orderKey, orderLabel]);
@@ -211,10 +226,103 @@ export function ApplicationsTable({
     });
   }
 
+  function toggleFold(key: string) {
+    const keys = new Set(foldedKeys);
+    if (!keys.delete(key)) keys.add(key);
+    setFolded({ kind: groupBy, keys });
+  }
+
+  function selectSection(section: Group<ApplicationRow>, on: boolean) {
+    setSelected((previous) => {
+      const next = new Set(previous);
+      for (const app of section.items) {
+        if (on) next.add(app.id);
+        else next.delete(app.id);
+      }
+      return next;
+    });
+  }
+
+  const sectionHeader = (section: Group<ApplicationRow>) => {
+    const picked = section.items.filter((app) => selected.has(app.id)).length;
+    return (
+      <GroupHeader
+        label={section.label}
+        hint={section.hint}
+        count={section.items.length}
+        summary={groupSummary(section.items, now)}
+        collapsed={foldedKeys.has(section.key)}
+        onToggle={() => toggleFold(section.key)}
+        leading={
+          <Checkbox
+            aria-label={`选择「${section.label}」这一组`}
+            checked={picked === section.items.length}
+            indeterminate={picked > 0 && picked < section.items.length}
+            onCheckedChange={(checked) => selectSection(section, checked === true)}
+          />
+        }
+      />
+    );
+  };
+
+  // Suggestions for 设置城市: where the same companies' other 投递 are, then the
+  // cities already in the list, then the usual 校招 cities.
+  const citySuggestions = (() => {
+    const overall = new Map<string, number>();
+    const byCompany = new Map<string, Map<string, number>>();
+    for (const app of applications) {
+      const own = byCompany.get(app.company.name) ?? new Map<string, number>();
+      for (const name of app.cities) {
+        overall.set(name, (overall.get(name) ?? 0) + 1);
+        own.set(name, (own.get(name) ?? 0) + 1);
+      }
+      byCompany.set(app.company.name, own);
+    }
+    const ranked = (counts: Map<string, number>) => [...counts].sort((a, b) => b[1] - a[1]).map(([name]) => name);
+    const sameCompany = new Map<string, number>();
+    for (const app of visibleSelected) for (const [name, count] of byCompany.get(app.company.name) ?? []) sameCompany.set(name, (sameCompany.get(name) ?? 0) + count);
+    const common = ["北京", "上海", "深圳", "广州", "杭州", "南京", "成都", "武汉"];
+    return [...new Set([...ranked(sameCompany).slice(0, 4), ...ranked(overall).slice(0, 8), ...common])].slice(0, 12);
+  })();
+
+  async function bulkCity(city: string): Promise<boolean> {
+    const ids = visibleSelected.map((app) => app.id);
+    if (!ids.length || bulkBusy) return false;
+    setBulkBusy(true);
+    try {
+      const result = await bulkSetCity(ids, city);
+      if (!result.ok) {
+        toast.error(result.message);
+        return false;
+      }
+      const { before } = result.data;
+      setSelected(new Set());
+      router.refresh();
+      toast.success(city ? `已把 ${before.length} 条投递的城市设为「${city}」` : `已让 ${before.length} 条投递的城市恢复自动识别`, {
+        duration: 10000,
+        action: {
+          label: "撤销",
+          onClick: async () => {
+            const undo = await undoBulkCity(before);
+            if (!undo.ok) toast.error(undo.message);
+            else {
+              toast.success("已撤销，城市回到之前的样子");
+              router.refresh();
+            }
+          },
+        },
+      });
+      return true;
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   function handleExport() {
     const csv = toCsv(filtered, [
       { header: "公司", value: (a) => a.company.name },
       { header: "岗位", value: (a) => a.title },
+      { header: "城市", value: (a) => a.cities.join("、") },
       { header: "投递日期", value: (a) => new Date(a.appliedDate).toLocaleDateString("zh-CN") },
       { header: "当前状态", value: (a) => a.currentStageLabel ? `${STAGE_LABELS[a.currentStage]} · ${a.currentStageLabel}` : STAGE_LABELS[a.currentStage] },
       { header: "下一步", value: (a) => a.nextSchedule ? `${a.nextSchedule.title} ${absoluteWhen(a.nextSchedule.startsAt, a.nextSchedule.hasTime)}` : "" },
@@ -227,6 +335,128 @@ export function ApplicationsTable({
     ]);
     downloadCsv(`投递记录_${todayKey()}.csv`, csv);
   }
+
+  // The city under a title, unless the title or the section already says it.
+  const cityNote = (app: ApplicationRow) => (groupBy === "city" ? "" : cityHint(app.cities, app.title));
+
+  // One 投递 as a card (phones).
+  const mobileCard = (app: ApplicationRow) => {
+          const stale = daysSince(new Date(app.currentStageDate));
+          const terminal = isTerminalStage(app.currentStage);
+          return (
+            // Delete sits outside the Link: nesting a button inside an anchor is
+            // invalid and the tap would race the navigation.
+            <div key={app.id} className="rounded-2xl border border-border/70 bg-background/55 p-4 shadow-sm">
+              <Link
+                href={`/applications/${app.id}`}
+                className="block space-y-2 transition-opacity hover:opacity-80"
+              >
+                <div className="flex items-start justify-between gap-2.5">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/8 text-sm font-semibold text-primary">{app.company.name.slice(0, 1)}</span>
+                    <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold"><Highlight text={app.company.name} ranges={hits?.get(app.id)?.company} />{hits?.get(app.id)?.alias && <span className="ml-1 text-xs font-normal text-muted-foreground">（{hits.get(app.id)!.alias}）</span>}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      <Highlight text={app.title} ranges={hits?.get(app.id)?.title} />
+                      {cityNote(app) && <span className="ml-1.5">· {cityNote(app)}</span>}
+                    </p>
+                    </div>
+                  </div>
+                  <Badge className={cn("h-6 border-0 px-2.5", applicationStageStyle(app.currentStage).pill)}>
+                    {STAGE_LABELS[app.currentStage]}
+                  </Badge>
+                </div>
+                {app.currentStageLabel && <p className="text-xs font-medium">{app.currentStageLabel}</p>}
+                <div className="flex flex-wrap gap-x-3 gap-y-1 border-t border-border/55 pt-3 text-xs text-muted-foreground">
+                  <span>{new Date(app.appliedDate).toLocaleDateString("zh-CN")} 投递</span>
+                  <span
+                    className={
+                      !terminal && stale >= 14 ? "font-medium text-destructive" : ""
+                    }
+                  >
+                    {stale} 天未更新
+                  </span>
+                  {app.source && <span>{app.source}</span>}
+                  {app.referrer && <span>内推：{app.referrer}</span>}
+                </div>
+              </Link>
+              {!terminal && <ProgressLine applicationId={app.id} step={app.step} next={app.nextSchedule} now={now} className="mt-2" />}
+              <div className="mt-1 flex items-center justify-end gap-1">
+                <QuickStageMenu applicationId={app.id} companyName={app.company.name} currentStage={app.currentStage} step={app.step} />
+                <ConfirmDeleteButton
+                  trigger={
+                    <Button size="sm" variant="ghost">
+                      删除
+                    </Button>
+                  }
+                  title={`确定删除 ${app.company.name} · ${app.title} 吗？`}
+                  description="这条投递的进展记录和附件也会一并删除，无法撤销。"
+                  onConfirm={() => handleDelete(app.id)}
+                />
+              </div>
+            </div>
+          );
+  };
+
+  // One 投递 as a table row.
+  const desktopRow = (app: ApplicationRow) => {
+            const stale = daysSince(new Date(app.currentStageDate));
+            const terminal = isTerminalStage(app.currentStage);
+            const checked = selected.has(app.id);
+            return (
+              <TableRow key={app.id} data-state={checked ? "selected" : undefined} className={cn("border-border/45 transition-colors hover:bg-primary/[0.035]", checked && "bg-primary/[0.05]")}>
+                <TableCell className="w-8 pr-0">
+                  <Checkbox aria-label={`选择 ${app.company.name} · ${app.title}`} checked={checked} onCheckedChange={(value) => toggle(app.id, value === true)} />
+                </TableCell>
+                <TableCell>
+                  <Link href={`/applications/${app.id}`} className="flex min-w-0 items-center gap-3 py-1.5 hover:text-primary">
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/8 text-sm font-semibold text-primary">{app.company.name.slice(0, 1)}</span>
+                    <span className="min-w-0">
+                      <span className="block truncate font-semibold"><Highlight text={app.company.name} ranges={hits?.get(app.id)?.company} />{hits?.get(app.id)?.alias && <span className="ml-1 text-xs font-normal text-muted-foreground">（{hits.get(app.id)!.alias}）</span>}</span>
+                      <span className="block truncate text-xs text-muted-foreground"><Highlight text={app.title} ranges={hits?.get(app.id)?.title} />{cityNote(app) && <span className="ml-1.5 text-muted-foreground/80">· {cityNote(app)}</span>}</span>
+                    </span>
+                  </Link>
+                </TableCell>
+                <TableCell>
+                  <Badge className={cn("h-6 border-0 px-2.5", applicationStageStyle(app.currentStage).pill)}>
+                    {STAGE_LABELS[app.currentStage]}
+                  </Badge>
+                  {app.currentStageLabel && <p className="mt-1 max-w-48 truncate text-xs text-muted-foreground" title={app.currentStageLabel}>{app.currentStageLabel}</p>}
+                </TableCell>
+                <TableCell className="max-w-72">
+                  {!terminal && (app.nextSchedule || (app.step && app.step.phase !== "open")) ? <ProgressLine applicationId={app.id} step={app.step} next={app.nextSchedule} now={now} /> : <span className="text-muted-foreground">—</span>}
+                </TableCell>
+                <TableCell className="text-xs tabular-nums text-muted-foreground">
+                  {new Date(app.appliedDate).toLocaleDateString("zh-CN")}
+                </TableCell>
+                <TableCell>
+                  <span
+                    className={
+                      !terminal && stale >= 14 ? "text-destructive font-medium" : ""
+                    }
+                  >
+                    {stale} 天
+                  </span>
+                </TableCell>
+                <TableCell className="text-muted-foreground">{app.source ?? "—"}{app.referrer ? <span className="block text-xs">内推：{app.referrer}</span> : null}</TableCell>
+                <TableCell className="text-right">
+                  <div className="flex items-center justify-end gap-1">
+                  <QuickStageMenu applicationId={app.id} companyName={app.company.name} currentStage={app.currentStage} step={app.step} />
+                  <ConfirmDeleteButton
+                    trigger={
+                      <Button size="sm" variant="ghost">
+                        删除
+                      </Button>
+                    }
+                    title={`确定删除 ${app.company.name} · ${app.title} 吗？`}
+                    description="这条投递的进展记录和附件也会一并删除，无法撤销。"
+                    onConfirm={() => handleDelete(app.id)}
+                  />
+                  </div>
+                </TableCell>
+              </TableRow>
+            );
+  };
 
   return (
     <div className="space-y-5">
@@ -296,6 +526,7 @@ export function ApplicationsTable({
               </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
+          <BulkCityDialog count={visibleSelected.length} suggestions={citySuggestions} busy={bulkBusy} onSubmit={bulkCity} />
           <ConfirmDeleteButton
             trigger={<Button type="button" size="sm" variant="ghost" className="gap-1 text-destructive"><Trash2 className="size-3.5" />删除</Button>}
             title={`删除选中的 ${visibleSelected.length} 条投递？`}
@@ -308,62 +539,12 @@ export function ApplicationsTable({
 
       {/* Mobile: cards. The 6-column table is unreadable under ~400px. */}
       <div className="space-y-3 md:hidden">
-        {filtered.map((app) => {
-          const stale = daysSince(new Date(app.currentStageDate));
-          const terminal = isTerminalStage(app.currentStage);
-          return (
-            // Delete sits outside the Link: nesting a button inside an anchor is
-            // invalid and the tap would race the navigation.
-            <div key={app.id} className="rounded-2xl border border-border/70 bg-background/55 p-4 shadow-sm">
-              <Link
-                href={`/applications/${app.id}`}
-                className="block space-y-2 transition-opacity hover:opacity-80"
-              >
-                <div className="flex items-start justify-between gap-2.5">
-                  <div className="flex min-w-0 items-center gap-2.5">
-                    <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/8 text-sm font-semibold text-primary">{app.company.name.slice(0, 1)}</span>
-                    <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold"><Highlight text={app.company.name} ranges={hits?.get(app.id)?.company} />{hits?.get(app.id)?.alias && <span className="ml-1 text-xs font-normal text-muted-foreground">（{hits.get(app.id)!.alias}）</span>}</p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      <Highlight text={app.title} ranges={hits?.get(app.id)?.title} />
-                    </p>
-                    </div>
-                  </div>
-                  <Badge className={cn("h-6 border-0 px-2.5", applicationStageStyle(app.currentStage).pill)}>
-                    {STAGE_LABELS[app.currentStage]}
-                  </Badge>
-                </div>
-                {app.currentStageLabel && <p className="text-xs font-medium">{app.currentStageLabel}</p>}
-                <div className="flex flex-wrap gap-x-3 gap-y-1 border-t border-border/55 pt-3 text-xs text-muted-foreground">
-                  <span>{new Date(app.appliedDate).toLocaleDateString("zh-CN")} 投递</span>
-                  <span
-                    className={
-                      !terminal && stale >= 14 ? "font-medium text-destructive" : ""
-                    }
-                  >
-                    {stale} 天未更新
-                  </span>
-                  {app.source && <span>{app.source}</span>}
-                  {app.referrer && <span>内推：{app.referrer}</span>}
-                </div>
-              </Link>
-              {!terminal && <ProgressLine applicationId={app.id} step={app.step} next={app.nextSchedule} now={now} className="mt-2" />}
-              <div className="mt-1 flex items-center justify-end gap-1">
-                <QuickStageMenu applicationId={app.id} companyName={app.company.name} currentStage={app.currentStage} step={app.step} />
-                <ConfirmDeleteButton
-                  trigger={
-                    <Button size="sm" variant="ghost">
-                      删除
-                    </Button>
-                  }
-                  title={`确定删除 ${app.company.name} · ${app.title} 吗？`}
-                  description="这条投递的进展记录和附件也会一并删除，无法撤销。"
-                  onConfirm={() => handleDelete(app.id)}
-                />
-              </div>
-            </div>
-          );
-        })}
+        {sections.map((section) => (
+          <div key={section.key} className="space-y-3">
+            {grouped && sectionHeader(section)}
+            {!foldedKeys.has(section.key) && section.items.map(mobileCard)}
+          </div>
+        ))}
         {filtered.length === 0 && (
           <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed py-12 text-center text-muted-foreground">
             <Send className="size-8 text-muted-foreground/50" />
@@ -393,64 +574,16 @@ export function ApplicationsTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {filtered.map((app) => {
-            const stale = daysSince(new Date(app.currentStageDate));
-            const terminal = isTerminalStage(app.currentStage);
-            const checked = selected.has(app.id);
-            return (
-              <TableRow key={app.id} data-state={checked ? "selected" : undefined} className={cn("border-border/45 transition-colors hover:bg-primary/[0.035]", checked && "bg-primary/[0.05]")}>
-                <TableCell className="w-8 pr-0">
-                  <Checkbox aria-label={`选择 ${app.company.name} · ${app.title}`} checked={checked} onCheckedChange={(value) => toggle(app.id, value === true)} />
-                </TableCell>
-                <TableCell>
-                  <Link href={`/applications/${app.id}`} className="flex min-w-0 items-center gap-3 py-1.5 hover:text-primary">
-                    <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/8 text-sm font-semibold text-primary">{app.company.name.slice(0, 1)}</span>
-                    <span className="min-w-0">
-                      <span className="block truncate font-semibold"><Highlight text={app.company.name} ranges={hits?.get(app.id)?.company} />{hits?.get(app.id)?.alias && <span className="ml-1 text-xs font-normal text-muted-foreground">（{hits.get(app.id)!.alias}）</span>}</span>
-                      <span className="block truncate text-xs text-muted-foreground"><Highlight text={app.title} ranges={hits?.get(app.id)?.title} /></span>
-                    </span>
-                  </Link>
-                </TableCell>
-                <TableCell>
-                  <Badge className={cn("h-6 border-0 px-2.5", applicationStageStyle(app.currentStage).pill)}>
-                    {STAGE_LABELS[app.currentStage]}
-                  </Badge>
-                  {app.currentStageLabel && <p className="mt-1 max-w-48 truncate text-xs text-muted-foreground" title={app.currentStageLabel}>{app.currentStageLabel}</p>}
-                </TableCell>
-                <TableCell className="max-w-72">
-                  {!terminal && (app.nextSchedule || (app.step && app.step.phase !== "open")) ? <ProgressLine applicationId={app.id} step={app.step} next={app.nextSchedule} now={now} /> : <span className="text-muted-foreground">—</span>}
-                </TableCell>
-                <TableCell className="text-xs tabular-nums text-muted-foreground">
-                  {new Date(app.appliedDate).toLocaleDateString("zh-CN")}
-                </TableCell>
-                <TableCell>
-                  <span
-                    className={
-                      !terminal && stale >= 14 ? "text-destructive font-medium" : ""
-                    }
-                  >
-                    {stale} 天
-                  </span>
-                </TableCell>
-                <TableCell className="text-muted-foreground">{app.source ?? "—"}{app.referrer ? <span className="block text-xs">内推：{app.referrer}</span> : null}</TableCell>
-                <TableCell className="text-right">
-                  <div className="flex items-center justify-end gap-1">
-                  <QuickStageMenu applicationId={app.id} companyName={app.company.name} currentStage={app.currentStage} step={app.step} />
-                  <ConfirmDeleteButton
-                    trigger={
-                      <Button size="sm" variant="ghost">
-                        删除
-                      </Button>
-                    }
-                    title={`确定删除 ${app.company.name} · ${app.title} 吗？`}
-                    description="这条投递的进展记录和附件也会一并删除，无法撤销。"
-                    onConfirm={() => handleDelete(app.id)}
-                  />
-                  </div>
-                </TableCell>
-              </TableRow>
-            );
-          })}
+          {sections.map((section) => (
+            <Fragment key={section.key}>
+              {grouped && (
+                <TableRow className="border-0 hover:bg-transparent">
+                  <TableCell colSpan={8} className="px-0 pb-1 pt-4">{sectionHeader(section)}</TableCell>
+                </TableRow>
+              )}
+              {!foldedKeys.has(section.key) && section.items.map(desktopRow)}
+            </Fragment>
+          ))}
           {filtered.length === 0 && (
             <TableRow>
               <TableCell colSpan={8} className="h-32 text-center text-muted-foreground">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Clock3, Send } from "lucide-react";
 import type { ApplicationStage } from "@prisma/client";
@@ -12,6 +12,9 @@ import { Highlight } from "@/components/applications/highlight";
 import { rememberListOrder } from "@/components/applications/list-order";
 import { ProgressLine } from "@/components/schedule/next-schedule";
 import type { ApplicationHits } from "@/lib/application-search";
+import type { Group } from "@/lib/application-groups";
+import { cityHint } from "@/lib/application-city";
+import { GroupHeader, groupSummary } from "@/components/applications/group-header";
 import type { ScheduleItem, StepView } from "@/lib/interview-schedule";
 
 export type BoardApplication = {
@@ -24,6 +27,8 @@ export type BoardApplication = {
   terminatedAtStageLabel?: string | null;
   appliedDate: string;
   currentStageDate: string;
+  cities?: string[];
+  waiting?: boolean;
   /** The step's time or deadline that matters now (see nextScheduleItem). */
   nextSchedule: ScheduleItem | null;
   step: StepView | null;
@@ -75,7 +80,7 @@ function ApplicationCard({ app, closed = false, hit, now }: { app: BoardApplicat
               <Highlight text={app.companyName} ranges={hit?.company} />{hit?.alias && <span className="ml-1 text-xs font-normal text-muted-foreground">（{hit.alias}）</span>}
             </Link>
           </div>
-          <p className="mt-0.5 truncate pr-20 text-xs text-muted-foreground"><Highlight text={app.title} ranges={hit?.title} /></p>
+          <p className="mt-0.5 truncate pr-20 text-xs text-muted-foreground"><Highlight text={app.title} ranges={hit?.title} />{cityHint(app.cities ?? [], app.title) ? <span className="ml-1.5 text-muted-foreground/80">· {cityHint(app.cities ?? [], app.title)}</span> : null}</p>
         </div>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-border/50 pt-2.5 text-[11px]">
@@ -95,26 +100,16 @@ function ApplicationCard({ app, closed = false, hit, now }: { app: BoardApplicat
   );
 }
 
-/**
- * `hits`: the search's matches. `narrowed`: a search or a quick filter is on,
- * so only columns with something in them are shown.
- */
-export function ApplicationsBoard({ applications, hits, narrowed = false, now, orderLabel = "" }: { applications: BoardApplication[]; hits?: Map<string, ApplicationHits> | null; narrowed?: boolean; now: number; orderLabel?: string }) {
+function arrange(applications: BoardApplication[], narrowed: boolean) {
   const lanes = LANES.map((lane) => ({ ...lane, items: applications.filter((app) => lane.stages.includes(app.currentStage)) }))
     .filter((lane) => !narrowed || lane.items.length > 0);
   const outcomes = OUTCOMES.map((group) => ({ ...group, items: applications.filter((app) => app.currentStage === group.stage) }));
-  // The order a 投递's page steps through: column by column, as seen here.
-  const orderKey = [...lanes.flatMap((lane) => lane.items), ...outcomes.flatMap((group) => group.items)].map((app) => app.id).join(",");
-  useEffect(() => {
-    rememberListOrder({ ids: orderKey ? orderKey.split(",") : [], href: `${window.location.pathname}${window.location.search}`, label: orderLabel });
-  }, [orderKey, orderLabel]);
+  return { lanes, outcomes };
+}
 
-  if (applications.length === 0) {
-    return <div className="flex min-h-72 flex-col items-center justify-center rounded-[1.6rem] border border-dashed border-border/80 bg-card/55 px-6 py-12 text-center"><Send className="size-6 text-primary" /><h3 className="mt-5 text-base font-semibold">从第一份投递开始</h3><p className="mt-1 text-sm text-muted-foreground">添加投递记录后，这里会按阶段整理你的机会。</p></div>;
-  }
-
+function BoardBody({ applications, hits, narrowed, now }: { applications: BoardApplication[]; hits?: Map<string, ApplicationHits> | null; narrowed: boolean; now: number }) {
+  const { lanes, outcomes } = arrange(applications, narrowed);
   return <div className="space-y-6">
-    <p className="text-xs leading-5 text-muted-foreground">这里按大类整理，不规定企业的先后顺序。卡片右上角「改进度」一键切换阶段；有面试时间的卡片会显示倒计时和「进入会议」。</p>
     {lanes.length > 0 && <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
       {lanes.map((lane) => (
         <section key={lane.title} className="min-w-0 rounded-xl border border-border/65 bg-card/35 p-2.5 backdrop-blur-md">
@@ -127,5 +122,38 @@ export function ApplicationsBoard({ applications, hits, narrowed = false, now, o
       <div><h3 className="text-sm font-semibold">已结束的投递</h3><p className="mt-1 text-xs text-muted-foreground">结果不会藏起来；“未通过”与本人拒绝分开记录。</p></div>
       {outcomes.filter((group) => group.items.length > 0).map((group) => <div key={group.title} className="space-y-2"><h4 className={cn("text-xs font-semibold", group.className)}>{group.title} · {group.items.length}</h4><div className="grid gap-2 md:grid-cols-2 2xl:grid-cols-4">{group.items.map((app) => <ApplicationCard key={app.id} app={app} closed hit={hits?.get(app.id)} now={now} />)}</div></div>)}
     </section>}
+  </div>;
+}
+
+/**
+ * `hits`: the search's matches. `narrowed`: a search or a quick filter is on,
+ * so only columns with something in them are shown. `sections`: the same
+ * 投递 split by company / city / week, each section its own board.
+ */
+export function ApplicationsBoard({ applications, sections, hits, narrowed = false, now, orderLabel = "" }: { applications: BoardApplication[]; sections?: Group<BoardApplication>[] | null; hits?: Map<string, ApplicationHits> | null; narrowed?: boolean; now: number; orderLabel?: string }) {
+  const [folded, setFolded] = useState<Set<string>>(() => new Set());
+  const blocks = sections ?? [{ key: "all", label: "", items: applications }];
+  // The order a 投递's page steps through: section by section, column by column, as seen here.
+  const orderKey = blocks.flatMap((block) => {
+    const { lanes, outcomes } = arrange(block.items, narrowed || !!sections);
+    return [...lanes.flatMap((lane) => lane.items), ...outcomes.flatMap((group) => group.items)];
+  }).map((app) => app.id).join(",");
+  useEffect(() => {
+    rememberListOrder({ ids: orderKey ? orderKey.split(",") : [], href: `${window.location.pathname}${window.location.search}`, label: orderLabel });
+  }, [orderKey, orderLabel]);
+
+  if (applications.length === 0) {
+    return <div className="flex min-h-72 flex-col items-center justify-center rounded-[1.6rem] border border-dashed border-border/80 bg-card/55 px-6 py-12 text-center"><Send className="size-6 text-primary" /><h3 className="mt-5 text-base font-semibold">从第一份投递开始</h3><p className="mt-1 text-sm text-muted-foreground">添加投递记录后，这里会按阶段整理你的机会。</p></div>;
+  }
+
+  return <div className="space-y-6">
+    <p className="text-xs leading-5 text-muted-foreground">这里按大类整理，不规定企业的先后顺序。卡片右上角「改进度」一键切换阶段；有面试时间的卡片会显示倒计时和「进入会议」。</p>
+    {sections ? sections.map((section) => {
+      const closed = folded.has(section.key);
+      return <div key={section.key} className="space-y-3">
+        <GroupHeader label={section.label} hint={section.hint} count={section.items.length} summary={groupSummary(section.items, now)} collapsed={closed} onToggle={() => setFolded((previous) => { const next = new Set(previous); if (!next.delete(section.key)) next.add(section.key); return next; })} />
+        {!closed && <BoardBody applications={section.items} hits={hits} narrowed now={now} />}
+      </div>;
+    }) : <BoardBody applications={applications} hits={hits} narrowed={narrowed} now={now} />}
   </div>;
 }

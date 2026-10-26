@@ -2,18 +2,21 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { FilterX, LayoutGrid, List, Search, SearchX, X } from "lucide-react";
+import { CalendarDays, FilterX, Layers, LayoutGrid, List, MapPin, Search, SearchX, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { matchApplication, type ApplicationHits } from "@/lib/application-search";
 import { APPLICATION_FILTERS, FILTER_HINTS, FILTER_LABELS, filterCounts, matchesFilter, parseFilter, type ApplicationFilter } from "@/lib/application-filters";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { GROUP_KINDS, GROUP_LABELS, TIME_LABELS, TIME_WINDOWS, groupApplications, inTimeWindow, monthLabel, monthsPresent, parseTime, type GroupKind } from "@/lib/application-groups";
+import { NO_CITY } from "@/lib/application-city";
 import { useStoredChoice } from "@/components/applications/use-stored-choice";
 import {
   ApplicationsTable,
   type ApplicationRow,
 } from "@/components/applications/applications-table";
-import { ApplicationsBoard } from "@/components/applications/applications-board";
+import { ApplicationsBoard, type BoardApplication } from "@/components/applications/applications-board";
 import { PortalReviewBanner } from "@/components/applications/portal-review-banner";
 import { useNow } from "@/components/schedule/use-now";
 
@@ -24,6 +27,30 @@ import { useNow } from "@/components/schedule/use-now";
  * migration away from the table.
  */
 const VIEWS = ["board", "table"] as const;
+
+function timeLabel(time: string): string {
+  return (TIME_LABELS as Record<string, string>)[time] ?? monthLabel(time);
+}
+
+function toBoard(a: ApplicationRow): BoardApplication {
+  return {
+    id: a.id,
+    companyName: a.company.name,
+    title: a.title,
+    currentStage: a.currentStage,
+    currentStageLabel: a.currentStageLabel,
+    terminatedAtStage: a.terminatedAtStage,
+    terminatedAtStageLabel: a.terminatedAtStageLabel,
+    appliedDate: a.appliedDate,
+    currentStageDate: a.currentStageDate,
+    cities: a.cities,
+    waiting: a.waiting,
+    nextSchedule: a.nextSchedule,
+    step: a.step,
+    portalStatus: a.portalStatus,
+    portalSuggestedStage: a.portalSuggestedStage,
+  };
+}
 
 export function ApplicationsView({ applications, now: serverNow }: { applications: ApplicationRow[]; now: number }) {
   const router = useRouter();
@@ -36,13 +63,22 @@ export function ApplicationsView({ applications, now: serverNow }: { application
   // otherwise flash through the filter.
   const urlQuery = searchParams.get("q") ?? "";
   const urlFilter = parseFilter(searchParams.get("f"));
+  const urlCity = searchParams.get("c") ?? "";
+  const urlTime = parseTime(searchParams.get("t"));
   const [draft, setDraft] = useState(urlQuery);
   const [query, setQuery] = useState(urlQuery);
   const [filter, setFilterState] = useState<ApplicationFilter>(urlFilter);
-  const [seenUrl, setSeenUrl] = useState(`${urlQuery}|${urlFilter}`);
+  const [city, setCityState] = useState(urlCity);
+  const [time, setTimeState] = useState(urlTime);
+  // How the lists are laid out: kept on this device, like 看板 / 列表.
+  const [groupBy, setGroupBy] = useStoredChoice<GroupKind>("careerplatform.applications.group", GROUP_KINDS, "none");
+  const urlKey = `${urlQuery}|${urlFilter}|${urlCity}|${urlTime}`;
+  const [seenUrl, setSeenUrl] = useState(urlKey);
   // Opened again with another ?q= / ?f= (from ⌘K search, say) while already here.
-  if (`${urlQuery}|${urlFilter}` !== seenUrl) {
-    setSeenUrl(`${urlQuery}|${urlFilter}`);
+  if (urlKey !== seenUrl) {
+    setSeenUrl(urlKey);
+    if (urlCity !== city) setCityState(urlCity);
+    if (urlTime !== time) setTimeState(urlTime);
     if (urlQuery !== query.trim()) {
       setDraft(urlQuery);
       setQuery(urlQuery);
@@ -53,7 +89,7 @@ export function ApplicationsView({ applications, now: serverNow }: { application
   const inputRef = useRef<HTMLInputElement>(null);
 
   // In the address too, so coming back from a 投递 shows the same results.
-  function writeUrl(change: { q?: string; f?: ApplicationFilter }) {
+  function writeUrl(change: { q?: string; f?: ApplicationFilter; c?: string; t?: string }) {
     const params = new URLSearchParams(window.location.search);
     if (change.q !== undefined) {
       if (change.q.trim()) params.set("q", change.q.trim());
@@ -62,6 +98,14 @@ export function ApplicationsView({ applications, now: serverNow }: { application
     if (change.f !== undefined) {
       if (change.f !== "all") params.set("f", change.f);
       else params.delete("f");
+    }
+    if (change.c !== undefined) {
+      if (change.c) params.set("c", change.c);
+      else params.delete("c");
+    }
+    if (change.t !== undefined) {
+      if (change.t !== "all") params.set("t", change.t);
+      else params.delete("t");
     }
     const search = params.toString();
     window.history.replaceState(null, "", search ? `${pathname}?${search}` : pathname);
@@ -78,6 +122,16 @@ export function ApplicationsView({ applications, now: serverNow }: { application
     writeUrl({ f: value });
   }
 
+  function chooseCity(next: string) {
+    setCityState(next);
+    writeUrl({ c: next });
+  }
+
+  function chooseTime(next: string) {
+    setTimeState(next);
+    writeUrl({ t: next });
+  }
+
   const term = query.trim();
   const hits = useMemo(() => {
     if (!term) return null;
@@ -89,11 +143,34 @@ export function ApplicationsView({ applications, now: serverNow }: { application
     return found;
   }, [applications, term]);
   const searched = hits ? applications.filter((app) => hits.has(app.id)) : applications;
-  const counts = filterCounts(searched, now);
-  const shown = filter === "all" ? searched : searched.filter((app) => matchesFilter(app, filter, now));
+  const timed = time === "all" ? searched : searched.filter((app) => inTimeWindow(app.appliedDate, time, now));
+  const inCity = (app: ApplicationRow) => !city || (city === NO_CITY ? app.cities.length === 0 : app.cities.includes(city));
+  const scoped = city ? timed.filter(inCity) : timed;
+  const counts = filterCounts(scoped, now);
+  const shown = filter === "all" ? scoped : scoped.filter((app) => matchesFilter(app, filter, now));
   const companies = new Set(shown.map((app) => app.company.name)).size;
-  const narrowed = !!term || filter !== "all";
-  const orderLabel = [filter !== "all" ? FILTER_LABELS[filter] : "", term ? `搜索「${term}」` : ""].filter(Boolean).join(" · ");
+  const narrowed = !!term || filter !== "all" || !!city || time !== "all";
+  const orderLabel = [filter !== "all" ? FILTER_LABELS[filter] : "", city ? `城市 ${city}` : "", time !== "all" ? timeLabel(time) : "", term ? `搜索「${term}」` : ""].filter(Boolean).join(" · ");
+
+  // Cities to pick from, counted over what the other filters already leave.
+  const cityOptions = useMemo(() => {
+    const base = timed.filter((app) => filter === "all" || matchesFilter(app, filter, now));
+    const found = new Map<string, number>();
+    let none = 0;
+    for (const app of base) {
+      if (!app.cities.length) none += 1;
+      for (const name of app.cities) found.set(name, (found.get(name) ?? 0) + 1);
+    }
+    if (city && city !== NO_CITY && !found.has(city)) found.set(city, 0);
+    const list = [...found].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "zh-Hans-CN")).map(([name, count]) => ({ name, count }));
+    if (none || city === NO_CITY) list.push({ name: NO_CITY, count: none });
+    return list;
+  }, [timed, filter, now, city]);
+  const months = useMemo(() => monthsPresent(applications.map((app) => app.appliedDate)), [applications]);
+  const sections = useMemo(
+    () => (groupBy === "none" ? null : groupApplications(shown, groupBy, now, (app) => app.company.name)),
+    [shown, groupBy, now],
+  );
 
   // "/" or ⌘F / Ctrl+F jumps to the search box, as in a browser.
   useEffect(() => {
@@ -119,7 +196,9 @@ export function ApplicationsView({ applications, now: serverNow }: { application
     setDraft("");
     commit("");
     setFilterState("all");
-    writeUrl({ q: "", f: "all" });
+    setCityState("");
+    setTimeState("all");
+    writeUrl({ q: "", f: "all", c: "", t: "all" });
   }
 
   return (
@@ -233,6 +312,42 @@ export function ApplicationsView({ applications, now: serverNow }: { application
         </div>
       )}
 
+      {applications.length > 0 && (
+        <div className="-mt-2 flex flex-wrap items-center gap-2" role="group" aria-label="分组与筛选">
+          <Select value={groupBy} onValueChange={(value) => value && setGroupBy(value as GroupKind)}>
+            <SelectTrigger className="h-8 w-36 rounded-full text-xs" aria-label="分组方式">
+              <Layers className="size-3.5 text-muted-foreground" />
+              <SelectValue>{(value: string) => GROUP_LABELS[value as GroupKind] ?? "不分组"}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {GROUP_KINDS.map((kind) => <SelectItem key={kind} value={kind}>{GROUP_LABELS[kind]}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          {cityOptions.length > 0 && (
+            <Select value={city || "all"} onValueChange={(value) => chooseCity(!value || value === "all" ? "" : value)}>
+              <SelectTrigger className="h-8 w-36 rounded-full text-xs" aria-label="按城市筛选">
+                <MapPin className="size-3.5 text-muted-foreground" />
+                <SelectValue>{(value: string) => (value === "all" ? "全部城市" : value)}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部城市</SelectItem>
+                {cityOptions.map((option) => <SelectItem key={option.name} value={option.name}>{option.name} · {option.count}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          )}
+          <Select value={time} onValueChange={(value) => chooseTime(value ?? "all")}>
+            <SelectTrigger className="h-8 w-36 rounded-full text-xs" aria-label="按投递时间筛选">
+              <CalendarDays className="size-3.5 text-muted-foreground" />
+              <SelectValue>{(value: string) => timeLabel(value)}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {TIME_WINDOWS.map((win) => <SelectItem key={win} value={win}>{TIME_LABELS[win]}</SelectItem>)}
+              {months.length > 1 && months.map((month) => <SelectItem key={month} value={month}>{monthLabel(month)}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
       {narrowed && shown.length > 0 && (
         <p className="-mt-3 text-xs text-muted-foreground" role="status">
           {orderLabel}：{shown.length} 条投递{companies > 1 ? `（${companies} 家公司）` : ""}
@@ -245,10 +360,10 @@ export function ApplicationsView({ applications, now: serverNow }: { application
         <div className="flex min-h-56 flex-col items-center justify-center rounded-xl border border-dashed border-border/80 bg-card/55 px-6 py-10 text-center" role="status">
           {term ? <SearchX className="size-6 text-muted-foreground" /> : <FilterX className="size-6 text-muted-foreground" />}
           <h3 className="mt-4 text-base font-semibold">
-            {term ? `没有找到和「${term}」有关的${filter !== "all" ? `「${FILTER_LABELS[filter]}」` : ""}投递` : `暂时没有「${FILTER_LABELS[filter]}」的投递`}
+            {term ? `没有找到和「${term}」有关的${filter !== "all" ? `「${FILTER_LABELS[filter]}」` : ""}投递` : `暂时没有符合「${orderLabel}」的投递`}
           </h3>
           <p className="mt-1 max-w-md text-sm text-muted-foreground">
-            {term ? "可以试试公司简称、岗位里的关键词，或公司名的拼音首字母（字节跳动 → zjtd）。" : FILTER_HINTS[filter]}
+            {term ? "可以试试公司简称、岗位里的关键词，或公司名的拼音首字母（字节跳动 → zjtd）。" : filter !== "all" && !city && time === "all" ? FILTER_HINTS[filter] : "换一个城市或时间范围试试，或者点下面显示全部。"}
           </p>
           <Button variant="outline" size="sm" className="mt-4" onClick={() => { clearAll(); inputRef.current?.focus(); }}>显示全部投递</Button>
         </div>
@@ -258,26 +373,13 @@ export function ApplicationsView({ applications, now: serverNow }: { application
           narrowed={narrowed}
           now={now}
           orderLabel={orderLabel}
-          applications={shown.map((a) => ({
-            id: a.id,
-            companyName: a.company.name,
-            title: a.title,
-            currentStage: a.currentStage,
-            currentStageLabel: a.currentStageLabel,
-            terminatedAtStage: a.terminatedAtStage,
-            terminatedAtStageLabel: a.terminatedAtStageLabel,
-            appliedDate: a.appliedDate,
-            currentStageDate: a.currentStageDate,
-            nextSchedule: a.nextSchedule,
-            step: a.step,
-            portalStatus: a.portalStatus,
-            portalSuggestedStage: a.portalSuggestedStage,
-          }))}
+          applications={shown.map(toBoard)}
+          sections={sections?.map((section) => ({ ...section, items: section.items.map(toBoard) }))}
         />
       ) : (
         <Card className="border-0 bg-card/80">
           <CardContent className="pt-1">
-            <ApplicationsTable applications={shown} hits={hits} now={now} orderLabel={orderLabel} />
+            <ApplicationsTable applications={shown} hits={hits} now={now} orderLabel={orderLabel} groupBy={groupBy} />
           </CardContent>
         </Card>
       )}

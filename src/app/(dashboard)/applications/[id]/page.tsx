@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AddStageForm } from "@/components/applications/add-stage-form";
 import { ApplicationAttachments } from "@/components/applications/application-attachments";
+import { applicationCities, cityText } from "@/lib/application-city";
 import { ApplicationEditForm } from "@/components/applications/application-edit-form";
 import { OfferEditForm } from "@/components/applications/offer-edit-form";
 import { StageTimeline } from "@/components/applications/stage-timeline";
@@ -54,6 +55,7 @@ export default async function ApplicationDetailPage({
       where: { id, userId: user.id },
       include: {
         company: true,
+        position: { select: { location: true } },
         resumeVersion: true,
         attachments: true,
         interviewQA: true,
@@ -243,7 +245,10 @@ export default async function ApplicationDetailPage({
               referrer: application.referrer,
               source: application.source,
               resumeVersionId: application.resumeVersionId,
+              city: application.city,
             }}
+            // What the 岗位 or title says, shown when no city is set by hand.
+            inferredCity={cityText(applicationCities({ location: application.position?.location, title: application.title, companyName: application.company.name }))}
             resumeVersions={resumeVersions}
           />
           <PortalAssignmentCard applicationId={application.id} currentPortalId={application.portalId} portals={portals} />

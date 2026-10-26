@@ -21,6 +21,7 @@ type ResumeOption = { id: string; name: string };
 export function ApplicationEditForm({
   applicationId,
   initial,
+  inferredCity = "",
   resumeVersions,
 }: {
   applicationId: string;
@@ -29,13 +30,17 @@ export function ApplicationEditForm({
     referrer: string | null;
     source: string | null;
     resumeVersionId: string | null;
+    city?: string | null;
   };
+  /** What the 岗位 or title says, until a city is typed. */
+  inferredCity?: string;
   resumeVersions: ResumeOption[];
 }) {
   const [appliedDate, setAppliedDate] = useState(toDateKey(initial.appliedDate));
   const [referrer, setReferrer] = useState(initial.referrer ?? "");
   const [source, setSource] = useState(initial.source ?? "");
   const [resumeVersionId, setResumeVersionId] = useState(initial.resumeVersionId ?? "");
+  const [city, setCity] = useState(initial.city ?? "");
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -47,6 +52,7 @@ export function ApplicationEditForm({
         referrer: referrer || undefined,
         source: source || undefined,
         resumeVersionId: resumeVersionId || null,
+        city,
       });
       toast.success("已保存");
     } catch {
@@ -81,6 +87,14 @@ export function ApplicationEditForm({
                 placeholder="官网 / 内推 / 猎头..."
               />
             </div>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">城市</Label>
+            <Input
+              value={city}
+              onChange={(e) => setCity(e.target.value)}
+              placeholder={inferredCity ? `${inferredCity}（来自岗位信息，可改）` : "上海 / 北京、深圳…（用于按城市分组）"}
+            />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
