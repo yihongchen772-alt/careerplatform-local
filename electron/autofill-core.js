@@ -1114,6 +1114,59 @@ async function fillCustomSelects(pairs, taskId) {
     return false;
   }
 
+  // 树形下拉 (Ant Design TreeSelect, Element tree-select, ARIA tree): 省 → 市 are
+  // nodes of one list, collapsed until opened. Type the value when the select
+  // is searchable, else expand collapsed nodes a few at a time until a leaf
+  // that reads like the wanted text shows up.
+  const TREE_NODES = ".ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-tree-treenode, .el-select-dropdown:not([style*='display: none']) .el-tree-node, [role='tree'] [role='treeitem']";
+  const treeNodes = () => Array.from(document.querySelectorAll(TREE_NODES)).filter((node) => visible(node) && !node.closest(".ant-select-dropdown-hidden"));
+  const treeRow = (node) => node.querySelector(":scope > .el-tree-node__content") || node.querySelector(".ant-select-tree-node-content-wrapper") || node;
+  const treeText = (node) => clean((node.querySelector(".ant-select-tree-title, .el-tree-node__label") || treeRow(node)).textContent);
+  const treeCollapsed = (node) => node.querySelector(".ant-select-tree-switcher_close") || node.querySelector(":scope > .el-tree-node__content > .el-tree-node__expand-icon:not(.is-leaf):not(.expanded)") || (node.getAttribute("aria-expanded") === "false" ? treeRow(node) : null);
+  const treeIsLeaf = (node) => !node.querySelector(".ant-select-tree-switcher_close, .ant-select-tree-switcher_open") && !node.querySelector(":scope > .el-tree-node__content > .el-tree-node__expand-icon:not(.is-leaf)") && !node.hasAttribute("aria-expanded");
+  const AREA_SUFFIX = /(?:特别行政区|维吾尔自治区|壮族自治区|回族自治区|自治区|自治州|地区|省|市|盟|区|县)$/;
+  const areaBase = (text) => text.replace(AREA_SUFFIX, "") || text;
+  async function fillTree(container, p, searchInput) {
+    const wanted = clean(p.value).replace(/[\s/,，、|>\-]+/g, "");
+    const reads = (node) => { const t = treeText(node), b = areaBase(t); return t === wanted || (b.length >= 2 && wanted.includes(b)) || (wanted.length >= 2 && t.includes(wanted)); };
+    if (!(await waitFor(treeNodes, 600)).length) return false;
+    if (searchInput) {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+      setter.call(searchInput, String(p.value));
+      searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+      await sleep(450);
+      assertActive();
+      // "江苏南京" matches no title as a whole: clear the filter and walk the tree instead.
+      if (!treeNodes().some(reads)) {
+        setter.call(searchInput, "");
+        searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+        await sleep(300);
+        assertActive();
+      }
+    }
+    const done = new Set();
+    for (let round = 0; round < 8; round++) {
+      const nodes = treeNodes();
+      const leaf = nodes.find((node) => treeIsLeaf(node) && reads(node));
+      if (leaf) {
+        const row = treeRow(leaf);
+        row.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+        row.click();
+        await sleep(200);
+        assertActive();
+        return !!selectedText(container);
+      }
+      // Expand the nodes that read like the wanted province first, then any other collapsed ones.
+      const collapsed = nodes.filter((node) => treeCollapsed(node) && !done.has(treeText(node)));
+      const next = (collapsed.filter(reads).length ? collapsed.filter(reads) : collapsed).slice(0, 6);
+      if (!next.length) return false;
+      for (const node of next) { done.add(treeText(node)); treeCollapsed(node)?.click(); }
+      await sleep(250);
+      assertActive();
+    }
+    return false;
+  }
+
   for (const p of pairs) {
     assertActive();
     const container = find('[data-cp-fill-id="' + p.id + '"]');
@@ -1143,6 +1196,17 @@ async function fillCustomSelects(pairs, taskId) {
     assertActive();
     let options = await waitFor(() => visibleOptions(container), 600);
     if (hasExistingValue(container)) { close(); skipped.push(p.id); continue; }
+    if (!options.length && treeNodes().length) {
+      let ok = false;
+      try { ok = await fillTree(container, p, container.querySelector("input:not([readonly]):not([type='hidden'])")); } catch (error) { if (/填写已停止/.test(error.message)) throw error; }
+      if (ok) {
+        mark(container, p.source || "profile");
+        if (p.answerId) container.setAttribute("data-cp-answer-id", p.answerId);
+        if ((p.source || "profile") === "profile") container.setAttribute("data-cp-profile-filled", "1");
+        filled.push(p.id);
+      } else { close(); failed.push(p.label || p.id); }
+      continue;
+    }
     let target = pick(options, p);
     // Searchable selects (and virtual lists that only render a screenful):
     // type the value to narrow the list, then look again.
@@ -2300,7 +2364,7 @@ function fillDetail(field, pair, filledSet, failedSet) {
   const own = displayLabel(field);
   const label = field.section && !own.includes(field.section) && (sectionGroup(field.section) || THIRD_PARTY.test(field.section)) ? `${field.section} · ${own}` : own;
   if (field.hasValue || field.userEdited) return { label, state: field.userEdited ? "手动修改过，保持不动" : "页面已有内容，未改动", source: "prefilled" };
-  if (isThirdPartyField(field)) return { label, state: "家庭成员 / 联系人等他人信息，请手填", source: "manual" };
+  if (isThirdPartyField(field)) return { label, state: "家庭成员 / 联系人等他人信息，请手填", source: "manual", deliberate: true };
   if (field.readonlyPicker) return { label, state: field.suggestion ? `日期需在网页上点选：${field.suggestion}` : "日期需在网页上点选", source: "manual" };
   if (pair && filledSet.has(field.id)) {
     if (pair.source === "profile") return { label, state: "来自网申资料", source: "profile" };
@@ -2308,7 +2372,7 @@ function fillDetail(field, pair, filledSet, failedSet) {
     if (pair.remembered) return { label, state: "复用你确认过的回答", source: "memory" };
     return { label, state: pair.reused ? "AI 草稿（复用），请核对" : "AI 生成，请核对", source: "ai" };
   }
-  if (isNeverGuessField(field)) return { label, state: "敏感或需核对，请手填", source: "manual" };
+  if (isNeverGuessField(field)) return { label, state: "敏感或需核对，请手填", source: "manual", deliberate: true };
   if (pair && failedSet.has(pair.label || pair.id)) return { label, state: "写入没成功，请手填", source: "manual" };
   return { label, state: "没有对应资料，请手填", source: "manual" };
 }
@@ -3079,7 +3143,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     parts.push("你手填的内容：网申资料里还空着的会直接记进去（可撤销），其余的先放进待核对；提交前请核对所有填入内容");
 
     assertActive();
-    const summary = { filled: previous.filled + filled.length, manual: allDetails.filter((d) => d.source === "manual").length, preserved: Math.max(0, alreadyFilled - priorFillsOnPage) + skipped.length, excluded: allDetails.filter((d) => d.source === "excluded").length, uploaded: previous.uploaded + uploadedResumeCount };
+    const summary = { filled: previous.filled + filled.length, manual: allDetails.filter((d) => d.source === "manual").length, deliberate: allDetails.filter((d) => d.source === "manual" && d.deliberate).length, preserved: Math.max(0, alreadyFilled - priorFillsOnPage) + skipped.length, excluded: allDetails.filter((d) => d.source === "excluded").length, uploaded: previous.uploaded + uploadedResumeCount };
     if (round) parts.unshift(`本次累计填入 ${summary.filled} 个字段、上传 ${summary.uploaded} 个附件；以下为最后一轮说明`);
     const result = { phase: "done", message: parts.join("；"), details: allDetails, summary };
     adapter.status(result);
@@ -3406,6 +3470,7 @@ module.exports = {
   profileChoices, applyAutofillPlan, validatePageFields, focusFormField, collectApplicationFields, readCurrentApplicationFields, watchApplicationFields,
   AUTOFILL_MODULES,
   socialValues,
+  fillDetail,
   fieldModule,
   attachResumeFile,
   showPageStatus,

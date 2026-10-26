@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>树形下拉（真 Ant Design TreeSelect）</title>
+<link rel="stylesheet" href="/vendor/antd-reset.css"></head>
+<body style="padding:24px;font-family:sans-serif">
+<div id="root"></div>
+<script src="/vendor/react.js"></script><script src="/vendor/react-dom.js"></script><script src="/vendor/dayjs.js"></script><script src="/vendor/antd.js"></script>
+<script>
+// 省 → 市 的树，默认全部折叠；现居城市不可搜索（只能逐级展开），籍贯可以搜索。
+const h = React.createElement;
+const { Form, TreeSelect } = antd;
+const data = [
+  { value: "sh-p", title: "上海", children: [{ value: "sh", title: "上海市" }] },
+  { value: "js", title: "江苏", children: [{ value: "nj", title: "南京" }, { value: "sz", title: "苏州" }] },
+  { value: "gd", title: "广东", children: [{ value: "gz", title: "广州" }, { value: "szx", title: "深圳" }] },
+  { value: "zj", title: "浙江", children: [{ value: "hz", title: "杭州" }] },
+];
+function App() {
+  const [form] = Form.useForm();
+  window.__form = form;
+  return h(Form, { form, layout: "vertical", style: { maxWidth: 480 } },
+    h(Form.Item, { label: "现居城市", name: "city" }, h(TreeSelect, { treeData: data, placeholder: "请选择城市", style: { width: "100%" } })),
+    h(Form.Item, { label: "籍贯", name: "hometown" }, h(TreeSelect, { treeData: data, showSearch: true, treeNodeFilterProp: "title", placeholder: "请选择籍贯", style: { width: "100%" } })));
+}
+ReactDOM.createRoot(document.getElementById("root")).render(h(App));
+</script></body></html>

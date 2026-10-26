@@ -48,7 +48,7 @@ export type DesktopBridgeAutofillStatus = {
   phase: "scanning" | "ai" | "done" | "error" | "preview";
   message: string;
   plan?: FillPlan;
-  summary?: { filled: number; manual: number; preserved: number; excluded: number; uploaded: number };
+  summary?: { filled: number; manual: number; /** Of `manual`: 身份证 / 家庭成员 etc. left on purpose. */ deliberate?: number; preserved: number; excluded: number; uploaded: number };
   details?: { id?: string; label: string; state: string; source?: DesktopBridgeFillSource }[];
 };
 
@@ -87,7 +87,7 @@ export type DesktopBridge = {
   /** 「这页没填好」: saves the page's form structure (no filled-in values) as a file and shows it in Finder. */
   captureSample(note?: string): Promise<{ file: string; fields: number }>;
   /** 填写统计.json: per site, how much 一键填写 filled and how much was typed by hand afterwards. */
-  fillStats(): Promise<{ stats: Record<string, { fills: number; filled: number; manual: number; typed: number; samples: number; lastAt?: string }>; samples: number }>;
+  fillStats(): Promise<{ stats: Record<string, { fills: number; filled: number; manual: number; deliberate?: number; typed: number; samples: number; lastAt?: string }>; samples: number }>;
   openSamples(): Promise<void>;
   /** Writes text to the system clipboard (navigator.clipboard fails while the page view has focus). */
   copyText(text: string): Promise<void>;
@@ -116,7 +116,7 @@ export type DesktopBridge = {
   showDownload(file: string): Promise<void>;
   clearSiteData(): Promise<void>;
   dismissForm(payload: { tabId: number; signature: string }): Promise<void>;
-  onFormDetected(callback: (payload: { tabId: number; count: number; signature: string }) => void): () => void;
+  onFormDetected(callback: (payload: { tabId: number; count: number; signature: string; typing?: boolean }) => void): () => void;
   onApplicationSubmitted(callback: (payload: { tabId: number; url: string; title: string; evidence: string }) => void): () => void;
   find(options: { text: string; forward?: boolean; findNext?: boolean }): Promise<void>;
   findStop(): Promise<void>;

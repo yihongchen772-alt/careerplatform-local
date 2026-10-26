@@ -36,3 +36,12 @@ test("职位搜索页里敲搜索框不算「手填」，不会自动存样本",
   const result = await run(form, Object.fromEntries(["a", "b", "c", "d"].map(typed)));
   assert.ok(result.handTyped <= 3 && result.handTyped >= 1, `search box not counted, got ${result.handTyped}`);
 });
+
+test("故意不填的栏目（身份证、家庭成员）和真没填上的分开标记", () => {
+  const f = (label, extra = {}) => ({ id: label, label, tag: "input", type: "text", section: "", ...extra });
+  const none = new Set();
+  assert.equal(core.fillDetail(f("身份证号码"), null, none, none).deliberate, true);
+  assert.equal(core.fillDetail(f("紧急联系人姓名"), null, none, none).deliberate, true);
+  assert.equal(core.fillDetail(f("某个没见过的栏目"), null, none, none).deliberate, undefined);
+  assert.equal(core.fillDetail(f("某个没见过的栏目"), null, none, none).source, "manual");
+});

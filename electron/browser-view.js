@@ -1215,8 +1215,8 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     try {
       for (const frame of allFrames(tab.view.webContents)) await frame.executeJavaScript(`document.documentElement.setAttribute("data-cp-task", ${JSON.stringify(task.id)})`).catch(() => {});
       if (options?.mode === "apply") await applyAutofillPlan(electronAdapter(tab, task), options);
-      else { tab.archiveUrl = tab.view.webContents.getURL(); tab.positionId = options?.positionId; tab.resumeVersionId = resumeVersionId; tab.variantId = options?.variantId; const result = await runAutofillCore(electronAdapter(tab, task), resumeVersionId, options || {});
-        if (result?.phase === "done" && result.summary) { tab.filledAt = Date.now(); tab.typedSinceFill = 0; tab.typedPage = tab.view.webContents.getURL().split("#")[0]; recordFillStats(tab.archiveUrl, { fills: 1, filled: result.summary.filled || 0, manual: result.summary.manual || 0 }); } }
+      else { tab.archiveUrl = tab.view.webContents.getURL(); tab.positionId = options?.positionId; tab.resumeVersionId = resumeVersionId; tab.variantId = options?.variantId; await rememberPreFill(tab); const result = await runAutofillCore(electronAdapter(tab, task), resumeVersionId, options || {});
+        if (result?.phase === "done" && result.summary) { tab.filledAt = Date.now(); tab.typedSinceFill = 0; tab.typedPage = tab.view.webContents.getURL().split("#")[0]; recordFillStats(tab.archiveUrl, { fills: 1, filled: result.summary.filled || 0, manual: result.summary.manual || 0, deliberate: result.summary.deliberate || 0 }); noteMissedFields(tab, result); } }
     } finally { fillingTabs.delete(tab.id); fillTasks.delete(tab.id); }
   });
 
@@ -1271,6 +1271,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
         if (tab.typedSinceFill >= AUTO_SAMPLE_TYPED) captureSample(tab, `自动保存：一键填写后手填了 ${tab.typedSinceFill} 个字段`, { auto: true }).catch(() => {});
       }
       if (result.handTyped) recordFillStats(tab.view.webContents.getURL(), { typed: result.handTyped });
+      nudgeToFill(tab).catch(() => {});
       return result;
     } finally {
       savingAnswersForTabs.delete(tab.id);
@@ -1282,18 +1283,52 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
 // by themselves when a filled page still needed several boxes typed in.
 const AUTO_SAMPLE_TYPED = 3;
 const AUTO_SAMPLE_LIMIT = 120;
+const AUTO_SAMPLE_MISSED = 8;
+const NUDGE_EMPTY_FIELDS = 4;
 const sampleDir = () => path.join(app.getPath("userData"), "网申样本");
 
-async function captureSample(tab, note, { auto = false } = {}) {
+/** The page as it is right before 一键填写 runs, kept for an automatic sample (see captureSample). */
+async function rememberPreFill(tab) {
+  try {
+    const url = new URL(tab.view.webContents.getURL());
+    tab.preFill = { page: `${url.origin}${url.pathname}`, at: Date.now(), frames: await snapshotFrames(tab.view.webContents) };
+  } catch { tab.preFill = null; }
+}
+
+/** What 一键填写 left to the user that it should have filled: remembered for the sample, and a page that
+ * still needs many boxes saves one by itself even if the user fixes them without typing (数据 for the next round). */
+function noteMissedFields(tab, result) {
+  const missed = (result?.details || []).filter((d) => d.source === "manual" && !d.deliberate).map((d) => ({ label: String(d.label || "").slice(0, 60), state: String(d.state || "").slice(0, 60) })).slice(0, 80);
+  tab.lastMissed = missed;
+  if (missed.length >= AUTO_SAMPLE_MISSED) captureSample(tab, `自动保存：一键填写后仍有 ${missed.length} 项没填上`, { auto: true }).catch(() => {});
+}
+
+/** Typing a form in by hand with 一键填写 never run on this page (it was dismissed, or never noticed):
+ * say once per page that the boxes still empty can be filled in one click. */
+async function nudgeToFill(tab) {
   const wc = tab.view.webContents;
-  let page;
-  try { const url = new URL(wc.getURL()); page = `${url.origin}${url.pathname}`; } catch { throw new Error("先打开一个网申页面"); }
-  const dir = sampleDir();
-  const host = new URL(page).hostname;
-  const day = new Date().toISOString().slice(0, 10);
-  // One automatic sample per page a day; a click on 「这页没填好」 always saves.
-  const key = crypto.createHash("sha1").update(page).digest("hex").slice(0, 8);
-  if (auto && fs.existsSync(dir) && fs.readdirSync(dir).some((name) => name.startsWith(`auto-${day}-${host}-${key}`))) return { file: "", fields: 0, skipped: true };
+  const page = wc.getURL().split("#")[0];
+  if (!/^https?:/i.test(page) || wc.isLoading()) return;
+  if (tab.filledAt && tab.typedPage === page) return;
+  tab.nudged = tab.nudged || new Set();
+  if (tab.nudged.has(page)) return;
+  // Only once the applicant has really typed something in this page.
+  let edited = false;
+  for (const frame of allFrames(wc)) if (await frame.executeJavaScript(`(${hasUserEditedFields.toString()})()`).catch(() => false)) { edited = true; break; }
+  if (!edited) return;
+  let count = 0;
+  const sigs = [];
+  for (const frame of allFrames(wc)) {
+    const r = await frame.executeJavaScript(`(${countFillableFields.toString()})(${scanPageFields.toString()})`).catch(() => null);
+    if (r) { count += r.count; sigs.push(r.signature); }
+  }
+  if (count < NUDGE_EMPTY_FIELDS || activeTab()?.id !== tab.id) return;
+  tab.nudged.add(page);
+  send("browser:form-detected", { tabId: tab.id, count, signature: sigs.join("||"), typing: true });
+}
+
+/** Form structure of every frame, labels only: no current values or saved entries. */
+async function snapshotFrames(wc) {
   const frames = [];
   for (const frame of allFrames(wc)) {
     try {
@@ -1309,11 +1344,28 @@ async function captureSample(tab, note, { auto = false } = {}) {
       });
     } catch { /* A frame that refuses scripts has no form to show. */ }
   }
+  return frames;
+}
+
+async function captureSample(tab, note, { auto = false } = {}) {
+  const wc = tab.view.webContents;
+  let page;
+  try { const url = new URL(wc.getURL()); page = `${url.origin}${url.pathname}`; } catch { throw new Error("先打开一个网申页面"); }
+  const dir = sampleDir();
+  const host = new URL(page).hostname;
+  const day = new Date().toISOString().slice(0, 10);
+  // One automatic sample per page a day; a click on 「这页没填好」 always saves.
+  const key = crypto.createHash("sha1").update(page).digest("hex").slice(0, 8);
+  if (auto && fs.existsSync(dir) && fs.readdirSync(dir).some((name) => name.startsWith(`auto-${day}-${host}-${key}`))) return { file: "", fields: 0, skipped: true };
+  // A fill ran on this page a moment ago: its clean "before" structure beats today's
+  // state, where chosen values have replaced the labels of dropdowns.
+  const before = tab.preFill && tab.preFill.page === page && Date.now() - tab.preFill.at < 6 * 3_600_000 ? tab.preFill : null;
+  const frames = before ? before.frames : await snapshotFrames(wc);
   if (!frames.some((frame) => frame.fields.length)) throw new Error("这个页面上没找到表单");
   fs.mkdirSync(dir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
   const file = path.join(dir, auto ? `auto-${day}-${host}-${key}.json` : `${host}-${stamp}.json`);
-  fs.writeFileSync(file, JSON.stringify({ app: app.getVersion(), page, title: wc.getTitle(), capturedAt: new Date().toISOString(), auto, note: typeof note === "string" ? note.slice(0, 1000) : "", frames }, null, 1));
+  fs.writeFileSync(file, JSON.stringify({ app: app.getVersion(), page, title: wc.getTitle(), capturedAt: new Date().toISOString(), auto, state: before ? "before" : "after", note: typeof note === "string" ? note.slice(0, 1000) : "", missed: before ? tab.lastMissed || [] : undefined, frames }, null, 1));
   if (auto) {
     const autos = fs.readdirSync(dir).filter((name) => name.startsWith("auto-")).sort();
     for (const name of autos.slice(0, Math.max(0, autos.length - AUTO_SAMPLE_LIMIT))) fs.rmSync(path.join(dir, name), { force: true });

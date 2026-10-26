@@ -480,6 +480,10 @@ Object.assign(suites, {
     { label: "项目描述", read: val("#x0"), expect: /协同过滤/ },
     { label: "第二项没有资料不乱填", read: val("#d1-start_date"), expect: "" },
   ]],
+  "antd-tree": [[
+    { label: "现居城市(不可搜索，逐级展开)", read: fv("city"), expect: "sh" },
+    { label: "籍贯 江苏南京(可搜索)", read: fv("hometown"), expect: "nj" },
+  ], { wait: 600 }],
   "wizard": [[
     { label: "第1步 姓名", read: val("#a1"), expect: "林晓舟" },
     { label: "第1步 性别", read: sel("#a4"), expect: "女" },

@@ -214,7 +214,7 @@ export function EmbeddedBrowser({
   // Multi-step wizard support: the main process reports "a form with N
   // empty fields just appeared" for the active tab; either show a one-line
   // prompt or, with 自动填每一页 on, just fill it.
-  const [detected, setDetected] = useState<{ tabId: number; count: number; signature: string } | null>(null);
+  const [detected, setDetected] = useState<{ tabId: number; count: number; signature: string; typing?: boolean } | null>(null);
   const [submitted, setSubmitted] = useState<{
     tabId: number;
     url: string;
@@ -428,7 +428,7 @@ export function EmbeddedBrowser({
     const offForm = bridge.onFormDetected((payload) => {
       const live = liveRef.current;
       if (live.autofilling || payload.tabId !== activeIdRef.current) return;
-      if (live.autoFill && live.fillModules.length > 0) {
+      if (!payload.typing && live.autoFill && live.fillModules.length > 0) {
         setDetected(null);
         setAutofilling(true);
         setStatus({ phase: "scanning", message: `检测到新一页表单（${payload.count} 个字段），自动填写中…` });
@@ -1117,7 +1117,7 @@ export function EmbeddedBrowser({
           >
             <span title={status.message}>
               {status.summary
-                ? `已填 ${status.summary.filled} 项 · 保留原有 ${status.summary.preserved} 项 · 待手填 ${status.summary.manual} 项${status.summary.excluded ? ` · 范围外 ${status.summary.excluded} 项` : ""}${status.summary.uploaded ? ` · 上传 ${status.summary.uploaded} 份简历` : ""}。提交前请核对网页上的紫色框。`
+                ? `已填 ${status.summary.filled} 项 · 保留原有 ${status.summary.preserved} 项 · 待手填 ${status.summary.manual} 项${status.summary.deliberate ? `（含 ${status.summary.deliberate} 项身份证/他人信息，故意不填）` : ""}${status.summary.excluded ? ` · 范围外 ${status.summary.excluded} 项` : ""}${status.summary.uploaded ? ` · 上传 ${status.summary.uploaded} 份简历` : ""}。提交前请核对网页上的紫色框。`
                 : status.message}
             </span>
           </Infobar>
@@ -1144,7 +1144,7 @@ export function EmbeddedBrowser({
               <Button size="xs" onClick={() => handleAutofill()}><Sparkles />填这页</Button>
             </>}
           >
-            这页有 {detected.count} 个可以自动填写的字段。
+            {detected.typing ? <>你在手动填写，这页还有 {detected.count} 个空着的字段，可以一键填好（你已经填的不会动）。</> : <>这页有 {detected.count} 个可以自动填写的字段。</>}
           </Infobar>
         )}
         {submitted && submitted.tabId === tabsState.activeId && (
