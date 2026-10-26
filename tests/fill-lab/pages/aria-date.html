@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8"><title>简历投递 | 仿汇川（React Aria 日期框）</title></head>
+<body>
+<!-- 仿 HeroUI / React Aria 的日期选择器：可见的是 年/月/日 三个 contenteditable 分段，
+     真正能写值的是藏在 hidden-dateinput-container 里的原生 <input type=date>（没有任何标签），
+     表单项用 <label> 但 label 没有 for。改它的值，分段要跟着变。 -->
+<h2>校园招聘开启星辰大海，共同智造非凡未来。</h2>
+<h3>项目经历<button type="button">+ 添加一项</button></h3>
+<div id="blocks"></div>
+<script>
+  const labels = [["start_date", "开始时间"], ["end_date", "结束时间"]];
+  function picker(i, key, text) {
+    return `<div id="field-error-project-${i}-${key}"><label>${text}<span>*</span></label><div><div><div data-slot="date-picker">
+      <div role="group" aria-label="请选择${text}"><div role="presentation">
+        <span role="spinbutton" aria-label="年, 请选择${text}" contenteditable="true" data-type="year"></span><span aria-hidden="true">/</span>
+        <span role="spinbutton" aria-label="月, 请选择${text}" contenteditable="true" data-type="month"></span><span aria-hidden="true">/</span>
+        <span role="spinbutton" aria-label="日, 请选择${text}" contenteditable="true" data-type="day"></span></div>
+        <input hidden type="text"><button type="button" aria-label="日历" aria-haspopup="dialog"></button></div>
+      <div aria-hidden="true" data-testid="hidden-dateinput-container" style="position:absolute;width:1px;height:1px;overflow:hidden;opacity:0"><input id="d${i}-${key}" tabindex="-1" step="60" type="date"></div>
+    </div></div></div></div>`;
+  }
+  document.getElementById("blocks").innerHTML = [0, 1].map((i) => `<div class="block"><span>第${i + 1}项</span>
+    <div id="field-error-project-${i}-name"><label>项目名称<span>*</span></label><div><input id="n${i}" placeholder="请输入项目名称" aria-label="请输入项目名称" type="text"></div></div>
+    <div id="field-error-project-${i}-job"><label>职务<span>*</span></label><div><input id="j${i}" placeholder="请输入职务" aria-label="请输入职务" type="text"></div></div>
+    ${labels.map(([k, t]) => picker(i, k, t)).join("")}
+    <div><label>项目描述</label><textarea id="x${i}" placeholder="请输入项目描述" aria-label="请输入项目描述"></textarea></div></div>`).join("");
+  // 原生日期框变了 -> 分段显示跟着变（和 React Aria 的 autofill 支持一致）
+  document.querySelectorAll("input[type=date]").forEach((input) => input.addEventListener("change", () => {
+    const [y, m, d] = input.value.split("-");
+    const g = input.closest("[data-slot=date-picker]");
+    g.querySelector("[data-type=year]").textContent = y; g.querySelector("[data-type=month]").textContent = Number(m); g.querySelector("[data-type=day]").textContent = Number(d);
+  }));
+</script>
+</body></html>

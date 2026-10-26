@@ -168,6 +168,15 @@ function scanPageFields(prefix, readOnly = false) {
   }
 
   function labelFor(el) {
+    // React Aria / HeroUI date pickers show 年/月/日 segments; the only real
+    // <input type=date> is an unlabeled twin hidden beside them (for browser
+    // autofill). The visible group's aria-label ("请选择开始时间") names it.
+    if (el.type === "date" && !el.getAttribute("aria-label")) {
+      const twin = el.closest("[data-testid='hidden-dateinput-container']");
+      const group = twin?.parentElement?.querySelector("[role='group'][aria-label]");
+      const named = clean(group?.getAttribute("aria-label")).replace(/^请(?:选择|输入|填写)?/, "");
+      if (named) return named;
+    }
     if (el.id) {
       const byFor = rootOf(el).querySelector('label[for="' + CSS.escape(el.id) + '"]');
       if (byFor && labelText(byFor)) return labelText(byFor);
@@ -1612,6 +1621,32 @@ function bareLabel(field) {
   return String(field.label || field.placeholder || "").replace(/^请(?:输入|选择|填写)/, "").replace(/[＊*：:\s]+/g, "").toLowerCase();
 }
 
+const SEARCH_BOX = /搜索|查询|关键词|关键字|search|keyword/i;
+
+// 飞书招聘「社交账号」: a 社交平台 dropdown paired with a "URL / ID" box, row
+// after row. Rows follow the accounts saved in 网申资料 (微信, then QQ); the ID
+// goes with whatever platform the row actually shows, so a platform the user
+// already picked (QQ in row one) never receives the wechat ID.
+const SOCIAL_ACCOUNTS = [
+  { name: "微信", test: /微信|wechat|weixin/i, get: (p) => p.wechat },
+  { name: "QQ", test: /^qq|\bqq\b/i, get: (p) => p.qq },
+];
+function socialValues(fields, profile) {
+  const types = fields.filter((field) => /^社交(?:平台|账号类型|软件)$/.test(bareLabel(field)));
+  const ids = fields.filter((field) => /^(?:url[\/／]id|账号[\/／]链接|账号id)$/.test(bareLabel(field)));
+  const accounts = SOCIAL_ACCOUNTS.filter((account) => String(account.get(profile) || "").trim());
+  const values = new Map();
+  types.forEach((field, i) => { if (!field.hasValue && !field.userEdited && accounts[i]) values.set(field.id, accounts[i].name); });
+  ids.forEach((field, i) => {
+    const type = types[i];
+    const platform = type ? (type.hasValue || type.userEdited ? type.currentValue : values.get(type.id)) : "";
+    const account = platform && SOCIAL_ACCOUNTS.find((item) => item.test.test(platform));
+    const value = account && String(account.get(profile) || "").trim();
+    if (value) values.set(field.id, value);
+  });
+  return values;
+}
+
 // One box holding the whole span ("起止时间: 2021.09 - 2025.06"). Only trusted
 // as the entire label inside a block, or for 在校时间-style education labels.
 const RANGE_LABEL = /^(?:起止(?:时间|日期|年月)?|起讫(?:时间|日期)?|时间段|时间范围|在校时间|就读时间|在读时间|实习时间|工作时间|任职时间|项目时间|时间|period|duration|dates?)$/i;
@@ -2748,6 +2783,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     let thirdPartyCount = 0;
     let pickOnPageCount = 0;
     const excluded = new Set();
+    const social = socialValues(fields, profile);
     for (const field of fields) {
       // Classify before skipping prefilled fields: a filled first education
       // block still occupies row one, so the next empty "学校" gets row two.
@@ -2764,6 +2800,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       if (isNeverGuessField(field)) { neverGuessCount++; continue; }
       // Someone else's details (家庭成员, 紧急联系人): never the applicant's, never AI.
       if (isThirdPartyField(field)) { thirdPartyCount++; continue; }
+      if (social.has(field.id)) { pairs.push({ id: field.id, value: social.get(field.id), source: "profile", label: field.label, tag: field.tag }); continue; }
       // A read-only calendar box can't be typed into; say what to pick.
       if (field.readonlyPicker) {
         const suggestion = repeat ? repeatFieldValue(field, repeat, profile) : matchFlatField(field, profile);
@@ -3177,7 +3214,10 @@ async function saveCorrectionsCore(adapter, resumeVersionId, onlyUserEdited = fa
     fields: fields.filter((field) => !isForbiddenMemoryField(field) && snapshots[field.id] && String(snapshots[field.id].value || "").length <= 20000).map((field) => ({ label: field.label || field.placeholder || field.name || "字段", fieldKey: field.mappingKey, section: field.section, value: String(snapshots[field.id].value || ""), selected: false, remember: false, edited: !!snapshots[field.id].userEdited, captured: true })) };
   const signature = JSON.stringify(draft);
   // Boxes the applicant typed in that 一键填写 left to them (essays are theirs to write anyway).
-  const handTyped = discover ? answers.filter((answer) => answer.kind === "field").length + recordsTyped : 0;
+  // A 职位搜索 / 筛选 page is not a form it missed (ubtrobot's 校招职位 list was auto-sampled
+  // from three search boxes): search boxes never count, and fewer than three real boxes is no form.
+  const formFields = fields.filter((field) => !SEARCH_BOX.test(`${field.label || ""} ${field.placeholder || ""} ${field.name || ""}`));
+  const handTyped = discover && formFields.length >= 3 ? answers.filter((answer) => answer.kind === "field" && !SEARCH_BOX.test(answer.questionLabel || "")).length + recordsTyped : 0;
   if (!discover) { answers.length = 0; records.length = 0; withdrawals.length = 0; savedFields.length = 0; emptyEdits.length = 0; }
   if (!answers.length && !records.length && !withdrawals.length && (!draft.fields.length || adapter.getDraftSignature?.() === signature)) return { saved: 0, draftSaved: draft.fields.length > 0 && adapter.getDraftSignature?.() === signature };
   savedFields.push(...emptyEdits);
@@ -3247,7 +3287,8 @@ function validatePageFields() {
     const row = el.closest(".ant-form-item, .el-form-item, .form-group, [class*='form-item']");
     const message = row?.querySelector(".ant-form-item-explain-error, .el-form-item__error, [role='alert']")?.textContent?.trim();
     if (message || el.getAttribute("aria-invalid") === "true") issues.push({ id, message: `网页提示：${message || "内容未通过校验"}` });
-    else if (el.validity && !el.validity.valid) issues.push({ id, message: el.validity.valueMissing ? "必填项尚未填写" : `格式需核对：${el.validationMessage || "网页校验未通过"}` });
+    // React Aria's hidden date twin carries step="60" (meant as seconds, read as 60 days).
+    else if (el.validity && !el.validity.valid && !(el.type === "date" && el.validity.stepMismatch && !el.validity.valueMissing && !el.validity.badInput && !el.validity.typeMismatch && !el.validity.rangeUnderflow && !el.validity.rangeOverflow)) issues.push({ id, message: el.validity.valueMissing ? "必填项尚未填写" : `格式需核对：${el.validationMessage || "网页校验未通过"}` });
   }
   return issues;
 }
@@ -3364,6 +3405,7 @@ module.exports = {
   classifyRepeatBlocks, savedRecordsOnPage, repeatsSavedEntry, previewRecordBlocks, formSkeleton, rowsForGroup, recordReference, awardFieldKind,
   profileChoices, applyAutofillPlan, validatePageFields, focusFormField, collectApplicationFields, readCurrentApplicationFields, watchApplicationFields,
   AUTOFILL_MODULES,
+  socialValues,
   fieldModule,
   attachResumeFile,
   showPageStatus,
