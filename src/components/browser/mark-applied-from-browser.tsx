@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/select";
 import type { ApplicationSnapshot } from "@/types/desktop-bridge";
 import type { IdentitySite } from "@/lib/application-identity";
+import { cityFromSubmission } from "@/lib/application-city";
 import { sourceFromUrl } from "@/lib/source-from-url";
 import { recognizeApplication, type Recognition } from "@/components/browser/recognize-application";
 
@@ -70,7 +71,9 @@ export function MarkAppliedFromBrowserDialog({
   const [title, setTitle] = useState(initialRecognition?.title || "");
   const [recognition, setRecognition] = useState<Recognition | null>(initialPositionId ? null : initialRecognition ?? null);
   const [recognizing, setRecognizing] = useState(!initialPositionId && !initialRecognition);
-  const touched = useRef({ position: false, company: false, title: false });
+  const touched = useRef({ position: false, company: false, title: false, city: false });
+  // Where the job is, read from the form (应聘城市) or the page (工作地点); editable.
+  const [city, setCity] = useState("");
   const [appliedDate, setAppliedDate] = useState(todayKey);
   const [source, setSource] = useState(sourceFromUrl(pageUrl));
   const [resumeVersionId, setResumeVersionId] = useState(
@@ -78,6 +81,22 @@ export function MarkAppliedFromBrowserDialog({
   );
   const [archive, setArchive] = useState(true);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const snapshot = await window.desktopBridge?.applicationSnapshot();
+        if (!snapshot || cancelled || touched.current.city) return;
+        const found = cityFromSubmission(snapshot.fields || [], snapshot.text);
+        if (found.length) setCity(found.join("、"));
+      } catch {
+        // No city read: left blank, and the list works it out from the 岗位.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open]);
 
   useEffect(() => {
     if (!open || initialPositionId || initialRecognition) return;
@@ -111,7 +130,7 @@ export function MarkAppliedFromBrowserDialog({
       const captured: ApplicationSnapshot | null = archive ? await window.desktopBridge?.applicationSnapshot() || null : null;
       // The material package keeps only the form; page text and history were for recognition.
       const snapshot = captured ? { url: captured.url, fields: captured.fields, positionId: captured.positionId, resumeVersionId: captured.resumeVersionId, variantId: captured.variantId } : null;
-      const res = await fetch("/api/desktop-browser/record-application", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ companyName: selected?.companyName || companyName.trim(), title: selected ? selected.title : title.trim(), appliedDate: new Date(appliedDate).toISOString(), source, positionId: selected?.id, resumeVersionId: resumeVersionId || undefined, applyUrl: pageUrl, snapshot: snapshot || undefined }) });
+      const res = await fetch("/api/desktop-browser/record-application", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ companyName: selected?.companyName || companyName.trim(), title: selected ? selected.title : title.trim(), appliedDate: new Date(appliedDate).toISOString(), source, positionId: selected?.id, resumeVersionId: resumeVersionId || undefined, applyUrl: pageUrl, city: city.trim() || undefined, snapshot: snapshot || undefined }) });
       const body = await res.json(); if (!res.ok) throw new Error(body.error);
       toast.success(`已记为投递：${selected?.companyName || companyName.trim()} · ${selected ? selected.title : title.trim()}。之后打开这家公司的「我的投递」页，可以一键设为进度页自动同步阶段`);
       onOpenChange(false);
@@ -174,6 +193,10 @@ export function MarkAppliedFromBrowserDialog({
               </div>
             </div>
           )}
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">工作城市</Label>
+            <Input value={city} onChange={(e) => { touched.current.city = true; setCity(e.target.value); }} placeholder="从页面读不到就留空，列表会按岗位信息识别" maxLength={40} />
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">投递日期</Label>

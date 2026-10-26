@@ -68,6 +68,8 @@ export type ApplicationRow = {
   source: string | null;
   /** Cities this 投递 is in: set by hand, else the 岗位's, else the title's. */
   cities: string[];
+  /** The company's 行业 (industryLabel), 未分类 when unknown. */
+  industry: string;
   salaryMin: number | null;
   salaryMax: number | null;
   /** The step's time or deadline that matters now (see nextScheduleItem). */
@@ -103,10 +105,15 @@ export function ApplicationsTable({
   now,
   orderLabel = "",
   groupBy = "none",
+  folded: foldedKeys,
+  onToggleFold,
 }: {
   applications: ApplicationRow[];
   /** Lay the rows out in sections by company, city or week. */
   groupBy?: GroupKind;
+  /** Sections folded away, kept by the page so 全部折叠 reaches both views. */
+  folded: Set<string>;
+  onToggleFold: (key: string) => void;
   /** The search's matches, when the list shows search results. */
   hits?: Map<string, ApplicationHits> | null;
   now: number;
@@ -119,9 +126,6 @@ export function ApplicationsTable({
   // Deleted in a batch, waiting out the 撤销 window.
   const [hidden, setHidden] = useState<Set<string>>(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
-  // Sections folded away; starts over when the grouping changes.
-  const [folded, setFolded] = useState<{ kind: GroupKind; keys: Set<string> }>({ kind: groupBy, keys: new Set() });
-  const foldedKeys = folded.kind === groupBy ? folded.keys : new Set<string>();
 
   const filtered = useMemo(() => {
     const list = (stageFilter === "ALL" ? [...applications] : applications.filter((a) => a.currentStage === stageFilter)).filter((a) => !hidden.has(a.id));
@@ -226,12 +230,6 @@ export function ApplicationsTable({
     });
   }
 
-  function toggleFold(key: string) {
-    const keys = new Set(foldedKeys);
-    if (!keys.delete(key)) keys.add(key);
-    setFolded({ kind: groupBy, keys });
-  }
-
   function selectSection(section: Group<ApplicationRow>, on: boolean) {
     setSelected((previous) => {
       const next = new Set(previous);
@@ -252,7 +250,7 @@ export function ApplicationsTable({
         count={section.items.length}
         summary={groupSummary(section.items, now)}
         collapsed={foldedKeys.has(section.key)}
-        onToggle={() => toggleFold(section.key)}
+        onToggle={() => onToggleFold(section.key)}
         leading={
           <Checkbox
             aria-label={`选择「${section.label}」这一组`}
@@ -408,7 +406,8 @@ export function ApplicationsTable({
                 <TableCell className="w-8 pr-0">
                   <Checkbox aria-label={`选择 ${app.company.name} · ${app.title}`} checked={checked} onCheckedChange={(value) => toggle(app.id, value === true)} />
                 </TableCell>
-                <TableCell>
+                {/* max-w-0 + w-full: the name column takes what the others leave and truncates, instead of stretching the table. */}
+                <TableCell className="w-full min-w-56 max-w-0">
                   <Link href={`/applications/${app.id}`} className="flex min-w-0 items-center gap-3 py-1.5 hover:text-primary">
                     <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/8 text-sm font-semibold text-primary">{app.company.name.slice(0, 1)}</span>
                     <span className="min-w-0">
@@ -421,13 +420,14 @@ export function ApplicationsTable({
                   <Badge className={cn("h-6 border-0 px-2.5", applicationStageStyle(app.currentStage).pill)}>
                     {STAGE_LABELS[app.currentStage]}
                   </Badge>
-                  {app.currentStageLabel && <p className="mt-1 max-w-48 truncate text-xs text-muted-foreground" title={app.currentStageLabel}>{app.currentStageLabel}</p>}
+                  {app.currentStageLabel && <p className="mt-1 max-w-36 truncate text-xs text-muted-foreground" title={app.currentStageLabel}>{app.currentStageLabel}</p>}
                 </TableCell>
-                <TableCell className="max-w-72">
+                <TableCell className="max-w-52">
                   {!terminal && (app.nextSchedule || (app.step && app.step.phase !== "open")) ? <ProgressLine applicationId={app.id} step={app.step} next={app.nextSchedule} now={now} /> : <span className="text-muted-foreground">—</span>}
                 </TableCell>
-                <TableCell className="text-xs tabular-nums text-muted-foreground">
+                <TableCell className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">
                   {new Date(app.appliedDate).toLocaleDateString("zh-CN")}
+                  {(app.source || app.referrer) && <span className="block max-w-24 truncate text-[11px] tabular-nums" title={[app.source, app.referrer ? `内推：${app.referrer}` : ""].filter(Boolean).join(" · ")}>{[app.source, app.referrer ? `内推：${app.referrer}` : ""].filter(Boolean).join(" · ")}</span>}
                 </TableCell>
                 <TableCell>
                   <span
@@ -438,14 +438,13 @@ export function ApplicationsTable({
                     {stale} 天
                   </span>
                 </TableCell>
-                <TableCell className="text-muted-foreground">{app.source ?? "—"}{app.referrer ? <span className="block text-xs">内推：{app.referrer}</span> : null}</TableCell>
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-1">
                   <QuickStageMenu applicationId={app.id} companyName={app.company.name} currentStage={app.currentStage} step={app.step} />
                   <ConfirmDeleteButton
                     trigger={
-                      <Button size="sm" variant="ghost">
-                        删除
+                      <Button size="icon-sm" variant="ghost" aria-label={`删除 ${app.company.name} · ${app.title}`} title="删除" className="text-muted-foreground hover:text-destructive">
+                        <Trash2 />
                       </Button>
                     }
                     title={`确定删除 ${app.company.name} · ${app.title} 吗？`}
@@ -567,9 +566,8 @@ export function ApplicationsTable({
             <TableHead>公司 / 岗位</TableHead>
             <TableHead>当前状态</TableHead>
             <TableHead>下一步</TableHead>
-            <TableHead>投递日期</TableHead>
-            <TableHead>距上次更新</TableHead>
-            <TableHead>渠道</TableHead>
+            <TableHead className="whitespace-nowrap">投递 / 渠道</TableHead>
+            <TableHead className="whitespace-nowrap">未更新</TableHead>
             <TableHead className="text-right">操作</TableHead>
           </TableRow>
         </TableHeader>
@@ -578,7 +576,7 @@ export function ApplicationsTable({
             <Fragment key={section.key}>
               {grouped && (
                 <TableRow className="border-0 hover:bg-transparent">
-                  <TableCell colSpan={8} className="px-0 pb-1 pt-4">{sectionHeader(section)}</TableCell>
+                  <TableCell colSpan={7} className="px-0 pb-1 pt-4">{sectionHeader(section)}</TableCell>
                 </TableRow>
               )}
               {!foldedKeys.has(section.key) && section.items.map(desktopRow)}
@@ -586,7 +584,7 @@ export function ApplicationsTable({
           ))}
           {filtered.length === 0 && (
             <TableRow>
-              <TableCell colSpan={8} className="h-32 text-center text-muted-foreground">
+              <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">
                 <div className="flex flex-col items-center gap-2">
                   <Send className="size-8 text-muted-foreground/50" />
                   <span>暂无投递记录</span>

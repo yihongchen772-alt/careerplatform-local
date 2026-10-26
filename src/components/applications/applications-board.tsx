@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import Link from "next/link";
 import { Clock3, Send } from "lucide-react";
 import type { ApplicationStage } from "@prisma/client";
@@ -28,6 +28,7 @@ export type BoardApplication = {
   appliedDate: string;
   currentStageDate: string;
   cities?: string[];
+  industry?: string;
   waiting?: boolean;
   /** The step's time or deadline that matters now (see nextScheduleItem). */
   nextSchedule: ScheduleItem | null;
@@ -130,8 +131,7 @@ function BoardBody({ applications, hits, narrowed, now }: { applications: BoardA
  * so only columns with something in them are shown. `sections`: the same
  * 投递 split by company / city / week, each section its own board.
  */
-export function ApplicationsBoard({ applications, sections, hits, narrowed = false, now, orderLabel = "" }: { applications: BoardApplication[]; sections?: Group<BoardApplication>[] | null; hits?: Map<string, ApplicationHits> | null; narrowed?: boolean; now: number; orderLabel?: string }) {
-  const [folded, setFolded] = useState<Set<string>>(() => new Set());
+export function ApplicationsBoard({ applications, sections, folded, onToggleFold, hits, narrowed = false, now, orderLabel = "" }: { applications: BoardApplication[]; sections?: Group<BoardApplication>[] | null; folded: Set<string>; onToggleFold: (key: string) => void; hits?: Map<string, ApplicationHits> | null; narrowed?: boolean; now: number; orderLabel?: string }) {
   const blocks = sections ?? [{ key: "all", label: "", items: applications }];
   // The order a 投递's page steps through: section by section, column by column, as seen here.
   const orderKey = blocks.flatMap((block) => {
@@ -151,7 +151,7 @@ export function ApplicationsBoard({ applications, sections, hits, narrowed = fal
     {sections ? sections.map((section) => {
       const closed = folded.has(section.key);
       return <div key={section.key} className="space-y-3">
-        <GroupHeader label={section.label} hint={section.hint} count={section.items.length} summary={groupSummary(section.items, now)} collapsed={closed} onToggle={() => setFolded((previous) => { const next = new Set(previous); if (!next.delete(section.key)) next.add(section.key); return next; })} />
+        <GroupHeader label={section.label} hint={section.hint} count={section.items.length} summary={groupSummary(section.items, now)} collapsed={closed} onToggle={() => onToggleFold(section.key)} />
         {!closed && <BoardBody applications={section.items} hits={hits} narrowed now={now} />}
       </div>;
     }) : <BoardBody applications={applications} hits={hits} narrowed={narrowed} now={now} />}

@@ -13,6 +13,7 @@ import { UpcomingSchedule } from "@/components/schedule/upcoming-schedule";
 import { loadUpcomingSchedule } from "@/lib/schedule-loader";
 import { applicationScheduleItems, currentStageRow, isTerminalStage, nextScheduleItem, stepView } from "@/lib/interview-schedule";
 import { applicationCities } from "@/lib/application-city";
+import { industryLabel } from "@/lib/company-industry";
 import { currentTimeMs } from "@/lib/dates";
 import { PageHero } from "@/components/layout/page-hero";
 import { Send } from "lucide-react";
@@ -100,6 +101,7 @@ export default async function ApplicationsPage() {
           return {
             ...a,
             cities: applicationCities({ city: a.city, location: position?.location, title: a.title, companyName: a.company.name }),
+            industry: industryLabel(a.company),
             appliedDate: a.appliedDate.toISOString(),
             currentStageDate: a.currentStageDate.toISOString(),
             terminatedAtStage: current?.terminatedAtStage ?? null,

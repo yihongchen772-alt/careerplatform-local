@@ -2,8 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { CalendarDays, FilterX, Layers, LayoutGrid, List, MapPin, Search, SearchX, X } from "lucide-react";
+import { CalendarDays, FilterX, Layers, Loader2, Sparkles, LayoutGrid, List, MapPin, Search, SearchX, X } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { fillCompanyIndustries, undoCompanyIndustries } from "@/lib/actions/company-industry";
+import { NO_INDUSTRY } from "@/lib/company-industry";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { matchApplication, type ApplicationHits } from "@/lib/application-search";
@@ -28,6 +31,8 @@ import { useNow } from "@/components/schedule/use-now";
  */
 const VIEWS = ["board", "table"] as const;
 
+const NO_KEYS: Set<string> = new Set();
+
 function timeLabel(time: string): string {
   return (TIME_LABELS as Record<string, string>)[time] ?? monthLabel(time);
 }
@@ -44,6 +49,7 @@ function toBoard(a: ApplicationRow): BoardApplication {
     appliedDate: a.appliedDate,
     currentStageDate: a.currentStageDate,
     cities: a.cities,
+    industry: a.industry,
     waiting: a.waiting,
     nextSchedule: a.nextSchedule,
     step: a.step,
@@ -72,6 +78,15 @@ export function ApplicationsView({ applications, now: serverNow }: { application
   const [time, setTimeState] = useState(urlTime);
   // How the lists are laid out: kept on this device, like 看板 / 列表.
   const [groupBy, setGroupBy] = useStoredChoice<GroupKind>("careerplatform.applications.group", GROUP_KINDS, "none");
+  // Sections folded away (shared by 看板 and 列表); starts over when the grouping changes.
+  const [foldState, setFoldState] = useState<{ kind: GroupKind; keys: Set<string> }>({ kind: groupBy, keys: new Set() });
+  const folded = foldState.kind === groupBy ? foldState.keys : NO_KEYS;
+  function toggleFold(key: string) {
+    const keys = new Set(folded);
+    if (!keys.delete(key)) keys.add(key);
+    setFoldState({ kind: groupBy, keys });
+  }
+  const [classifying, setClassifying] = useState(false);
   const urlKey = `${urlQuery}|${urlFilter}|${urlCity}|${urlTime}`;
   const [seenUrl, setSeenUrl] = useState(urlKey);
   // Opened again with another ?q= / ?f= (from ⌘K search, say) while already here.
@@ -122,6 +137,37 @@ export function ApplicationsView({ applications, now: serverNow }: { application
     writeUrl({ f: value });
   }
 
+  // Companies still without a 行业: the AI can name them from their names alone.
+  const unclassified = useMemo(() => new Set(applications.filter((app) => app.industry === NO_INDUSTRY).map((app) => app.company.name)).size, [applications]);
+
+  async function classify() {
+    if (classifying) return;
+    setClassifying(true);
+    try {
+      const result = await fillCompanyIndustries();
+      if (!result.ok) return void toast.error(result.message);
+      const { filled, left } = result.data;
+      router.refresh();
+      if (!filled.length) return void toast.info("AI 没能确定这些公司的行业，可以到企业名录里手动补");
+      toast.success(`已给 ${filled.length} 家公司补上行业${left ? `，另有 ${left} 家没能确定` : ""}`, {
+        duration: 10000,
+        action: {
+          label: "撤销",
+          onClick: async () => {
+            const undo = await undoCompanyIndustries(filled);
+            if (!undo.ok) toast.error(undo.message);
+            else {
+              toast.success("已撤销，这些公司回到没有行业的状态");
+              router.refresh();
+            }
+          },
+        },
+      });
+    } finally {
+      setClassifying(false);
+    }
+  }
+
   function chooseCity(next: string) {
     setCityState(next);
     writeUrl({ c: next });
@@ -137,7 +183,13 @@ export function ApplicationsView({ applications, now: serverNow }: { application
     if (!term) return null;
     const found = new Map<string, ApplicationHits>();
     for (const app of applications) {
-      const hit = matchApplication({ companyName: app.company.name, aliases: app.company.aliases?.map((entry) => entry.alias), title: app.title }, term);
+      // A word that is one of this 投递's cities ("上海") matches it by city, not only by title.
+      const words = term.split(/\s+/).filter(Boolean);
+      const cityWords = words.filter((word) => word.length >= 2 && app.cities.some((name) => name.includes(word)));
+      const rest = words.filter((word) => !cityWords.includes(word)).join(" ");
+      const hit = rest
+        ? matchApplication({ companyName: app.company.name, aliases: app.company.aliases?.map((entry) => entry.alias), title: app.title }, rest)
+        : { company: [], title: [], alias: null };
       if (hit) found.set(app.id, hit);
     }
     return found;
@@ -224,7 +276,7 @@ export function ApplicationsView({ applications, now: serverNow }: { application
             type="search"
             value={draft}
             aria-label="搜索投递记录"
-            placeholder="搜公司或岗位，拼音首字母也行（zjtd）"
+            placeholder="搜公司、岗位或城市，拼音首字母也行（zjtd）"
             autoComplete="off"
             spellCheck={false}
             onChange={(event) => {
@@ -292,7 +344,8 @@ export function ApplicationsView({ applications, now: serverNow }: { application
       </div>
 
       {applications.length > 0 && (
-        <div className="-mt-2 flex flex-wrap items-center gap-1.5" role="group" aria-label="快捷筛选">
+      <div className="-mt-2 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="快捷筛选">
           {chips.map((key) => (
             <button
               key={key}
@@ -310,10 +363,7 @@ export function ApplicationsView({ applications, now: serverNow }: { application
             </button>
           ))}
         </div>
-      )}
-
-      {applications.length > 0 && (
-        <div className="-mt-2 flex flex-wrap items-center gap-2" role="group" aria-label="分组与筛选">
+        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="分组与筛选">
           <Select value={groupBy} onValueChange={(value) => value && setGroupBy(value as GroupKind)}>
             <SelectTrigger className="h-8 w-36 rounded-full text-xs" aria-label="分组方式">
               <Layers className="size-3.5 text-muted-foreground" />
@@ -345,7 +395,28 @@ export function ApplicationsView({ applications, now: serverNow }: { application
               {months.length > 1 && months.map((month) => <SelectItem key={month} value={month}>{monthLabel(month)}</SelectItem>)}
             </SelectContent>
           </Select>
+          {sections && sections.length > 1 && (
+            <button
+              type="button"
+              onClick={() => setFoldState({ kind: groupBy, keys: folded.size >= sections.length ? new Set() : new Set(sections.map((section) => section.key)) })}
+              className="h-8 rounded-full px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              {folded.size >= sections.length ? "全部展开" : "全部折叠"}
+            </button>
+          )}
         </div>
+      </div>
+      )}
+
+      {groupBy === "industry" && unclassified > 0 && (
+        <p className="-mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground" role="status">
+          有 {unclassified} 家公司还没有行业。
+          <Button type="button" size="sm" variant="outline" className="h-7 gap-1.5 rounded-full text-xs" disabled={classifying} onClick={() => void classify()}>
+            {classifying ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
+            {classifying ? "AI 分类中…" : "让 AI 补全"}
+          </Button>
+          <span>只会把公司名发给你设置的 AI，已有的行业不会改。</span>
+        </p>
       )}
 
       {narrowed && shown.length > 0 && (
@@ -375,11 +446,13 @@ export function ApplicationsView({ applications, now: serverNow }: { application
           orderLabel={orderLabel}
           applications={shown.map(toBoard)}
           sections={sections?.map((section) => ({ ...section, items: section.items.map(toBoard) }))}
+          folded={folded}
+          onToggleFold={toggleFold}
         />
       ) : (
         <Card className="border-0 bg-card/80">
           <CardContent className="pt-1">
-            <ApplicationsTable applications={shown} hits={hits} now={now} orderLabel={orderLabel} groupBy={groupBy} />
+            <ApplicationsTable applications={shown} hits={hits} now={now} orderLabel={orderLabel} groupBy={groupBy} folded={folded} onToggleFold={toggleFold} />
           </CardContent>
         </Card>
       )}

@@ -101,3 +101,26 @@ export function cityText(cities: string[]): string {
 export function cityHint(cities: string[], title: string): string {
   return cityText(cities.filter((name) => !title.includes(name)));
 }
+
+// A form box asking where the job is — not where the applicant lives or studied.
+const JOB_CITY_LABEL = /(?:应聘|投递|报考|报名|工作|就业|意向|期望|志愿|岗位|职位)[^\s,，、]{0,6}?(?:城市|地点|地区|地域|工作地)|^(?:工作)?(?:城市|地点)$|work\s*location|job\s*location|preferred\s*(?:city|location)/i;
+const NOT_JOB_CITY = /现居|居住|户籍|户口|籍贯|出生|生源|家庭|通讯|联系|邮寄|所在|毕业|学校|院校|身份证|常住|住址|入学|学历|参加工作|工作时间|工作经[历验]|实习|兼职|公司|单位|雇主|school|home|birth|resid|address/i;
+// "工作地点：上海" in the page's own wording.
+const JOB_CITY_TEXT = /(?:工作地点|工作城市|工作地址|工作地|就业地点|招聘城市|招聘地点|work\s*location|job\s*location)\s*[:：]\s*([^\n\r；;。|]{2,40})/i;
+
+/**
+ * Where the job is, read from a submitted 网申: the form's own 应聘/意向城市 boxes,
+ * else a "工作地点：…" line on the page. Only places on the city list count here —
+ * free text in a form is too often something else.
+ */
+export function cityFromSubmission(fields: { label: string; value: string }[], pageText?: string | null): string[] {
+  const named: string[] = [];
+  for (const field of fields) {
+    const label = field.label.normalize("NFKC").replace(/\s+/g, " ").trim();
+    if (!JOB_CITY_LABEL.test(label) || NOT_JOB_CITY.test(label)) continue;
+    named.push(...scanNames(field.value.normalize("NFKC")));
+  }
+  if (named.length) return unique(named).slice(0, 6);
+  const line = (pageText ?? "").normalize("NFKC").match(JOB_CITY_TEXT);
+  return line ? unique(scanNames(line[1])).slice(0, 6) : [];
+}

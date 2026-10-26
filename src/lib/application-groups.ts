@@ -1,24 +1,28 @@
 import { cityGroup, MULTI_CITY, NO_CITY } from "@/lib/application-city";
 import { compareCompanyNames } from "@/lib/application-search";
+import { NO_INDUSTRY } from "@/lib/company-industry";
 
 /**
  * Ways to lay 投递记录 out in sections — by company, city or the week it was
  * sent — and the time window it can be narrowed to. Both work on a list that
  * is already filtered and sorted: sections keep that order inside.
  */
-export const GROUP_KINDS = ["none", "company", "city", "week"] as const;
+export const GROUP_KINDS = ["none", "company", "city", "industry", "week"] as const;
 export type GroupKind = (typeof GROUP_KINDS)[number];
 
 export const GROUP_LABELS: Record<GroupKind, string> = {
   none: "不分组",
   company: "按公司",
   city: "按城市",
+  industry: "按行业",
   week: "按投递时间",
 };
 
 export type Groupable = {
   appliedDate: string;
   cities: string[];
+  /** See industryLabel; missing counts as 未分类. */
+  industry?: string;
 };
 
 export type Group<T> = { key: string; label: string; hint?: string; items: T[] };
@@ -88,6 +92,17 @@ function byCity<T extends Groupable>(items: T[]): Group<T>[] {
   return [...groups.values()].sort((a, b) => tail(a.label) - tail(b.label) || b.items.length - a.items.length || compareCompanyNames(a.label, b.label));
 }
 
+function byIndustry<T extends Groupable>(items: T[]): Group<T>[] {
+  const groups = new Map<string, Group<T>>();
+  for (const item of items) {
+    const label = item.industry || NO_INDUSTRY;
+    const found = groups.get(label);
+    if (found) found.items.push(item);
+    else groups.set(label, { key: `i${label}`, label, hint: label === NO_INDUSTRY ? "这些公司还没有行业" : undefined, items: [item] });
+  }
+  return [...groups.values()].sort((a, b) => Number(a.label === NO_INDUSTRY) - Number(b.label === NO_INDUSTRY) || b.items.length - a.items.length || compareCompanyNames(a.label, b.label));
+}
+
 /** Companies with several 岗位 each get a section; the single ones share one. */
 function byCompany<T extends Groupable>(items: T[], companyOf: (item: T) => string): Group<T>[] {
   const companies = new Map<string, T[]>();
@@ -111,6 +126,7 @@ function byCompany<T extends Groupable>(items: T[], companyOf: (item: T) => stri
 export function groupApplications<T extends Groupable>(items: T[], kind: GroupKind, now: number, companyOf: (item: T) => string): Group<T>[] {
   if (kind === "company") return byCompany(items, companyOf);
   if (kind === "city") return byCity(items);
+  if (kind === "industry") return byIndustry(items);
   if (kind === "week") return byWeek(items, now);
   return [{ key: "all", label: "全部", items }];
 }

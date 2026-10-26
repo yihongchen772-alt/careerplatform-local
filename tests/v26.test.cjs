@@ -148,3 +148,50 @@ test("a company named 「城市+市…」 is in that city; a brand that merely c
   assert.deepEqual(plain(city.applicationCities({ title: "算法工程师", companyName: "深圳市雷赛智能控制股份有限公司" })), ["深圳"]);
   assert.deepEqual(plain(city.applicationCities({ title: "算法工程师（上海）", companyName: "深圳市雷赛智能控制股份有限公司" })), ["上海"]);
 });
+
+test("the city a job is in is read from the submitted form, not the applicant's own address", () => {
+  const f = (label, value) => ({ label, value });
+  assert.deepEqual(plain(city.cityFromSubmission([f("应聘城市", "上海"), f("现居城市", "杭州"), f("籍贯", "江苏南京")])), ["上海"]);
+  assert.deepEqual(plain(city.cityFromSubmission([f("意向工作城市1", "北京市"), f("意向工作城市2", "深圳市"), f("户籍所在地", "成都")])), ["北京", "深圳"]);
+  assert.deepEqual(plain(city.cityFromSubmission([f("工作地点", "广东省/深圳市")])), ["深圳"]);
+  assert.deepEqual(plain(city.cityFromSubmission([f("现居城市", "杭州"), f("毕业院校所在城市", "南京"), f("实习公司所在城市", "苏州"), f("参加工作时间", "2024-07")])), []);
+  assert.deepEqual(plain(city.cityFromSubmission([f("姓名", "张三")], "岗位名称：算法工程师\n工作地点：南京\n学历要求：硕士")), ["南京"]);
+  assert.deepEqual(plain(city.cityFromSubmission([], "您已成功投递，工作地点：上海市浦东新区；请留意短信")), ["上海"]);
+  assert.deepEqual(plain(city.cityFromSubmission([], "投递成功")), []);
+  assert.deepEqual(plain(city.cityFromSubmission([f("应聘城市", "")])), []);
+});
+
+const industry = loadTs("src/lib/company-industry.ts");
+
+test("a company is listed under the part of its 细分行业 before the slash, else its 大类", () => {
+  assert.equal(industry.industryLabel({ industry: "新能源/电池", sector: "制造业" }), "新能源");
+  assert.equal(industry.industryLabel({ industry: "互联网/本地生活", sector: "互联网" }), "互联网");
+  assert.equal(industry.industryLabel({ industry: null, sector: "制造业" }), "制造业");
+  assert.equal(industry.industryLabel({ industry: " ", sector: null }), "未分类");
+  assert.equal(industry.industryLabel({}), "未分类");
+});
+
+test("only answers about companies that were asked about, once each, with an industry, are kept", () => {
+  const kept = industry.cleanIndustryAnswers(["博世", "NXP"], [
+    { name: "博世", industry: "汽车", sector: "制造业" },
+    { name: "博世", industry: "家电", sector: null },
+    { name: "NXP", industry: "半导体", sector: " " },
+    { name: "没问过的公司", industry: "金融", sector: null },
+    { name: "博世 ", industry: "", sector: null },
+    { name: 5, industry: "金融" },
+  ]);
+  assert.deepEqual(plain(kept), [{ name: "博世", industry: "汽车", sector: "制造业" }, { name: "NXP", industry: "半导体", sector: null }]);
+  assert.deepEqual(plain(industry.cleanIndustryAnswers(["A"], [{ name: "A", industry: "未分类" }])), []);
+});
+
+test("by industry: biggest first, 未分类 last", () => {
+  const rows = [
+    { id: 1, company: "a", cities: [], industry: "互联网", appliedDate: at(10, 20) },
+    { id: 2, company: "b", cities: [], industry: "未分类", appliedDate: at(10, 21) },
+    { id: 3, company: "c", cities: [], industry: "汽车", appliedDate: at(10, 22) },
+    { id: 4, company: "d", cities: [], industry: "汽车", appliedDate: at(10, 23) },
+    { id: 5, company: "e", cities: [], appliedDate: at(10, 24) },
+  ];
+  const result = groups.groupApplications(rows, "industry", NOW, (item) => item.company);
+  assert.deepEqual(plain(result.map((g) => [g.label, g.items.map((i) => i.id)])), [["汽车", [3, 4]], ["互联网", [1]], ["未分类", [2, 5]]]);
+});
