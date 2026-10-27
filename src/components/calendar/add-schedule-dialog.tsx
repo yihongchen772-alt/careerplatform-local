@@ -13,9 +13,7 @@ import { EMPTY_SCHEDULE, ScheduleFields, scheduleFromDraft, type ScheduleDraft }
 import { defaultScheduleStage, scheduleStageChoices } from "@/lib/interview-schedule";
 import { matchApplication } from "@/lib/application-search";
 import { STAGE_LABELS } from "@/lib/stage-labels";
-import { addStageSchedule } from "@/lib/actions/schedule";
-import { saveEvent } from "@/lib/actions/productivity";
-import { toDateKey } from "@/lib/dates";
+import { addCalendarItem, addStageSchedule } from "@/lib/actions/schedule";
 
 export type ScheduleApplication = { id: string; companyName: string; aliases: string[]; title: string; currentStage: ApplicationStage };
 
@@ -67,20 +65,7 @@ export function AddScheduleDialog({ applications, defaultDate, trigger }: { appl
         if (!result.ok) return void toast.error(result.message);
         toast.success(`已加到 ${chosen.companyName} 的「${STAGE_LABELS[round]}」，${value.nextHasTime ? "到点前会提醒你" : "截止日期已记上"}`);
       } else {
-        const day = value.nextHasTime ? toDateKey(value.nextDeadline) : value.nextDeadline.toISOString().slice(0, 10);
-        const startsAt = value.nextHasTime ? value.nextDeadline : new Date(`${day}T00:00:00`);
-        const result = await saveEvent({
-          title: title.trim(),
-          description: value.meetingInfo ?? "",
-          startsAt,
-          // A booked slot's end, or the last day of a 笔试 window (as a local day, like the start).
-          endsAt: value.nextDeadlineEnd ? (value.nextHasTime ? value.nextDeadlineEnd : new Date(`${value.nextDeadlineEnd.toISOString().slice(0, 10)}T00:00:00`)) : null,
-          allDay: !value.nextHasTime,
-          dateKey: day,
-          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          noteId: null,
-          offsetMinutes: value.nextHasTime ? value.remindMinutes : null,
-        });
+        const result = await addCalendarItem(title, value);
         if (!result.ok) return void toast.error(result.message);
         toast.success("已加入日历");
       }

@@ -3,7 +3,10 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowUpRight, CalendarClock, CheckCircle2, Link2, Mail, TriangleAlert } from "lucide-react";
+import { ArrowUpRight, CalendarClock, CalendarPlus, CheckCircle2, Link2, Mail, Pencil, TriangleAlert } from "lucide-react";
+import type { ApplicationStage } from "@prisma/client";
+import { AddScheduleDialog } from "@/components/calendar/add-schedule-dialog";
+import { EditScheduleDialog } from "@/components/schedule/edit-schedule-dialog";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -26,7 +29,7 @@ import { MeetingActions } from "@/components/schedule/meeting-actions";
 import { useNow } from "@/components/schedule/use-now";
 import { completeStep } from "@/components/schedule/step-actions";
 
-export type LinkableApplication = { id: string; companyName: string; title: string; aliases?: string[] };
+export type LinkableApplication = { id: string; companyName: string; title: string; aliases?: string[]; currentStage: ApplicationStage };
 
 const KIND_STYLE: Record<ScheduleKind, string> = {
   interview: "bg-violet-500/12 text-violet-700 dark:text-violet-300",
@@ -54,6 +57,7 @@ export function UpcomingSchedule({ items, now: serverNow, applications, days = 7
   const [hidden, setHidden] = useState<string[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [linking, setLinking] = useState<ScheduleItem | null>(null);
+  const [editing, setEditing] = useState<ScheduleItem | null>(null);
   const visible = items.filter((item) => !hidden.includes(item.key) && urgencyOf(item, now) !== "past");
   // Two booked times on top of each other: say so on both.
   const clashes = useMemo(() => clashingKeys(visible), [visible]);
@@ -68,7 +72,8 @@ export function UpcomingSchedule({ items, now: serverNow, applications, days = 7
       <section aria-label="接下来的面试和笔试" className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-dashed border-border/80 bg-card/45 px-4 py-3 text-xs text-muted-foreground">
         <CalendarClock className="size-4 text-primary" />
         <span className="font-medium text-foreground">接下来 {days} 天没有面试或笔试安排</span>
-        <span>邮件里的时间会自动写入；没读到的，到「日历」页点「添加面试 / 笔试」。</span>
+        <span>邮件里的时间会自动写入；没读到的，点这里加。</span>
+        <AddScheduleDialog applications={applications.map((app) => ({ ...app, aliases: app.aliases ?? [] }))} trigger={<Button type="button" size="sm" variant="outline" className="h-7 gap-1 rounded-full px-2.5 text-xs"><CalendarPlus className="size-3.5" />添加面试 / 笔试</Button>} />
       </section>
     );
   }
@@ -106,7 +111,10 @@ export function UpcomingSchedule({ items, now: serverNow, applications, days = 7
             {days} 天内 · {(Object.keys(counts) as ScheduleKind[]).map((kind) => `${SCHEDULE_KIND_LABELS[kind]} ${counts[kind]}`).join(" · ")}
           </p>
         </div>
-        <Link href="/calendar" className="text-xs font-medium text-muted-foreground hover:text-foreground hover:underline">日历视图</Link>
+        <div className="flex items-center gap-3">
+          <AddScheduleDialog applications={applications.map((app) => ({ ...app, aliases: app.aliases ?? [] }))} trigger={<Button type="button" size="sm" variant="outline" className="h-7 gap-1 rounded-full px-2.5 text-xs"><CalendarPlus className="size-3.5" />添加面试 / 笔试</Button>} />
+          <Link href="/calendar" className="text-xs font-medium text-muted-foreground hover:text-foreground hover:underline">日历视图</Link>
+        </div>
       </div>
       <div className="space-y-3">
         {groups.map((group) => {
@@ -126,6 +134,7 @@ export function UpcomingSchedule({ items, now: serverNow, applications, days = 7
                     onWrite={() => run(item, () => writeMailSchedule(item.sourceId), item.applicationId ? `已写进 ${item.companyName ?? "投递"} 的进度和日历` : "已加入日历")}
                     onDismiss={() => run(item, () => dismissMailDraft(item.sourceId), "已忽略这封邮件里的时间")}
                     onLink={() => setLinking(item)}
+                    onEdit={() => setEditing(item)}
                   />
                 ))}
               </ul>
@@ -138,6 +147,7 @@ export function UpcomingSchedule({ items, now: serverNow, applications, days = 7
           {expanded ? "收起" : `展开全部 ${visible.length} 项`}
         </button>
       )}
+      <EditScheduleDialog item={editing} onClose={() => setEditing(null)} />
       <LinkDialog
         item={linking}
         applications={applications}
@@ -153,7 +163,7 @@ export function UpcomingSchedule({ items, now: serverNow, applications, days = 7
   );
 }
 
-function ScheduleRow({ item, now, busy, clash, onComplete, onWrite, onDismiss, onLink }: { item: ScheduleItem; now: number; busy: boolean; clash: boolean; onComplete: () => void; onWrite: () => void; onDismiss: () => void; onLink: () => void }) {
+function ScheduleRow({ item, now, busy, clash, onComplete, onWrite, onDismiss, onLink, onEdit }: { item: ScheduleItem; now: number; busy: boolean; clash: boolean; onComplete: () => void; onWrite: () => void; onDismiss: () => void; onLink: () => void; onEdit: () => void }) {
   const urgency = urgencyOf(item, now);
   const start = new Date(item.startsAt);
   const end = item.endsAt ? new Date(item.endsAt) : null;
@@ -210,6 +220,9 @@ function ScheduleRow({ item, now, busy, clash, onComplete, onWrite, onDismiss, o
         ) : item.source === "stage" && item.kind === "exam" ? (
           <Button type="button" size="sm" variant="outline" className="h-7 gap-1 rounded-full px-2.5 text-xs" disabled={busy} onClick={onComplete} title="做完了：不再提醒截止，开始等结果"><CheckCircle2 className="size-3.5" />已完成</Button>
         ) : null}
+        {item.source !== "mail" && (
+          <Button type="button" size="sm" variant="ghost" className="h-7 gap-1 rounded-full px-2 text-xs text-muted-foreground" disabled={busy} onClick={onEdit} aria-label={`修改 ${heading}`}><Pencil className="size-3.5" />修改</Button>
+        )}
         {item.applicationId && (
           <Link href={`/applications/${item.applicationId}#interview`} className="inline-flex h-7 items-center gap-0.5 rounded-full px-2 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={`打开 ${heading}`}>
             打开<ArrowUpRight className="size-3.5" />

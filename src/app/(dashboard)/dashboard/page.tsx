@@ -184,7 +184,7 @@ export default async function DashboardPage() {
         <UpcomingSchedule
           items={upcoming}
           now={now}
-          applications={applications.filter((a) => !isTerminalStage(a.currentStage)).map((a) => ({ id: a.id, companyName: a.company.name, title: a.title, aliases: a.company.aliases.map((entry) => entry.alias) }))}
+          applications={applications.filter((a) => !isTerminalStage(a.currentStage)).map((a) => ({ id: a.id, companyName: a.company.name, title: a.title, currentStage: a.currentStage, aliases: a.company.aliases.map((entry) => entry.alias) }))}
         />
       )}
 

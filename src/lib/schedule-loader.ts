@@ -36,7 +36,7 @@ export const scheduleRowSelect = {
   followedUpAt: true,
 } as const;
 
-type EventRow = { id: string; title: string; description: string; startsAt: Date; endsAt: Date | null; allDay: boolean; dateKey: string; meetingInfo: string | null; source: string | null };
+type EventRow = { id: string; title: string; description: string; startsAt: Date; endsAt: Date | null; allDay: boolean; dateKey: string; meetingInfo: string | null; source: string | null; reminders?: { offsetMinutes: number }[] };
 
 /** A calendar item as a 接下来 entry. All-day items use the date-only shape. */
 export function eventItem(event: EventRow): ScheduleItem {
@@ -55,6 +55,7 @@ export function eventItem(event: EventRow): ScheduleItem {
     companyName: null,
     jobTitle: null,
     meetingInfo: meetingInfo || null,
+    remindMinutes: event.allDay ? null : event.reminders?.[0]?.offsetMinutes ?? null,
   };
 }
 
@@ -141,8 +142,8 @@ export async function loadUpcomingSchedule(userId: string, now = new Date(), day
   // Only job-search items: the ones made from mail. The applicant's own
   // calendar (gym, classes) stays in 日历 and 总览.
   const events = await db.calendarEvent.findMany({
-    where: { userId, stageHistoryId: null, startsAt: { lte: horizon }, OR: [{ source: "email" }, { id: { in: ids } }] },
-    select: { id: true, title: true, description: true, startsAt: true, endsAt: true, allDay: true, dateKey: true, meetingInfo: true, source: true },
+    where: { userId, stageHistoryId: null, startsAt: { lte: horizon }, OR: [{ source: { in: ["email", "schedule"] } }, { id: { in: ids } }] },
+    select: { id: true, title: true, description: true, startsAt: true, endsAt: true, allDay: true, dateKey: true, meetingInfo: true, source: true, reminders: { select: { offsetMinutes: true } } },
   });
   const items: ScheduleItem[] = [];
   for (const app of apps) {

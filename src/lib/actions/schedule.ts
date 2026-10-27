@@ -9,7 +9,7 @@ import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action
 import { resyncCurrentStage } from "@/lib/application-stage-history";
 import { cleanSchedule, sameSchedule, scheduleOf, syncApplicationEvents } from "@/lib/stage-schedule";
 import { applyMailSchedule, undoMailScheduleWrite } from "@/lib/mail-schedule";
-import { currentStageRow, isTerminalStage, overlapping, scheduleStageChoices, targetStageFor } from "@/lib/interview-schedule";
+import { localDayKey, currentStageRow, isTerminalStage, overlapping, scheduleStageChoices, targetStageFor } from "@/lib/interview-schedule";
 import { STAGE_LABELS } from "@/lib/stage-labels";
 import { rowForSchedule } from "@/lib/schedule-target";
 import { terminationFields } from "@/lib/termination";
@@ -49,6 +49,104 @@ export async function setStageSchedule(stageHistoryId: string, input: z.input<ty
       await syncApplicationEvents(tx, row.applicationId);
     });
     revalidate([row.applicationId]);
+    return null;
+  });
+}
+
+/**
+ * 「编辑」 on a calendar item made from an invitation (not one of a 投递's
+ * steps — those are changed on the step): its title, time, link and reminder.
+ */
+export async function updateCalendarItem(eventId: string, title: string, input: z.input<typeof scheduleInput>): Promise<ActionResult<null>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const parsed = scheduleInput.safeParse(input);
+    if (!parsed.success) throw new UserFacingError(parsed.error.issues[0]?.message ?? "时间格式不对");
+    const name = title.trim().slice(0, 200);
+    if (!name) throw new UserFacingError("标题不能为空");
+    const schedule = cleanSchedule(parsed.data);
+    if (!schedule.nextDeadline) throw new UserFacingError("请先选日期");
+    const event = await db.calendarEvent.findFirst({ where: { id: eventId, userId: user.id, stageHistoryId: null }, select: { id: true } });
+    if (!event) throw new UserFacingError("这个日程已经不在了，请刷新");
+    const timed = schedule.nextHasTime;
+    // A day without a clock time is stored as local midnight, with its day key.
+    const dayKey = timed ? localDayKey(schedule.nextDeadline) : schedule.nextDeadline.toISOString().slice(0, 10);
+    const startsAt = timed ? schedule.nextDeadline : new Date(`${dayKey}T00:00:00`);
+    const endsAt = schedule.nextDeadlineEnd ? (timed ? schedule.nextDeadlineEnd : new Date(`${schedule.nextDeadlineEnd.toISOString().slice(0, 10)}T00:00:00`)) : null;
+    await db.$transaction(async (tx) => {
+      await tx.calendarEvent.update({
+        where: { id: event.id },
+        data: { title: name, startsAt, endsAt, allDay: !timed, dateKey: dayKey, meetingInfo: schedule.meetingInfo, revision: { increment: 1 } },
+      });
+      if (!timed || schedule.remindMinutes === null) {
+        await tx.eventReminder.deleteMany({ where: { eventId: event.id } });
+        return;
+      }
+      const scheduledAt = new Date(startsAt.getTime() - schedule.remindMinutes * 60_000);
+      const existing = await tx.eventReminder.findUnique({ where: { eventId: event.id } });
+      // Changing only the title must not deliver a reminder again.
+      if (!existing || existing.scheduledAt.getTime() !== scheduledAt.getTime()) {
+        await tx.eventReminder.upsert({
+          where: { eventId: event.id },
+          create: { eventId: event.id, offsetMinutes: schedule.remindMinutes, scheduledAt },
+          update: { offsetMinutes: schedule.remindMinutes, scheduledAt, deliveredAt: null, claimUntil: null, claimToken: null },
+        });
+      }
+    });
+    revalidate();
+    return null;
+  });
+}
+
+/**
+ * 「添加面试 / 笔试」 without a 投递: a calendar item of the user's own for
+ * something in the job search (marked so 接下来 lists it, unlike gym or class).
+ */
+export async function addCalendarItem(title: string, input: z.input<typeof scheduleInput>): Promise<ActionResult<{ id: string }>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const parsed = scheduleInput.safeParse(input);
+    if (!parsed.success) throw new UserFacingError(parsed.error.issues[0]?.message ?? "时间格式不对");
+    const name = title.trim().slice(0, 200);
+    if (!name) throw new UserFacingError("写一下这是什么事，例如「宝洁一面」");
+    const schedule = cleanSchedule(parsed.data);
+    if (!schedule.nextDeadline) throw new UserFacingError("请先选日期");
+    const timed = schedule.nextHasTime;
+    const dayKey = timed ? localDayKey(schedule.nextDeadline) : schedule.nextDeadline.toISOString().slice(0, 10);
+    const startsAt = timed ? schedule.nextDeadline : new Date(`${dayKey}T00:00:00`);
+    const endsAt = schedule.nextDeadlineEnd ? (timed ? schedule.nextDeadlineEnd : new Date(`${schedule.nextDeadlineEnd.toISOString().slice(0, 10)}T00:00:00`)) : null;
+    const event = await db.calendarEvent.create({
+      data: {
+        userId: user.id,
+        title: name,
+        description: "",
+        startsAt,
+        endsAt,
+        allDay: !timed,
+        dateKey: dayKey,
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        meetingInfo: schedule.meetingInfo,
+        source: "schedule",
+        ...(timed && schedule.remindMinutes !== null ? { reminders: { create: { offsetMinutes: schedule.remindMinutes, scheduledAt: new Date(startsAt.getTime() - schedule.remindMinutes * 60_000) } } } : {}),
+      },
+      select: { id: true },
+    });
+    revalidate();
+    return event;
+  });
+}
+
+/** 「删除」 on a calendar item made from an invitation. The mail does not bring it back. */
+export async function deleteCalendarItem(eventId: string): Promise<ActionResult<null>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    await db.$transaction(async (tx) => {
+      const result = await tx.calendarEvent.deleteMany({ where: { id: eventId, userId: user.id, stageHistoryId: null } });
+      if (!result.count) throw new UserFacingError("这个日程已经不在了，请刷新");
+      // The mail stays handled (applied), so a rescan does not offer it again.
+      await tx.personalTask.updateMany({ where: { userId: user.id, mailEventId: eventId }, data: { mailEventId: null, mailUndo: Prisma.DbNull, mailAppliedSeenAt: new Date() } });
+    });
+    revalidate();
     return null;
   });
 }
