@@ -74,6 +74,22 @@ async function settleSiblings(tx: Prisma.TransactionClient, input: { userId: str
   }
 }
 
+/** The company a mail 待办 is about, from its title 「面试邀请：宝洁」. */
+function companyOf(title: string): string | undefined {
+  return /^[^：]+：(.+)$/.exec(title)?.[1]?.trim() || undefined;
+}
+
+/** A slot is booked: that company's 「预约面试时间」 reminders have done their job. */
+async function clearBookingReminders(tx: Prisma.TransactionClient, userId: string, title: string) {
+  const company = companyOf(title);
+  if (!company) return;
+  const stale = await tx.calendarEvent.findMany({ where: { userId, stageHistoryId: null, source: "email", allDay: true, title: { startsWith: "预约面试时间" } }, select: { id: true, title: true } });
+  const ids = stale.filter((event) => event.title.includes(company)).map((event) => event.id);
+  if (!ids.length) return;
+  await tx.calendarEvent.deleteMany({ where: { id: { in: ids }, userId } });
+  await tx.personalTask.updateMany({ where: { userId, mailEventId: { in: ids } }, data: { mailEventId: null } });
+}
+
 /**
  * Puts one mail's time on the calendar.
  *
@@ -96,11 +112,23 @@ export async function applyMailSchedule(
   if (!input.force && mailTimeOver(time) <= now.getTime()) return { status: "skipped", reason: "past" };
 
   const app = task.application && task.application.userId === input.userId ? task.application : null;
+  // 「预约截止」 only matters until a slot is booked: once the 投递 (or that
+  // company, on the calendar) has a time ahead, it is a reminder of nothing.
+  if (time.booking && !input.force) {
+    const company = companyOf(task.title);
+    const booked = (app?.stageHistory.some((row) => row.nextHasTime && row.nextDeadline && row.nextDeadline.getTime() > now.getTime()) ?? false)
+      || (!!company && (await tx.calendarEvent.count({ where: { userId: input.userId, allDay: false, startsAt: { gt: now }, title: { contains: company } } })) > 0);
+    if (booked) {
+      await tx.personalTask.update({ where: { id: task.id }, data: { done: true } });
+      return { status: "same" };
+    }
+  }
   // The round the mail is about: as recognised, else as its words say. A
   // recognised round other than the current one means the stage update
   // above declined it (older mail, a move back): then it stays off the steps.
   let row: NonNullable<typeof app>["stageHistory"][number] | undefined;
-  if (app && !isTerminalStage(app.currentStage)) {
+  // The last day to pick a slot is a reminder of its own, not the interview's time.
+  if (app && !isTerminalStage(app.currentStage) && !time.booking) {
     const subject = task.note?.match(/邮件主题：(.+)/)?.[1]?.trim().slice(0, 120) || task.title;
     const target = input.stage ?? targetStageFor(app.currentStage, `${time.title} ${task.title} ${time.evidence}`);
     if (target && (target === app.currentStage || !input.stage)) {
@@ -109,6 +137,12 @@ export async function applyMailSchedule(
         row = (await tx.stageHistory.findUnique({ where: { id: placed.rowId }, select: taskSelect.application.select.stageHistory.select })) ?? undefined;
       }
     }
+  }
+  // A time the user typed that is already over belongs to the round just
+  // finished: a later invitation is the next round, not a change to it.
+  if (row && !input.force) {
+    const typed = scheduleOf(row);
+    if (typed.scheduleSource !== "email" && typed.nextHasTime && typed.nextDeadline && typed.nextDeadline.getTime() < now.getTime() && time.startsAt.getTime() > now.getTime() && typed.nextDeadline.getTime() !== time.startsAt.getTime()) row = undefined;
   }
   if (app && row) {
     const current = scheduleOf(row);
@@ -138,6 +172,7 @@ export async function applyMailSchedule(
     };
     await tx.stageHistory.update({ where: { id: row.id }, data: written });
     await syncApplicationEvents(tx, app.id, now);
+    if (time.hasTime) await clearBookingReminders(tx, input.userId, task.title);
     const copy = await tx.calendarEvent.findUnique({ where: { stageHistoryId: row.id }, select: { id: true } });
     await settleSiblings(tx, { userId: input.userId, taskId: task.id, startsAt: time.startsAt, eventId: copy?.id ?? null, applicationId: app.id, titles: [] });
     const undo: MailUndo = { kind: "stage", stageHistoryId: row.id, written: storeSchedule(written), previous: storeSchedule(current) };
@@ -183,6 +218,7 @@ export async function applyMailSchedule(
     },
   });
   await settleSiblings(tx, { userId: input.userId, taskId: task.id, startsAt: time.startsAt, eventId: event.id, applicationId: null, titles: [task.title, title] });
+  if (time.hasTime && !time.booking) await clearBookingReminders(tx, input.userId, task.title);
   const undo: MailUndo = { kind: "event", eventId: event.id };
   await tx.personalTask.update({
     where: { id: task.id },

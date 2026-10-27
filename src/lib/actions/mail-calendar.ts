@@ -22,7 +22,7 @@ export async function confirmMailCalendar(taskId: string, draft: MailEventDraft,
         where: { id: taskId, userId: user.id },
         include: { application: { select: { id: true, userId: true, currentStage: true, currentStageDate: true, stageHistory: { select: { id: true, stage: true, enteredAt: true, meetingInfo: true } } } } },
       });
-      if (!task?.mailEventDraft) throw new UserFacingError("邮件日程草稿不存在");
+      if (!task) throw new UserFacingError("这条邮件待办已经不在了，请刷新");
       if (task.mailEventId) { const saved = await tx.calendarEvent.findFirst({ where: { id: task.mailEventId, userId: user.id } }); if (saved) return { id: saved.id, existing: true, applicationId: task.applicationId }; }
       // A mail about one of the 投递 puts the time on that 投递's current step,
       // so it shows there, in 接下来 and in 日历 — one place to change it.

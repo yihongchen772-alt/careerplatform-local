@@ -18,6 +18,9 @@ import { applyMailSchedule } from "@/lib/mail-schedule";
 import { SCAN_ALERT_STREAK } from "@/lib/scan-health";
 import { alreadyRecorded, createApplicationFromMail, type KnownApplication } from "@/lib/mail-new-application";
 import { resolveCompanyId } from "@/lib/company-resolver";
+import { rereadMailTimes } from "@/lib/mail-reread";
+import { completeMailDraft } from "@/lib/mail-time-extract";
+import { matchMailApplication, type MatchableApplication } from "@/lib/mail-application-match";
 
 const TERMINAL_STAGES: ApplicationStage[] = ["REJECTED", "ACCEPTED", "DECLINED", "WITHDRAWN", "CANCELLED"];
 // What an email can tell us. Offers and rejections included; accepting,
@@ -80,7 +83,7 @@ const classificationSchema = z.object({
   ),
 });
 
-type ActiveApplication = { id: string; companyName: string; title: string; currentStage: ApplicationStage };
+type ActiveApplication = MatchableApplication & { currentStage: ApplicationStage };
 
 async function classifyEmails(
   emails: InboxEmail[],
@@ -189,10 +192,10 @@ async function runScan(
   const activeApplications: ActiveApplication[] = autoApply
     ? (await db.application.findMany({
         where: { userId, currentStage: { notIn: TERMINAL_STAGES } },
-        select: { id: true, title: true, currentStage: true, company: { select: { name: true } } },
+        select: { id: true, title: true, currentStage: true, company: { select: { name: true, aliases: { select: { alias: true } } } } },
         orderBy: { currentStageDate: "desc" },
         take: 200,
-      })).map((a) => ({ id: a.id, title: a.title, currentStage: a.currentStage, companyName: a.company.name }))
+      })).map((a) => ({ id: a.id, title: a.title, currentStage: a.currentStage, companyName: a.company.name, aliases: a.company.aliases.map((entry) => entry.alias) }))
     : [];
   // Everything already recorded, closed ones too, so a 「投递成功」 mail for
   // a 投递 made long ago (or already rejected) never creates a second one.
@@ -231,7 +234,14 @@ async function runScan(
         if (!c.isJobRelated) continue;
         const email = emails[c.index];
         if (!email) continue;
-        const matched = c.applicationId && activeApplications.some((a) => a.id === c.applicationId) ? c.applicationId : null;
+        // The AI's pick when it made one; else the company named in the mail.
+        const matched = c.applicationId && activeApplications.some((a) => a.id === c.applicationId)
+          ? c.applicationId
+          : matchMailApplication({ subject: email.subject, company: c.company, body: email.snippet }, activeApplications);
+        // A time the AI left out but the mail states plainly (考试时间：… / October 30, 2026 14:00).
+        const draft = email.calendarInvite
+          ? { ...email.calendarInvite, title: email.calendarInvite.title || `${c.type}${c.company ? `：${c.company}` : ""}` }
+          : completeMailDraft({ ai: c.event, subject: email.subject, body: email.snippet, mailDate: email.date, type: c.type, company: c.company });
         const stage = AUTO_STAGES.find((value) => value === c.stage) ?? null;
         let created = false;
         let taskId: string | null = null;
@@ -241,7 +251,7 @@ async function runScan(
               userId,
               applicationId: matched,
               sourceMailKey: mailTaskKey(account.id, email.uid),
-              mailEventDraft: email.calendarInvite ? { ...email.calendarInvite, title: email.calendarInvite.title || `${c.type}${c.company ? `：${c.company}` : ""}` } : c.event || undefined,
+              mailEventDraft: draft ?? undefined,
               title: `${c.type}${c.company ? `：${c.company}` : ""}`,
               note: `${c.summary}\n\n邮件主题：${email.subject}\n来自：${email.from}\n收件箱：${account.label}`,
             },
@@ -285,7 +295,7 @@ async function runScan(
         // An interview / 笔试 time goes on the calendar right away (after the
         // stage, so it lands on the step the mail is about), with 撤销 in
         // the 自动更新 banner. With the switch off it waits in 接下来.
-        if (created && taskId && autoApply && (email.calendarInvite || c.event)) {
+        if (created && taskId && autoApply && draft) {
           const id = taskId;
           try {
             const placed = await db.$transaction((tx) => applyMailSchedule(tx, { taskId: id, userId, stage: matched ? stage : null }));
@@ -316,6 +326,13 @@ async function runScan(
       },
     });
   }
+
+  // Recent mail whose time the first reading missed gets a second look.
+  const again = await rereadMailTimes(userId, { days: 4 }).catch((error) => {
+    console.error("[inbox-scan] second reading failed", error);
+    return null;
+  });
+  if (again) scheduled += again.scheduled;
 
   return { found, scanned, failedAccounts, failures, progressUpdated, scheduled, recorded };
 }

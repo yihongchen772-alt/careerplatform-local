@@ -68,7 +68,7 @@ export function UpcomingSchedule({ items, now: serverNow, applications, days = 7
       <section aria-label="接下来的面试和笔试" className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-dashed border-border/80 bg-card/45 px-4 py-3 text-xs text-muted-foreground">
         <CalendarClock className="size-4 text-primary" />
         <span className="font-medium text-foreground">接下来 {days} 天没有面试或笔试安排</span>
-        <span>收到邀请后在投递里点「添加面试时间」，或开启邮件扫描自动写入。</span>
+        <span>邮件里的时间会自动写入；没读到的，到「日历」页点「添加面试 / 笔试」。</span>
       </section>
     );
   }

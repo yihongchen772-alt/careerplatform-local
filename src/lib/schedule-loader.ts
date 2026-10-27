@@ -73,7 +73,7 @@ export function draftItem(task: DraftTask): ScheduleItem | null {
   if (!time) return null;
   const app = task.application;
   let conflictsWith: string | null = null;
-  if (app && !TERMINAL.includes(app.currentStage)) {
+  if (app && !TERMINAL.includes(app.currentStage) && !time.booking) {
     const row = currentStageRow(app, app.stageHistory);
     if (row?.nextDeadline && (row.nextHasTime || !time.hasTime) && row.nextDeadline.getTime() !== time.startsAt.getTime()) conflictsWith = row.nextDeadline.toISOString();
   }
@@ -81,7 +81,7 @@ export function draftItem(task: DraftTask): ScheduleItem | null {
     key: `mail:${task.id}`,
     source: "mail",
     sourceId: task.id,
-    kind: time.hasTime ? kindFromText(`${time.title}\n${task.title}`) : "exam",
+    kind: time.booking ? "deadline" : time.hasTime ? kindFromText(`${time.title}\n${task.title}`) : "exam",
     startsAt: time.startsAt.toISOString(),
     endsAt: time.endsAt?.toISOString() ?? null,
     hasTime: time.hasTime,

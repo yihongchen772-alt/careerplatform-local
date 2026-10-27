@@ -11,6 +11,8 @@ export type MailTime = {
   meetingInfo: string | null;
   title: string;
   evidence: string;
+  /** The date is the last day to pick an interview slot, not the interview. */
+  booking: boolean;
 };
 
 const LOCAL_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
@@ -49,6 +51,7 @@ export function mailTime(draft: unknown, fallbackZone = systemTimeZone()): MailT
       meetingInfo: meetingInfoOf(deadline[2] ? `截止 ${deadline[2]}` : ""),
       title: value.title.trim(),
       evidence: value.evidence.trim(),
+      booking: value.booking,
     };
   }
   const zone = isValidTimeZone(value.timeZone.trim()) ? value.timeZone.trim() : fallbackZone;
@@ -67,7 +70,7 @@ export function mailTime(draft: unknown, fallbackZone = systemTimeZone()): MailT
       endsAt = null;
     }
   }
-  return { startsAt, endsAt, hasTime: true, timeZone: zone, meetingInfo: meetingInfoOf(), title: value.title.trim(), evidence: value.evidence.trim() };
+  return { startsAt, endsAt, hasTime: true, timeZone: zone, meetingInfo: meetingInfoOf(), title: value.title.trim(), evidence: value.evidence.trim(), booking: false };
 }
 
 /** The last moment a mail time still matters: the slot's start, or the end of a deadline's last day. */

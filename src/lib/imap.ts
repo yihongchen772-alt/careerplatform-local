@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { decryptSecret } from "@/lib/crypto";
 import { UserFacingError } from "@/lib/action-result";
 import { unseenUids } from "@/lib/inbox-identity";
+import { bodyTextOf } from "@/lib/mail-html-text";
 
 export type InboxEmail = {
   uid: number;
@@ -50,6 +51,67 @@ export async function getUserScanAccounts(userId: string): Promise<ScanAccount[]
   }));
 }
 
+
+type FetchedMessage = { uid: number; source?: Buffer; envelope?: { subject?: string; from?: { address?: string }[]; date?: Date } };
+
+async function toInboxEmail(message: FetchedMessage): Promise<InboxEmail> {
+  const parsed = message.source ? await simpleParser(message.source) : null;
+  // HTML-only mail (most recruiting systems) has no plain text: read its HTML.
+  const bodyText = bodyTextOf(parsed?.text, parsed?.html);
+  return {
+    uid: message.uid,
+    subject: message.envelope?.subject ?? "(无主题)",
+    from: message.envelope?.from?.[0]?.address ?? "",
+    date: message.envelope?.date ?? new Date(),
+    snippet: bodyText.slice(0, 12000),
+    calendarInvite: parsed?.attachments?.filter((a) => a.contentType === "text/calendar" || /\.ics$/i.test(a.filename || "")).slice(0, 1).map((a) => a.size < 1024 * 1024 ? (() => { try { return parseCalendarInvite(a.content.toString("utf8")); } catch { return null; } })() : null)[0] || null,
+  };
+}
+
+async function connect(config: ImapConfig): Promise<ImapFlow> {
+  const client = new ImapFlow({
+    host: config.host,
+    port: config.port,
+    secure: true,
+    auth: { user: config.user, pass: config.password },
+    logger: false,
+  });
+  try {
+    await client.connect();
+  } catch (err) {
+    console.error("[imap] connect failed", err);
+    // Told apart so the 「自动读邮件停了」 notice can say what to do.
+    throw new UserFacingError(
+      (err as { authenticationFailed?: boolean })?.authenticationFailed
+        ? "邮箱拒绝登录：授权码可能过期或被重置了，去邮箱网页版重新生成一个填进来"
+        : "连不上邮箱服务器，检查一下网络和 IMAP 地址、端口"
+    );
+  }
+  return client;
+}
+
+/**
+ * Read-only: the given messages again, by UID — to read a mail a second time
+ * (a time the first reading missed). Nothing is marked, moved or deleted.
+ */
+export async function fetchEmailsByUid(config: ImapConfig, uids: number[]): Promise<InboxEmail[]> {
+  const wanted = Array.from(new Set(uids.filter((uid) => Number.isSafeInteger(uid) && uid > 0))).slice(0, 60);
+  if (!wanted.length) return [];
+  const client = await connect(config);
+  const results: InboxEmail[] = [];
+  try {
+    const lock = await client.getMailboxLock("INBOX");
+    try {
+      for await (const message of client.fetch(wanted, { envelope: true, source: true }, { uid: true })) results.push(await toInboxEmail(message));
+    } finally {
+      lock.release();
+    }
+  } finally {
+    await client.logout().catch(() => {});
+  }
+  return results;
+}
+
 const MAX_EMAILS_PER_CHECK = 20;
 
 /**
@@ -72,25 +134,7 @@ export async function fetchRecentEmails(
   since: Date,
   sinceUid?: number | null
 ): Promise<InboxEmail[]> {
-  const client = new ImapFlow({
-    host: config.host,
-    port: config.port,
-    secure: true,
-    auth: { user: config.user, pass: config.password },
-    logger: false,
-  });
-
-  try {
-    await client.connect();
-  } catch (err) {
-    console.error("[imap] connect failed", err);
-    // Told apart so the 「自动读邮件停了」 notice can say what to do.
-    throw new UserFacingError(
-      (err as { authenticationFailed?: boolean })?.authenticationFailed
-        ? "邮箱拒绝登录：授权码可能过期或被重置了，去邮箱网页版重新生成一个填进来"
-        : "连不上邮箱服务器，检查一下网络和 IMAP 地址、端口"
-    );
-  }
+  const client = await connect(config);
 
   const results: InboxEmail[] = [];
   try {
@@ -117,16 +161,7 @@ export async function fetchRecentEmails(
         { envelope: true, source: true },
         { uid: true }
       )) {
-        const parsed = message.source ? await simpleParser(message.source) : null;
-        const bodyText = parsed?.text ?? "";
-        results.push({
-          uid: message.uid,
-          subject: message.envelope?.subject ?? "(无主题)",
-          from: message.envelope?.from?.[0]?.address ?? "",
-          date: message.envelope?.date ?? new Date(),
-          snippet: bodyText.slice(0, 12000),
-          calendarInvite: parsed?.attachments?.filter((a) => a.contentType === "text/calendar" || /\.ics$/i.test(a.filename || "")).slice(0, 1).map((a) => a.size < 1024 * 1024 ? (() => { try { return parseCalendarInvite(a.content.toString("utf8")); } catch { return null; } })() : null)[0] || null,
-        });
+        results.push(await toInboxEmail(message));
       }
       // ImapFlow normally yields in UID order, but keep the contract explicit
       // for callers that use the result as a cursor-ordered batch.

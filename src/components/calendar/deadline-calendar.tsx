@@ -7,9 +7,10 @@ import { zhCN } from "react-day-picker/locale";
 import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { PersonalTaskFormDialog } from "@/components/dashboard/personal-task-form-dialog";
+import { AddScheduleDialog, type ScheduleApplication } from "@/components/calendar/add-schedule-dialog";
 import { toDateKey } from "@/lib/dates";
 import { downloadIcs, toIcs } from "@/lib/ics";
+import { absoluteWhen, clock, kindFromText, SCHEDULE_KIND_LABELS } from "@/lib/interview-schedule";
 
 export type CalendarEvent = {
   id: string;
@@ -18,10 +19,12 @@ export type CalendarEvent = {
    * single-point deadline — same idea as StageHistory.nextDeadlineEnd. */
   dateEnd: string | null;
   label: string;
+  /** Has a clock time (a booked slot), not just a day. */
+  timed?: boolean;
+  /** When a booked slot ends (same day). */
+  until?: string | null;
   href: string;
 };
-
-type LinkOption = { id: string; label: string };
 
 // Local calendar day, not UTC — react-day-picker's `selected` is a local-midnight
 // Date, so bucketing by `.toISOString()` (UTC) would shift events by a day for any
@@ -30,12 +33,10 @@ const dayKey = toDateKey;
 
 export function DeadlineCalendar({
   events,
-  positions,
-  applications,
+  scheduleApps,
 }: {
   events: CalendarEvent[];
-  positions: LinkOption[];
-  applications: LinkOption[];
+  scheduleApps: ScheduleApplication[];
 }) {
   const [selected, setSelected] = useState<Date | undefined>(undefined);
   const [now] = useState(() => Date.now());
@@ -123,10 +124,9 @@ export function DeadlineCalendar({
                 </Button>
               )}
               {selectedKey && (
-                <PersonalTaskFormDialog
-                  positions={positions}
-                  applications={applications}
-                  defaultDueDate={selectedKey}
+                <AddScheduleDialog
+                  applications={scheduleApps}
+                  defaultDate={selectedKey}
                   trigger={
                     <Button size="sm" variant="outline">
                       <Plus />
@@ -151,11 +151,14 @@ export function DeadlineCalendar({
                 href={e.href}
                 className="flex items-center justify-between rounded-md border p-2 text-sm hover:bg-muted"
               >
-                <span>{e.label}</span>
-                <span className="text-xs text-muted-foreground">
+                <span className="flex min-w-0 items-center gap-2">
+                  {kindFromText(e.label) !== "event" && <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">{SCHEDULE_KIND_LABELS[kindFromText(e.label)]}</span>}
+                  <span className="min-w-0 [overflow-wrap:anywhere]">{e.label}</span>
+                </span>
+                <span className="shrink-0 pl-2 text-xs text-muted-foreground">
                   {e.dateEnd
                     ? `${new Date(e.date).toLocaleDateString("zh-CN")} - ${new Date(e.dateEnd).toLocaleDateString("zh-CN")}`
-                    : new Date(e.date).toLocaleDateString("zh-CN")}
+                    : `${absoluteWhen(e.date, !!e.timed)}${e.timed && e.until ? `–${clock(new Date(e.until))}` : ""}`}
                 </span>
               </Link>
             ))
