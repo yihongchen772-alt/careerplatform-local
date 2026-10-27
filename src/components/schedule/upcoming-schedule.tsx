@@ -204,7 +204,7 @@ function ScheduleRow({ item, now, busy, clash, onComplete, onWrite, onDismiss, o
             </p>
           )}
           {item.source === "event" && !item.applicationId && (
-            <p className="mt-0.5 text-[11px] text-muted-foreground">邮件里的安排，已在日历中；没认出是哪条投递</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">{item.fromMail ? "邮件里的安排，已在日历中；没认出是哪条投递" : "你自己加的日程，不属于任何投递"}</p>
           )}
         </div>
       </div>
@@ -215,7 +215,7 @@ function ScheduleRow({ item, now, busy, clash, onComplete, onWrite, onDismiss, o
             <Button type="button" size="sm" className="h-7 rounded-full px-2.5 text-xs" disabled={busy} onClick={onWrite}>{busy ? "写入中…" : "写入日程"}</Button>
             <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={busy} onClick={onDismiss}>忽略</Button>
           </>
-        ) : item.source === "event" && item.hasTime ? (
+        ) : item.source === "event" ? (
           <Button type="button" size="sm" variant="outline" className="h-7 gap-1 rounded-full px-2.5 text-xs" disabled={busy} onClick={onLink}><Link2 className="size-3.5" />关联投递</Button>
         ) : item.source === "stage" && item.kind === "exam" ? (
           <Button type="button" size="sm" variant="outline" className="h-7 gap-1 rounded-full px-2.5 text-xs" disabled={busy} onClick={onComplete} title="做完了：不再提醒截止，开始等结果"><CheckCircle2 className="size-3.5" />已完成</Button>
@@ -250,7 +250,7 @@ function LinkDialog({ item, applications, onClose, onPick }: { item: ScheduleIte
       <DialogContent>
         <DialogHeader>
           <DialogTitle>这个安排属于哪条投递？</DialogTitle>
-          <DialogDescription>{item ? `${item.title} · ${absoluteWhen(item.startsAt, item.hasTime)}` : ""}。关联后时间写进那条投递的当前进度，日历和提醒跟着它走。</DialogDescription>
+          <DialogDescription>{item ? `${item.title} · ${absoluteWhen(item.startsAt, item.hasTime)}` : ""}。关联后{item?.hasTime ? "时间写进那条投递的当前进度，日历和提醒跟着它走" : "这个截止日写进那条投递的当前进度，日历跟着它走"}。</DialogDescription>
         </DialogHeader>
         <input
           autoFocus

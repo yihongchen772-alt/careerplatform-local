@@ -30,7 +30,7 @@ function readDismissed() {
  * workspace without taking over the first screen, and disappears when done
  * or when dismissed on this device.
  */
-export function OnboardingCard({ steps }: { steps: OnboardingStep[] }) {
+export function OnboardingCard({ steps, defaultOpen = false }: { steps: OnboardingStep[]; defaultOpen?: boolean }) {
   const dismissed = useSyncExternalStore(noop, readDismissed, () => false);
   const [hidden, setHidden] = useState(false);
   const remaining = steps.filter((s) => !s.done);
@@ -48,7 +48,7 @@ export function OnboardingCard({ steps }: { steps: OnboardingStep[] }) {
 
   return (
     <Card className="surface-card relative overflow-hidden rounded-xl py-0">
-      <details className="group">
+      <details className="group" open={defaultOpen}>
         <summary className="flex cursor-pointer list-none items-center gap-3 px-5 py-3.5 pr-16 marker:hidden sm:pl-6 [&::-webkit-details-marker]:hidden">
           <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
             <Sparkles className="size-4.5" />

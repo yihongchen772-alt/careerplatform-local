@@ -8,7 +8,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { CalendarDays } from "lucide-react";
 import { AddScheduleDialog, type ScheduleApplication } from "@/components/calendar/add-schedule-dialog";
 import { PendingMailPanel } from "@/components/calendar/pending-mail-panel";
-import { pendingMailRows } from "@/lib/pending-mail";
+import { loadPendingMail } from "@/lib/pending-mail-loader";
 import { isTerminalStage } from "@/lib/interview-schedule";
 import { currentTimeMs } from "@/lib/dates";
 
@@ -45,14 +45,7 @@ export default async function CalendarPage() {
     ]);
 
   const now = currentTimeMs();
-  const pendingTasks = await db.personalTask.findMany({
-    where: { userId: user.id, done: false, mailEventId: null, mailAppliedAt: null, mailUndoneAt: null, sourceMailKey: { not: null }, createdAt: { gte: new Date(now - 45 * 86_400_000) } },
-    select: { id: true, title: true, note: true, mailEventDraft: true, applicationId: true, createdAt: true },
-    orderBy: { createdAt: "desc" },
-    take: 100,
-  });
-  const scheduledApps = new Set(stageHistory.filter((h) => h.nextDeadline && h.nextDeadline.getTime() >= now - 86_400_000).map((h) => h.applicationId));
-  const pending = pendingMailRows(pendingTasks, now, scheduledApps);
+  const pending = await loadPendingMail(user.id, now);
   const scheduleApps: ScheduleApplication[] = allApplications
     .filter((a) => !isTerminalStage(a.currentStage))
     .map((a) => ({ id: a.id, companyName: a.company.name, aliases: [], title: a.title, currentStage: a.currentStage }));

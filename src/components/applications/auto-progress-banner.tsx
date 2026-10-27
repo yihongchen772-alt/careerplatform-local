@@ -88,7 +88,7 @@ export function AutoProgressBanner({ items, schedules = [], showApplication = tr
       const result = await undoMailSchedule(item.id);
       if (!result.ok) return void toast.error(result.message);
       setHandled((previous) => [...previous, item.id]);
-      toast.success(result.data.kept ? "已撤销。这条投递的时间你后来改过，保留你填的" : "已撤销，这封邮件回到「总览 → 我的日程」里待你核对");
+      toast.success(result.data.kept ? "已撤销。这条投递的时间你后来改过，保留你填的" : "已撤销，这封邮件回到「总览 → 我的待办」里待你核对");
       router.refresh();
     } finally {
       setBusy(null);

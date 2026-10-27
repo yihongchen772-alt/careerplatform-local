@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowUpRight, Clock, Send, Trophy, XCircle, type LucideIcon } from "lucide-react";
+import { ArrowUpRight, Clock, Mail, Send, Trophy, XCircle, type LucideIcon } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,6 +11,8 @@ import { LearnedBacklogBanner } from "@/components/settings/learned-backlog-bann
 import { learnFromBacklog, loadBacklogNotices } from "@/lib/profile-backlog";
 import { computeFunnel, computeOutcomes } from "@/lib/funnel";
 import { computeShareStats } from "@/lib/share-card";
+import { isCalendarMailTask } from "@/lib/pending-mail";
+import { loadPendingMail } from "@/lib/pending-mail-loader";
 import { ShareCardDialog } from "@/components/dashboard/share-card-dialog";
 import { FunnelCard } from "@/components/insights/funnel-card";
 import { PersonalTaskCard } from "@/components/dashboard/personal-task-card";
@@ -19,6 +21,7 @@ import { getTodayDigest } from "@/lib/actions/daily-digest";
 import { WeeklyReviewCard } from "@/components/dashboard/weekly-review-card";
 import { getWeeklyReview } from "@/lib/actions/weekly-review";
 import { OnboardingCard } from "@/components/dashboard/onboarding-card";
+import { FirstRunCard } from "@/components/dashboard/first-run-card";
 import { duplicateImportedTaskIds } from "@/lib/inbox-identity";
 import { AutoProgressBanner } from "@/components/applications/auto-progress-banner";
 import { ScanHealthBanner } from "@/components/applications/scan-health-banner";
@@ -96,6 +99,13 @@ export default async function DashboardPage() {
   const shareStats = computeShareStats(funnelApps.map((a) => ({ currentStage: a.currentStage, stageHistory: a.stageHistory, companyName: a.company.name, industry: a.company.industry })));
   const calendarEvents = await db.calendarEvent.findMany({ where: { userId: user.id } });
   const todos = buildTodos(applications, positions, stageHistories, personalTasks, contacts, calendarEvents);
+  // 待办 is what the app watches for you; the tasks you wrote are in 我的待办,
+  // and mail times waiting for the calendar are in 日历 — each in one place.
+  const watchTodos = todos.filter((todo) => !todo.id.startsWith("task-"));
+  // Mail with a time shows in 接下来 with its own 写入 button; only those with no
+  // time need the calendar, so only those are pointed at.
+  const mailNeedingTime = (await loadPendingMail(user.id, now)).filter((row) => !row.time);
+  const ownTasks = personalTasks.filter((task) => !isCalendarMailTask(task, now));
   // One line under the greeting: this week's interviews / tests, the next one, what is pressing.
   const scheduled = upcoming.filter((item) => item.source !== "mail");
   const next = scheduled[0];
@@ -177,6 +187,13 @@ export default async function DashboardPage() {
         </div>
       </header>
 
+      {total === 0 && (
+        <>
+          <FirstRunCard />
+          <OnboardingCard steps={onboardingSteps} defaultOpen />
+        </>
+      )}
+
       <InferredProfileBanner due={inferred.due} initial={inferred.record} />
       <LearnedBacklogBanner notices={backlog} showLink />
       {scanHealth.failing && <ScanHealthBanner error={scanHealth.error} since={scanHealth.since?.toISOString() ?? null} lastOkAt={scanHealth.lastOkAt?.toISOString() ?? null} />}
@@ -200,6 +217,14 @@ export default async function DashboardPage() {
         <StatCard label="已结束" value={closed} icon={XCircle} tone="slate" />
       </div>
 
+      {mailNeedingTime.length > 0 && (
+        <Link href="/calendar" className="flex items-center gap-2 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm transition-colors hover:bg-primary/10">
+          <Mail className="size-4 shrink-0 text-primary" />
+          <span className="min-w-0 flex-1">邮件里有 {mailNeedingTime.length} 条面试 / 笔试没读到时间，点这里补上</span>
+          <ArrowUpRight className="size-4 shrink-0 text-muted-foreground" />
+        </Link>
+      )}
+
       <div className="flex items-end justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold tracking-[-0.025em]">今日工作台</h2>
@@ -210,12 +235,12 @@ export default async function DashboardPage() {
         <div className="space-y-5">
           {/* 小欧's 今日简报 at the top says the same; the older digest only without it. */}
           {!(dbUser?.agentDailyBrief && dbUser.defaultAiProvider) && <DailyDigestCard initial={dailyDigest} />}
-          <TodoCard todos={todos} />
+          <TodoCard todos={watchTodos} />
         </div>
         <div className="space-y-5">
           <PersonalTaskCard
-            duplicateMailTaskCount={duplicateImportedTaskIds(personalTasks).length}
-            tasks={personalTasks.map((t) => ({
+            duplicateMailTaskCount={duplicateImportedTaskIds(ownTasks).length}
+            tasks={ownTasks.map((t) => ({
               id: t.id,
               title: t.title,
               note: t.note,
@@ -245,7 +270,7 @@ export default async function DashboardPage() {
         <FunnelCard levels={levels} total={total} outcomes={outcomes} />
       </div>
 
-      <OnboardingCard steps={onboardingSteps} />
+      {total > 0 && <OnboardingCard steps={onboardingSteps} />}
     </div>
   );
 }

@@ -253,7 +253,7 @@ export async function writeMailSchedule(taskId: string): Promise<ActionResult<{ 
     const user = await requireUser();
     const result = await db.$transaction((tx) => applyMailSchedule(tx, { taskId, userId: user.id, force: true }));
     if (result.status === "skipped") {
-      throw new UserFacingError(result.reason === "no-time" ? "邮件里没有识别出明确的日期和时间，请在「总览 → 我的日程」里核对后填写" : "这条邮件日程已经处理过了，请刷新");
+      throw new UserFacingError(result.reason === "no-time" ? "邮件里没有识别出明确的日期和时间，请到「日历」的「邮件里的安排」里填上时间" : "这条邮件日程已经处理过了，请刷新");
     }
     if (result.status === "conflict") throw new UserFacingError("请刷新后重试");
     revalidate([result.status === "stage" ? result.applicationId : null]);
@@ -287,7 +287,6 @@ export async function attachEventToApplication(eventId: string, applicationId: s
     ]);
     if (!event) throw new UserFacingError("这个日程已经不在了，请刷新");
     if (!app) throw new UserFacingError("这条投递已经不在了，请刷新");
-    if (event.allDay) throw new UserFacingError("全天事项没有具体时间，请在投递详情里填写");
     if (isTerminalStage(app.currentStage)) throw new UserFacingError("这条投递已经结束，不能再关联面试时间");
     if (!currentStageRow(app, app.stageHistory)) throw new UserFacingError("这条投递没有进度记录");
     await db.$transaction(async (tx) => {
@@ -297,17 +296,35 @@ export async function attachEventToApplication(eventId: string, applicationId: s
         ?? await rowForSchedule(tx, app.id, app.currentStage, { kind: "manual" });
       if (!placed) throw new UserFacingError("这条投递没有进度记录");
       const row = { id: placed.rowId };
+      // That step already has a time of its own: not replaced behind the user's back.
+      const existing = await tx.stageHistory.findUnique({ where: { id: row.id }, select: { nextDeadline: true } });
+      const incoming = event.allDay ? new Date(`${event.dateKey}T00:00:00.000Z`) : event.startsAt;
+      if (existing?.nextDeadline && existing.nextDeadline.getTime() !== incoming.getTime()) {
+        throw new UserFacingError("这条投递的这一步已经有别的时间了，请先在投递里改掉，或选另一条");
+      }
       const offset = event.reminders[0]?.offsetMinutes;
+      // A day-only item (a 测评 cut-off) becomes the step's deadline: a date,
+      // stored as UTC midnight of that day like every other date-only step,
+      // with no clock time and no reminder.
       await tx.stageHistory.update({
         where: { id: row.id },
-        data: {
-          nextDeadline: event.startsAt,
-          nextDeadlineEnd: event.endsAt,
-          nextHasTime: true,
-          meetingInfo: event.meetingInfo,
-          remindMinutes: offset ?? 30,
-          scheduleSource: event.source === "email" ? "email" : null,
-        },
+        data: event.allDay
+          ? {
+              nextDeadline: new Date(`${event.dateKey}T00:00:00.000Z`),
+              nextDeadlineEnd: null,
+              nextHasTime: false,
+              meetingInfo: event.meetingInfo,
+              remindMinutes: null,
+              scheduleSource: event.source === "email" ? "email" : null,
+            }
+          : {
+              nextDeadline: event.startsAt,
+              nextDeadlineEnd: event.endsAt,
+              nextHasTime: true,
+              meetingInfo: event.meetingInfo,
+              remindMinutes: offset ?? 30,
+              scheduleSource: event.source === "email" ? "email" : null,
+            },
       });
       await tx.calendarEvent.delete({ where: { id: event.id } });
       await syncApplicationEvents(tx, app.id);

@@ -67,3 +67,20 @@ export function pendingMailRows(tasks: PendingTask[], now: number, scheduledApps
   const withTime = rows.filter((row) => row.time).sort((a, b) => new Date(a.time!.startsAt).getTime() - new Date(b.time!.startsAt).getTime());
   return [...withTime, ...rows.filter((row) => !row.time)];
 }
+
+const PENDING_WINDOW_MS = 45 * 86_400_000;
+
+/**
+ * A mail-made 待办 that 日历 is looking after (its 「邮件里的安排」 panel, or
+ * the 接下来 list once written): 总览's 我的待办 leaves it out, so one mail is
+ * never listed in two places. A mail the user took back (撤销) or an
+ * ordinary 「回复 HR」 task is not covered and stays in the list.
+ */
+export function isCalendarMailTask(
+  task: { title: string; mailEventDraft?: unknown; sourceMailKey?: string | null; done: boolean; mailEventId?: string | null; mailAppliedAt?: Date | null; mailUndoneAt?: Date | null; createdAt: Date },
+  now: number
+): boolean {
+  if (task.done || !task.sourceMailKey || task.mailEventId || task.mailAppliedAt || task.mailUndoneAt) return false;
+  if (task.createdAt.getTime() < now - PENDING_WINDOW_MS) return false;
+  return EXAM_OR_INTERVIEW.test(task.title) || !!mailTime(task.mailEventDraft);
+}

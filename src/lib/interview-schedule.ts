@@ -32,6 +32,8 @@ export type ScheduleItem = {
   evidence?: string | null;
   /** Mail only: the 投递 already has another time the user typed. */
   conflictsWith?: string | null;
+  /** Calendar items only: made from a mail (not typed in by the user). */
+  fromMail?: boolean;
 };
 
 const TERMINAL: ApplicationStage[] = ["REJECTED", "ACCEPTED", "DECLINED", "WITHDRAWN", "CANCELLED"];

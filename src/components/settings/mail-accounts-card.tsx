@@ -66,7 +66,7 @@ export function MailAccountsCard({ accounts, health }: { accounts: MailAccountOv
         <p className="text-sm text-muted-foreground">
           可以加多个邮箱一起扫——投腾讯要留 QQ 邮箱、投网易要留 163 邮箱这种情况，
           加进来的每个邮箱都会各自检查最近的新邮件（最多 20 封），用 AI 判断是不是
-          面试邀请/笔试通知/offer/拒信，是的话自动加进「我的日程」。只读，不会修改、
+          面试邀请/笔试通知/offer/拒信，是的话自动加进「日历」。只读，不会修改、
           标记或删除任何邮件。需要先在「AI 设置」里配置好 Key。
         </p>
 

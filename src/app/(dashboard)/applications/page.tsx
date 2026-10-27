@@ -3,6 +3,7 @@ import Link from "next/link";
 import { requireUser } from "@/lib/session";
 import { getAppSettings } from "@/lib/actions/app-settings";
 import { AddApplicationDialog } from "@/components/applications/add-application-dialog";
+import { ImportApplicationsDialog } from "@/components/applications/import-applications-dialog";
 import { ApplicationsView } from "@/components/applications/applications-view";
 import { PortalSyncButton } from "@/components/applications/portal-sync-button";
 import { AutoProgressBanner } from "@/components/applications/auto-progress-banner";
@@ -74,7 +75,7 @@ export default async function ApplicationsPage() {
         title="投递记录"
         icon={Send}
         description="从发出申请到收到 Offer，每一次进展都在这里。"
-        actions={<><PortalSyncButton configuredCount={portals.length} /><AddApplicationDialog resumeVersions={resumeVersions} defaultResumeVersionId={defaultResumeVersionId} /></>}
+        actions={<><PortalSyncButton configuredCount={portals.length} /><ImportApplicationsDialog /><AddApplicationDialog resumeVersions={resumeVersions} defaultResumeVersionId={defaultResumeVersionId} /></>}
       />
 
       {scanHealth.failing && <ScanHealthBanner error={scanHealth.error} since={scanHealth.since?.toISOString() ?? null} lastOkAt={scanHealth.lastOkAt?.toISOString() ?? null} />}

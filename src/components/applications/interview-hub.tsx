@@ -322,7 +322,7 @@ export function InterviewHub({
               </li>
             ))}
           </ul>
-          <Link href="/dashboard" className="mt-2 inline-block text-[11px] text-primary hover:underline">在「总览 → 我的日程」里处理</Link>
+          <Link href="/dashboard" className="mt-2 inline-block text-[11px] text-primary hover:underline">在「日历」或「总览 → 我的待办」里处理</Link>
         </details>
       )}
     </section>

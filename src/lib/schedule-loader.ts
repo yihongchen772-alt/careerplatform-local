@@ -56,6 +56,7 @@ export function eventItem(event: EventRow): ScheduleItem {
     jobTitle: null,
     meetingInfo: meetingInfo || null,
     remindMinutes: event.allDay ? null : event.reminders?.[0]?.offsetMinutes ?? null,
+    fromMail: event.source === "email",
   };
 }
 

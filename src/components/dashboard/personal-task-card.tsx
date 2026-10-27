@@ -16,6 +16,18 @@ import { toggleTaskDone, deletePersonalTask, cleanupDuplicateImportedTasks } fro
 
 type LinkOption = { id: string; label: string };
 
+/** 「已逾期 2 天」 / 「今天」 / 「明天」 / 「3 天后」 for a date within a week; nothing further out. */
+export function dueTag(dueDate: string, now: number): { text: string; late: boolean } | null {
+  const due = new Date(dueDate);
+  const today = new Date(now);
+  const days = Math.round((new Date(due.getFullYear(), due.getMonth(), due.getDate()).getTime() - new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()) / 86_400_000);
+  if (days < 0) return { text: `已逾期 ${-days} 天`, late: true };
+  if (days === 0) return { text: "今天", late: true };
+  if (days === 1) return { text: "明天", late: true };
+  if (days <= 7) return { text: `${days} 天后`, late: false };
+  return null;
+}
+
 export type PersonalTaskRow = PersonalTaskInitial & { done: boolean; mailEventDraft?: unknown; mailEventId?: string | null };
 
 export function PersonalTaskCard({
@@ -30,6 +42,7 @@ export function PersonalTaskCard({
   duplicateMailTaskCount: number;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
+  const [now] = useState(() => Date.now());
 
   const pending = tasks
     .filter((t) => !t.done)
@@ -64,7 +77,7 @@ export function PersonalTaskCard({
   return (
     <Card className="surface-card rounded-xl">
       <CardHeader className="flex-col items-start justify-between gap-2 space-y-0 sm:flex-row sm:items-center">
-        <CardTitle>我的日程</CardTitle>
+        <CardTitle>我的待办</CardTitle>
         <div className="flex flex-wrap items-center gap-2">
           {duplicateMailTaskCount > 0 && <ConfirmDeleteButton
             trigger={<Button size="sm" variant="ghost">清理重复邮件（{duplicateMailTaskCount}）</Button>}
@@ -94,8 +107,8 @@ export function PersonalTaskCard({
       <CardContent className="space-y-2">
         {tasks.length === 0 ? (
           <div className="rounded-xl border border-border/50 bg-background/30 px-4 py-5">
-            <p className="text-sm font-medium">给自己留一项具体安排</p>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">例如联系内推人、准备二面，也可以关联到对应岗位。</p>
+            <p className="text-sm font-medium">记下自己要做的事</p>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">例如联系内推人、准备二面，也可以关联到对应岗位。面试和笔试的时间请在「日历」里添加。</p>
           </div>
         ) : (
           <>
@@ -106,6 +119,7 @@ export function PersonalTaskCard({
                 positions={positions}
                 applications={applications}
                 busy={busy === t.id}
+                now={now}
                 onToggle={handleToggle}
                 onDelete={handleDelete}
               />
@@ -123,6 +137,7 @@ export function PersonalTaskCard({
                       positions={positions}
                       applications={applications}
                       busy={busy === t.id}
+                      now={now}
                       onToggle={handleToggle}
                       onDelete={handleDelete}
                     />
@@ -142,6 +157,7 @@ function TaskRow({
   positions,
   applications,
   busy,
+  now,
   onToggle,
   onDelete,
 }: {
@@ -149,12 +165,14 @@ function TaskRow({
   positions: LinkOption[];
   applications: LinkOption[];
   busy: boolean;
+  now: number;
   onToggle: (id: string, next: boolean) => void;
   onDelete: (id: string) => void;
 }) {
   const linked =
     positions.find((p) => p.id === task.positionId) ??
     applications.find((a) => a.id === task.applicationId);
+  const tag = !task.done && task.dueDate ? dueTag(task.dueDateEnd ?? task.dueDate, now) : null;
 
   return (
     <div className="flex items-start gap-2 rounded-md border p-2 text-sm">
@@ -167,6 +185,7 @@ function TaskRow({
       />
       <div className="min-w-0 flex-1">
         <p className={task.done ? "truncate text-muted-foreground line-through" : "truncate font-medium"}>
+          {tag && <span className={tag.late ? "mr-1.5 rounded-full bg-destructive/10 px-1.5 py-0.5 text-[11px] font-normal text-destructive" : "mr-1.5 rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground"}>{tag.text}</span>}
           {task.title}
         </p>
         <p className="text-xs text-muted-foreground">
