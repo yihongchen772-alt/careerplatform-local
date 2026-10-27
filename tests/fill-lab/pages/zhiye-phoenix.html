@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>曙光式 zhiye（北森 phoenix 组件）网申</title>
+<style>
+body{font:14px sans-serif;max-width:900px;margin:20px auto}
+.fields-col{margin:8px 0}.form-item{display:flex;gap:10px;align-items:center}
+.form-item__title{width:150px;text-align:right;color:#555;font-size:12px}
+.form-item__control{flex:1}
+.sec{font-weight:600;margin-top:18px}.sub{color:#999;font-size:12px}
+.phoenix-select{position:relative;border:1px solid #ccc;border-radius:4px;min-height:32px;padding:4px 8px;cursor:pointer}
+.phoenix-select__placeHolder{display:none;color:#aaa}.phoenix-select__placeHolder--show{display:block}
+.phoenix-select__content{list-style:none;margin:0;padding:0}.phoenix-select__input{border:0;outline:0;width:100%}
+.phoenix-popover{position:absolute;z-index:9;background:#fff;border:1px solid #ddd;box-shadow:0 2px 8px #0002;min-width:180px}
+.phoenix-selectList__listItem{padding:6px 10px;cursor:pointer}.phoenix-selectList__listItem:hover{background:#eef}
+.phoenix-calendar-input{width:160px}.phoenix-input__input{border:1px solid #ccc;border-radius:4px;padding:6px;width:100%;box-sizing:border-box}
+</style></head>
+<body>
+<!-- Layout of sugon.zhiye.com's resume form (北森 phoenix components), 2026-10-28: every dropdown sits in a
+     form-item__control whose title is one level up; the select shows 「请选择」 / the chosen value inside itself. -->
+<div class="sec">个人信息</div>
+<div class="fields-col"><div class="form-item form-item--phoenix">
+  <div class="form-item__title form-item__title--right"><label class="form-item__text">期望工作地（提示：只能填写一个城市）</label></div>
+  <div class="form-item__control"><div class="phoenix-input"><input id="city1" class="phoenix-input__input" type="text" placeholder="请输入"></div></div>
+</div></div>
+<div class="fields-col"><div class="form-item form-item--phoenix">
+  <div class="form-item__title form-item__title--right"><label class="form-item__text">意向城市</label></div>
+  <div class="form-item__control"><div class="phoenix-input"><input id="city2" class="phoenix-input__input" type="text" placeholder="例：浙江杭州(最多2个,空格隔开)"></div></div>
+</div></div>
+<div class="fields-col"><div class="mobile-container"><div class="form-item form-item--phoenix">
+  <div class="form-item__title form-item__title--right"><label class="form-item__text">手机号</label></div>
+  <div class="form-item__control"><div class="phoenix-unmodeled-layer"><div class="phoenix-unmodeled-layer__inner"><div class="phoenix-unmodeled-layer__protect"><div class="phoenix-unmodeled-layer__content"><div class="phoenix-button mobile-type-button"><div class="phoenix-button__wraper"><div class="phoenix-button__content">中国大陆</div></div></div></div></div></div></div>
+  <div class="phoenix-input"><input id="phone" class="phoenix-input__input" type="text" placeholder="请输入11位手机号"></div></div>
+</div></div></div>
+<div class="fields-col"><div class="form-item form-item--phoenix">
+  <div class="form-item__title form-item__title--right"><label class="form-item__text">学历</label></div>
+  <div class="form-item__control" id="degree-slot"></div>
+</div></div>
+<div class="fields-col"><div class="form-item form-item--phoenix">
+  <div class="form-item__title form-item__title--right"><label class="form-item__text">意向行业</label></div>
+  <div class="form-item__control" id="industry-slot"></div>
+</div></div>
+
+<div class="sec">工作经历</div><div class="sub">此处可填写工作经历或实习经历</div>
+<div class="fields-col"><div class="form-item form-item--phoenix">
+  <div class="form-item__title form-item__title--right"><label class="form-item__text">单位名称</label></div>
+  <div class="form-item__control"><div class="phoenix-input phoenix-input--statusError"><input id="exp-company" class="phoenix-input__input phoenix-input__input--statusError" type="text" placeholder="请输入"></div><span class="form-item__error">必填</span></div>
+</div></div>
+<div class="fields-col"><div class="form-item form-item--phoenix">
+  <div class="form-item__title form-item__title--right"><label class="form-item__text">职位名称</label></div>
+  <div class="form-item__control"><div class="phoenix-input phoenix-input--statusError"><input id="exp-role" class="phoenix-input__input phoenix-input__input--statusError" type="text" placeholder="请输入"></div><span class="form-item__error">必填</span></div>
+</div></div>
+<div class="fields-col"><div class="form-item form-item--phoenix">
+  <div class="form-item__title form-item__title--right"><label class="form-item__text">开始时间</label></div>
+  <div class="form-item__control" id="exp-start-slot"></div>
+</div></div>
+<div class="fields-col"><div class="form-item form-item--phoenix">
+  <div class="form-item__title form-item__title--right"><label class="form-item__text">结束时间</label></div>
+  <div class="form-item__control" id="exp-end-slot"></div>
+</div></div>
+
+<div class="fields-col"><div class="form-item form-item--phoenix">
+  <div class="form-item__title form-item__title--right"><label class="form-item__text">工作职责</label></div>
+  <div class="form-item__control"><div class="phoenix-textarea phoenix-textarea--hasBottomBar phoenix-textarea--error"><textarea id="exp-desc" class="phoenix-textarea__realTextarea" placeholder="请输入"></textarea><div class="phoenix-textarea__bottomBar"><span class="phoenix-textarea__barItem"><span class="phoenix-textarea__currentCount">0</span>/2000</span></div></div><span class="form-item__error">必填</span></div>
+</div></div>
+<div class="sec">获奖情况</div>
+<div class="fields-col"><div class="form-item form-item--phoenix">
+  <div class="form-item__title form-item__title--right"><label class="form-item__text">奖项</label></div>
+  <div class="form-item__control"><div class="phoenix-input"><input id="award-name" class="phoenix-input__input" type="text" placeholder="请输入"></div></div>
+</div></div>
+<div class="fields-col"><div class="form-item form-item--phoenix">
+  <div class="form-item__title form-item__title--right"><label class="form-item__text">获奖级别</label></div>
+  <div class="form-item__control" id="award-level-slot"></div>
+</div></div>
+<div class="fields-col"><div class="form-item form-item--phoenix">
+  <div class="form-item__title form-item__title--right"><label class="form-item__text">获奖时间</label></div>
+  <div class="form-item__control" id="award-date-slot"></div>
+</div></div>
+
+<script>
+// The select markup as the real page prints it (empty: 「请选择」; chosen: the tip element).
+function selectHtml(id, shown) {
+  return '<div class="phoenix-unmodeled-layer block"><div class="phoenix-unmodeled-layer__inner"><div class="phoenix-unmodeled-layer__protect"><div class="phoenix-unmodeled-layer__content phoenix-unmodeled-layer__content--block">'
+    + '<div id="' + id + '" class="phoenix-select phoenix-select--editable phoenix-select--large"><span class="phoenix-select__calcEle"></span>'
+    + '<div class="phoenix-select__placeHolder phoenix-select__placeHolder--large' + (shown ? '' : ' phoenix-select__placeHolder--show') + '">请选择</div>'
+    + '<ul class="phoenix-select__content"><li class="phoenix-select__inputWrapper phoenix-select__inputWrapper--emptyMultiValue"><input placeholder="" class="phoenix-select__input phoenix-select__input--large"></li></ul>'
+    + '<span class="phoenix-select__tipWrapper phoenix-select__tipWrapper--large' + (shown ? ' phoenix-select__tipWrapper--visible' : '') + '"><span class="phoenix-select__tipEle">' + (shown || '') + '</span></span>'
+    + '<div class="phoenix-select__switchArrow"></div></div></div></div></div></div>';
+}
+const SLOTS = {
+  "degree-slot": ["degree", "硕士", null],
+  "industry-slot": ["industry", "", { multi: ["制造业", "互联网", "金融"] }],
+  "exp-start-slot": ["exp-start", "", { date: "month" }],
+  "exp-end-slot": ["exp-end", "", { date: "month" }],
+  "award-level-slot": ["award-level", "", { list: ["校级", "省级", "国家级"] }],
+  "award-date-slot": ["award-date", "", { date: "day" }],
+};
+for (const [slot, [id, shown]] of Object.entries(SLOTS)) document.getElementById(slot).innerHTML = selectHtml(id, shown);
+let popup = null;
+function closePopup() { if (popup) { popup.remove(); popup = null; } }
+function choose(select, text) {
+  select.querySelector(".phoenix-select__placeHolder").classList.remove("phoenix-select__placeHolder--show");
+  select.querySelector(".phoenix-select__tipWrapper").classList.add("phoenix-select__tipWrapper--visible");
+  select.querySelector(".phoenix-select__tipEle").textContent = text;
+  closePopup();
+}
+function place(select, node) {
+  const r = select.getBoundingClientRect();
+  node.style.left = r.left + scrollX + "px"; node.style.top = r.bottom + scrollY + "px";
+  document.body.appendChild(node); popup = node;
+}
+document.addEventListener("click", (event) => {
+  const select = event.target.closest(".phoenix-select");
+  if (!select) return;
+  const cfg = SLOTS[Object.keys(SLOTS).find((slot) => document.getElementById(slot).contains(select))][2];
+  if (!cfg || popup) return;
+  const box = document.createElement("div");
+  box.className = "phoenix-popover";
+  if (cfg.date) {
+    const need = cfg.date === "day" ? /^\d{4}-\d{2}-\d{2}$/ : /^\d{4}-\d{2}$/;
+    box.innerHTML = '<div class="phoenix-calendar"><div class="phoenix-calendar-input-wrap"><input class="phoenix-calendar-input" placeholder="' + (cfg.date === "day" ? "请选择日期" : "请选择年月") + '"></div><a class="phoenix-calendar-ok-btn">确定</a></div>';
+    const input = box.querySelector("input");
+    const commit = () => { if (need.test(input.value)) choose(select, input.value); };
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") commit(); });
+    box.querySelector(".phoenix-calendar-ok-btn").addEventListener("click", commit);
+  } else {
+    const items = cfg.multi
+      ? cfg.multi.map((t) => '<div class="phoenix-selectList__listItem"><label><input type="checkbox"> ' + t + '</label></div>')
+      : cfg.list.map((t) => '<div class="phoenix-selectList__listItem">' + t + '</div>');
+    box.innerHTML = '<div class="phoenix-selectList"><div class="phoenix-selectList__contentWraper"><div class="phoenix-selectList__list">' + items.join("") + '</div></div></div>';
+    box.addEventListener("click", (e) => { const item = e.target.closest(".phoenix-selectList__listItem"); if (item && !cfg.multi) choose(select, item.textContent.trim()); });
+  }
+  place(select, box);
+});
+document.addEventListener("mousedown", (event) => { if (popup && !popup.contains(event.target) && !event.target.closest(".phoenix-select")) closePopup(); });
+document.addEventListener("keydown", (event) => { if (event.key === "Escape") closePopup(); });
+</script>
+</body></html>

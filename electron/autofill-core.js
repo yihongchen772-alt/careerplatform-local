@@ -96,9 +96,27 @@ function scanPageFields(prefix, readOnly = false) {
   // "form item" wrapper — a plain previous-sibling walk almost never finds
   // it. Walk up looking for that wrapper, then take the first text-bearing
   // node inside it that isn't the input itself.
+  // A 「必填」 validation message or a 「0/2000」 character counter sits inside the
+  // same form item as the box and is not its name. (A real label stays, even
+  // when the portal marks it red.)
+  const MESSAGE_CLASS = /(?:^|[_\s-])(?:error|explain|feedback|bottombar|baritem|currentcount|counter)(?![a-z])/i;
+  function isValidationOrCounter(node, container) {
+    if (/^\d+\s*\/\s*\d+$|^\d+$/.test(clean(node.textContent))) return true;
+    if (node.matches?.("label, [class*='label']")) return false;
+    for (let current = node; current && current !== container; current = parentOf(current)) {
+      if (MESSAGE_CLASS.test((current.className || "").toString()) || current.getAttribute?.("role") === "alert") return true;
+    }
+    return false;
+  }
+
   function labelFromFormItem(el) {
     let container = parentOf(el);
     let depth = 0;
+    // A dropdown's own text — its 「请选择」 placeholder, or the value it shows —
+    // is never the question. 北森 zhiye puts that dropdown inside a
+    // `form-item__control` that is the first "form item" wrapper met on the
+    // way up, with the real title one level higher.
+    const ownWidget = el.closest?.(".phoenix-select, .ant-select, .el-select, .el-cascader, .ud__select__selector");
     // 10, not fewer: an AntD date picker with a "至今" checkbox beside it sits
     // seven wrappers below its .ant-form-item-label, 飞书招聘's date range nine.
     while (container && depth < 10) {
@@ -106,7 +124,7 @@ function scanPageFields(prefix, readOnly = false) {
       if (/form-item|formily-item(?![-\w])|form-group|field|form-row|input-group|form-cell|form-control-wrap|el-form/.test(cls) || portal?.wrapper.test(cls)) {
         // A label wrapping its own checkbox ("至今") belongs to that checkbox.
         const explicit = Array.from(container.querySelectorAll(portal?.label || "label, .ant-form-item-label, .el-form-item__label, [class*='label']"))
-          .find((node) => !node.contains(el) && !node.querySelector("input, select, textarea") && !isOptionText(node));
+          .find((node) => !node.contains(el) && !node.querySelector("input, select, textarea") && !isOptionText(node) && !ownWidget?.contains(node));
         if (explicit) {
           const text = clean(explicit.textContent);
           if (text && text.length < 40) return text;
@@ -115,8 +133,11 @@ function scanPageFields(prefix, readOnly = false) {
         for (const node of candidates) {
           if (node === el || node.contains(el) || el.contains(node)) continue;
           // Skip other controls' own text: a "至今" checkbox, a range "-".
-          if (node.querySelector("input, select, textarea") || isOptionText(node)) continue;
-          const text = clean(node.textContent);
+          if (node.querySelector("input, select, textarea") || isOptionText(node) || ownWidget?.contains(node) || isValidationOrCounter(node, container)) continue;
+          // A wrapper holding a dropdown or button (a phone box with its 「中国大陆」
+          // area-code) must not lend that text as its own.
+          if (node.closest?.("button, [role='button'], .phoenix-button")) continue;
+          const text = node.querySelector(".phoenix-select, .phoenix-button") ? labelText(node) : clean(node.textContent);
           if (text && text.length < 40 && /[\p{L}\p{N}]/u.test(text)) return text;
         }
       }
@@ -142,7 +163,7 @@ function scanPageFields(prefix, readOnly = false) {
 
   function labelText(node) {
     const copy = node.cloneNode(true);
-    copy.querySelectorAll("input, select, textarea, button, [role='combobox'], .ant-select, .el-select").forEach((control) => control.remove());
+    copy.querySelectorAll("input, select, textarea, button, [role='combobox'], .ant-select, .el-select, .phoenix-select, .phoenix-button").forEach((control) => control.remove());
     return clean(copy.textContent);
   }
 
@@ -361,7 +382,7 @@ function scanPageFields(prefix, readOnly = false) {
     return clean(copy.textContent);
   }
   function selectedText(container) {
-    const shown = container.querySelector(".ant-select-selection-item, .ud__select__selector__selectItem, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text, .el-cascader__tags");
+    const shown = container.querySelector(".ant-select-selection-item, .ud__select__selector__selectItem, .phoenix-select__tipEle, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text, .el-cascader__tags");
     // Some portals print their prompt ("输入工作单位名称") where the choice goes.
     if (shown && clean(shown.textContent) && !PLACEHOLDER_TEXT.test(clean(shown.textContent))) return clean(shown.textContent);
     // Element UI and cascaders show the choice in a read-only input; Arco,
@@ -377,17 +398,17 @@ function scanPageFields(prefix, readOnly = false) {
   // clicked (Ant Design .ant-select, Element .el-select, cascaders, and
   // anything using the ARIA combobox/listbox pattern). No options are read
   // here — the fill step opens each one and picks the closest match.
-  const customSelectors = ".ant-select, .el-select, .el-cascader, [role='combobox']:not(input):not(select), input[role='combobox'][readonly], input[aria-haspopup='listbox'], button[aria-haspopup='listbox'], [role='button'][aria-haspopup='listbox']";
+  const customSelectors = ".ant-select, .el-select, .el-cascader, .phoenix-select, [role='combobox']:not(input):not(select), input[role='combobox'][readonly], input[aria-haspopup='listbox'], button[aria-haspopup='listbox'], [role='button'][aria-haspopup='listbox']";
   queryAll(customSelectors).forEach((el) => {
     // Element Plus date inputs are read-only comboboxes too; they're typed into.
     // A language switcher or site search in the page header is not the form.
     if (el.closest(PICKER) || el.closest(SITE_CHROME)) return;
-    const container = el.closest(".ant-select, .el-select, .el-cascader, .ud__select__selector") || el;
+    const container = el.closest(".ant-select, .el-select, .el-cascader, .ud__select__selector, .phoenix-select") || el;
     // An AutoComplete accepts free text: its input is filled like any other.
     if (customContainers.has(container) || container.classList.contains("ant-select-auto-complete")) return;
     if (!isVisible(container)) return;
-    if (container.classList.contains("ant-select-disabled") || container.classList.contains("is-disabled") || container.getAttribute("aria-disabled") === "true" || container.disabled) return;
-    const multiple = container.classList.contains("ant-select-multiple") || container.getAttribute("aria-multiselectable") === "true" || !!container.querySelector(".el-select__tags, .el-cascader__tags");
+    if (container.classList.contains("ant-select-disabled") || container.classList.contains("is-disabled") || container.classList.contains("phoenix-select--disabled") || container.getAttribute("aria-disabled") === "true" || container.disabled) return;
+    const multiple = container.classList.contains("ant-select-multiple") || container.getAttribute("aria-multiselectable") === "true" || !!container.querySelector(".el-select__tags, .el-cascader__tags, .phoenix-select__tag") || container.classList.contains("phoenix-select--exsitMultiValue") || container.classList.contains("phoenix-select--showCountTag");
     if (multiple) return; // never guess multi-selects
     const innerInput = container.matches("input") ? container : container.querySelector("input:not([type='hidden'])");
     const id = prefix + "s" + counter++;
@@ -399,7 +420,7 @@ function scanPageFields(prefix, readOnly = false) {
       tag: "custom-select",
       type: "",
       label: labelFor(innerInput || container) || labelFor(container),
-      placeholder: clean((innerInput && innerInput.getAttribute("placeholder")) || (container.querySelector(".ant-select-selection-placeholder, .el-select__placeholder") || {}).textContent || ""),
+      placeholder: clean((innerInput && innerInput.getAttribute("placeholder")) || (container.querySelector(".ant-select-selection-placeholder, .el-select__placeholder, .phoenix-select__placeHolder") || {}).textContent || ""),
       name: (innerInput && innerInput.getAttribute("name")) || container.id || "",
       section: sectionFor(container),
       hasValue: !!selectedText(container),
@@ -608,7 +629,7 @@ function snapshotFormStructure(secrets) {
     if (el.tagName === "TEXTAREA") el.textContent = "";
   });
   // Component-library dropdowns show the chosen value as plain text.
-  clone.querySelectorAll(".ant-select-selection-item, .ud__select__selector__selectItem, .el-select__selected-item, .ant-select-selection-item-content, .el-tag, .ant-upload-list").forEach((el) => { el.textContent = "[已选内容]"; });
+  clone.querySelectorAll(".ant-select-selection-item, .ud__select__selector__selectItem, .phoenix-select__tipEle, .el-select__selected-item, .ant-select-selection-item-content, .el-tag, .ant-upload-list").forEach((el) => { el.textContent = "[已选内容]"; });
   clone.querySelectorAll("*").forEach((el) => {
     for (const attr of Array.from(el.attributes)) {
       if (/^on/i.test(attr.name) || (attr.name.startsWith("data-cp-") && attr.name !== "data-cp-fill-id")) el.removeAttribute(attr.name);
@@ -983,7 +1004,7 @@ async function fillCustomSelects(pairs, taskId) {
     return clean(copy.textContent);
   }
   function selectedText(container) {
-    const shown = container.querySelector(".ant-select-selection-item, .ud__select__selector__selectItem, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text, .el-cascader__tags");
+    const shown = container.querySelector(".ant-select-selection-item, .ud__select__selector__selectItem, .phoenix-select__tipEle, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text, .el-cascader__tags");
     // Some portals print their prompt ("输入工作单位名称") where the choice goes.
     if (shown && clean(shown.textContent) && !PLACEHOLDER_TEXT.test(clean(shown.textContent))) return clean(shown.textContent);
     // Element UI and cascaders show the choice in a read-only input; Arco,
@@ -1014,7 +1035,9 @@ async function fillCustomSelects(pairs, taskId) {
         ".el-select-dropdown:not([style*='display: none']) .el-select-dropdown__item:not(.is-disabled), " +
         ".ivu-select-dropdown .ivu-select-item:not(.ivu-select-item-disabled), .arco-select-option:not(.arco-select-option-disabled), .t-select-option:not(.t-is-disabled), " +
         "[role='listbox'] [role='option']:not([aria-disabled='true']), " +
-        ".ud__select__dropdown:not([class*='dropdown-hidden']) .ud__select__list__item:not([class*='item-disabled'])"
+        ".ud__select__dropdown:not([class*='dropdown-hidden']) .ud__select__list__item:not([class*='item-disabled']), " +
+        // 北森 zhiye: a multi-select's rows carry a checkbox; those lists are never guessed.
+        ".phoenix-selectList__listItem:not(.phoenix-selectList__listItem--disabled):not(:has(input[type='checkbox']))"
     );
     return Array.from(nodes).filter(visible);
   }
@@ -1167,11 +1190,36 @@ async function fillCustomSelects(pairs, taskId) {
     return false;
   }
 
+  // 北森 zhiye 日期框：点开是一个带输入框的日历（phoenix-calendar）。把日期打进它
+  // 的输入框再回车；只有年月时再补成当月 1 日重试（有的框要完整日期）。
+  const calendarPanel = () => Array.from(document.querySelectorAll(".phoenix-calendar")).find((node) => visible(node) && !node.closest(".phoenix-popover-hidden"));
+  async function fillCalendar(container, value) {
+    const panel = calendarPanel();
+    const input = panel?.querySelector(".phoenix-calendar-input");
+    if (!input) return false;
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+    const text = String(value).trim();
+    for (const attempt of /^\d{4}-\d{2}$/.test(text) ? [text, text + "-01"] : [text]) {
+      setter.call(input, attempt);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      await sleep(150);
+      assertActive();
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true }));
+      await sleep(300);
+      assertActive();
+      if (selectedText(container)) return true;
+      const ok = calendarPanel()?.querySelector(".phoenix-calendar-ok-btn:not(.phoenix-calendar-ok-btn-disabled)");
+      if (ok) { ok.click(); await sleep(300); assertActive(); if (selectedText(container)) return true; }
+    }
+    return false;
+  }
+
   for (const p of pairs) {
     assertActive();
     const container = find('[data-cp-fill-id="' + p.id + '"]');
     if (!container || !p.value) continue;
-    if (container.classList.contains("ant-select-disabled") || container.classList.contains("is-disabled") || container.getAttribute("aria-disabled") === "true" || container.disabled) {
+    if (container.classList.contains("ant-select-disabled") || container.classList.contains("is-disabled") || container.classList.contains("phoenix-select--disabled") || container.getAttribute("aria-disabled") === "true" || container.disabled) {
       failed.push(p.label || p.id);
       continue;
     }
@@ -1196,6 +1244,17 @@ async function fillCustomSelects(pairs, taskId) {
     assertActive();
     let options = await waitFor(() => visibleOptions(container), 600);
     if (hasExistingValue(container)) { close(); skipped.push(p.id); continue; }
+    if (!options.length && container.matches(".phoenix-select") && calendarPanel()) {
+      let ok = false;
+      try { ok = await fillCalendar(container, p.value); } catch (error) { if (/填写已停止/.test(error.message)) throw error; }
+      if (ok) {
+        mark(container, p.source || "profile");
+        if (p.answerId) container.setAttribute("data-cp-answer-id", p.answerId);
+        if ((p.source || "profile") === "profile") container.setAttribute("data-cp-profile-filled", "1");
+        filled.push(p.id);
+      } else { close(); failed.push(p.label || p.id); }
+      continue;
+    }
     if (!options.length && treeNodes().length) {
       let ok = false;
       try { ok = await fillTree(container, p, container.querySelector("input:not([readonly]):not([type='hidden'])")); } catch (error) { if (/填写已停止/.test(error.message)) throw error; }
@@ -1302,10 +1361,10 @@ function trackUserEdits() {
   document.addEventListener("input", mark, true);
   document.addEventListener("change", mark, true);
   let selected = null;
-  const shownValue = (el) => (el.querySelector(".ant-select-selection-item, .ud__select__selector__selectItem, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent)")?.textContent || el.value || (el.matches("button, [role='combobox']") ? el.textContent : "") || "").trim();
+  const shownValue = (el) => (el.querySelector(".ant-select-selection-item, .ud__select__selector__selectItem, .phoenix-select__tipEle, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent)")?.textContent || el.value || (el.matches("button, [role='combobox']") ? el.textContent : "") || "").trim();
   document.addEventListener("pointerdown", (event) => {
     if (!event.isTrusted) return;
-    const el = origin(event)?.closest?.(".ant-select, .el-select, .el-cascader, .ud__select__selector, [role='combobox'], button[aria-haspopup='listbox']");
+    const el = origin(event)?.closest?.(".ant-select, .el-select, .el-cascader, .ud__select__selector, .phoenix-select, [role='combobox'], button[aria-haspopup='listbox']");
     if (el) selected = { el, at: Date.now(), value: shownValue(el) };
   }, true);
   document.addEventListener("click", (event) => {
@@ -1360,7 +1419,7 @@ function readFieldValues(ids) {
     if (el.getAttribute("role") === "radiogroup") return clean(el.querySelector("[role='radio'][aria-checked='true']")?.textContent);
     if (el.isContentEditable && tag !== "input" && tag !== "textarea") return String(el.innerText || "").trim();
     if (tag === "input" || tag === "textarea") return String(el.value || "").trim();
-    const shown = el.querySelector(".ant-select-selection-item, .ud__select__selector__selectItem, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text");
+    const shown = el.querySelector(".ant-select-selection-item, .ud__select__selector__selectItem, .phoenix-select__tipEle, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text");
     if (shown && clean(shown.textContent) && !PLACEHOLDER_TEXT.test(clean(shown.textContent))) return clean(shown.textContent);
     const input = el.querySelector("input:not([type='hidden'])");
     if (input && clean(input.value) && !PLACEHOLDER_TEXT.test(clean(input.value))) return clean(input.value);
@@ -1412,7 +1471,7 @@ function clearSavedUserEdits(saved) {
     if (el.getAttribute("role") === "radiogroup") return clean(el.querySelector("[role='radio'][aria-checked='true']")?.textContent);
     if (el.isContentEditable && tag !== "input" && tag !== "textarea") return String(el.innerText || "").trim();
     if (tag === "input" || tag === "textarea") return String(el.value || "").trim();
-    const shown = el.querySelector(".ant-select-selection-item, .ud__select__selector__selectItem, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text");
+    const shown = el.querySelector(".ant-select-selection-item, .ud__select__selector__selectItem, .phoenix-select__tipEle, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text");
     if (shown && clean(shown.textContent) && !PLACEHOLDER_TEXT.test(clean(shown.textContent))) return clean(shown.textContent);
     const input = el.querySelector("input:not([type='hidden'])");
     if (input && clean(input.value) && !PLACEHOLDER_TEXT.test(clean(input.value))) return clean(input.value);
@@ -1483,7 +1542,7 @@ const BASIC_FIELD_RULES = [
   { keys: ["通讯地址", "联系地址", "家庭住址", "现住址", "居住地址", "详细地址", "邮寄地址", "mailing address", "home address", "street address", "address line"], not: /e-?mail|邮箱|户口|户籍|原籍/i, get: (p) => p.address, learn: "address" },
   // Preferred cities first: a bare English "City" (address blocks) is where
   // the applicant lives, not where they'd like to work.
-  { keys: ["意向城市", "期望城市", "工作城市", "意向工作地", "期望工作地", "工作地点", "意向地点", "期望地点", "工作地区", "preferred city", "preferred location", "desired location", "work location"], not: /是否|可否|能否|接受/, get: (p) => p.preferredCities },
+  { keys: ["意向城市", "期望城市", "工作城市", "意向工作地", "期望工作地", "工作地点", "意向地点", "期望地点", "工作地区", "preferred city", "preferred location", "desired location", "work location"], not: /是否|可否|能否|接受/, get: (p) => p.preferredCities, cities: true },
   // English portals (Microsoft, Workday …): country of residence, before the bare "city" rule.
   { keys: ["country/region", "country / region", "country or region", "country of residence", "country", "所在国家", "居住国家", "国家/地区", "国家或地区"], not: /code|区号|代码|phone|dial|birth|出生|citizenship|nationality|国籍|issu|签发|city|城市|state of/i, get: (p) => p.country || countryFromCity(p.currentCity), learn: "country", english: false, englishName: true },
   { keys: ["现居", "现住", "所在城市", "常住", "居住城市", "current city", "current location", "city"], get: (p) => p.currentCity, learn: "currentCity", englishName: true },
@@ -2540,6 +2599,24 @@ function countryFromCity(city) {
   return Object.keys(PLACE_NAMES).some((name) => !OVERSEAS_PLACES[name] && text.includes(name)) ? "中国" : null;
 }
 
+// 「期望工作地（提示：只能填写一个城市）」「例：浙江杭州(最多3个,空格隔开)」:
+// a box that says how many cities it takes gets that many, in the separator it
+// names; one that says nothing gets the whole list as saved.
+const CITY_COUNT = { 一: 1, 两: 2, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6 };
+function citiesForField(field, value) {
+  const text = String(value || "");
+  const hint = `${field.label || ""} ${field.placeholder || ""} ${field.hint || ""}`;
+  const cities = text.split(/[\s,，、/;；|]+/).filter(Boolean);
+  if (cities.length < 2) return text;
+  const numeral = "([1-9一二两三四五六])";
+  const found = new RegExp(`只[能可]\\s*(?:填写|选择|填|选|输入)?\\s*${numeral}?\\s*个|(?:最多|至多|不超过|限)\\s*(?:填写|选择|填|选|输入)?\\s*${numeral}\\s*个|${numeral}\\s*个(?:城市|地点|工作地)?以内`).exec(hint);
+  const limit = found ? Number(found[1] || found[2] || found[3]) || CITY_COUNT[found[1] || found[2] || found[3]] || 1 : 0;
+  const kept = limit ? cities.slice(0, limit) : cities;
+  if (!limit && !/空格|逗号|顿号|分号|分隔|隔开/.test(hint)) return text;
+  const separator = /空格/.test(hint) ? " " : /顿号/.test(hint) ? "、" : /分号/.test(hint) ? "；" : /逗号/.test(hint) ? "," : (/[,，]/.exec(text)?.[0] ?? "、");
+  return kept.join(separator);
+}
+
 function placeForField(field, value) {
   const text = String(value || "").trim();
   if (!/[㐀-鿿]/.test(text)) return text;
@@ -2579,6 +2656,7 @@ function matchFlatField(field, profile) {
     if (rule.date) value = formatDateForField(field, value) || (field.options ? value : "");
     if (!value) continue;
     if (rule.englishName) value = placeForField(field, value);
+    if (rule.cities) value = citiesForField(field, value);
     // A yes / no choice takes 否 for 「无」 and 是 for anything describing one.
     if (rule.yesNo && field.options?.length && field.options.every((option) => /^(?:是|否|有|无|没有|yes|no)$/i.test(String(option).trim()))) {
       const none = /^(?:无|否|没有|暂无|no|none|n\/?a)$/i.test(String(value).trim());
@@ -3381,7 +3459,7 @@ function readCurrentApplicationFields() {
     if (!(radios ? radios.some((r) => (r.closest("label") || r).getBoundingClientRect().width) : el.getBoundingClientRect().width)) continue;
     const label = el.getAttribute("data-cp-fill-label") || el.getAttribute("aria-label") || (el.id && el.getRootNode().querySelector('label[for="' + CSS.escape(el.id) + '"]')?.textContent) || el.closest(".ant-form-item, .el-form-item, .form-group")?.querySelector("label, [class*='label']")?.textContent || el.name || el.placeholder || "字段";
     if (/密码|验证码|证件|身份证|银行卡|护照|家庭住址|password|captcha|passport|social security|bank account/i.test(label)) continue;
-    let value = el.value || el.querySelector?.(".ant-select-selection-item, .ud__select__selector__selectItem, .el-select__selected-item:not(.el-select__input-wrapper)")?.textContent || "";
+    let value = el.value || el.querySelector?.(".ant-select-selection-item, .ud__select__selector__selectItem, .phoenix-select__tipEle, .el-select__selected-item:not(.el-select__input-wrapper)")?.textContent || "";
     if (radios) {
       const checked = radios.find((r) => r.checked);
       value = checked?.closest("label")?.textContent || checked?.value || "";
@@ -3496,6 +3574,7 @@ module.exports = {
   clickAddBlock,
   countFillableFields,
   dateFormatFor,
+  citiesForField,
   dateParts,
   ageFromBirthDate,
   dateRangeValue,

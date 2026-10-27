@@ -172,6 +172,7 @@ const fv = (p) => `(() => { const v = window.__form.getFieldValue(${JSON.stringi
 const vm = (expr) => `(() => { const v = window.__vm.f${expr}; return Array.isArray(v) ? v.join("/") : String(v ?? ""); })()`;
 const val = (sel) => `(document.querySelector(${JSON.stringify(sel)}) || {}).value || ""`;
 const sel = (sel) => `(() => { const s = document.querySelector(${JSON.stringify(sel)}); return s && s.selectedIndex > 0 ? s.options[s.selectedIndex].text : ""; })()`;
+const tip = (sel) => `(document.querySelector(${JSON.stringify(sel + " .phoenix-select__tipEle")}) || {}).textContent || ""`;
 const radio = (name) => `(() => { const r = document.querySelector('input[name=${JSON.stringify(name)}]:checked'); return r ? (r.closest("label") ? r.closest("label").textContent : r.nextSibling.textContent).trim() : ""; })()`;
 const shadow = (id, s = "input") => `document.getElementById(${JSON.stringify(id)}).shadowRoot.querySelector(${JSON.stringify(s)}).value`;
 
@@ -441,6 +442,22 @@ Object.assign(suites, {
     { label: "获奖时间", read: val("#a3"), expect: /^2023[-./年]?11/ },
     { label: "第二组获奖项(只存了一个奖，不重复)", read: val("#a4"), expect: "" },
   ]],
+  // 曙光（北森 zhiye）：下拉的占位字「请选择」不能当标签；日历型下拉；多选不乱填；城市数量按提示。
+  "zhiye-phoenix": [[
+    { label: "期望工作地(只能一个城市)", read: val("#city1"), expect: "上海" },
+    { label: "意向城市(最多2个,空格)", read: val("#city2"), expect: "上海 苏州" },
+    { label: "单位名称", read: val("#exp-company"), expect: "字节跳动" },
+    { label: "职位名称", read: val("#exp-role"), expect: "数据分析实习生" },
+    { label: "工作职责(计数器0/2000不当标签)", read: val("#exp-desc"), expect: /抖音电商/ },
+    { label: "手机号(区号按钮不当标签)", read: val("#phone"), expect: "13812345678" },
+    { label: "开始时间(年月日历)", read: tip("#exp-start"), expect: "2025-06" },
+    { label: "结束时间(年月日历)", read: tip("#exp-end"), expect: "2025-09" },
+    { label: "奖项", read: val("#award-name"), expect: "全国大学生数学建模竞赛一等奖" },
+    { label: "获奖级别(下拉)", read: tip("#award-level"), expect: "国家级" },
+    { label: "获奖时间(完整日期日历)", read: tip("#award-date"), expect: "2023-11-01" },
+    { label: "学历(已有值不动)", read: tip("#degree"), expect: "硕士" },
+    { label: "意向行业(多选不乱填)", read: tip("#industry"), expect: "" },
+  ], { profile: (p) => { p.preferredCities = "上海、苏州、杭州"; } }],
   "jd-meituan-v24": [[
     { label: "考试分数", read: val("#s1"), expect: "560" },
     { label: "语言考试成绩(考试名+分数)", read: val("#s2"), expect: "CET-6 560" },
