@@ -68,6 +68,7 @@ export const TABLES = [
   "desktopNote",
   "calendarEvent",
   "eventReminder",
+  "journeyEntry",
 ] as const;
 
 export type TableName = (typeof TABLES)[number];

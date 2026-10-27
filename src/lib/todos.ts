@@ -197,17 +197,15 @@ export function buildTodos(
     const current = !h.enteredAt || !h.application.currentStageDate
       || (h.stage === h.application.currentStage && h.enteredAt.getTime() === h.application.currentStageDate.getTime());
     if (!current && !(h.nextHasTime && h.nextDeadline.getTime() > now)) continue;
-    // Done on the applicant's side: no deadline to chase. A word the day an
-    // interview ends (notes while fresh, the result), then quiet until it is
-    // time to follow up.
+    // Done on the applicant's side: no deadline to chase. Quiet until it is
+    // time to follow up (the note while it is fresh is asked for by
+    // 接下来's 「刚结束」 strip, not listed here).
     const state = stepState(h, now);
     if (state.phase === "waiting") {
       const round = h.stageLabel || STAGE_LABELS[h.stage];
       const label = `${h.application.company.name} · ${h.application.title}`;
       if (state.followUp && current) {
         todos.push({ id: `follow-${h.id}`, label, sublabel: `${round}${waitingText(h.stage, state)}，可以发封邮件问问进度`, urgency: "soon", href: `/applications/${h.application.id}#interview`, order: -state.days });
-      } else if (state.byTime && state.days === 0 && current) {
-        todos.push({ id: `after-${h.id}`, label, sublabel: `${round}已结束：趁记得记两句面经，有结果了点一下`, urgency: "soon", href: `/applications/${h.application.id}#interview`, order: 0 });
       }
       continue;
     }

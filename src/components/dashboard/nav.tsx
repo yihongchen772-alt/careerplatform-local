@@ -17,6 +17,7 @@ import {
   ListChecks,
   Menu,
   MessageSquare,
+  NotebookPen,
   Crosshair,
   Scale,
   Search,
@@ -104,6 +105,7 @@ const groups: { label: string | null; links: NavLink[] }[] = [
     links: [
       { href: "/contacts", label: "联系人", icon: Users },
       { href: "/library", label: "资料库", icon: FolderOpen },
+      { href: "/journey", label: "心路历程", icon: NotebookPen },
       { href: "/personality", label: "性格测试", icon: Brain },
     ],
   },

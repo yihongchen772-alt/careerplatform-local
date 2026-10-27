@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowUpRight, Clock, Mail, Send, Trophy, XCircle, type LucideIcon } from "lucide-react";
+import { ArrowUpRight, Clock, Mail, NotebookPen, Send, Trophy, XCircle, type LucideIcon } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,6 +13,8 @@ import { computeFunnel, computeOutcomes } from "@/lib/funnel";
 import { computeShareStats } from "@/lib/share-card";
 import { isCalendarMailTask } from "@/lib/pending-mail";
 import { loadPendingMail } from "@/lib/pending-mail-loader";
+import { loadJourneyEvents } from "@/lib/journey-loader";
+import { nudgeEvent } from "@/lib/journey";
 import { ShareCardDialog } from "@/components/dashboard/share-card-dialog";
 import { FunnelCard } from "@/components/insights/funnel-card";
 import { PersonalTaskCard } from "@/components/dashboard/personal-task-card";
@@ -28,9 +30,10 @@ import { ScanHealthBanner } from "@/components/applications/scan-health-banner";
 import { getScanHealth } from "@/lib/scan-health";
 import { loadAutoProgressItems, loadAutoScheduleItems } from "@/lib/auto-progress";
 import { UpcomingSchedule } from "@/components/schedule/upcoming-schedule";
+import { JustFinishedStrip } from "@/components/schedule/just-finished";
 import { AgentBriefCard } from "@/components/dashboard/agent-brief-card";
 import { loadBriefState } from "@/lib/agent/brief";
-import { loadUpcomingSchedule } from "@/lib/schedule-loader";
+import { loadJustFinished, loadUpcomingSchedule } from "@/lib/schedule-loader";
 import { isTerminalStage } from "@/lib/interview-schedule";
 import { currentTimeMs } from "@/lib/dates";
 
@@ -45,10 +48,11 @@ export default async function DashboardPage() {
   const now = currentTimeMs();
   // 待核对 captures that fill a blank in 网申资料 are learned here too (with 撤销).
   const backlog = await db.$transaction((tx) => learnFromBacklog(tx, user.id)).catch((error) => { console.error("[backlog]", error); return []; }).then(() => loadBacklogNotices(user.id));
-  const [autoUpdates, autoSchedules, upcoming, briefs, inferred] = await Promise.all([
+  const [autoUpdates, autoSchedules, upcoming, justFinished, briefs, inferred] = await Promise.all([
     loadAutoProgressItems(user.id),
     loadAutoScheduleItems(user.id),
     loadUpcomingSchedule(user.id, new Date(now)),
+    loadJustFinished(user.id, new Date(now)),
     loadBriefState(user.id, new Date(now)),
     loadInferredNotice(user.id),
   ]);
@@ -106,6 +110,9 @@ export default async function DashboardPage() {
   // time need the calendar, so only those are pointed at.
   const mailNeedingTime = (await loadPendingMail(user.id, now)).filter((row) => !row.time);
   const ownTasks = personalTasks.filter((task) => !isCalendarMailTask(task, now));
+  // A result in the last two days with nothing written about it: one gentle line, not a card.
+  const recentEntries = await db.journeyEntry.findMany({ where: { userId: user.id, createdAt: { gte: new Date(now - 8 * 86_400_000) } }, select: { about: true, createdAt: true } });
+  const journeyNudge = nudgeEvent(await loadJourneyEvents(user.id, now), recentEntries.map((entry) => ({ about: entry.about, createdAt: entry.createdAt.toISOString() })), now);
   // One line under the greeting: this week's interviews / tests, the next one, what is pressing.
   const scheduled = upcoming.filter((item) => item.source !== "mail");
   const next = scheduled[0];
@@ -199,6 +206,8 @@ export default async function DashboardPage() {
       {scanHealth.failing && <ScanHealthBanner error={scanHealth.error} since={scanHealth.since?.toISOString() ?? null} lastOkAt={scanHealth.lastOkAt?.toISOString() ?? null} />}
       <AutoProgressBanner items={autoUpdates} schedules={autoSchedules} />
 
+      <JustFinishedStrip items={justFinished} now={now} />
+
       {/* Today's interviews, one click from their meeting links — what to act on first. */}
       {applications.length > 0 && (
         <UpcomingSchedule
@@ -221,6 +230,14 @@ export default async function DashboardPage() {
         <Link href="/calendar" className="flex items-center gap-2 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm transition-colors hover:bg-primary/10">
           <Mail className="size-4 shrink-0 text-primary" />
           <span className="min-w-0 flex-1">邮件里有 {mailNeedingTime.length} 条面试 / 笔试没读到时间，点这里补上</span>
+          <ArrowUpRight className="size-4 shrink-0 text-muted-foreground" />
+        </Link>
+      )}
+
+      {journeyNudge && (
+        <Link href={`/journey?about=${encodeURIComponent(journeyNudge.about)}`} className="flex items-center gap-2 rounded-xl border border-border/60 bg-card/60 px-4 py-3 text-sm transition-colors hover:bg-muted/60">
+          <NotebookPen className="size-4 shrink-0 text-primary" />
+          <span className="min-w-0 flex-1">{journeyNudge.about.split(" · ")[0]} 有结果了，要不要写两句心情？</span>
           <ArrowUpRight className="size-4 shrink-0 text-muted-foreground" />
         </Link>
       )}

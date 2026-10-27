@@ -11,7 +11,8 @@ import { ScanHealthBanner } from "@/components/applications/scan-health-banner";
 import { getScanHealth } from "@/lib/scan-health";
 import { loadAutoProgressItems, loadAutoScheduleItems } from "@/lib/auto-progress";
 import { UpcomingSchedule } from "@/components/schedule/upcoming-schedule";
-import { loadUpcomingSchedule } from "@/lib/schedule-loader";
+import { JustFinishedStrip } from "@/components/schedule/just-finished";
+import { loadJustFinished, loadUpcomingSchedule } from "@/lib/schedule-loader";
 import { applicationScheduleItems, currentStageRow, isTerminalStage, nextScheduleItem, stepView } from "@/lib/interview-schedule";
 import { applicationCities } from "@/lib/application-city";
 import { industryLabel } from "@/lib/company-industry";
@@ -24,7 +25,7 @@ export default async function ApplicationsPage() {
   const scanHealth = await getScanHealth(user.id);
 
   const now = currentTimeMs();
-  const [applications, resumeVersions, portals, settings, autoUpdates, autoSchedules, upcoming] = await Promise.all([
+  const [applications, resumeVersions, portals, settings, autoUpdates, autoSchedules, upcoming, justFinished] = await Promise.all([
     db.application.findMany({
       where: { userId: user.id },
       include: {
@@ -60,6 +61,7 @@ export default async function ApplicationsPage() {
     loadAutoProgressItems(user.id),
     loadAutoScheduleItems(user.id),
     loadUpcomingSchedule(user.id, new Date(now)),
+    loadJustFinished(user.id, new Date(now)),
   ]);
 
   const portalCompanies = new Set(portals.map((portal) => portal.companyId));
@@ -80,6 +82,8 @@ export default async function ApplicationsPage() {
 
       {scanHealth.failing && <ScanHealthBanner error={scanHealth.error} since={scanHealth.since?.toISOString() ?? null} lastOkAt={scanHealth.lastOkAt?.toISOString() ?? null} />}
       <AutoProgressBanner items={autoUpdates} schedules={autoSchedules} />
+
+      <JustFinishedStrip items={justFinished} now={now} />
 
       {applications.length > 0 && (
         <UpcomingSchedule

@@ -24,6 +24,7 @@ model User {
   applicationDrafts ApplicationDraft[]
   desktopNotes DesktopNote[]
   calendarEvents CalendarEvent[]
+  journeyEntries JourneyEntry[]
   id                    String    @id @default(cuid())
   email                 String    @unique
   passwordHash          String?
@@ -1361,4 +1362,22 @@ model AgentBrief {
   createdAt DateTime @default(now())
 
   @@unique([userId, kind, period])
+}
+
+/// 心路历程: the applicant's own diary of the search — a mood and a few lines,
+/// newest first. `about` is only a label (「星河半导体 · 一面」) when it was
+/// written from a prompt after something happened; no link, so deleting a
+/// 投递 never touches what was written about it.
+model JourneyEntry {
+  id        String   @id @default(cuid())
+  userId    String
+  /// happy | ok | down | angry | cry
+  mood      String
+  text      String
+  about     String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }

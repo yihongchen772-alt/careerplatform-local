@@ -185,3 +185,6 @@ export const IMPORT_STAGE_LABELS: Record<ImportStage, string> = {
   REJECTED: "未通过",
   WITHDRAWN: "已放弃",
 };
+
+/** Starts the note on a step made by an import, so later features can tell it from something that just happened. */
+export const IMPORT_NOTE_PREFIX = "导入时表格里写的是";

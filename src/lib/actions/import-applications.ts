@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
 import { resolveCompanyIds } from "@/lib/company-resolver";
-import { IMPORT_STAGES, MAX_IMPORT_ROWS } from "@/lib/application-import";
+import { IMPORT_NOTE_PREFIX, IMPORT_STAGES, MAX_IMPORT_ROWS } from "@/lib/application-import";
 import { terminationFields } from "@/lib/termination";
 
 const rowSchema = z.object({
@@ -81,7 +81,7 @@ export async function importApplications(
               applicationId: application.id,
               stage: row.stage as never,
               enteredAt: now,
-              note: row.statusText ? `导入时表格里写的是「${row.statusText}」` : null,
+              note: `${IMPORT_NOTE_PREFIX}「${row.statusText || "（没写状态）"}」`,
               ...terminationFields(row.stage, "APPLIED"),
             },
           });

@@ -51,7 +51,7 @@ export function computeOpportunityScore(
   if (history && !history.smallSample) {
     historyComponent = history.engagedRate * 100;
     reasons.push(
-      `「${input.track}」方向历史进面率 ${Math.round(history.engagedRate * 100)}%（${history.total} 次投递）`
+      `「${input.track}」方向历史进展率 ${Math.round(history.engagedRate * 100)}%（到过笔试或面试；${history.total} 次投递）`
     );
   } else if (history && history.smallSample) {
     reasons.push(

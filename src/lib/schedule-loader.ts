@@ -5,9 +5,13 @@ import {
   currentStageRow,
   extractMeetingUrl,
   isUpcoming,
+  itemEndMs,
   kindFromText,
+  scheduleKindOf,
   type ScheduleItem,
+  type ScheduleKind,
 } from "@/lib/interview-schedule";
+import { STAGE_LABELS } from "@/lib/stage-labels";
 import { mailTime } from "@/lib/mail-time";
 import type { ApplicationStage } from "@prisma/client";
 
@@ -192,4 +196,52 @@ export async function loadApplicationSchedule(userId: string, applicationId: str
       fromMail: !!task.mailEventDraft || /邮件主题：/.test(task.note ?? ""),
     })),
   };
+}
+
+export type JustFinished = {
+  stageHistoryId: string;
+  applicationId: string;
+  companyName: string;
+  jobTitle: string;
+  /** 一面 / the company's own name for the step. */
+  round: string;
+  kind: ScheduleKind;
+  /** ISO: when the booked slot ended. */
+  endedAt: string;
+};
+
+const RECAP_WINDOW_MS = 36 * 3_600_000;
+
+/**
+ * Booked times that ended in the last day and a half with nothing written
+ * yet — the moment to jot down what was asked, while it is fresh (it feeds
+ * 面经库). Gone once there is a note, or after the window.
+ */
+export async function loadJustFinished(userId: string, now = new Date()): Promise<JustFinished[]> {
+  const nowMs = now.getTime();
+  const rows = await db.stageHistory.findMany({
+    where: {
+      nextHasTime: true,
+      nextDeadline: { gte: new Date(nowMs - RECAP_WINDOW_MS - DAY), lte: now },
+      OR: [{ note: null }, { note: "" }],
+      application: { userId },
+    },
+    select: { id: true, stage: true, stageLabel: true, nextDeadline: true, nextDeadlineEnd: true, application: { select: { id: true, title: true, company: { select: { name: true } } } } },
+  });
+  const out: JustFinished[] = [];
+  for (const row of rows) {
+    if (!row.nextDeadline) continue;
+    const end = itemEndMs({ startsAt: row.nextDeadline.toISOString(), endsAt: row.nextDeadlineEnd?.toISOString() ?? null, hasTime: true });
+    if (end > nowMs || nowMs - end > RECAP_WINDOW_MS) continue;
+    out.push({
+      stageHistoryId: row.id,
+      applicationId: row.application.id,
+      companyName: row.application.company.name,
+      jobTitle: row.application.title,
+      round: row.stageLabel?.trim() || STAGE_LABELS[row.stage],
+      kind: scheduleKindOf(row.stage),
+      endedAt: new Date(end).toISOString(),
+    });
+  }
+  return out.sort((a, b) => b.endedAt.localeCompare(a.endedAt));
 }
