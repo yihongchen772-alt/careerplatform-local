@@ -52,6 +52,8 @@ const bodySchema = z.object({
         label: z.string(),
         kind: z.enum(["essay", "short", "choice"]).default("essay"),
         options: z.array(z.string()).optional(),
+        /** The page section the field sits under (校园经历 / 工作经历 …). */
+        section: z.string().max(60).optional(),
         maxLength: z.number().int().min(1).max(100000).optional(),
         /** Entries this module already saved on the page (one 证书 / 活动 at a time). */
         saved: z.array(z.string().max(400)).max(10).optional(),
@@ -73,6 +75,11 @@ const bodySchema = z.object({
 // page (never cached either, below — a "couldn't find it" isn't a real
 // answer worth reusing).
 const NEEDS_MANUAL_INPUT = "NEEDS_MANUAL_INPUT";
+
+// 「所在栏目：校园经历」: the same label (职务名称, 名称) means different entries under 实习 / 项目 / 校园经历.
+function sectionNote(question: { section?: string }): string {
+  return question.section ? `（所在栏目：${question.section}，按这个栏目对应的经历来答）` : "";
+}
 
 // An answer already saved in this module would be a duplicate entry.
 function alreadySaved(answer: string, saved: string[] | undefined): boolean {
@@ -211,7 +218,7 @@ export async function POST(request: Request) {
               `- 只用简历里确实有的经历、项目、技能，不要编造简历里没有的内容\n` +
               `- 每题尽量不超过 ${parsed.data.answerLength || 300} 字；有字段上限时严格遵守，语气自然、具体，不要写"我是一个xxx的人"这类空话\n` +
               `- 如果没有可靠依据，只输出 ${NEEDS_MANUAL_INPUT}，不要编造\n\n` +
-              essays.map((q) => `- [id:${q.id}] ${q.label}${q.maxLength ? `（最多 ${q.maxLength} 字）` : ""}`).join("\n")
+              essays.map((q) => `- [id:${q.id}] ${q.label}${sectionNote(q)}${q.maxLength ? `（最多 ${q.maxLength} 字）` : ""}`).join("\n")
           );
         }
         const withSaved = needsGeneration.filter((q) => q.saved?.length);
@@ -231,12 +238,12 @@ export async function POST(request: Request) {
         if (shortFields.length > 0) {
           sections.push(
             `结构化短字段——从简历（或上面的已知信息）里查出确切的值，每个只给这一个值本身，不要加任何解释或标点：\n` +
-              `- 是"从选项里选"的题，只能原样输出给出的选项文字中的一个，一个都不匹配就输出 ${NEEDS_MANUAL_INPUT}\n` +
+              `- 是"从选项里选"的题，只能原样输出给出的选项文字中的一个；简历/已知信息能推出答案就选最贴切的那个（例如简历里有学生会职务，"是否担任过学生干部"选"是"），推不出才输出 ${NEEDS_MANUAL_INPUT}\n` +
               `- 简历/已知信息里确实没有依据的，输出 ${NEEDS_MANUAL_INPUT}，绝对不要编造（这类信息一旦错了比空着更糟，比如性别、出生日期）\n\n` +
               shortFields
                 .map(
                   (q) =>
-                    `- [id:${q.id}] ${q.label}` + (q.options?.length ? `（可选项：${q.options.join("/")}）` : "")
+                    `- [id:${q.id}] ${q.label}${sectionNote(q)}` + (q.options?.length ? `（可选项：${q.options.join("/")}）` : "")
                 )
                 .join("\n")
           );

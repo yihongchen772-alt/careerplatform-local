@@ -84,9 +84,13 @@ const base = `http://127.0.0.1:${server.address().port}`;
 
 function fakeAi(questions) {
   return questions.map((q) => {
+    // A dropdown reaches the AI with the choices the page really offers, and every box with its section.
+    if (/校区/.test(q.label)) return { id: q.id, answer: q.kind === "choice" && (q.options || []).includes("本部") ? "本部" : "NEEDS_MANUAL_INPUT" };
+    if (/兴趣小组/.test(q.label)) return { id: q.id, answer: `所在栏目=${q.section || "无"}` };
     if (q.kind === "choice") {
       const yes = (q.options || []).find((o) => /^(?:是|yes)$/i.test(o));
       if (/调剂|authori[sz]ed|外派|派遣/i.test(q.label) && yes) return { id: q.id, answer: yes };
+      if (/hear about/i.test(q.label)) { const site = (q.options || []).find((o) => /company website/i.test(o)); if (site) return { id: q.id, answer: site }; }
       return { id: q.id, answer: "NEEDS_MANUAL_INPUT" };
     }
     if (q.kind === "essay") return { id: q.id, answer: `【AI草稿】${q.label.slice(0, 12)}` };
@@ -457,6 +461,8 @@ Object.assign(suites, {
     { label: "获奖时间(完整日期日历)", read: tip("#award-date"), expect: "2023-11-01" },
     { label: "学历(已有值不动)", read: tip("#degree"), expect: "硕士" },
     { label: "意向行业(多选不乱填)", read: tip("#industry"), expect: "" },
+    { label: "所在校区(读出选项交给AI选)", read: tip("#campus"), expect: "本部" },
+    { label: "栏目传给AI", read: val("#club"), expect: "所在栏目=其他信息" },
   ], { profile: (p) => { p.preferredCities = "上海、苏州、杭州"; } }],
   "jd-meituan-v24": [[
     { label: "考试分数", read: val("#s1"), expect: "560" },

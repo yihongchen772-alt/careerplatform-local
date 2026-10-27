@@ -75,6 +75,16 @@ body{font:14px sans-serif;max-width:900px;margin:20px auto}
   <div class="form-item__control" id="award-date-slot"></div>
 </div></div>
 
+<div class="sec">其他信息</div>
+<div class="fields-col"><div class="form-item form-item--phoenix">
+  <div class="form-item__title form-item__title--right"><label class="form-item__text">所在校区</label></div>
+  <div class="form-item__control" id="campus-slot"></div>
+</div></div>
+<div class="fields-col"><div class="form-item form-item--phoenix">
+  <div class="form-item__title form-item__title--right"><label class="form-item__text">兴趣小组称号</label></div>
+  <div class="form-item__control"><div class="phoenix-input"><input id="club" class="phoenix-input__input" type="text" placeholder="请输入"></div></div>
+</div></div>
+
 <script>
 // The select markup as the real page prints it (empty: 「请选择」; chosen: the tip element).
 function selectHtml(id, shown) {
@@ -92,6 +102,7 @@ const SLOTS = {
   "exp-end-slot": ["exp-end", "", { date: "month" }],
   "award-level-slot": ["award-level", "", { list: ["校级", "省级", "国家级"] }],
   "award-date-slot": ["award-date", "", { date: "day" }],
+  "campus-slot": ["campus", "", { list: ["本部", "新校区", "南校区"] }],
 };
 for (const [slot, [id, shown]] of Object.entries(SLOTS)) document.getElementById(slot).innerHTML = selectHtml(id, shown);
 let popup = null;

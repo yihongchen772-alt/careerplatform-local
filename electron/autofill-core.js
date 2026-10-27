@@ -991,6 +991,8 @@ async function fillCustomSelects(pairs, taskId) {
   const filled = [];
   const failed = [];
   const skipped = [];
+  // `readOptions` pairs only open the dropdown and report what it offers.
+  const optionsRead = {};
   const roots = [document];
   for (let i = 0; i < roots.length; i++) Array.from(roots[i].querySelectorAll ? roots[i].querySelectorAll("*") : []).forEach((node) => { if (node.shadowRoot) roots.push(node.shadowRoot); });
   const find = (selector) => { for (const root of roots) { const hit = root.querySelector(selector); if (hit) return hit; } return null; };
@@ -1218,6 +1220,22 @@ async function fillCustomSelects(pairs, taskId) {
   for (const p of pairs) {
     assertActive();
     const container = find('[data-cp-fill-id="' + p.id + '"]');
+    if (p.readOptions) {
+      // Which choices the dropdown really offers, so the AI picks one instead of guessing a word.
+      if (!container || container.classList.contains("ant-cascader") || container.classList.contains("el-cascader") || hasExistingValue(container)) continue;
+      open(container);
+      await sleep(300);
+      assertActive();
+      const texts = [...new Set((await waitFor(() => visibleOptions(container), 600)).map(optionText).filter(Boolean))];
+      close();
+      await sleep(120);
+      assertActive();
+      // A list that only closes by clicking its own trigger again: leave it as found.
+      if (visibleOptions(container).length) { open(container); await sleep(150); assertActive(); }
+      // One option is no choice; hundreds (cities, schools) are a search box in disguise.
+      if (texts.length >= 2 && texts.length <= 60) optionsRead[p.id] = texts;
+      continue;
+    }
     if (!container || !p.value) continue;
     if (container.classList.contains("ant-select-disabled") || container.classList.contains("is-disabled") || container.classList.contains("phoenix-select--disabled") || container.getAttribute("aria-disabled") === "true" || container.disabled) {
       failed.push(p.label || p.id);
@@ -1309,7 +1327,7 @@ async function fillCustomSelects(pairs, taskId) {
       assertActive();
     }
   }
-  return { filled, failed, skipped };
+  return { filled, failed, skipped, options: optionsRead };
 }
 
 // Side-effect-free count of what an autofill could touch right now — used
@@ -2857,6 +2875,29 @@ async function scanFrames(adapter) {
   return { fields, frameById, pageText };
 }
 
+// What each listed custom dropdown offers: { id: [option text, …] }. Dropdowns that
+// can't be read (search-only lists, cascaders, very long lists) are simply absent.
+async function readSelectOptions(adapter, questions, frameById, initialUrl) {
+  const byFrame = new Map();
+  for (const q of questions) {
+    const frame = frameById.get(q.id);
+    if (frame === undefined) continue;
+    if (!byFrame.has(frame)) byFrame.set(frame, []);
+    byFrame.get(frame).push({ id: q.id, readOptions: true, label: q.label });
+  }
+  const found = {};
+  for (const [frame, batch] of byFrame) {
+    if (!adapter.stillOnPage(initialUrl)) throw new Error("页面或标签已切换，已停止写入；请在当前页面重新填充");
+    try {
+      const result = await adapter.run(frame, fillCustomSelects, [batch, adapter.taskId]);
+      Object.assign(found, result.options || {});
+    } catch (error) {
+      if (/填写已停止/.test(String(error?.message))) throw error;
+    }
+  }
+  return found;
+}
+
 async function fillFrames(adapter, pairs, frameById, initialUrl) {
   const byFrame = new Map();
   for (const p of pairs) {
@@ -2978,14 +3019,16 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       }
       const label = field.label || field.placeholder || field.name;
       if (!label) continue; // nothing to even describe this field to the AI with
+      // The section it sits under (「校园经历」「工作经历」) tells the AI which of the resume's entries to look at.
+      const section = String(field.section || "").replace(/\s+/g, " ").trim().slice(0, 40) || undefined;
       if (field.tag === "textarea" || field.tag === "richtext") {
-        candidates.push({ id: field.id, label, kind: "essay" });
+        candidates.push({ id: field.id, label, kind: "essay", section });
       } else if (field.tag === "select" || field.tag === "radio") {
-        candidates.push({ id: field.id, label, kind: "choice", options: field.options || [] });
+        candidates.push({ id: field.id, label, kind: "choice", options: field.options || [], section });
       } else {
-        // custom-select options aren't known until opened — ask for a plain
-        // value and let fillCustomSelects match it against what appears.
-        candidates.push({ id: field.id, label, kind: "short" });
+        // A custom dropdown's options are read just before asking (below); until
+        // then it is a plain value that fillCustomSelects matches on the page.
+        candidates.push({ id: field.id, label, kind: "short", section });
       }
     }
     // Fields sharing one module's saved entries are one entry being added.
@@ -3037,6 +3080,14 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     if (candidates.length > 0 && !resumeVersionId) {
       aiError = "没选简历，这些字段跳过了";
     } else if (candidates.length > 0) {
+      // Open each custom dropdown that's about to be asked and read its real choices, so the AI picks one.
+      const dropdowns = candidates.filter((q) => /-s\d+$/.test(q.id) && q.kind === "short");
+      if (dropdowns.length) {
+        adapter.status({ phase: "ai", message: `正在查看 ${dropdowns.length} 个下拉框里有哪些选项…` });
+        const offered = await readSelectOptions(adapter, dropdowns, frameById, initialUrl);
+        assertActive();
+        candidates = candidates.map((q) => (offered[q.id] ? { ...q, kind: "choice", options: offered[q.id] } : q));
+      }
       adapter.status({ phase: "ai", message: `已验证填入 ${basicResult.filled.length} 个资料字段，正在用 AI 生成 ${candidates.length} 个字段的内容…` });
       try {
         const answerRes = await adapter.api("answer-questions", {

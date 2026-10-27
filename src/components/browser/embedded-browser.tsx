@@ -225,13 +225,13 @@ export function EmbeddedBrowser({
   // pages as soon as 投递成功 shows; handed to the 记为已投递 dialog.
   const [submittedRecognition, setSubmittedRecognition] = useState<{ tabId: number; url: string; result: Recognition | null } | null>(null);
   const [markRecognition, setMarkRecognition] = useState<Recognition | null>(null);
-  const autoFillPreference = usePreference("careerplatform.browser.autofillEveryPage", "0") === "1";
+  const autoFillPreference = usePreference("careerplatform.browser.autofillEveryPage", "1") !== "0";
   const [autoFillOverride, setAutoFillOverride] = useState<boolean | null>(null);
   const autoFill = autoFillOverride ?? autoFillPreference;
   const rememberPreference = usePreference("careerplatform.browser.autoRememberAnswers", "1") !== "0";
   const [rememberOverride, setRememberOverride] = useState<boolean | null>(null);
   const autoRemember = rememberOverride ?? rememberPreference;
-  const expandPreference = usePreference("careerplatform.browser.expandBlocks", "0") === "1";
+  const expandPreference = usePreference("careerplatform.browser.expandBlocks", "1") !== "0";
   const [expandOverride, setExpandOverride] = useState<boolean | null>(null);
   const expandBlocks = expandOverride ?? expandPreference;
   const fullWindowPreference = usePreference("careerplatform.browser.expanded", "0") === "1";
