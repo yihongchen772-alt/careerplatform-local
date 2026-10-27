@@ -1,4 +1,4 @@
-import { cityText, parseCities } from "@/lib/application-city";
+import { parseCities } from "@/lib/application-city";
 
 /**
  * Reading the applicant's own tracking sheet (the Excel almost everyone has
@@ -159,7 +159,8 @@ export function mapApplicationRows(cells: string[][], now = new Date()): Applica
     rows.push({
       companyName: companyName.slice(0, 80),
       title,
-      city: cities.length ? cityText(cities).slice(0, 40) : null,
+      // Joined, not cityText(): 「北京 等 4 城」 would read back as 北京 alone.
+      city: cities.length ? cities.join("、").slice(0, 40) : null,
       appliedDate: parseSheetDate(record.appliedDate ?? "", now),
       stage,
       statusText,

@@ -87,3 +87,9 @@ test("mail tasks the calendar looks after are kept out of 我的待办, others s
   assert.equal(isCalendarMailTask(task({ createdAt: new Date(NOW_MS - 60 * 86_400_000) }), NOW_MS), false, "older than the calendar's window");
   assert.equal(isCalendarMailTask(task({ title: "邮件", mailEventDraft: { localStart: "2026-10-30T14:00", title: "x" } }), NOW_MS), true, "a timed draft counts whatever the title");
 });
+
+test("several cities in one cell are kept whole, and read back as the same cities", () => {
+  const { parseCities } = loadTs("src/lib/application-city.ts");
+  const sheet = plain(mapApplicationRows([["公司", "城市"], ["甲公司", "北京/上海/深圳/杭州"]], NOW));
+  assert.deepEqual(plain(parseCities(sheet.rows[0].city)), ["北京", "上海", "深圳", "杭州"]);
+});

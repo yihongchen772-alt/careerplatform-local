@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -13,10 +13,16 @@ import type { JustFinished } from "@/lib/schedule-loader";
 
 const DISMISS_KEY = "careerplatform.recap.dismissed";
 
-function readDismissed(): string[] {
+// What was dismissed on this device. Read through useSyncExternalStore so the
+// server render (nothing dismissed) and the first client render agree.
+const noop = () => () => {};
+const readStored = () => {
+  try { return window.localStorage.getItem(DISMISS_KEY) ?? "[]"; } catch { return "[]"; }
+};
+function parseStored(raw: string): string[] {
   try {
-    const raw = JSON.parse(window.localStorage.getItem(DISMISS_KEY) ?? "[]");
-    return Array.isArray(raw) ? raw.filter((id): id is string => typeof id === "string").slice(-200) : [];
+    const list = JSON.parse(raw);
+    return Array.isArray(list) ? list.filter((id): id is string => typeof id === "string").slice(-200) : [];
   } catch {
     return [];
   }
@@ -38,18 +44,17 @@ function agoText(endedAt: string, now: number): string {
 export function JustFinishedStrip({ items, now: serverNow }: { items: JustFinished[]; now: number }) {
   const now = useNow(serverNow);
   const router = useRouter();
-  const [dismissed, setDismissed] = useState<string[]>(() => (typeof window === "undefined" ? [] : readDismissed()));
+  const stored = useSyncExternalStore(noop, readStored, () => "[]");
+  const [hiddenNow, setHiddenNow] = useState<string[]>([]);
+  const dismissed = [...parseStored(stored), ...hiddenNow];
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const shown = items.filter((item) => !dismissed.includes(item.stageHistoryId));
   if (!shown.length) return null;
 
   function hide(id: string) {
-    setDismissed((previous) => {
-      const next = [...previous, id];
-      try { window.localStorage.setItem(DISMISS_KEY, JSON.stringify(next.slice(-200))); } catch {}
-      return next;
-    });
+    setHiddenNow((previous) => [...previous, id]);
+    try { window.localStorage.setItem(DISMISS_KEY, JSON.stringify([...parseStored(readStored()), id].slice(-200))); } catch {}
   }
 
   async function save(item: JustFinished) {
