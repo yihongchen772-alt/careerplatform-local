@@ -97,7 +97,7 @@ export type DesktopBridge = {
   capturePage(): Promise<DesktopBridgeCapturedPage>;
   exportFormStructure(): Promise<{ path: string; fields: number; frames: number }>;
   chooseDirectory(): Promise<string | null>;
-  exportDocument(payload: { format: "pdf" | "doc"; html: string; fileName: string }): Promise<{ path: string }>;
+  exportDocument(payload: { format: "pdf" | "doc" | "png"; html: string; fileName: string }): Promise<{ path: string }>;
   openExtensionFolder(): Promise<{ path: string }>;
   screenshot(): Promise<{ dataUrl: string; url: string; title: string }>;
   /** A still of the visible page, shown while App menus cover it; null when unavailable. */

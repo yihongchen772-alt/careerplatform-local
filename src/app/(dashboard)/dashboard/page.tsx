@@ -10,6 +10,8 @@ import { loadInferredNotice } from "@/lib/agent/infer-profile";
 import { LearnedBacklogBanner } from "@/components/settings/learned-backlog-banner";
 import { learnFromBacklog, loadBacklogNotices } from "@/lib/profile-backlog";
 import { computeFunnel, computeOutcomes } from "@/lib/funnel";
+import { computeShareStats } from "@/lib/share-card";
+import { ShareCardDialog } from "@/components/dashboard/share-card-dialog";
 import { FunnelCard } from "@/components/insights/funnel-card";
 import { PersonalTaskCard } from "@/components/dashboard/personal-task-card";
 import { DailyDigestCard } from "@/components/dashboard/daily-digest-card";
@@ -81,7 +83,7 @@ export default async function DashboardPage() {
 
   const funnelApps = await db.application.findMany({
     where: { userId: user.id },
-    select: { currentStage: true, stageHistory: { select: { stage: true } } },
+    select: { currentStage: true, stageHistory: { select: { stage: true } }, company: { select: { name: true, industry: true } } },
   });
 
   const total = applications.length;
@@ -91,6 +93,7 @@ export default async function DashboardPage() {
 
   const { levels } = computeFunnel(funnelApps);
   const outcomes = computeOutcomes(funnelApps);
+  const shareStats = computeShareStats(funnelApps.map((a) => ({ currentStage: a.currentStage, stageHistory: a.stageHistory, companyName: a.company.name, industry: a.company.industry })));
   const calendarEvents = await db.calendarEvent.findMany({ where: { userId: user.id } });
   const todos = buildTodos(applications, positions, stageHistories, personalTasks, contacts, calendarEvents);
   // One line under the greeting: this week's interviews / tests, the next one, what is pressing.
@@ -232,9 +235,12 @@ export default async function DashboardPage() {
       </div>
 
       <div className="space-y-4">
-        <div>
-          <h2 className="text-lg font-semibold tracking-[-0.025em]">进展回顾</h2>
-          <p className="mt-1 text-xs text-muted-foreground">用阶段转化看清求职节奏。</p>
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold tracking-[-0.025em]">进展回顾</h2>
+            <p className="mt-1 text-xs text-muted-foreground">用阶段转化看清求职节奏。</p>
+          </div>
+          {total > 0 && <ShareCardDialog stats={shareStats} />}
         </div>
         <FunnelCard levels={levels} total={total} outcomes={outcomes} />
       </div>

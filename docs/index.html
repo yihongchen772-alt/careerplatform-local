@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>求职罗盘 — 秋招管理桌面软件</title>
+<meta name="description" content="求职罗盘：把投递、笔试、面试、邮件和网申都管起来的桌面软件。读邮件自动进日历，网申表单一键填写，数据存在你自己的电脑上。">
+<link rel="icon" href="assets/icon.png">
+<style>
+  :root {
+    --bg: #f3eee3;
+    --band: #ece5d4;
+    --card: #fdfbf6;
+    --ink: #2b2a24;
+    --soft: #6d6753;
+    --faint: #9a937b;
+    --line: rgba(80, 68, 40, .14);
+    --brand: #4f56c8;
+    --brand-deep: #3f46b3;
+    --amber: #d9902f;
+    --green: #3f8a3a;
+    --shadow: 0 1px 3px rgba(80, 68, 40, .06), 0 18px 48px rgba(80, 68, 40, .12);
+    --serif: Georgia, "Songti SC", "Noto Serif SC", "Source Han Serif SC", "SimSun", serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 76px; }
+  body { background: var(--bg); color: var(--ink); line-height: 1.75; -webkit-font-smoothing: antialiased;
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif; }
+  a { color: inherit; text-decoration: none; }
+  img { max-width: 100%; height: auto; display: block; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+  header { position: sticky; top: 0; z-index: 50; background: rgba(243, 238, 227, .88);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid var(--line); }
+  .nav { display: flex; align-items: center; justify-content: space-between; height: 60px; }
+  .logo { display: flex; align-items: center; gap: 10px; font-family: var(--serif); font-size: 20px; font-weight: 700; letter-spacing: 2px; }
+  .logo img { width: 28px; height: 28px; border-radius: 7px; }
+  .links { display: flex; align-items: center; gap: 24px; font-size: 14px; color: var(--soft); }
+  .links a:hover { color: var(--ink); }
+  .links .cta { background: var(--ink); color: var(--bg); padding: 7px 18px; border-radius: 999px; }
+  .links .cta:hover { color: var(--bg); background: #000; }
+
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 26px; border-radius: 999px; font-size: 15px; border: 1.5px solid transparent; transition: transform .15s, background .2s; cursor: pointer; }
+  .btn:active { transform: scale(.97); }
+  .btn.primary { background: var(--brand); color: #fff; }
+  .btn.primary:hover { background: var(--brand-deep); }
+  .btn.ghost { border-color: var(--ink); color: var(--ink); }
+  .btn.ghost:hover { background: rgba(43, 42, 36, .06); }
+  .actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .meta { margin-top: 12px; font-size: 13px; color: var(--faint); }
+
+  /* hero */
+  .hero { padding: 72px 0 56px; text-align: center; }
+  .eyebrow { display: inline-block; padding: 3px 14px; border-radius: 999px; background: rgba(79, 86, 200, .1); color: var(--brand-deep); font-size: 13px; letter-spacing: 1px; }
+  h1 { margin-top: 18px; font-family: var(--serif); font-size: clamp(30px, 5.2vw, 52px); line-height: 1.3; letter-spacing: 1px; }
+  .lead { margin: 18px auto 0; max-width: 640px; font-size: clamp(15px, 2vw, 18px); color: var(--soft); }
+  .hero .actions { justify-content: center; margin-top: 28px; }
+  .shot { margin-top: 44px; border-radius: 16px; overflow: hidden; border: 1px solid var(--line); background: var(--card); box-shadow: var(--shadow); }
+  .bar { display: flex; gap: 7px; padding: 11px 14px; background: #ebe5d5; border-bottom: 1px solid var(--line); }
+  .bar i { width: 11px; height: 11px; border-radius: 50%; background: #cfc7b0; }
+
+  /* pain */
+  .pain { padding: 56px 0 24px; }
+  .pain h2 { font-family: var(--serif); font-size: clamp(22px, 3.2vw, 32px); }
+  .pain-lines { margin-top: 26px; display: grid; gap: 18px; }
+  .pain-line { font-family: var(--serif); font-weight: 700; font-size: clamp(18px, 2.6vw, 27px); line-height: 1.5; color: var(--soft); }
+  .pain-line b { color: var(--ink); }
+  [data-stagger] .item { opacity: 0; transform: translateY(18px); transition: opacity .6s ease, transform .6s ease; }
+  [data-stagger].in .item { opacity: 1; transform: none; }
+  [data-stagger].in .item:nth-child(2) { transition-delay: .18s; }
+  [data-stagger].in .item:nth-child(3) { transition-delay: .36s; }
+  [data-stagger].in .item:nth-child(4) { transition-delay: .54s; }
+
+  /* features */
+  .feature { padding: 64px 0; }
+  .feature.alt { background: var(--band); }
+  .row { display: grid; grid-template-columns: 1.25fr 1fr; gap: clamp(24px, 4vw, 52px); align-items: center; }
+  .row.flip { grid-template-columns: 1fr 1.25fr; }
+  .row.flip .shot-col { order: 2; }
+  .tag { font-size: 13px; letter-spacing: 2px; color: var(--brand-deep); }
+  .feature h3 { margin-top: 6px; font-family: var(--serif); font-size: clamp(22px, 3vw, 30px); line-height: 1.4; }
+  .feature p { margin-top: 12px; color: var(--soft); font-size: 15.5px; }
+  .ticks { margin-top: 14px; list-style: none; display: grid; gap: 8px; font-size: 14.5px; color: var(--soft); }
+  .ticks li { position: relative; padding-left: 22px; }
+  .ticks li::before { content: ""; position: absolute; left: 0; top: .62em; width: 8px; height: 8px; border-radius: 50%; background: var(--brand); }
+  .feature .shot { margin-top: 0; }
+  .steps { list-style: none; counter-reset: step; display: grid; gap: 14px; }
+  .steps li { counter-increment: step; position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px 18px 66px; box-shadow: var(--shadow); }
+  .steps li::before { content: counter(step); position: absolute; left: 20px; top: 50%; transform: translateY(-50%); width: 32px; height: 32px; border-radius: 50%; background: var(--brand); color: #fff; display: grid; place-items: center; font-family: var(--serif); font-weight: 700; }
+  .steps b { display: block; font-family: var(--serif); font-size: 17px; }
+  .steps span { display: block; margin-top: 2px; font-size: 14px; color: var(--soft); }
+  .card-shot { display: grid; place-items: center; }
+  .card-shot img { width: min(100%, 300px); border-radius: 18px; box-shadow: var(--shadow); border: 1px solid var(--line); }
+
+  /* more */
+  .more { padding: 64px 0 28px; }
+  .more h2, .privacy h2, .download h2 { font-family: var(--serif); font-size: clamp(22px, 3.2vw, 32px); }
+  .grid { margin-top: 26px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .tile { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px 20px 22px; box-shadow: var(--shadow); }
+  .tile b { display: flex; align-items: center; gap: 9px; font-family: var(--serif); font-size: 17px; letter-spacing: 1px; }
+  .tile b::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--amber); }
+  .tile span { display: block; margin-top: 8px; font-size: 14px; color: var(--soft); line-height: 1.7; }
+
+  /* privacy */
+  .privacy { padding: 56px 0 28px; }
+  .privacy .panel { margin-top: 22px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 26px 28px; box-shadow: var(--shadow); display: grid; gap: 12px; color: var(--soft); font-size: 15px; }
+  .privacy .panel div::before { content: "✓"; margin-right: 10px; color: var(--green); font-weight: 700; }
+
+  /* download */
+  .download { padding: 56px 0 72px; text-align: center; }
+  .download .lead { margin-top: 10px; }
+  .download .actions { justify-content: center; margin-top: 24px; }
+  .notes { margin: 30px auto 0; max-width: 720px; text-align: left; display: grid; gap: 14px; }
+  .note { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; font-size: 14px; color: var(--soft); }
+  .note b { color: var(--ink); }
+
+  footer { border-top: 1px solid var(--line); padding: 26px 0 40px; color: var(--faint); font-size: 13px; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 10px 24px; justify-content: space-between; }
+  footer a:hover { color: var(--ink); }
+
+  @media (max-width: 820px) {
+    .row, .row.flip { grid-template-columns: 1fr; }
+    .row.flip .shot-col { order: 0; }
+    .grid { grid-template-columns: 1fr 1fr; }
+    .links a:not(.cta) { display: none; }
+  }
+  @media (max-width: 540px) { .grid { grid-template-columns: 1fr; } .hero { padding-top: 48px; } .btn { padding: 11px 22px; } }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } [data-stagger] .item { opacity: 1; transform: none; transition: none; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <a class="logo" href="#top"><img src="assets/icon.png" alt="">求职罗盘</a>
+    <nav class="links">
+      <a href="#features">功能</a>
+      <a href="#more">还有这些</a>
+      <a href="#privacy">隐私</a>
+      <a class="cta" href="#download">下载</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero">
+    <div class="wrap">
+      <span class="eyebrow">给秋招的桌面软件 · Mac / Windows</span>
+      <h1>投递、笔试、面试、邮件、网申，<br>一个软件替你盯着</h1>
+      <p class="lead">读邮件自动把面试和笔试排进日历，网申表单一键填好，每次进展都记在一处。数据只存在你自己的电脑上。</p>
+      <div class="actions">
+        <a class="btn primary" data-dl="mac" href="https://github.com/yihongchen772-alt/careerplatform-local/releases/latest">下载 Mac 版</a>
+        <a class="btn ghost" data-dl="win" href="https://github.com/yihongchen772-alt/careerplatform-local/releases/latest">下载 Windows 版</a>
+      </div>
+      <p class="meta" data-version>免费 · 不用注册账号</p>
+      <div class="shot">
+        <div class="bar"><i></i><i></i><i></i></div>
+        <img src="assets/hero.webp" alt="总览页：接下来的面试和笔试，一行一件，点一下进会议" width="1440" height="900">
+      </div>
+    </div>
+  </section>
+
+  <section class="pain" data-stagger>
+    <div class="wrap">
+      <h2 class="item">秋招投到后面，最怕这三件事</h2>
+      <div class="pain-lines">
+        <p class="pain-line item">投了几十家，<b>哪家到哪一步</b>，自己都说不清。</p>
+        <p class="pain-line item">面试邀请埋在邮箱里，<b>看漏一封</b>，机会就没了。</p>
+        <p class="pain-line item">每家的网申表单<b>一模一样地重填</b>，填到手酸。</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="feature" id="features">
+    <div class="wrap row">
+      <div class="shot-col"><div class="shot"><img src="assets/calendar.webp" alt="日历：邮件里读到的面试和笔试时间" loading="lazy" width="1440" height="900"></div></div>
+      <div>
+        <div class="tag">读邮件</div>
+        <h3>面试邀请，不用再自己抄进日历</h3>
+        <p>绑上你的邮箱，软件会读招聘邮件，把面试、笔试、测评的时间排进日历，并更新那条投递的进度。</p>
+        <ul class="ticks">
+          <li>HTML 排版的邮件也能读，笔试时间、测评截止、会议链接都认得出</li>
+          <li>读不出具体时间的，会放在「还没进日历」里等你补一下</li>
+          <li>每一次自动更新都能撤销，不会悄悄改掉你自己填的</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="feature alt">
+    <div class="wrap row flip">
+      <div class="shot-col"><div class="shot"><img src="assets/board.webp" alt="投递记录看板：按阶段分列，卡片上有倒计时和进会议按钮" loading="lazy" width="1440" height="900"></div></div>
+      <div>
+        <div class="tag">投递记录</div>
+        <h3>每家公司走到哪一步，一眼看清</h3>
+        <p>看板按阶段把投递排开，有面试时间的卡片直接显示倒计时和「进入会议」。</p>
+        <ul class="ticks">
+          <li>按城市、公司、行业、时间分组和筛选，搜「杭州 测试」就够</li>
+          <li>在网申浏览器里点「记为已投递」，自动带上城市和岗位</li>
+          <li>一键改进度，面试、笔试、offer 的历史都留着</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="feature">
+    <div class="wrap row">
+      <div>
+        <div class="tag">网申浏览器</div>
+        <h3>网申表单，填一次就够</h3>
+        <p>软件里自带一个像 Chrome 一样的浏览器。打开企业的网申页，点「一键填写」，基本信息、教育经历、实习、项目、奖项会按你的资料填好。</p>
+        <ul class="ticks">
+          <li>支持多数校招系统的分页表单和树形城市下拉</li>
+          <li>简历里没有的信息不乱填，标成「待手填」交给你</li>
+          <li>开放题可以让小欧起草，你看过再点「填进这一栏」</li>
+          <li>也有 Chrome 插件，在你平时用的浏览器里同样能填</li>
+        </ul>
+      </div>
+      <div class="shot-col">
+        <ol class="steps">
+          <li><b>打开网申页</b><span>在软件里的浏览器打开企业的招聘官网，登录、进到表单</span></li>
+          <li><b>点「一键填写」</b><span>按你的网申资料和简历填好，已经填了的内容默认保留</span></li>
+          <li><b>核对「待手填」</b><span>没有对应资料的栏目被标出来，补完就能提交</span></li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <section class="feature alt">
+    <div class="wrap row flip">
+      <div class="shot-col card-shot"><img src="assets/card.webp" alt="求职战绩卡：2 个 Offer，转化漏斗" loading="lazy" width="720" height="1279"></div>
+      <div>
+        <div class="tag">战绩卡</div>
+        <h3>一键生成你的求职战绩</h3>
+        <p>把投递、面试、Offer 的数字做成一张竖版图片，发朋友圈或小红书。可以只放数字，也可以带上转化漏斗和投递行业。</p>
+        <ul class="ticks">
+          <li>昵称、届别、投递方向都可以不填</li>
+          <li>公司名默认不写，想晒 Offer 再勾上</li>
+          <li>图片只保存在你电脑的「下载」文件夹里</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="feature">
+    <div class="wrap row">
+      <div class="shot-col"><div class="shot"><img src="assets/funnel.webp" alt="转化率：每一关到了多少家" loading="lazy" width="1440" height="640"></div></div>
+      <div>
+        <div class="tag">复盘</div>
+        <h3>看清卡在哪一关</h3>
+        <p>只统计真正记录过的阶段，跳过的环节不会被虚算进去。哪一关过得少，样本太小不足以下结论，也会直接标出来。</p>
+        <ul class="ticks">
+          <li>Offer 对比：薪资、通勤、加班一起比，不只看月薪</li>
+          <li>每周复盘：这周投了多少、卡在哪、下周先做什么</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="more" id="more">
+    <div class="wrap">
+      <h2>还有这些</h2>
+      <div class="grid">
+        <div class="tile"><b>小欧助手</b><span>每天的简报、每周的复盘，也能帮你起草开放题的回答。要你自己配置的 AI Key。</span></div>
+        <div class="tile"><b>AI 模拟面试</b><span>按岗位出题、打分、给更好的答法；简历深挖会顺着你的项目一路追问。</span></div>
+        <div class="tile"><b>面经库和题库</b><span>面试记录自动整理成题目，复盘时能看到每一类题答得怎么样。</span></div>
+        <div class="tile"><b>秋招信息库</b><span>群里的大表格导入进来，筛完把想投的放进候选池，不用来回翻。</span></div>
+        <div class="tile"><b>简历体检与匹配</b><span>上传简历，看和每个岗位的匹配度，也能按岗位生成一份定制版本。</span></div>
+        <div class="tile"><b>桌面提醒</b><span>小日历、便利贴和提醒邮件，面试前不会忘。日历能导出到手机。</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="privacy" id="privacy">
+    <div class="wrap">
+      <h2>你的数据，留在你自己的电脑上</h2>
+      <div class="panel">
+        <div>投递记录、简历、邮件结果都存在本机，没有注册，没有云端账号。</div>
+        <div>用 AI 功能时，相关内容只会发给你自己配置的 AI 服务商，用的是你自己的 Key。</div>
+        <div>支持定时自动备份，换电脑时一键导出再导入。</div>
+        <div>源码公开，装之前可以先看看它做了什么。</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="download" id="download">
+    <div class="wrap">
+      <h2>下载求职罗盘</h2>
+      <p class="lead" data-version>免费使用</p>
+      <div class="actions">
+        <a class="btn primary" data-dl="mac" href="https://github.com/yihongchen772-alt/careerplatform-local/releases/latest">Mac 版（Apple 芯片）</a>
+        <a class="btn ghost" data-dl="win" href="https://github.com/yihongchen772-alt/careerplatform-local/releases/latest">Windows 版（64 位）</a>
+      </div>
+      <div class="notes">
+        <div class="note"><b>Mac</b>：打开 dmg，把软件拖进「应用程序」再打开。首次打开如果提示无法验证开发者，到「系统设置 → 隐私与安全性」里点「仍要打开」。目前只有 Apple 芯片（M 系列）的版本。</div>
+        <div class="note"><b>Windows</b>：双击安装包即可。如果出现蓝色的 SmartScreen 提示，点「更多信息 → 仍要运行」。</div>
+        <div class="note"><b>更新</b>：装好以后，有新版本时软件会自己提示，点一下就升级，数据不会丢。</div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>求职罗盘 · 数据只存在你自己的电脑</span>
+    <span><a href="https://github.com/yihongchen772-alt/careerplatform-local">源码</a> · <a href="https://github.com/yihongchen772-alt/careerplatform-local/releases">更新记录</a></span>
+  </div>
+</footer>
+
+<script>
+  // The newest release's installers, so the buttons always point at the current version.
+  (function () {
+    var api = "https://api.github.com/repos/yihongchen772-alt/careerplatform-local/releases/latest";
+    fetch(api).then(function (r) { return r.ok ? r.json() : Promise.reject(); }).then(function (rel) {
+      var assets = rel.assets || [];
+      var pick = function (re) { return assets.filter(function (a) { return re.test(a.name); })[0]; };
+      var mac = pick(/\.dmg$/), win = pick(/\.exe$/);
+      document.querySelectorAll("[data-dl=mac]").forEach(function (a) { if (mac) a.href = mac.browser_download_url; });
+      document.querySelectorAll("[data-dl=win]").forEach(function (a) { if (win) a.href = win.browser_download_url; });
+      var when = rel.published_at ? new Date(rel.published_at).toLocaleDateString("zh-CN") : "";
+      document.querySelectorAll("[data-version]").forEach(function (el) { el.textContent = "当前版本 " + rel.tag_name + (when ? " · " + when + " 发布" : "") + " · 免费"; });
+    }).catch(function () {});
+  })();
+  // Reveal the three lines one after another.
+  (function () {
+    var els = document.querySelectorAll("[data-stagger]");
+    if (!("IntersectionObserver" in window)) { els.forEach(function (e) { e.classList.add("in"); }); return; }
+    var io = new IntersectionObserver(function (entries) { entries.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }); }, { threshold: .25 });
+    els.forEach(function (e) { io.observe(e); });
+  })();
+</script>
+</body>
+</html>

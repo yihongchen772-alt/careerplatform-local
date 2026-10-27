@@ -1051,12 +1051,25 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
   // rendered with JavaScript off in a throwaway hidden window, then printed
   // to A4 PDF (or written as a Word-readable .doc) into Downloads.
   handle("browser:export-document", async (_e, { format, html, fileName }) => {
-    if (!["pdf", "doc"].includes(format)) throw new Error("不支持的导出格式");
+    if (!["pdf", "doc", "png"].includes(format)) throw new Error("不支持的导出格式");
     if (typeof html !== "string" || html.length > 2000000) throw new Error("导出内容过大");
     const base = safeDownloadFilename(String(fileName || "定制简历").replace(/[\\/:*?"<>|]+/g, " ").trim().slice(0, 80) || "定制简历");
     const file = path.join(app.getPath("downloads"), `${base}.${format}`);
     if (format === "doc") {
       fs.writeFileSync(file, html, "utf8");
+    } else if (format === "png") {
+      // 战绩卡: a fixed 420×746 page, zoomed so the picture is sharp on any
+      // screen, then saved at one width whatever the display's density.
+      const win = new BrowserWindow({ show: false, useContentSize: true, width: 1050, height: 1865, webPreferences: { javascript: false, sandbox: true, partition: "cp-document-export", zoomFactor: 2.5 } });
+      try {
+        await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        const shot = await win.webContents.capturePage();
+        const { width } = shot.getSize();
+        fs.writeFileSync(file, (width === 1080 ? shot : shot.resize({ width: 1080, quality: "best" })).toPNG());
+      } finally {
+        win.destroy();
+      }
     } else {
       const win = new BrowserWindow({ show: false, width: 900, height: 1200, webPreferences: { javascript: false, sandbox: true, partition: "cp-document-export" } });
       try {
