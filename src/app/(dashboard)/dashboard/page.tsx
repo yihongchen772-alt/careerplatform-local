@@ -101,7 +101,7 @@ export default async function DashboardPage() {
   const { levels } = computeFunnel(funnelApps);
   const outcomes = computeOutcomes(funnelApps);
   const shareStats = computeShareStats(funnelApps.map((a) => ({ currentStage: a.currentStage, stageHistory: a.stageHistory, companyName: a.company.name, industry: a.company.industry })));
-  const calendarEvents = await db.calendarEvent.findMany({ where: { userId: user.id } });
+  const calendarEvents = await db.calendarEvent.findMany({ where: { userId: user.id, completedAt: null } });
   const todos = buildTodos(applications, positions, stageHistories, personalTasks, contacts, calendarEvents);
   // 待办 is what the app watches for you; the tasks you wrote are in 我的待办,
   // and mail times waiting for the calendar are in 日历 — each in one place.

@@ -29,7 +29,7 @@ async function collectTodos(userId: string): Promise<Todo[]> {
       where: { userId, nextFollowUpAt: { not: null } },
       select: { id: true, name: true, companyName: true, nextFollowUpAt: true },
     }),
-    db.calendarEvent.findMany({ where: { userId } }),
+    db.calendarEvent.findMany({ where: { userId, completedAt: null } }),
   ]);
 
   return buildTodos(applications, positions, stageHistories, personalTasks, contacts, calendarEvents);

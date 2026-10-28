@@ -25,9 +25,12 @@ export type PendingRow = {
   evidence: string | null;
   /** 「预约面试成功」: a slot is booked, but the mail does not say which. */
   booked: boolean;
+  /** 「具体时间另行通知」: the mail itself says no time yet, so nothing is missing. */
+  waiting: boolean;
 };
 
-const BOOKED = /选择时间成功|预约(?:面试)?成功|已(?:成功)?预约/;
+const BOOKED = /选择时间成功|预约(?:面试)?成功(?!后)|已(?:成功)?预约/;
+const WAITING = /另行通知|后续通知|稍后通知|另行安排|另有通知|待通知|等待通知|时间(?:待定|未定)|具体时间[^。；;]{0,12}通知/;
 const MAIL_TITLE = /^([^：]+)：(.+)$/;
 
 /**
@@ -61,11 +64,17 @@ export function pendingMailRows(tasks: PendingTask[], now: number, scheduledApps
       time: time ? { startsAt: time.startsAt.toISOString(), hasTime: time.hasTime, booking: time.booking } : null,
       evidence: time?.evidence || null,
       booked: !time && BOOKED.test(`${task.title} ${lines[0] ?? ""} ${lines.find((line) => line.startsWith("邮件主题：")) ?? ""}`),
+      waiting: !time && WAITING.test(`${lines[0] ?? ""} ${evidenceOf(task.mailEventDraft)}`),
     });
   }
   // Ones with a time first, soonest first; then the rest, newest first (as sorted above).
   const withTime = rows.filter((row) => row.time).sort((a, b) => new Date(a.time!.startsAt).getTime() - new Date(b.time!.startsAt).getTime());
   return [...withTime, ...rows.filter((row) => !row.time)];
+}
+
+function evidenceOf(draft: unknown): string {
+  const value = (draft as { evidence?: unknown } | null)?.evidence;
+  return typeof value === "string" ? value : "";
 }
 
 const PENDING_WINDOW_MS = 45 * 86_400_000;

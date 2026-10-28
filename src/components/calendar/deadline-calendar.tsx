@@ -2,7 +2,9 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { CalendarDays, Download, Plus } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { CalendarDays, CheckCircle2, Download, Plus, Undo2 } from "lucide-react";
 import { zhCN } from "react-day-picker/locale";
 import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,6 +13,8 @@ import { AddScheduleDialog, type ScheduleApplication } from "@/components/calend
 import { toDateKey } from "@/lib/dates";
 import { downloadIcs, toIcs } from "@/lib/ics";
 import { absoluteWhen, clock, kindFromText, SCHEDULE_KIND_LABELS } from "@/lib/interview-schedule";
+import { setEventCompleted, setStepCompleted } from "@/lib/actions/schedule";
+import { cn } from "@/lib/utils";
 
 export type CalendarEvent = {
   id: string;
@@ -23,6 +27,8 @@ export type CalendarEvent = {
   timed?: boolean;
   /** When a booked slot ends (same day). */
   until?: string | null;
+  /** Marked 已完成 (your own events and 投递 steps can be). */
+  done?: boolean;
   href: string;
 };
 
@@ -40,6 +46,24 @@ export function DeadlineCalendar({
 }) {
   const [selected, setSelected] = useState<Date | undefined>(undefined);
   const [now] = useState(() => Date.now());
+  const router = useRouter();
+  const [busy, setBusy] = useState<string | null>(null);
+
+  // 「已完成」 / 撤销 for your own events (event-…) and a 投递's steps (stage-…).
+  async function toggleDone(e: CalendarEvent) {
+    const [kind, ...rest] = e.id.split("-");
+    const id = rest.join("-");
+    const done = !e.done;
+    setBusy(e.id);
+    try {
+      const result = kind === "event" ? await setEventCompleted(id, done) : await setStepCompleted(id, done);
+      if (!result.ok) return void toast.error(result.message);
+      toast.success(done ? "已完成" : "已恢复为未完成");
+      router.refresh();
+    } finally {
+      setBusy(null);
+    }
+  }
 
   const eventsByDay = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>();
@@ -145,23 +169,41 @@ export function DeadlineCalendar({
               </span>
             </div>
           ) : (
-            shownEvents.map((e) => (
-              <Link
-                key={e.id}
-                href={e.href}
-                className="flex items-center justify-between rounded-md border p-2 text-sm hover:bg-muted"
-              >
-                <span className="flex min-w-0 items-center gap-2">
-                  {kindFromText(e.label) !== "event" && <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">{SCHEDULE_KIND_LABELS[kindFromText(e.label)]}</span>}
-                  <span className="min-w-0 [overflow-wrap:anywhere]">{e.label}</span>
-                </span>
-                <span className="shrink-0 pl-2 text-xs text-muted-foreground">
-                  {e.dateEnd
-                    ? `${new Date(e.date).toLocaleDateString("zh-CN")} - ${new Date(e.dateEnd).toLocaleDateString("zh-CN")}`
-                    : `${absoluteWhen(e.date, !!e.timed)}${e.timed && e.until ? `–${clock(new Date(e.until))}` : ""}`}
-                </span>
-              </Link>
-            ))
+            shownEvents.map((e) => {
+              const canComplete = e.id.startsWith("event-") || e.id.startsWith("stage-");
+              return (
+                <div
+                  key={e.id}
+                  className={cn("flex items-center justify-between gap-2 rounded-md border p-2 text-sm hover:bg-muted", e.done && "opacity-60")}
+                >
+                  <Link href={e.href} className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                    <span className="flex min-w-0 items-center gap-2">
+                      {kindFromText(e.label) !== "event" && <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">{SCHEDULE_KIND_LABELS[kindFromText(e.label)]}</span>}
+                      <span className={cn("min-w-0 [overflow-wrap:anywhere]", e.done && "line-through")}>{e.label}</span>
+                    </span>
+                    <span className="shrink-0 pl-2 text-xs text-muted-foreground">
+                      {e.dateEnd
+                        ? `${new Date(e.date).toLocaleDateString("zh-CN")} - ${new Date(e.dateEnd).toLocaleDateString("zh-CN")}`
+                        : `${absoluteWhen(e.date, !!e.timed)}${e.timed && e.until ? `–${clock(new Date(e.until))}` : ""}`}
+                    </span>
+                  </Link>
+                  {canComplete && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 shrink-0 gap-1 px-2 text-xs text-muted-foreground"
+                      disabled={busy === e.id}
+                      onClick={() => void toggleDone(e)}
+                      aria-label={`${e.done ? "撤销完成" : "标为已完成"}：${e.label}`}
+                    >
+                      {e.done ? <Undo2 className="size-3.5" /> : <CheckCircle2 className="size-3.5" />}
+                      {e.done ? "撤销" : "已完成"}
+                    </Button>
+                  )}
+                </div>
+              );
+            })
           )}
         </CardContent>
       </Card>

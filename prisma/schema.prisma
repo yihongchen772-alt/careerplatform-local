@@ -242,6 +242,8 @@ model CalendarEvent {
   meetingInfo String?
   /// "email" when created from a recognised invitation.
   source String?
+  /// 「已完成」: done with it — out of 接下来, and its reminders stop. (A 投递 step keeps its own completedAt.)
+  completedAt DateTime?
   revision Int @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

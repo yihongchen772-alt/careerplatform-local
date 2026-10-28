@@ -180,6 +180,21 @@ export async function addStageSchedule(applicationId: string, stage: string, inp
 }
 
 /** 「我已完成 / 我已面完」 on a step, or taking that back. */
+/**
+ * 「已完成」 on a calendar item (an invitation read from mail, or one you added):
+ * it leaves 接下来 and stops reminding, and 撤销 brings it back. A 投递 step's own
+ * calendar copy follows the step (setStepCompleted), not this.
+ */
+export async function setEventCompleted(eventId: string, done: boolean): Promise<ActionResult<null>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const changed = await db.calendarEvent.updateMany({ where: { id: eventId, userId: user.id, stageHistoryId: null }, data: { completedAt: done ? new Date() : null } });
+    if (!changed.count) throw new UserFacingError("这条日程已不存在，请刷新");
+    revalidate();
+    return null;
+  });
+}
+
 export async function setStepCompleted(stageHistoryId: string, done: boolean): Promise<ActionResult<null>> {
   return toActionResult(async () => {
     const user = await requireUser();

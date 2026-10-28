@@ -54,7 +54,7 @@ export default async function CalendarPage() {
   const personalEvents = await db.calendarEvent.findMany({ where: { userId: user.id, stageHistoryId: null } });
   const clock = (date: Date) => `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
   const listed: CalendarEvent[] = [
-    ...personalEvents.map((e) => ({ id: `event-${e.id}`, date: e.allDay ? `${e.dateKey}T00:00:00` : e.startsAt.toISOString(), dateEnd: e.allDay ? e.endsAt?.toISOString() ?? null : null, until: e.allDay ? null : e.endsAt?.toISOString() ?? null, label: e.title, timed: !e.allDay, href: `/calendar/events?id=${e.id}` })),
+    ...personalEvents.map((e) => ({ id: `event-${e.id}`, date: e.allDay ? `${e.dateKey}T00:00:00` : e.startsAt.toISOString(), dateEnd: e.allDay ? e.endsAt?.toISOString() ?? null : null, until: e.allDay ? null : e.endsAt?.toISOString() ?? null, label: e.title, timed: !e.allDay, done: !!e.completedAt, href: `/calendar/events?id=${e.id}` })),
     ...positions.map((p) => ({
       id: `position-${p.id}`,
       date: p.deadline!.toISOString(),
@@ -73,6 +73,7 @@ export default async function CalendarPage() {
         : `${h.application.company.name} · ${h.application.title} 下一步`,
       timed: h.nextHasTime,
       until: h.nextHasTime ? h.nextDeadlineEnd?.toISOString() ?? null : null,
+      done: !!h.completedAt,
       href: `/applications/${h.application.id}`,
     })),
     ...personalTasks.map((t) => ({

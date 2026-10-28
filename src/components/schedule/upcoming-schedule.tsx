@@ -27,7 +27,7 @@ import { matchApplication } from "@/lib/application-search";
 import { attachEventToApplication, dismissMailDraft, writeMailSchedule } from "@/lib/actions/schedule";
 import { MeetingActions } from "@/components/schedule/meeting-actions";
 import { useNow } from "@/components/schedule/use-now";
-import { completeStep } from "@/components/schedule/step-actions";
+import { completeEvent, completeStep } from "@/components/schedule/step-actions";
 
 export type LinkableApplication = { id: string; companyName: string; title: string; aliases?: string[]; currentStage: ApplicationStage };
 
@@ -130,7 +130,16 @@ export function UpcomingSchedule({ items, now: serverNow, applications, days = 7
                     now={now}
                     busy={busy === item.key}
                     clash={clashes.has(item.key)}
-                    onComplete={() => { setHidden((previous) => [...previous, item.key]); void completeStep(item.sourceId, () => router.refresh(), `${item.companyName ?? ""} · ${item.title}已完成，开始等结果`).then((ok) => { if (!ok) setHidden((previous) => previous.filter((key) => key !== item.key)); }); }}
+                    onComplete={() => {
+                      setHidden((previous) => [...previous, item.key]);
+                      const label = [item.companyName, item.title].filter(Boolean).join(" · ");
+                      // Undoing brings the row back, so it must not stay in the hidden list.
+                      const unhide = () => setHidden((previous) => previous.filter((key) => key !== item.key));
+                      const finished = item.source === "event"
+                        ? completeEvent(item.sourceId, () => router.refresh(), `${label}已完成`, unhide)
+                        : completeStep(item.sourceId, () => router.refresh(), `${label}${item.kind === "interview" && new Date(item.startsAt).getTime() <= now ? "已面完" : "已完成"}，开始等结果`, unhide);
+                      void finished.then((ok) => { if (!ok) setHidden((previous) => previous.filter((key) => key !== item.key)); });
+                    }}
                     onWrite={() => run(item, () => writeMailSchedule(item.sourceId), item.applicationId ? `已写进 ${item.companyName ?? "投递"} 的进度和日历` : "已加入日历")}
                     onDismiss={() => run(item, () => dismissMailDraft(item.sourceId), "已忽略这封邮件里的时间")}
                     onLink={() => setLinking(item)}
@@ -216,9 +225,12 @@ function ScheduleRow({ item, now, busy, clash, onComplete, onWrite, onDismiss, o
             <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={busy} onClick={onDismiss}>忽略</Button>
           </>
         ) : item.source === "event" ? (
-          <Button type="button" size="sm" variant="outline" className="h-7 gap-1 rounded-full px-2.5 text-xs" disabled={busy} onClick={onLink}><Link2 className="size-3.5" />关联投递</Button>
-        ) : item.source === "stage" && item.kind === "exam" ? (
-          <Button type="button" size="sm" variant="outline" className="h-7 gap-1 rounded-full px-2.5 text-xs" disabled={busy} onClick={onComplete} title="做完了：不再提醒截止，开始等结果"><CheckCircle2 className="size-3.5" />已完成</Button>
+          <>
+            <Button type="button" size="sm" variant="outline" className="h-7 gap-1 rounded-full px-2.5 text-xs" disabled={busy} onClick={onComplete} title="做完了：从「接下来」拿掉，也不再提醒"><CheckCircle2 className="size-3.5" />已完成</Button>
+            <Button type="button" size="sm" variant="ghost" className="h-7 gap-1 rounded-full px-2 text-xs text-muted-foreground" disabled={busy} onClick={onLink}><Link2 className="size-3.5" />关联投递</Button>
+          </>
+        ) : item.source === "stage" ? (
+          <Button type="button" size="sm" variant="outline" className="h-7 gap-1 rounded-full px-2.5 text-xs" disabled={busy} onClick={onComplete} title={item.kind === "interview" ? "面完了：开始等结果，趁记得写两句" : "做完了：不再提醒截止，开始等结果"}><CheckCircle2 className="size-3.5" />{item.kind === "interview" && start.getTime() <= now ? "已面完" : "已完成"}</Button>
         ) : null}
         {item.source !== "mail" && (
           <Button type="button" size="sm" variant="ghost" className="h-7 gap-1 rounded-full px-2 text-xs text-muted-foreground" disabled={busy} onClick={onEdit} aria-label={`修改 ${heading}`}><Pencil className="size-3.5" />修改</Button>

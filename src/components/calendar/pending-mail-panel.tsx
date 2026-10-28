@@ -24,6 +24,7 @@ export type PendingMail = {
   time: { startsAt: string; hasTime: boolean; booking: boolean } | null;
   evidence: string | null;
   booked: boolean;
+  waiting: boolean;
 };
 
 /**
@@ -96,7 +97,8 @@ export function PendingMailPanel({ items }: { items: PendingMail[] }) {
                   <p className="mt-1 text-xs text-muted-foreground [overflow-wrap:anywhere]">
                     {item.time
                       ? <>邮件里的时间：<span className="font-medium text-foreground">{item.time.booking ? "最晚 " : ""}{absoluteWhen(item.time.startsAt, item.time.hasTime)}{item.time.hasTime ? "" : item.time.booking ? " 前预约" : " 截止"}</span></>
-                      : item.booked ? "你已经约好了，但邮件里没写具体时间。到预约页面看一眼，把时间填在这里。" : "邮件里没写具体时间（常见于要你自己点链接约时间的）。约好后把时间填上。"}
+                      : item.waiting ? "邮件里说具体时间会另行通知，通知到了再把时间填在这里。"
+                        : item.booked ? "你已经约好了，但邮件里没写具体时间。到预约页面看一眼，把时间填在这里。" : "邮件里没写具体时间（常见于要你自己点链接约时间的）。约好后把时间填上。"}
                   </p>
                   {item.summary && <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground [overflow-wrap:anywhere]">{item.summary}</p>}
                   {item.subject && <p className="mt-0.5 truncate text-[11px] text-muted-foreground/80" title={item.subject}>邮件：{item.subject}</p>}
@@ -107,6 +109,7 @@ export function PendingMailPanel({ items }: { items: PendingMail[] }) {
                   ) : (
                     <MailEventDialog taskId={item.id} initial={item.draft} label="填时间加入日历" variant="default" onSaved={() => { setHidden((previous) => [...previous, item.id]); router.refresh(); }} />
                   )}
+                  <Button size="sm" variant="outline" disabled={busy === item.id} onClick={() => act(item, () => dismissMailDraft(item.id), "已完成，从这里拿掉了")} title="这件事已经办完了（约好了、考完了…）">已完成</Button>
                   <Button size="sm" variant="ghost" disabled={busy === item.id} onClick={() => act(item, () => dismissMailDraft(item.id), "已忽略")}>忽略</Button>
                 </div>
               </li>

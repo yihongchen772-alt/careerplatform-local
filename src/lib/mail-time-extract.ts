@@ -121,11 +121,13 @@ const SLOT_LABEL = new RegExp(
     "interview\\s+(?:time|date|schedule|slot)",
     "(?:exam|test|assessment|online\\s+assessment)\\s+(?:time|date)",
     "scheduled\\s+(?:for|at|on)",
+    // 「面试将于 2026 年 10 月 30 日 14:00 进行」「已调整为 …」
+    "(?:将于|定于|安排于|安排在|改期至|调整至|调整为|更改为)",
     "(?<![A-Za-z发邮送截止预约有效期限])时间\\s*[：:]",
   ].join("|"),
   "gi"
 );
-const BOOKING_LABEL = /(?:可预约期限时间|预约截止(?:时间|日期)?|预约期限|选择截止(?:时间)?|反馈截止(?:时间)?|Appointment\s+Deadline(?:\s+Time)?|Booking\s+Deadline|select\s+(?:a\s+)?(?:slot|time)\s+(?:before|by))/gi;
+const BOOKING_LABEL = /(?:可预约期限时间|预约(?:面试|笔试|测评)?截止(?:时间|日期)?|预约期限|选择截止(?:时间)?|反馈截止(?:时间)?|Appointment\s+Deadline(?:\s+Time)?|Booking\s+Deadline|select\s+(?:a\s+)?(?:slot|time)\s+(?:before|by))/gi;
 const DEADLINE_LABEL = /(?:截止(?:时间|日期)?|完成期限|有效期至?|最晚|deadline|due\s+(?:date|by)|(?:before|until|by))\s*[：:（(]?\s*/gi;
 const DEADLINE_VERB = /完成|参加|反馈|作答|提交|回复|预约|确认|登录|答题|测评|考试|笔试|complete|submit|respond|finish/i;
 const URL_RE = /https?:\/\/[^\s<>()（）\]\[|"'，。；]+/i;
@@ -232,19 +234,100 @@ export function extractMailTime(input: { subject?: string; body: string; mailDat
   const cutoff = findDeadline(text, input.mailDate);
   if (cutoff) return { kind: "deadline", localStart: "", localEnd: "", timeZone: "", deadline: cutoff.value, windowStart: "", evidence: cutoff.evidence, meetingUrl };
 
-  // 4. 「48 小时内完成」, counted from the mail's own date.
+  // 3b. 「明天下午 3 点」, counted from the day the mail was sent.
+  const relativeSlot = findRelativeSlot(text, input.mailDate);
+  if (relativeSlot) return { kind: "slot", localStart: relativeSlot.start, localEnd: "", timeZone: "", deadline: "", windowStart: "", evidence: relativeSlot.evidence, meetingUrl: meetingUrl || urlNear(text, relativeSlot.at, 400) };
+
+  // 4. 「48 小时内完成」「七日内有效」「72h有效」: a span counted from the mail's
+  //    own date, or from the moment it says the link took effect.
   if (input.exam) {
-    const relative = /(?:请|须|需|务必)?\s*(?:在|于)?\s*(?:收到(?:本)?(?:邮件|通知)(?:后|起)?)?\s*(\d{1,3})\s*(小时|h|个?自然日|日|天)\s*内[^。]{0,16}?(?:完成|作答|参加)|(?:完成|作答)[^。]{0,16}?(\d{1,3})\s*(小时|h|个?自然日|日|天)\s*内/i.exec(text);
-    if (relative) {
-      const amount = Number(relative[1] ?? relative[3]);
-      const unit = relative[2] ?? relative[4];
-      const hours = /小时|h/i.test(unit) ? amount : amount * 24;
-      if (hours >= 1 && hours <= 24 * 30) {
-        const until = new Date(input.mailDate.getTime() + hours * 3_600_000);
-        const wall = `${until.getFullYear()}-${pad(until.getMonth() + 1)}-${pad(until.getDate())}T${pad(until.getHours())}:${pad(until.getMinutes())}`;
-        return { kind: "deadline", localStart: "", localEnd: "", timeZone: "", deadline: wall, windowStart: "", evidence: snippet(text, relative.index, relative.index + relative[0].length), meetingUrl };
-      }
+    const span = findSpan(text);
+    if (span && span.hours >= 1 && span.hours <= 24 * 30) {
+      const anchor = findAnchor(text, input.mailDate);
+      const until = new Date(anchor.wall + span.hours * 3_600_000);
+      const wall = `${until.getUTCFullYear()}-${pad(until.getUTCMonth() + 1)}-${pad(until.getUTCDate())}T${pad(until.getUTCHours())}:${pad(until.getUTCMinutes())}`;
+      return { kind: "deadline", localStart: "", localEnd: "", timeZone: "", deadline: wall, windowStart: "", evidence: span.evidence, meetingUrl };
     }
+  }
+  return null;
+}
+
+
+const ZH_DIGIT: Record<string, number> = { 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+/** 「7」「七」「十二」「二十四」. */
+function zhNumber(text: string): number | null {
+  if (/^\d+$/.test(text)) return Number(text);
+  const ten = text.indexOf("十");
+  if (ten < 0) return text.length === 1 && ZH_DIGIT[text] ? ZH_DIGIT[text] : null;
+  const tens = ten === 0 ? 1 : ZH_DIGIT[text.slice(0, ten)];
+  const ones = text.length > ten + 1 ? ZH_DIGIT[text.slice(ten + 1)] : 0;
+  return tens && ones !== undefined ? tens * 10 + ones : null;
+}
+
+const NUM = "(\\d{1,3}|[一二两三四五六七八九十]{1,3})";
+const UNIT = "(小时|h|个?自然日|日|天)";
+const SPAN_PATTERNS: RegExp[] = [
+  // 「请在 48 小时内完成」「7 天内完成测评」
+  new RegExp(`${NUM}\\s*${UNIT}\\s*内[^。]{0,16}?(?:完成|作答|参加)`, "i"),
+  // 「完成…七日内」
+  new RegExp(`(?:完成|作答)[^。]{0,16}?${NUM}\\s*${UNIT}\\s*内`, "i"),
+  // 「七日内有效」「72h有效」「3 天有效」
+  new RegExp(`${NUM}\\s*${UNIT}\\s*(?:内)?\\s*有效`, "i"),
+  // 「有效期为 3 天」
+  new RegExp(`有效期(?:为|：|:)?\\s*${NUM}\\s*${UNIT}`, "i"),
+];
+
+function findSpan(text: string): { hours: number; evidence: string } | null {
+  for (const re of SPAN_PATTERNS) {
+    const match = re.exec(text);
+    if (!match) continue;
+    const amount = zhNumber(match[1]);
+    if (amount === null) continue;
+    return { hours: /小时|h/i.test(match[2]) ? amount : amount * 24, evidence: snippet(text, match.index, match.index + match[0].length) };
+  }
+  return null;
+}
+
+/**
+ * Where a span starts: the moment the mail says the invitation took effect
+ * (「于 2026 年 10 月 27 日 03:11 生效」), else the day it was sent. `wall` is a
+ * wall-clock reading in UTC fields, so adding hours never meets a time zone.
+ */
+function findAnchor(text: string, mailDate: Date): { wall: number } {
+  for (let at = 0; at < text.length; ) {
+    const moment = momentAt(text, at, mailDate);
+    if (!moment) break;
+    if (moment.hh !== null && /^\s*(?:起)?\s*(?:生效|发起|发出|发送|开放|开启|开始)/.test(text.slice(moment.end, moment.end + 8))) {
+      return { wall: Date.UTC(moment.y, moment.m - 1, moment.d, moment.hh, moment.mm) };
+    }
+    at = moment.end;
+  }
+  return { wall: Date.UTC(mailDate.getFullYear(), mailDate.getMonth(), mailDate.getDate(), mailDate.getHours(), mailDate.getMinutes()) };
+}
+
+const REL_DAY: Record<string, number> = { 今天: 0, 今晚: 0, 明天: 1, 明晚: 1, 后天: 2, 大后天: 3 };
+const WEEK_DAY: Record<string, number> = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 日: 0, 天: 0 };
+
+/** 「面试安排在明天下午 3 点」「下周三 10:00」: only right after a word about the event. */
+function findRelativeSlot(text: string, mailDate: Date): { start: string; evidence: string; at: number } | null {
+  const re = /(今天|今晚|明天|明晚|后天|大后天|(?:本周|这周|下周)\s*(?:周|星期)?([一二三四五六日天]))\s*(?:上午|下午|晚上|中午|早上)?\s*\d{1,2}\s*(?::|：|点|时)\s*\d{0,2}/g;
+  for (let match = re.exec(text); match; match = re.exec(text)) {
+    if (!/面试|笔试|考试|测评|宣讲|会议|安排|时间|将于|定于/.test(text.slice(Math.max(0, match.index - 30), match.index))) continue;
+    const base = new Date(Date.UTC(mailDate.getFullYear(), mailDate.getMonth(), mailDate.getDate()));
+    let target = base;
+    if (match[2] !== undefined) {
+      const week = /^下周/.test(match[1]) ? 1 : 0;
+      const monday = new Date(base.getTime() - ((base.getUTCDay() + 6) % 7) * DAY_MS + week * 7 * DAY_MS);
+      target = new Date(monday.getTime() + ((WEEK_DAY[match[2]] + 6) % 7) * DAY_MS);
+    } else {
+      target = new Date(base.getTime() + (REL_DAY[match[1]] ?? 0) * DAY_MS);
+    }
+    const clock = clockAfter(match[0].slice(match[1].length));
+    if (!clock) continue;
+    let hh = clock.hh;
+    // 「明晚 8 点」「今晚 7 点」
+    if (/晚/.test(match[1]) && hh < 12) hh += 12;
+    return { start: `${target.getUTCFullYear()}-${pad(target.getUTCMonth() + 1)}-${pad(target.getUTCDate())}T${pad(hh)}:${pad(clock.mm)}`, evidence: snippet(text, Math.max(0, match.index - 12), match.index + match[0].length + 2), at: match.index + match[0].length };
   }
   return null;
 }
@@ -280,7 +363,7 @@ function findDeadline(text: string, mailDate: Date): { value: string; evidence: 
 }
 
 /** 「预约面试成功」: a slot is already booked, and the mail does not say which. */
-const BOOKED = /选择时间成功|预约(?:面试)?成功|已(?:成功)?预约|successfully\s+(?:booked|scheduled|selected)|slot\s+(?:is\s+)?confirmed|confirms\s+receiving\s+your\s+available\s+slot/i;
+const BOOKED = /选择时间成功(?!后)|预约(?:面试)?成功(?!后)|已(?:成功)?预约|successfully\s+(?:booked|scheduled|selected)|slot\s+(?:is\s+)?confirmed|confirms\s+receiving\s+your\s+available\s+slot/i;
 
 const NEGATIVE = /取消|cancel|不合适|遗憾|unfortunately|未通过|not\s+(?:been\s+)?selected|reject|已满|验证码|verification\s+code/i;
 
@@ -290,6 +373,8 @@ export function mailRulesOutTime(subject: string, type: string, body: string): b
 }
 
 export const EXAM_OR_INTERVIEW = /面试|笔试|测评|考试|机试|OA\b|在线测试|interview|assessment|online\s+test|written\s+test|exam/i;
+/** Recruiting events with a time of their own: they go on the calendar too. */
+const RECRUIT_EVENT = /宣讲|双选会|说明会|见面会|开放日|招聘会|交流会|分享会/;
 
 const clean = (value: string | null | undefined) => (value ?? "").trim();
 
@@ -312,7 +397,7 @@ export function completeMailDraft(input: {
   };
   // The AI already got a time the app can use.
   if (ai && mailTime(base)) return base;
-  if (!EXAM_OR_INTERVIEW.test(`${input.type} ${input.subject}`)) return ai ? base : null;
+  if (!EXAM_OR_INTERVIEW.test(`${input.type} ${input.subject}`) && !RECRUIT_EVENT.test(`${input.type} ${input.subject}`)) return ai ? base : null;
   if (mailRulesOutTime(input.subject, input.type, input.body)) return ai ? base : null;
   const exam = /笔试|测评|考试|机试|OA\b|在线测试|assessment|online\s+test|written\s+test|exam/i.test(`${input.type} ${input.subject}`) && !/面试|interview/i.test(input.type);
   const found = extractMailTime({ subject: input.subject, body: input.body, mailDate: input.mailDate, exam });

@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 export async function claimEventReminders(userId: string, now = new Date()) {
   const claimToken = randomUUID();
   const reminders = await db.$transaction(async (tx) => {
-    const due = await tx.eventReminder.findMany({ where: { event: { userId }, deliveredAt: null, scheduledAt: { lte: now }, OR: [{ claimUntil: null }, { claimUntil: { lt: now } }] }, orderBy: { scheduledAt: "asc" }, take: 100, include: { event: { include: { stageHistory: { select: { applicationId: true, stage: true } } } } } });
+    const due = await tx.eventReminder.findMany({ where: { event: { userId, completedAt: null }, deliveredAt: null, scheduledAt: { lte: now }, OR: [{ claimUntil: null }, { claimUntil: { lt: now } }] }, orderBy: { scheduledAt: "asc" }, take: 100, include: { event: { include: { stageHistory: { select: { applicationId: true, stage: true } } } } } });
     const result = [];
     for (const reminder of due) {
       const claimed = await tx.eventReminder.updateMany({ where: { id: reminder.id, deliveredAt: null, OR: [{ claimUntil: null }, { claimUntil: { lt: now } }] }, data: { claimToken, claimUntil: new Date(now.getTime() + 120000) } });

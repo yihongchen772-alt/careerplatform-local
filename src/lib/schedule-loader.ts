@@ -147,7 +147,7 @@ export async function loadUpcomingSchedule(userId: string, now = new Date(), day
   // Only job-search items: the ones made from mail. The applicant's own
   // calendar (gym, classes) stays in 日历 and 总览.
   const events = await db.calendarEvent.findMany({
-    where: { userId, stageHistoryId: null, startsAt: { lte: horizon }, OR: [{ source: { in: ["email", "schedule"] } }, { id: { in: ids } }] },
+    where: { userId, stageHistoryId: null, completedAt: null, startsAt: { lte: horizon }, OR: [{ source: { in: ["email", "schedule"] } }, { id: { in: ids } }] },
     select: { id: true, title: true, description: true, startsAt: true, endsAt: true, allDay: true, dateKey: true, meetingInfo: true, source: true, reminders: { select: { offsetMinutes: true } } },
   });
   const items: ScheduleItem[] = [];
