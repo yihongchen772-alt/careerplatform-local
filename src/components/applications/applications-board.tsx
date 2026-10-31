@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Clock3, Send } from "lucide-react";
+import { ChevronDown, Clock3, Send } from "lucide-react";
 import type { ApplicationStage } from "@prisma/client";
 import { STAGE_LABELS } from "@/lib/stage-labels";
 import { applicationStageStyle } from "@/lib/application-stage-style";
@@ -69,34 +69,30 @@ function ApplicationCard({ app, closed = false, hit, now }: { app: BoardApplicat
     // never races the navigation.
     <div
       className={cn(
-        "group relative rounded-2xl border bg-card/90 p-3.5 shadow-[0_3px_12px_-8px_rgba(0,0,0,0.28)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_10px_25px_-14px_rgba(0,0,0,0.35)]",
+        "group relative rounded-xl border bg-card/90 px-3 py-2.5 shadow-[0_2px_8px_-6px_rgba(0,0,0,0.25)] transition-all duration-200 hover:-translate-y-px hover:shadow-[0_8px_20px_-14px_rgba(0,0,0,0.35)]",
         closed && app.currentStage === "REJECTED" ? "border-rose-500/30" : "border-border/65 hover:border-primary/25"
       )}
     >
-      <div className="flex items-start gap-2.5">
-        <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-xl text-sm font-semibold ring-1", tone.pill, tone.border)}>{app.companyName.slice(0, 1)}</span>
-        <div className="min-w-0 flex-1">
-          <div className="pr-20 text-sm font-semibold leading-5">
-            <Link href={`/applications/${app.id}`} className="block truncate before:absolute before:inset-0 before:rounded-2xl before:content-[''] group-hover:text-primary focus-visible:outline-none focus-visible:before:ring-3 focus-visible:before:ring-ring/40">
-              <Highlight text={app.companyName} ranges={hit?.company} />{hit?.alias && <span className="ml-1 text-xs font-normal text-muted-foreground">（{hit.alias}）</span>}
-            </Link>
-          </div>
-          <p className="mt-0.5 truncate pr-20 text-xs text-muted-foreground"><Highlight text={app.title} ranges={hit?.title} />{cityHint(app.cities ?? [], app.title) ? <span className="ml-1.5 text-muted-foreground/80">· {cityHint(app.cities ?? [], app.title)}</span> : null}</p>
+      <div className="flex items-start gap-2">
+        <span className={cn("mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg text-xs font-semibold ring-1", tone.pill, tone.border)}>{app.companyName.slice(0, 1)}</span>
+        <div className="min-w-0 flex-1 pr-[5.5rem]">
+          <Link href={`/applications/${app.id}`} className="block truncate text-sm font-semibold leading-5 before:absolute before:inset-0 before:rounded-xl before:content-[''] group-hover:text-primary focus-visible:outline-none focus-visible:before:ring-3 focus-visible:before:ring-ring/40">
+            <Highlight text={app.companyName} ranges={hit?.company} />{hit?.alias && <span className="ml-1 text-xs font-normal text-muted-foreground">（{hit.alias}）</span>}
+          </Link>
+          <p className="truncate text-xs text-muted-foreground" title={app.title}><Highlight text={app.title} ranges={hit?.title} />{cityHint(app.cities ?? [], app.title) ? <span className="ml-1.5 text-muted-foreground/80">· {cityHint(app.cities ?? [], app.title)}</span> : null}</p>
         </div>
       </div>
-      <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-border/50 pt-2.5 text-[11px]">
-        <span className={cn("rounded-full px-2 py-0.5 font-medium", tone.pill)}>{STAGE_LABELS[app.currentStage]}</span>
-        {detail && <span className="max-w-full truncate text-foreground/85" title={detail}>{detail}</span>}
-        {app.portalSuggestedStage && <span className="rounded-full bg-amber-500/10 px-2 py-0.5 font-medium text-amber-700 dark:text-amber-300">官网结果待核对</span>}
+      <div className="mt-2 flex items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground">
+        <span className={cn("shrink-0 rounded-full px-1.5 py-px font-medium", tone.pill)}>{STAGE_LABELS[app.currentStage]}</span>
+        {detail && <span className="min-w-0 truncate text-foreground/80" title={detail}>{detail}</span>}
+        {app.portalSuggestedStage && <span className="shrink-0 rounded-full bg-amber-500/10 px-1.5 py-px font-medium text-amber-700 dark:text-amber-300">官网待核对</span>}
+        <span className="ml-auto shrink-0" title={`投递于 ${app.appliedDate.slice(0, 10)}`}>{app.appliedDate.slice(5, 10).replace("-", "/")}</span>
+        {!closed && <span className={cn("flex shrink-0 items-center gap-0.5", stay >= 14 && "font-medium text-amber-700 dark:text-amber-400")} title={`这一步已停留 ${stay} 天`}><Clock3 className="size-3" />{stay}天</span>}
       </div>
-      {portalDiffers && <p className="mt-2 truncate text-[11px] text-muted-foreground" title={`官网显示：${app.portalStatus}`}>官网显示 · {app.portalStatus}</p>}
-      <div className="mt-2.5 flex items-center justify-between text-[11px] tabular-nums text-muted-foreground">
-        <span>投递 {app.appliedDate.slice(5, 10).replace("-", "/")}</span>
-        {!closed && <span className={cn("flex items-center gap-1", stay >= 14 && "text-amber-700 dark:text-amber-400")}><Clock3 className="size-3" />停留 {stay} 天</span>}
-      </div>
-      {app.terminatedAtStage && <p className="mt-2 text-xs text-muted-foreground">结束于：{app.terminatedAtStageLabel || STAGE_LABELS[app.terminatedAtStage as ApplicationStage]}</p>}
-      {!closed && <ProgressLine applicationId={app.id} step={app.step} next={app.nextSchedule} now={now} className="relative z-10 mt-2" />}
-      <QuickStageMenu applicationId={app.id} companyName={app.companyName} currentStage={app.currentStage} step={app.step} className="absolute right-3 top-3 z-10 bg-card/95" />
+      {portalDiffers && <p className="mt-1 truncate text-[11px] text-muted-foreground" title={`官网显示：${app.portalStatus}`}>官网显示 · {app.portalStatus}</p>}
+      {app.terminatedAtStage && <p className="mt-1 text-[11px] text-muted-foreground">结束于：{app.terminatedAtStageLabel || STAGE_LABELS[app.terminatedAtStage as ApplicationStage]}</p>}
+      {!closed && <ProgressLine applicationId={app.id} step={app.step} next={app.nextSchedule} now={now} className="relative z-10 mt-1.5" />}
+      <QuickStageMenu applicationId={app.id} companyName={app.companyName} currentStage={app.currentStage} step={app.step} className="absolute right-2 top-2 z-10 bg-card/95" />
     </div>
   );
 }
@@ -110,18 +106,26 @@ function arrange(applications: BoardApplication[], narrowed: boolean) {
 
 function BoardBody({ applications, hits, narrowed, now }: { applications: BoardApplication[]; hits?: Map<string, ApplicationHits> | null; narrowed: boolean; now: number }) {
   const { lanes, outcomes } = arrange(applications, narrowed);
-  return <div className="space-y-6">
-    {lanes.length > 0 && <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
+  const finished = outcomes.reduce((sum, group) => sum + group.items.length, 0);
+  // Finished ones stay one click away; open by themselves when a search or filter is what brought them up.
+  const [showFinished, setShowFinished] = useState(false);
+  const finishedOpen = showFinished || (narrowed && lanes.length === 0);
+  return <div className="space-y-4">
+    {lanes.length > 0 && <div className="grid items-start gap-3 md:grid-cols-2 xl:grid-cols-4">
       {lanes.map((lane) => (
-        <section key={lane.title} className="min-w-0 rounded-xl border border-border/65 bg-card/35 p-2.5 backdrop-blur-md">
-          <div className="px-2.5 pb-3 pt-1.5"><div className="flex items-center justify-between text-sm font-semibold"><span>{lane.title}</span><span className="rounded-full bg-background/80 px-2 py-0.5 text-xs tabular-nums text-muted-foreground">{lane.items.length}</span></div><p className="mt-1 text-[11px] text-muted-foreground">{lane.description}</p></div>
-          <div className="space-y-2.5">{lane.items.length ? lane.items.map((app) => <ApplicationCard key={app.id} app={app} hit={hits?.get(app.id)} now={now} />) : <p className="rounded-2xl border border-dashed border-border/80 bg-background/35 px-3 py-8 text-center text-xs text-muted-foreground">暂无记录</p>}</div>
+        <section key={lane.title} className="min-w-0 rounded-xl border border-border/65 bg-card/35 p-2 backdrop-blur-md">
+          <div className="flex items-baseline justify-between gap-2 px-1.5 pb-2 pt-1" title={lane.description}><span className="text-sm font-semibold">{lane.title}</span><span className="rounded-full bg-background/80 px-2 py-0.5 text-xs tabular-nums text-muted-foreground">{lane.items.length}</span></div>
+          {/* A long column (130+ 投递 waiting on 筛选) scrolls on its own instead of stretching the page. */}
+          <div className="max-h-[68vh] space-y-2 overflow-y-auto overscroll-contain pr-0.5 [scrollbar-width:thin]">{lane.items.length ? lane.items.map((app) => <ApplicationCard key={app.id} app={app} hit={hits?.get(app.id)} now={now} />) : <p className="rounded-xl border border-dashed border-border/80 bg-background/35 px-3 py-6 text-center text-xs text-muted-foreground">暂无记录</p>}</div>
         </section>
       ))}
     </div>}
-    {outcomes.some((group) => group.items.length > 0) && <section className="space-y-3 rounded-xl border border-border/70 bg-card/55 p-3 sm:p-4">
-      <div><h3 className="text-sm font-semibold">已结束的投递</h3><p className="mt-1 text-xs text-muted-foreground">结果不会藏起来；“未通过”与本人拒绝分开记录。</p></div>
-      {outcomes.filter((group) => group.items.length > 0).map((group) => <div key={group.title} className="space-y-2"><h4 className={cn("text-xs font-semibold", group.className)}>{group.title} · {group.items.length}</h4><div className="grid gap-2 md:grid-cols-2 2xl:grid-cols-4">{group.items.map((app) => <ApplicationCard key={app.id} app={app} closed hit={hits?.get(app.id)} now={now} />)}</div></div>)}
+    {finished > 0 && <section className="rounded-xl border border-border/70 bg-card/55 p-3 sm:p-4">
+      <button type="button" onClick={() => setShowFinished(!finishedOpen)} aria-expanded={finishedOpen} className="flex w-full items-center justify-between gap-2 text-left">
+        <span><span className="text-sm font-semibold">已结束的投递 · {finished}</span><span className="ml-2 text-xs text-muted-foreground">{outcomes.filter((group) => group.items.length).map((group) => `${group.title.split(" / ").pop()} ${group.items.length}`).join(" · ")}</span></span>
+        <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", finishedOpen && "rotate-180")} />
+      </button>
+      {finishedOpen && <div className="mt-3 space-y-3">{outcomes.filter((group) => group.items.length > 0).map((group) => <div key={group.title} className="space-y-2"><h4 className={cn("text-xs font-semibold", group.className)}>{group.title} · {group.items.length}</h4><div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">{group.items.map((app) => <ApplicationCard key={app.id} app={app} closed hit={hits?.get(app.id)} now={now} />)}</div></div>)}</div>}
     </section>}
   </div>;
 }
@@ -147,7 +151,6 @@ export function ApplicationsBoard({ applications, sections, folded, onToggleFold
   }
 
   return <div className="space-y-6">
-    <p className="text-xs leading-5 text-muted-foreground">这里按大类整理，不规定企业的先后顺序。卡片右上角「改进度」一键切换阶段；有面试时间的卡片会显示倒计时和「进入会议」。</p>
     {sections ? sections.map((section) => {
       const closed = folded.has(section.key);
       return <div key={section.key} className="space-y-3">

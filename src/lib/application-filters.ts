@@ -5,7 +5,7 @@ import type { ApplicationStage } from "@prisma/client";
  * in: 「面试阶段 4」 opens those four. Kept in the address (?f=) so coming
  * back from a 投递 shows the same list.
  */
-export const APPLICATION_FILTERS = ["all", "active", "exam", "interview", "waiting", "offer", "stale", "rejected", "closed"] as const;
+export const APPLICATION_FILTERS = ["all", "active", "applied", "exam", "interview", "waiting", "offer", "stale", "rejected", "closed"] as const;
 export type ApplicationFilter = (typeof APPLICATION_FILTERS)[number];
 
 /** Same threshold as the 待办's 「该催一下 HR 了」. */
@@ -14,6 +14,7 @@ export const STALE_DAYS = 14;
 export const FILTER_LABELS: Record<ApplicationFilter, string> = {
   all: "全部",
   active: "进行中",
+  applied: "等筛选",
   exam: "笔试测评",
   interview: "面试中",
   waiting: "等结果",
@@ -26,6 +27,7 @@ export const FILTER_LABELS: Record<ApplicationFilter, string> = {
 export const FILTER_HINTS: Record<ApplicationFilter, string> = {
   all: "所有投递",
   active: "还没结束的流程",
+  applied: "已投递、筛选中，还没有下一步",
   exam: "测评、笔试阶段",
   interview: "一面到 HR 面",
   waiting: "面完 / 考完，在等公司结果",
@@ -49,6 +51,7 @@ export function matchesFilter(app: { currentStage: ApplicationStage; currentStag
   switch (filter) {
     case "all": return true;
     case "active": return !TERMINAL.includes(stage);
+    case "applied": return stage === "APPLIED" || stage === "SCREENING";
     case "exam": return EXAM.includes(stage);
     case "interview": return INTERVIEW.includes(stage);
     case "waiting": return !TERMINAL.includes(stage) && !!app.waiting;

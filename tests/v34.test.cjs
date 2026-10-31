@@ -167,3 +167,16 @@ test("a module with any of its boxes on the page is not empty; a 自我介绍 bo
   assert.deepEqual(core.emptyModules(profile, rows, [field("自我介绍（选填）", { tag: "textarea" })]).map((item) => item.group), []);
   assert.deepEqual(core.emptyModules(profile, new Map(), []).map((item) => item.group), ["education", "selfIntro"]);
 });
+
+test("v1.35: numbered questions, the job applied for, 其他岗位机会, 工作年限, 成绩", () => {
+  const profile = { appliedJob: "高级算法工程师", acceptAdjust: "接受", education: [{ school: "东南大学", gpa: "3.8/4.0", end: "2099-06" }] };
+  assert.equal(basic(field("*01投递岗位"), profile), "高级算法工程师");
+  assert.equal(basic(field("期望岗位"), profile), null, "the wished-for job is not the applied one");
+  assert.equal(basic(field("是否接受其他岗位机会?"), profile), "是");
+  assert.equal(basic(field("工作年限", { tag: "select", options: ["1年以下", "应届生", "1-3年"] }), profile), "应届生");
+  assert.equal(basic(field("工作年限"), profile), "应届生");
+  assert.equal(kind(core.resolveRepeatField(field("成绩", { section: "教育经历" }), new Map())), "education:gpa");
+  // 「12项目经历」 is the 项目经历 box.
+  assert.equal(kind(core.resolveRepeatField(field("12项目经历", { tag: "textarea" }), new Map())), kind(core.resolveRepeatField(field("项目经历", { tag: "textarea" }), new Map())));
+  assert.notEqual(kind(core.resolveRepeatField(field("12项目经历", { tag: "textarea" }), new Map())), null);
+});

@@ -45,7 +45,7 @@ export function FunnelCard({
                     style={{ width: `${Math.max(level.shareOfTotal * 100, level.count > 0 ? 2 : 0)}%` }}
                   />
                 </div>
-                <span className="w-6 shrink-0 text-right font-medium tabular-nums">
+                <span className="min-w-9 shrink-0 whitespace-nowrap text-right font-medium tabular-nums">
                   {level.count}
                 </span>
                 {level.smallSample && (

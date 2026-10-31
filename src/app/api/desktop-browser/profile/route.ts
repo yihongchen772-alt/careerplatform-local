@@ -31,6 +31,9 @@ export async function GET(request: Request) {
     .map(toMemoryView).filter((row): row is MemoryView => row !== null);
   const structured = profileWithMemories(base, memories, !!variant);
   const summaries = Object.fromEntries(memories.filter((row) => row.enabled && row.content.text && !(variant && ["experience", "project"].includes(row.category))).map((row) => [row.category, row.content.text]));
+  // The job this tab is filling for (岗位工作台 / 候选池), for 「投递岗位」「应聘职位」 boxes.
+  const positionId = contextKey?.startsWith("job:v1:") ? contextKey.slice(7) : null;
+  const appliedJob = positionId ? (await db.position.findFirst({ where: { id: positionId, userId: user.id }, select: { title: true } }))?.title ?? null : null;
   const edu = structured.education[0];
   const exp = structured.experiences[0];
   return NextResponse.json({
@@ -90,6 +93,7 @@ export async function GET(request: Request) {
     address: structured.extras.address || null,
     researchDirection: structured.extras.researchDirection || null,
     researchTopic: structured.extras.researchTopic || null,
+    appliedJob,
     jobSource: structured.extras.jobSource || null,
     rank: structured.extras.rank || null,
     acceptAdjust: structured.extras.acceptAdjust || null,

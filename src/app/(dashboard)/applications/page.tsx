@@ -18,6 +18,8 @@ import { applicationCities } from "@/lib/application-city";
 import { industryLabel } from "@/lib/company-industry";
 import { currentTimeMs } from "@/lib/dates";
 import { PageHero } from "@/components/layout/page-hero";
+import { FunnelCard } from "@/components/insights/funnel-card";
+import { computeFunnel, computeOutcomes } from "@/lib/funnel";
 import { Send } from "lucide-react";
 
 export default async function ApplicationsPage() {
@@ -68,6 +70,10 @@ export default async function ApplicationsPage() {
   const unassigned = applications.filter((app) => !app.portalId && !["REJECTED", "ACCEPTED", "DECLINED", "WITHDRAWN", "CANCELLED"].includes(app.currentStage) && portalCompanies.has(app.companyId));
   const autoSyncEnabled = settings.backgroundReminders && (settings.applicationSyncIntervalHours ?? 0) > 0;
 
+  // The 总览's 阶段覆盖, shown again in the 投递情况总表.
+  const funnelApps = applications.map((app) => ({ currentStage: app.currentStage, stageHistory: app.stageHistory.map((row) => ({ stage: row.stage })) }));
+  const funnel = <FunnelCard levels={computeFunnel(funnelApps).levels} total={applications.length} outcomes={computeOutcomes(funnelApps)} />;
+
   const defaultResumeVersionId =
     resumeVersions.find((r) => r.isDefault)?.id ?? null;
 
@@ -95,6 +101,7 @@ export default async function ApplicationsPage() {
 
       <ApplicationsView
         now={now}
+        funnel={funnel}
         applications={applications.map(({ stageHistory, position, ...a }) => {
           // The step's time or deadline that matters now: live, else the
           // next one ahead, else the current step's (past) one.

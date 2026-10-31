@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { CalendarDays, FilterX, Layers, Loader2, Sparkles, LayoutGrid, List, MapPin, Search, SearchX, X } from "lucide-react";
 import { toast } from "sonner";
@@ -21,6 +21,7 @@ import {
 } from "@/components/applications/applications-table";
 import { ApplicationsBoard, type BoardApplication } from "@/components/applications/applications-board";
 import { PortalReviewBanner } from "@/components/applications/portal-review-banner";
+import { ApplicationsOverview } from "@/components/applications/applications-overview";
 import { useNow } from "@/components/schedule/use-now";
 
 /**
@@ -58,7 +59,7 @@ function toBoard(a: ApplicationRow): BoardApplication {
   };
 }
 
-export function ApplicationsView({ applications, now: serverNow }: { applications: ApplicationRow[]; now: number }) {
+export function ApplicationsView({ applications, now: serverNow, funnel }: { applications: ApplicationRow[]; now: number; funnel?: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -102,6 +103,7 @@ export function ApplicationsView({ applications, now: serverNow }: { application
   }
   const composing = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   // In the address too, so coming back from a 投递 shows the same results.
   function writeUrl(change: { q?: string; f?: ApplicationFilter; c?: string; t?: string }) {
@@ -166,6 +168,13 @@ export function ApplicationsView({ applications, now: serverNow }: { application
     } finally {
       setClassifying(false);
     }
+  }
+
+  // From the 总表: open exactly those 投递, and bring the list into view.
+  function showFilter(next: ApplicationFilter) {
+    setFilterState(next);
+    writeUrl({ f: next });
+    listRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function chooseCity(next: string) {
@@ -263,7 +272,8 @@ export function ApplicationsView({ applications, now: serverNow }: { application
         suggestedStage: a.portalSuggestedStage!,
         portalStatus: a.portalStatus ?? null,
       }))} />
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+      <ApplicationsOverview applications={applications} now={now} filter={filter} onFilter={showFilter} funnel={funnel} />
+      <div ref={listRef} className="flex scroll-mt-4 flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h2 className="text-base font-semibold tracking-tight">进度视图</h2>
           <p className="mt-1 text-xs text-muted-foreground">把每次投递放在它当前所处的位置，下一步一眼可见。</p>

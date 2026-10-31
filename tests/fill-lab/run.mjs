@@ -183,6 +183,7 @@ const shadow = (id, s = "input") => `document.getElementById(${JSON.stringify(id
 
 function v34Profile(p) {
   p.acceptAdjust = "接受";
+  p.appliedJob = "数据分析师（2027届）";
   p.education[0].end = "2027-06";
   p.researchDirection = "因果推断与增长分析：基于观察数据估计营销干预的因果效应，并把结论用于用户增长策略的制定与评估。";
   p.awards = [...p.awards, { name: "国家奖学金", issuer: "教育部", level: "国家级", date: "2023-10", description: "" }];
@@ -539,6 +540,9 @@ Object.assign(suites, {
     { label: "是否接受调剂(资料写接受)", read: val("#adjust"), expect: "是" },
     { label: "全日制在校(标签被截成…)", read: `document.querySelector("#fulltime-sel .ud__select__selector__selectItem").textContent`, expect: "是" },
     { label: "国籍", read: sel("#nation"), expect: "中国大陆" },
+    { label: "带编号的投递岗位", read: val("#job"), expect: "数据分析师（2027届）" },
+    { label: "工作年限(在读选应届生)", read: sel("#years"), expect: "应届生" },
+    { label: "成绩(4字框只填分数)", read: val("#edu-gpa"), expect: "3.7" },
     { label: "研究方向(单行框用简短的)", read: val("#topic"), expect: "因果推断与增长分析" },
     { label: "专业描述(长框用整段)", read: val("#topic-long"), expect: /^因果推断与增长分析：基于观察数据/ },
     { label: "学生干部情况", read: val("#cadre"), expect: /学术部部长/ },

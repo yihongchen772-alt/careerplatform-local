@@ -1600,7 +1600,11 @@ const BASIC_FIELD_RULES = [
   { keys: ["研究方向", "研究领域", "research direction", "research interest"], when: longTextBox, get: (p) => p.researchDirection || p.researchTopic, learn: "researchDirection" },
   { keys: ["成绩排名", "专业排名", "绩点排名", "年级排名", "班级排名", "排名"], not: /学校|院校|企业|公司|职位|岗位/, get: (p) => p.rank, learn: "rank" },
   { keys: ["主修课程", "专业课程", "核心课程", "主要课程"], get: (p) => p.courses, learn: "courses" },
-  { keys: ["是否接受调剂", "服从调剂", "接受调剂", "岗位调剂", "是否服从"], not: /工作地|城市|地点/, get: (p) => p.acceptAdjust, learn: "acceptAdjust" },
+  { keys: ["是否接受调剂", "服从调剂", "接受调剂", "岗位调剂", "是否服从", "接受其他岗位", "考虑其他岗位"], not: /工作地|城市|地点/, get: (p) => p.acceptAdjust, learn: "acceptAdjust" },
+  // The job being applied for: the one this tab was opened for (比亚迪 / 钉钉表单's 「投递岗位」).
+  { keys: ["投递岗位", "应聘岗位", "申请岗位", "应聘职位", "申请职位", "报考岗位", "投递职位"], not: /是否|期望|意向|第二|其他/, get: (p) => p.appliedJob },
+  // 工作年限 for someone still studying: 应届生 (or the option that means none).
+  { keys: ["工作年限", "工作经验年限", "工作经验（年）", "工作年数"], get: (p) => studyingNow(p) ? "应届生" : null, workYears: true },
   // 是否有交换生经历 (是 / 否) or a box for the exchange itself.
   { keys: ["交换生经历", "交换经历", "海外交换", "交换学习", "海外经历", "海外学习经历"], not: /是否接受|愿意|意向/, get: (p) => p.exchange, learn: "exchange", yesNo: true },
   { keys: ["是否学生干部", "是否担任学生干部", "是否担任过学生干部", "是否为学生干部"], get: (p) => (p.campus || []).some((row) => row.role) ? "是" : null },
@@ -1831,7 +1835,8 @@ function fieldModule(field, repeat) {
 // Label alone, without "*"/"：" decoration — generic block labels such as
 // "名称"/"开始时间" are only trusted when they are the whole label.
 function bareLabel(field) {
-  return String(field.label || field.placeholder || "").replace(/^请(?:输入|选择|填写)/, "").replace(/[＊*：:\s]+/g, "").toLowerCase();
+  // 钉钉 / 飞书多维表格 number their questions: 「*01投递岗位」「12项目经历」.
+  return String(field.label || field.placeholder || "").replace(/^[＊*\s]*\d{1,2}[.、．)）:：]?\s*(?=[\u4e00-\u9fa5])/, "").replace(/^请(?:输入|选择|填写)/, "").replace(/[＊*：:\s]+/g, "").toLowerCase();
 }
 
 const SEARCH_BOX = /搜索|查询|关键词|关键字|search|keyword/i;
@@ -1877,7 +1882,7 @@ function educationFieldKind(haystack, inSection, bare = "") {
   if (/学校|院校|school|university|college/i.test(haystack)) return /城市|所在地|地区|省份|类型|性质|层次|排名|city|type|rank/i.test(haystack) ? null : "school";
   if (/专业|major|field of study/i.test(haystack)) return /技能|证书|资格|排名|方向|课程|实践|能力/.test(haystack) ? null : "major";
   if (/学历|学位|degree|education.?level/i.test(haystack)) return "degree";
-  if (/gpa|绩点|平均分|平均成绩|学习成绩|加权/i.test(haystack)) return /排名|rank/i.test(haystack) ? null : "gpa";
+  if (/gpa|绩点|平均分|平均成绩|学习成绩|加权/i.test(haystack) || (inSection && /^成绩$/.test(bare))) return /排名|rank/i.test(haystack) ? null : "gpa";
   if (NOT_A_DATE.test(haystack)) return null;
   if (/入学/.test(haystack) || (inSection && START_LABEL.test(haystack))) return "start";
   if (/毕业(?:时间|年份|年月|日期)|graduation/i.test(haystack) || (inSection && END_LABEL.test(haystack))) return "end";
@@ -2926,6 +2931,11 @@ function matchFlatField(field, profile) {
       if (yesNo) return yesNo;
       continue;
     }
+    if (rule.workYears && field.options) {
+      const none = field.options.find((option) => /应届|无工作|无经验|^无$|^0\s*年?$|在校/.test(String(option).trim())) || field.options.find((option) => /1\s*年以下|一年以下|1年以内/.test(String(option)));
+      if (none) return none;
+      continue;
+    }
     if (rule.nationality && field.options) {
       const own = field.options.find((option) => /^(?:中国|中国大陆|中华人民共和国|china|chinese)$/i.test(String(option).trim()));
       if (own) return own;
@@ -3324,7 +3334,9 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
         const field = fields.find((f) => f.id === pairs[i].id);
         const limit = field && options.mode !== "preview" && !field.options ? textLimitFor(field) : null;
         if (!limit || String(pairs[i].value).length <= limit) continue;
-        const fitted = fitToLimit(pairs[i].value, limit);
+        // 「3.8/4.0」 in a box that takes 3 characters: the score without its scale.
+        const score = /^\s*(\d+(?:\.\d+)?)\s*\/\s*\d+(?:\.\d+)?\s*$/.exec(String(pairs[i].value))?.[1];
+        const fitted = score && score.length <= limit ? score : fitToLimit(pairs[i].value, limit);
         if (fitted) { pairs[i] = { ...pairs[i], value: fitted, shortened: limit }; shortened.push(displayLabel(field)); continue; }
         tooLong.add(field.id);
         pairs.splice(i, 1);
