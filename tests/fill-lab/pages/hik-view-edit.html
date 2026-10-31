@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>海康威视式个人中心简历（先点编辑才有输入框）</title>
+<style>
+body{font:14px sans-serif;max-width:960px;margin:20px auto}
+.main__body__item{border:1px solid #e5e5e5;border-radius:6px;margin:14px 0;padding:10px 16px}
+.main__body__header{display:flex;justify-content:space-between;align-items:center}
+.mode_title{font-weight:600}.must{color:#e44;font-size:12px;margin-left:6px}.item-tips{color:#999;font-weight:400;margin-left:8px}
+.main__header__text{display:flex;gap:16px;color:#2a6ae9;cursor:pointer}
+.unedit{color:#bbb;cursor:not-allowed}
+.body_left_item{display:flex;align-items:center;gap:8px;margin:8px 0}
+.left_item_text{width:120px;text-align:right;color:#666}
+.edit_form{display:none}
+.ar-input,.ar-select{border:1px solid #ccc;border-radius:4px;padding:4px 6px}
+</style></head>
+<body>
+<!-- Layout of campushr.hikvision.com/view/mine/resume (2026-10-31, static page shell): each module shows saved
+     values as text; its 「编辑」 reveals the form and turns every other 编辑 into `unedit` until 保存/取消.
+     Module titles carry a 「必填」 badge and a long tip inside the title element. -->
+<div class="main__body__item" id="m-basic">
+  <div class="main__body__header">
+    <span class="mode_title">个人信息 <span class="must">必填</span></span>
+    <div class="main__header__text"><div><div id="info_lead">导入简历</div></div><span class="edit" id="edit-basic">编辑</span></div>
+  </div>
+  <div class="view"><label class="body_left_item"><div class="left_item_text">姓名：</div><div class="left_item_content"></div></label></div>
+  <form class="edit_form">
+    <label class="body_left_item"><div class="left_item_text star">姓名：</div><div class="tips"><input class="ar-input" id="name" name="name" placeholder="请输入真实姓名"></div></label>
+    <label class="body_left_item"><div class="left_item_text star">邮箱：</div><div class="tips"><input class="ar-input" id="email" name="email"></div></label>
+    <div class="body_left_item">
+      <div class="left_item_text star">意向工作地：</div>
+      <div class="tips">
+        <label><input type="radio" name="workwill_addr_type" value="2"> 国内任意</label>
+        <label><input type="radio" name="workwill_addr_type" value="3"> 全球任意</label>
+        <label><input type="radio" name="workwill_addr_type" value="1"> 自填</label>
+        <div style="margin-bottom:10px"></div>
+        <input class="ar-input" id="workwill" name="workwillAddr" placeholder="例：浙江杭州(最多3个,空格隔开)">
+      </div>
+    </div>
+    <label class="body_left_item"><div class="left_item_text">QQ：</div><div class="tips"><input class="ar-input" id="qq" name="qq"></div></label>
+    <button type="button" class="save">保 存</button>
+  </form>
+</div>
+<div class="main__body__item" id="m-edu">
+  <div class="main__body__header">
+    <span class="mode_title">教育经历 <span class="must">必填</span><span class="item-tips">从最高学历开始一直写到本科（若有专科教育经历请写到专科），所有信息请依据毕业证书/在线学籍填写准确。</span></span>
+    <div class="main__header__text"><span class="edit" id="edit-edu">编辑</span></div>
+  </div>
+  <div class="view"><label class="body_left_item"><div class="left_item_text">学历：</div><div class="left_item_content"></div></label></div>
+  <form class="edit_form">
+    <label class="body_left_item">
+      <div class="left_item_text star">时间：</div>
+      <div class="tips"><input class="ar-input" id="eduStart" name="eduStart" placeholder="请选择开始时间" autocomplete="off"></div>
+      <span> -- </span>
+      <div class="tips"><input class="ar-input" id="eduEnd" name="eduEnd" placeholder="请选择结束或预计结束时间" autocomplete="off"></div>
+    </label>
+    <label class="body_left_item"><div class="left_item_text star">研究方向：</div><div class="tips"><input class="ar-input" id="research" name="researchDire" placeholder="如没有请填写“无”"></div></label>
+    <button type="button" class="save">保 存</button>
+  </form>
+</div>
+<script>
+// The site's own rule: one module in edit at a time.
+document.querySelectorAll(".main__header__text .edit, .main__header__text .unedit").forEach((button) => {
+  button.addEventListener("click", () => {
+    if (button.classList.contains("unedit")) return;
+    const item = button.closest(".main__body__item");
+    item.querySelector(".view").style.display = "none";
+    item.querySelector(".edit_form").style.display = "block";
+    button.style.display = "none";
+    document.querySelectorAll(".main__header__text .edit").forEach((other) => { if (other !== button) { other.classList.add("unedit"); other.classList.remove("edit"); } });
+  });
+});
+document.querySelectorAll(".save").forEach((save) => save.addEventListener("click", () => {
+  const item = save.closest(".main__body__item");
+  item.querySelector(".view").style.display = "";
+  item.querySelector(".edit_form").style.display = "none";
+  item.querySelector("[id^=edit-]").style.display = "";
+  document.querySelectorAll(".main__header__text .unedit").forEach((other) => { other.classList.add("edit"); other.classList.remove("unedit"); });
+}));
+</script>
+</body></html>

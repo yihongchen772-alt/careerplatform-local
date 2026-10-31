@@ -182,7 +182,9 @@ function scanPageFields(prefix, readOnly = false) {
       }
       const parent = parentOf(node);
       if (!parent || parent === document.body) break;
-      if (parent.querySelectorAll("input:not([type='hidden']), select, textarea, [contenteditable='true'], [role='combobox'], [role='radiogroup']").length > 3) break;
+      // A radio group counts once: 海康威视's 意向工作地 row is 国内任意 / 全球任意 / 自填 plus the 自填 box.
+      const controls = new Set(Array.from(parent.querySelectorAll("input:not([type='hidden']), select, textarea, [contenteditable='true'], [role='combobox'], [role='radiogroup']")).map((control) => control.type === "radio" && control.name ? "radio:" + control.name : control));
+      if (controls.size > 3) break;
       node = parent;
     }
     return "";
@@ -260,9 +262,14 @@ function scanPageFields(prefix, readOnly = false) {
   // link reads too long as a whole; its title element is the heading.
   // "项目职务" / "单位名称" beside its box is the box's caption, not a module title.
   const CAPTION_LIKE = /(?:名称|职务|职位|角色|时间|日期|描述|内容|地点|类别|级别|排名|单位|方向|类型|专业|电话|邮箱)[*＊?？：:\s]*$|^是否|[?？]/;
+  // 海康威视's title carries a 「必填」 badge and a long tip inside itself
+  // ("教育经历 必填 从最高学历开始…"); its own text nodes are the title.
+  const directText = (el) => clean(Array.from(el.childNodes).filter((child) => child.nodeType === 3).map((child) => child.textContent).join(" "));
   function headerTitle(node, text) {
     if (!text || text.length > 200) return "";
-    return Array.from(node.querySelectorAll("h1, h2, h3, h4, h5, h6, strong, b, [class*='title'], [class*='Title'], [class*='name'], [class*='head']")).map((child) => clean(child.textContent)).find((value) => value && value.length <= 30 && SECTION_HEADING.test(value) && !CAPTION_LIKE.test(value)) || "";
+    const isTitle = (value) => value && value.length <= 30 && SECTION_HEADING.test(value) && !CAPTION_LIKE.test(value);
+    const titles = Array.from(node.querySelectorAll("h1, h2, h3, h4, h5, h6, strong, b, [class*='title'], [class*='Title'], [class*='name'], [class*='head']"));
+    return titles.map((child) => clean(child.textContent)).find(isTitle) || titles.map(directText).find(isTitle) || "";
   }
   // Entries the site already saved in this module, shown as text cards next
   // to the one empty form (portals that take one 经历 / 证书 / 语言 at a time).
@@ -2525,6 +2532,56 @@ async function clickAddBlock(group) {
   return { clicked: true, text: (target.textContent || "").trim().slice(0, 20), modal };
 }
 
+// Resume pages that show what was saved as plain text (海康威视's 个人中心 简历)
+// only grow boxes after a section's own 「编辑」. With no box on the page,
+// press one: the first section this tab hasn't opened yet, starting over once
+// all were. Such sites allow one open section at a time (the others turn
+// `unedit`), so one per run — save it, press 一键填写 again for the next.
+async function openEditSection() {
+  const EDIT = /^(?:编辑|修改|编辑信息|编辑资料|编辑简历|去编辑|完善|去完善|完善信息|立即完善|edit)$/i;
+  const clean = (text) => String(text || "").replace(/\s+/g, " ").trim();
+  const visible = (el) => { const r = el.getBoundingClientRect(); const st = getComputedStyle(el); return r.width > 0 && r.height > 0 && st.visibility !== "hidden" && st.display !== "none"; };
+  const blocked = (el) => el.disabled || el.getAttribute("aria-disabled") === "true" || /disabled|unedit|forbid|readonly/i.test(String(el.className || ""));
+  // The section's own heading, for the message: the nearest short text before
+  // the button that names a module (not 「导入简历」 beside it).
+  const MODULE = /信息|资料|经历|经验|教育|学历|项目|获奖|奖项|荣誉|证书|技能|特长|语言|外语|求职|意向|实践|校园|家庭|自我|评价|附件|作品|其他|其它|information|education|experience|project|award|skill|language/i;
+  const sectionOf = (el) => {
+    for (let node = el, depth = 0; node && node !== document.body && depth < 6; depth++, node = node.parentElement) {
+      for (let sibling = node.previousElementSibling, hops = 0; sibling && hops < 4; hops++, sibling = sibling.previousElementSibling) {
+        const walker = document.createTreeWalker(sibling, NodeFilter.SHOW_TEXT);
+        for (let text = walker.nextNode(); text; text = walker.nextNode()) {
+          const value = clean(text.textContent);
+          if (value.length >= 2 && value.length <= 16 && MODULE.test(value)) return value;
+        }
+      }
+    }
+    return "";
+  };
+  const buttons = Array.from(document.querySelectorAll("button, a, [role='button'], span, div, i"))
+    .filter((el) => {
+      const text = clean(el.textContent) || clean(el.getAttribute("title")) || clean(el.getAttribute("aria-label"));
+      if (!EDIT.test(text) || !visible(el)) return false;
+      // Innermost element carrying the word; its clickable ancestor is pressed.
+      return !Array.from(el.children).some((child) => EDIT.test(clean(child.textContent)));
+    })
+    .map((el) => el.closest("button, a, [role='button']") || el)
+    .filter((el, index, list) => list.indexOf(el) === index && !blocked(el) && !el.closest("[role='dialog'], [role='menu'], nav, header"))
+    // Only a résumé module's own button: a bare 「修改」 beside 账号 / 密码 is not one.
+    .filter((el) => sectionOf(el) && !/账号|帐号|密码|安全|绑定|account|password/i.test(sectionOf(el)));
+  if (!buttons.length) return { clicked: false };
+  const keyOf = (el) => sectionOf(el) + "#" + buttons.indexOf(el);
+  let opened = [];
+  try { opened = JSON.parse(sessionStorage.getItem("cp-opened-edit") || "[]"); } catch { opened = []; }
+  let target = buttons.find((el) => !opened.includes(keyOf(el)));
+  if (!target) { opened = []; target = buttons[0]; }
+  opened.push(keyOf(target));
+  try { sessionStorage.setItem("cp-opened-edit", JSON.stringify(opened)); } catch { /* storage blocked: next run starts at the top */ }
+  target.scrollIntoView({ block: "center" });
+  target.click();
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  return { clicked: true, section: sectionOf(target), more: buttons.some((el) => el !== target && !opened.includes(keyOf(el))) };
+}
+
 // Long-text kinds may still go to the AI when the saved row lacks them. Short
 // facts (school, dates, company) only do when nothing is saved for that list
 // and it's the first block — the AI can't tell which row a second "学校" means
@@ -2953,6 +3010,16 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     assertActive();
     const { fields, frameById, pageText } = await scanFrames(adapter);
     assertActive();
+    if (fields.length === 0 && !options.openedSection && adapter.stillOnPage(initialUrl)) {
+      for (const frame of await adapter.frames()) {
+        assertActive();
+        const opened = await adapter.run(frame, openEditSection, []).catch(() => null);
+        if (opened && opened.clicked) {
+          adapter.status({ phase: "scanning", message: `已点开${opened.section ? `「${opened.section}」的` : "页面上的"}「编辑」，继续填写…` });
+          return runAutofillCore(adapter, resumeVersionId, { ...options, openedSection: opened });
+        }
+      }
+    }
     // A page may only contain an upload control. Keep going when a resume
     // is selected so the attachment pass below still gets a chance to run.
     if (fields.length === 0 && !resumeVersionId) throw new Error("这个页面上没找到可以填的表单——如果表单在弹窗里，先把它打开");
@@ -3274,6 +3341,8 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     assertActive();
     const summary = { filled: previous.filled + filled.length, manual: allDetails.filter((d) => d.source === "manual").length, deliberate: allDetails.filter((d) => d.source === "manual" && d.deliberate).length, preserved: Math.max(0, alreadyFilled - priorFillsOnPage) + skipped.length, excluded: allDetails.filter((d) => d.source === "excluded").length, uploaded: previous.uploaded + uploadedResumeCount };
     if (round) parts.unshift(`本次累计填入 ${summary.filled} 个字段、上传 ${summary.uploaded} 个附件；以下为最后一轮说明`);
+    const openedSection = options.openedSection;
+    if (openedSection) parts.unshift(`已点开${openedSection.section ? `「${openedSection.section}」的` : ""}「编辑」并填写${openedSection.more ? "——核对后点网页上的保存，再点一次一键填写会打开下一栏" : "——核对后记得点网页上的保存"}`);
     const result = { phase: "done", message: parts.join("；"), details: allDetails, summary };
     adapter.status(result);
     return result;
@@ -3623,6 +3692,7 @@ module.exports = {
   clearFillMarks,
   clearSavedUserEdits,
   clickAddBlock,
+  openEditSection,
   countFillableFields,
   dateFormatFor,
   citiesForField,

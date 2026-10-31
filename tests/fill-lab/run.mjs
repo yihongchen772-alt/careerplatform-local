@@ -507,6 +507,20 @@ Object.assign(suites, {
     { label: "现居城市(不可搜索，逐级展开)", read: fv("city"), expect: "sh" },
     { label: "籍贯 江苏南京(可搜索)", read: fv("hometown"), expect: "nj" },
   ], { wait: 600 }],
+  // 海康威视个人中心：只读展示，先点「编辑」才有输入框，一次只能开一栏；栏目标题里带「必填」和长提示。
+  "hik-view-edit": [[
+    { label: "姓名(自动点开个人信息)", read: val("#name"), expect: "林晓舟" },
+    { label: "邮箱", read: val("#email"), expect: "linxz@example.invalid" },
+    { label: "意向工作地自填框", read: val("#workwill"), expect: "上海 苏州" },
+    { label: "QQ", read: val("#qq"), expect: "123456789" },
+    { label: "保存后再填:教育开始", read: val("#eduStart"), expect: "2024-09" },
+    { label: "教育结束", read: val("#eduEnd"), expect: "2026-06" },
+    { label: "研究方向", read: val("#research"), expect: "因果推断与增长分析" },
+  ], { profile: (p) => { p.preferredCities = "上海、苏州"; }, between: async (page) => {
+    const opened = await page.evaluate(`[document.querySelector("#m-basic .edit_form").style.display, document.querySelector("#m-edu .edit_form").style.display].join("/")`);
+    await page.click("#m-basic .save");
+    return `第一次填写后 个人信息/教育经历 表单显示=${opened}`;
+  } }],
   "wizard": [[
     { label: "第1步 姓名", read: val("#a1"), expect: "林晓舟" },
     { label: "第1步 性别", read: sel("#a4"), expect: "女" },
