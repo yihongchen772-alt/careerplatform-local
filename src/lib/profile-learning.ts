@@ -37,6 +37,7 @@ const LABEL_KEYS: Array<[RegExp, string, RegExp?]> = [
   [/成绩排名|专业排名|绩点排名|年级排名|班级排名|学习成绩排名/, "rank"],
   [/主修课程|专业课程|核心课程|主要课程/, "courses"],
   [/调剂|是否服从/, "acceptAdjust", /工作地|城市|地点/],
+  [/招聘信息来源|信息来源|获知渠道|了解渠道|得知渠道|从何处得知/, "jobSource"],
   [/(?:^|[^a-z])qq(?:号|号码)?(?:$|[^a-z])/i, "qq"],
   [/个人主页|个人网站|作品链接|作品集|个人博客|github|portfolio|personal (?:website|homepage)/i, "homepage", /linkedin|领英/i],
   [/实验室|课题组/, "lab", /是否|安全/],
@@ -57,6 +58,15 @@ const LABEL_KEYS: Array<[RegExp, string, RegExp?]> = [
   [/现居|所在城市|居住城市|^currentcity$|^city$/i, "currentCity"],
   [/期望岗位|期望职位|意向岗位|意向职位/, "targetRole"],
 ];
+
+/**
+ * 研究方向 typed short (「多传感器融合导航」) beside a saved paragraph is the
+ * short version the one-line boxes want, not a replacement for the paragraph.
+ */
+export function shortVersionKey(key: string | undefined, answer: string, extras: Record<string, string>): string | undefined {
+  if (key === "researchDirection" && answer.trim().length <= 30 && (extras.researchDirection || "").trim().length > 40) return "researchTopic";
+  return key;
+}
 
 export function profileKeyForLabel(label: string): string | null {
   const text = label.replace(/[\s*＊:：]/g, "");
@@ -126,7 +136,7 @@ export function learnFromPage(base: ApplicationProfile, user: { preferredCities:
   const handled = new Set<string>();
 
   for (const [index, answer] of input.answers.entries()) {
-    const key = answer.profileKey;
+    const key = shortVersionKey(answer.profileKey, answer.answer, input.effectiveExtras);
     if (!key || !Object.hasOwn(LEARNABLE_FACTS, key) || PER_COMPANY.has(key) || handled.has(key)) continue;
     handled.add(key);
     const value = answer.answer.trim();

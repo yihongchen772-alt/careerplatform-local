@@ -439,7 +439,23 @@ function createTab(url, { activate = true } = {}) {
     recordHistory(wc.getURL(), wc.getTitle());
     sendTabsState();
   });
-  wc.on("did-start-loading", () => sendTabsState());
+  wc.on("did-start-loading", () => {
+    send("browser:page-problem", { tabId: tab.id, kind: null });
+    sendTabsState();
+  });
+  // Chrome shows its own page when a site can't be reached (a dead 国企 server,
+  // no network, a bad certificate) or the page crashed; a view here stays white.
+  wc.on("did-fail-load", (_event, code, description, url, isMainFrame) => {
+    // -3: replaced by another navigation, not a failure.
+    if (!isMainFrame || code === -3) return;
+    send("browser:page-problem", { tabId: tab.id, kind: "load", code, description: String(description || ""), url: String(url || "") });
+  });
+  wc.on("render-process-gone", (_event, details) => {
+    if (details?.reason === "clean-exit") return;
+    send("browser:page-problem", { tabId: tab.id, kind: "crash", description: String(details?.reason || "") });
+  });
+  wc.on("unresponsive", () => send("browser:page-problem", { tabId: tab.id, kind: "hang" }));
+  wc.on("responsive", () => send("browser:page-problem", { tabId: tab.id, kind: null }));
   wc.on("did-stop-loading", () => {
     recordHistory(wc.getURL(), wc.getTitle());
     sendTabsState();
@@ -1229,7 +1245,9 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       for (const frame of allFrames(tab.view.webContents)) await frame.executeJavaScript(`document.documentElement.setAttribute("data-cp-task", ${JSON.stringify(task.id)})`).catch(() => {});
       if (options?.mode === "apply") await applyAutofillPlan(electronAdapter(tab, task), options);
       else { tab.archiveUrl = tab.view.webContents.getURL(); tab.positionId = options?.positionId; tab.resumeVersionId = resumeVersionId; tab.variantId = options?.variantId; await rememberPreFill(tab); const result = await runAutofillCore(electronAdapter(tab, task), resumeVersionId, options || {});
-        if (result?.phase === "done" && result.summary) { tab.filledAt = Date.now(); tab.typedSinceFill = 0; tab.typedPage = tab.view.webContents.getURL().split("#")[0]; recordFillStats(tab.archiveUrl, { fills: 1, filled: result.summary.filled || 0, manual: result.summary.manual || 0, deliberate: result.summary.deliberate || 0 }); noteMissedFields(tab, result); } }
+        if (result?.phase === "done" && result.summary) { tab.filledAt = Date.now(); tab.typedSinceFill = 0; tab.typedPage = tab.view.webContents.getURL().split("#")[0]; recordFillStats(tab.archiveUrl, { fills: 1, filled: result.summary.filled || 0, manual: result.summary.manual || 0, deliberate: result.summary.deliberate || 0 }); noteMissedFields(tab, result); }
+        // A run that ended in an error used to leave no trace in 填写统计 (fills 0, typed 11 on 国机).
+        else if (result?.phase === "error" && !/已停止/.test(result.message || "")) recordFillStats(tab.archiveUrl, { errors: 1, lastError: String(result.message || "").slice(0, 80) }); }
     } finally { fillingTabs.delete(tab.id); fillTasks.delete(tab.id); }
   });
 
@@ -1283,6 +1301,14 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
         tab.typedSinceFill = (tab.typedSinceFill || 0) + result.handTyped;
         if (tab.typedSinceFill >= AUTO_SAMPLE_TYPED) captureSample(tab, `自动保存：一键填写后手填了 ${tab.typedSinceFill} 个字段`, { auto: true }).catch(() => {});
       }
+      // Typed by hand where 一键填写 never ran (国机 / 猎聘 on 10-31): keep the page's structure
+      // too once several boxes went that way, so why it wasn't filled can be looked at.
+      else if (result.handTyped && !tab.filledAt) {
+        const page = tab.view.webContents.getURL().split("#")[0];
+        if (tab.unfilledPage !== page) { tab.unfilledPage = page; tab.typedUnfilled = 0; }
+        tab.typedUnfilled = (tab.typedUnfilled || 0) + result.handTyped;
+        if (tab.typedUnfilled >= AUTO_SAMPLE_UNFILLED) captureSample(tab, `自动保存：没用一键填写，手填了 ${tab.typedUnfilled} 个字段`, { auto: true }).catch(() => {});
+      }
       if (result.handTyped) recordFillStats(tab.view.webContents.getURL(), { typed: result.handTyped });
       nudgeToFill(tab).catch(() => {});
       return result;
@@ -1295,6 +1321,8 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
 // 网申样本: form structures saved for fixing autofill — by 「这页没填好」 or
 // by themselves when a filled page still needed several boxes typed in.
 const AUTO_SAMPLE_TYPED = 3;
+// Higher than after a fill: a login or search box is a few boxes too.
+const AUTO_SAMPLE_UNFILLED = 5;
 const AUTO_SAMPLE_LIMIT = 120;
 const AUTO_SAMPLE_MISSED = 8;
 const NUDGE_EMPTY_FIELDS = 4;
@@ -1398,7 +1426,7 @@ function recordFillStats(rawUrl, patch) {
     let stats = {};
     try { stats = JSON.parse(fs.readFileSync(file, "utf8")) || {}; } catch { stats = {}; }
     const row = stats[host] || { fills: 0, filled: 0, manual: 0, typed: 0, samples: 0 };
-    for (const [key, value] of Object.entries(patch)) row[key] = (row[key] || 0) + value;
+    for (const [key, value] of Object.entries(patch)) row[key] = typeof value === "string" ? value : (row[key] || 0) + value;
     row.lastAt = new Date().toISOString();
     stats[host] = row;
     fs.writeFileSync(file, JSON.stringify(stats, null, 1));

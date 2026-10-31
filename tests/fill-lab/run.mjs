@@ -153,7 +153,8 @@ async function runPage(browser, name, checks, { wait = 600, options = {}, page: 
   for (const check of checks) {
     const frame = check.frame ? page.frames().find((f) => f.url().includes(check.frame)) : page.mainFrame();
     let actual;
-    try { actual = await frame.evaluate(check.read); } catch (e) { actual = `<<error ${e.message.slice(0, 80)}>>`; }
+    // `result`: a check on what 一键填写 reported (its notes, the 补齐 button), not on the page.
+    try { actual = check.result ? check.result(result) : await frame.evaluate(check.read); } catch (e) { actual = `<<error ${e.message.slice(0, 80)}>>`; }
     actual = actual == null ? "" : String(actual).trim();
     const ok = check.expect instanceof RegExp ? check.expect.test(actual) : actual === check.expect;
     if (ok) pass++;
@@ -179,6 +180,15 @@ const sel = (sel) => `(() => { const s = document.querySelector(${JSON.stringify
 const tip = (sel) => `(document.querySelector(${JSON.stringify(sel + " .phoenix-select__tipEle")}) || {}).textContent || ""`;
 const radio = (name) => `(() => { const r = document.querySelector('input[name=${JSON.stringify(name)}]:checked'); return r ? (r.closest("label") ? r.closest("label").textContent : r.nextSibling.textContent).trim() : ""; })()`;
 const shadow = (id, s = "input") => `document.getElementById(${JSON.stringify(id)}).shadowRoot.querySelector(${JSON.stringify(s)}).value`;
+
+function v34Profile(p) {
+  p.acceptAdjust = "接受";
+  p.education[0].end = "2027-06";
+  p.researchDirection = "因果推断与增长分析：基于观察数据估计营销干预的因果效应，并把结论用于用户增长策略的制定与评估。";
+  p.awards = [...p.awards, { name: "国家奖学金", issuer: "教育部", level: "国家级", date: "2023-10", description: "" }];
+  p.wechat = "zoe_lin_wx";
+  p.selfIntro = "统计学硕士在读，研究方向是因果推断与增长分析。在字节跳动做过电商增长分析实习，搭建过 AB 实验看板。熟悉 SQL、Python 与 Tableau，能独立完成从取数到结论的分析。担任研究生会学术部部长，组织学术沙龙 12 场。做事认真细致，沟通顺畅。";
+}
 
 const suites = {
   "antd-moka": [[
@@ -516,11 +526,44 @@ Object.assign(suites, {
     { label: "保存后再填:教育开始", read: val("#eduStart"), expect: "2024-09" },
     { label: "教育结束", read: val("#eduEnd"), expect: "2026-06" },
     { label: "研究方向", read: val("#research"), expect: "因果推断与增长分析" },
+    { label: "填了自填框就选「自填」", read: radio("workwill_addr_type"), expect: "自填" },
+    { label: "提示写在结果栏上", result: (r) => (r.summary?.notes || []).join("|"), expect: /已点开「教育经历」的「编辑」/ },
   ], { profile: (p) => { p.preferredCities = "上海、苏州"; }, between: async (page) => {
     const opened = await page.evaluate(`[document.querySelector("#m-basic .edit_form").style.display, document.querySelector("#m-edu .edit_form").style.display].join("/")`);
     await page.click("#m-basic .save");
     return `第一次填写后 个人信息/教育经历 表单显示=${opened}`;
   } }],
+  // 2026-10-31 的蔚来 / 千寻（飞书招聘）、国机、猎聘：只选年份的获奖时间、是否题、空着只有「添加」的社交账号 / 自我评价、
+  // 网站自己解析简历填错了学历、单行研究方向要短的、字数上限、学生干部 / 奖学金 / 国籍 / 学习形式。
+  "feishu-v34": [[
+    { label: "是否接受调剂(资料写接受)", read: val("#adjust"), expect: "是" },
+    { label: "全日制在校(标签被截成…)", read: `document.querySelector("#fulltime-sel .ud__select__selector__selectItem").textContent`, expect: "是" },
+    { label: "国籍", read: sel("#nation"), expect: "中国大陆" },
+    { label: "研究方向(单行框用简短的)", read: val("#topic"), expect: "因果推断与增长分析" },
+    { label: "专业描述(长框用整段)", read: val("#topic-long"), expect: /^因果推断与增长分析：基于观察数据/ },
+    { label: "学生干部情况", read: val("#cadre"), expect: /学术部部长/ },
+    { label: "奖学金情况(只要奖学金)", read: val("#scholar"), expect: /^(?!.*数学建模).*国家奖学金/ },
+    { label: "解析错学历的那段仍补专业", read: val("#edu-major"), expect: "数学与应用数学" },
+    { label: "页面已有的学历不改", read: sel("#edu-degree"), expect: "硕士" },
+    { label: "学习形式", read: sel("#edu-mode"), expect: "全日制" },
+    { label: "教育形式(不选非全日制)", read: sel("#edu-kind"), expect: "统招全日制" },
+    { label: "获奖1 名称", read: val("#award1-name"), expect: "全国大学生数学建模竞赛一等奖" },
+    { label: "获奖1 年份(ud)", read: val("#award1-date"), expect: "2023" },
+    { label: "获奖2 名称", read: val("#award2-name"), expect: "国家奖学金" },
+    { label: "获奖2 年份(atsx)", read: val("#award2-date"), expect: "2023" },
+    { label: "社交账号1 平台(点添加)", read: `(document.querySelector("#sns1-sel .ud__select__selector__selectItem") || {}).textContent || ""`, expect: "微信" },
+    { label: "社交账号1 ID", read: val("#sns1-id"), expect: "zoe_lin_wx" },
+    { label: "社交账号2 平台", read: `(document.querySelector("#sns2-sel .ud__select__selector__selectItem") || {}).textContent || ""`, expect: "QQ" },
+    { label: "社交账号2 ID", read: val("#sns2-id"), expect: "123456789" },
+    { label: "自我评价(点添加、按120字截整句)", read: `(() => { const v = (document.querySelector("#self-text") || {}).value || ""; return v.length <= 120 && v.endsWith("。") && v.startsWith("统计学硕士在读") ? "ok" : v.length + ":" + v; })()`, expect: "ok" },
+    { label: "结果栏:截短了", result: (r) => (r.summary?.notes || []).join("|"), expect: /按网页字数上限截短/ },
+    { label: "结果栏:学历和资料不同", result: (r) => (r.summary?.notes || []).join("|"), expect: /学历.*硕士.*本科/ },
+  ], { options: { expandBlocks: true }, profile: v34Profile }],
+  // 自动补齐栏目关着：空栏目不点，结果栏给出「补齐栏目再填」。
+  "feishu-v34-off": [[
+    { label: "不点添加", read: `String(document.querySelectorAll("#sns .sel").length)`, expect: "0" },
+    { label: "结果栏列出空栏目", result: (r) => (r.summary?.expandable || []).join("、"), expect: "社交账号、自我评价" },
+  ], { page: "feishu-v34", options: { expandBlocks: false }, profile: v34Profile }],
   "wizard": [[
     { label: "第1步 姓名", read: val("#a1"), expect: "林晓舟" },
     { label: "第1步 性别", read: sel("#a4"), expect: "女" },

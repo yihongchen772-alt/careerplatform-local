@@ -48,11 +48,19 @@ export type DesktopBridgeAutofillStatus = {
   phase: "scanning" | "ai" | "done" | "error" | "preview";
   message: string;
   plan?: FillPlan;
-  summary?: { filled: number; manual: number; /** Of `manual`: 身份证 / 家庭成员 etc. left on purpose. */ deliberate?: number; preserved: number; excluded: number; uploaded: number };
+  summary?: {
+    filled: number; manual: number; /** Of `manual`: 身份证 / 家庭成员 etc. left on purpose. */ deliberate?: number; preserved: number; excluded: number; uploaded: number;
+    /** What needs a next step from the applicant (保存 an opened section, a cut-short text, a value the page had differently). */
+    notes?: string[];
+    /** Modules the page shows short of rows, with an 「添加」 waiting, while 自动补齐栏目 is off. */
+    expandable?: string[];
+  };
   details?: { id?: string; label: string; state: string; source?: DesktopBridgeFillSource }[];
 };
 
 export type DesktopBridgeCapturedPage = { url: string; title: string; text: string };
+
+export type DesktopBridgePageProblem = { tabId: number; kind: "load" | "crash" | "hang" | null; code?: number; description?: string; url?: string };
 
 export type DesktopBridgeHistoryEntry = { url: string; title: string; at: number };
 
@@ -87,7 +95,7 @@ export type DesktopBridge = {
   /** 「这页没填好」: saves the page's form structure (no filled-in values) as a file and shows it in Finder. */
   captureSample(note?: string): Promise<{ file: string; fields: number }>;
   /** 填写统计.json: per site, how much 一键填写 filled and how much was typed by hand afterwards. */
-  fillStats(): Promise<{ stats: Record<string, { fills: number; filled: number; manual: number; deliberate?: number; typed: number; samples: number; lastAt?: string }>; samples: number }>;
+  fillStats(): Promise<{ stats: Record<string, { fills: number; filled: number; manual: number; deliberate?: number; typed: number; samples: number; lastAt?: string; /** Runs that ended in an error, and the last message. */ errors?: number; lastError?: string }>; samples: number }>;
   openSamples(): Promise<void>;
   /** Writes text to the system clipboard (navigator.clipboard fails while the page view has focus). */
   copyText(text: string): Promise<void>;
@@ -125,6 +133,8 @@ export type DesktopBridge = {
   onShortcut(callback: (payload: DesktopBridgeShortcut) => void): () => void;
   onDownload(callback: (payload: DesktopBridgeDownload) => void): () => void;
   onFindResult(callback: (payload: { tabId: number; active: number; total: number }) => void): () => void;
+  /** A page that failed to load, crashed or hangs; kind null when it is fine again. */
+  onPageProblem?(callback: (payload: DesktopBridgePageProblem) => void): () => void;
   // Saved passwords (missing before v1.14).
   loginState?(tabId: number): Promise<LoginState | null>;
   loginSave?(tabId: number): Promise<{ ok: boolean; site?: string; message?: string }>;

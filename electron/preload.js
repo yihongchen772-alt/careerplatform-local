@@ -97,6 +97,12 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     ipcRenderer.on("browser:download", listener);
     return () => ipcRenderer.removeListener("browser:download", listener);
   },
+  // A page that failed to load, crashed or hangs (kind null: fine again).
+  onPageProblem: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("browser:page-problem", listener);
+    return () => ipcRenderer.removeListener("browser:page-problem", listener);
+  },
   onFindResult: (callback) => {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("browser:find-result", listener);

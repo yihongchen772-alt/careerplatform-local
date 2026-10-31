@@ -94,8 +94,12 @@ export const EXTRA_FIELDS = [
   { key: "address", label: "通讯地址", hint: "省 市 区 街道" },
   // Asked on most 校招 forms and missing before (seen filled by hand on 歌尔、中国移动、51job、Moka).
   { key: "researchDirection", label: "研究方向", hint: "强化学习控制 / 机器人运动控制" },
+  // One-line 研究方向 boxes want the topic, not the paragraph: typed short by hand on 9 sites (v1.34).
+  { key: "researchTopic", label: "研究方向（简短）", hint: "一句话方向名：多传感器融合导航；空着就从上面一栏取" },
   { key: "rank", label: "成绩排名", hint: "前 10% / 5/120" },
   { key: "acceptAdjust", label: "是否接受调剂", hint: "是 / 否" },
+  // 国企 / 海康 / 浩鲸 forms ask where the opening was seen.
+  { key: "jobSource", label: "招聘信息来源", hint: "学校就业网 / 公司官网 / 牛客" },
   { key: "courses", label: "主修课程", hint: "自动控制原理、机器人学、……", multiline: true },
   // Seen filled by hand on 腾讯、网易、歌尔、中国移动 after v1.20.
   { key: "qq", label: "QQ 号", hint: "" },

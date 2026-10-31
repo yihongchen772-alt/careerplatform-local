@@ -89,6 +89,8 @@ export async function GET(request: Request) {
     wechat: structured.extras.wechat || null,
     address: structured.extras.address || null,
     researchDirection: structured.extras.researchDirection || null,
+    researchTopic: structured.extras.researchTopic || null,
+    jobSource: structured.extras.jobSource || null,
     rank: structured.extras.rank || null,
     acceptAdjust: structured.extras.acceptAdjust || null,
     courses: structured.extras.courses || null,

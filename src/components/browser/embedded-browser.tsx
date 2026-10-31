@@ -44,6 +44,7 @@ import type {
   DesktopBridgeAutofillOptions,
   DesktopBridgeAutofillStatus,
   DesktopBridgeHistoryEntry,
+  DesktopBridgePageProblem,
   DesktopBridgeTabsState,
 } from "@/types/desktop-bridge";
 
@@ -81,6 +82,20 @@ function writePreference(key: string, value: string) {
   try { localStorage.setItem(key, value); }
   catch { /* per-device preference only */ }
 }
+// What went wrong with a page, in words (Chromium net error codes).
+function pageProblemText(problem: DesktopBridgePageProblem) {
+  if (problem.kind === "crash") return "这个页面崩溃了（可能是网页太占内存），重新加载就好；没保存的内容需要重新填。";
+  if (problem.kind === "hang") return "这个页面没有响应，可以稍等一下，或者重新加载。";
+  const code = problem.code ?? 0;
+  const reason = code === -105 || code === -137 ? "找不到这个网址，检查一下有没有输错"
+    : code === -106 ? "网络断开了"
+    : code === -7 || code === -118 ? "网站响应超时"
+    : code === -100 || code === -101 || code === -102 || code === -109 ? "网站拒绝或断开了连接"
+    : code <= -200 && code > -300 ? "网站的安全证书有问题（过期或不受信任），为了安全没有打开"
+    : `网站没有正常响应（${problem.description || `错误 ${code}`}）`;
+  return `打不开这个网页：${reason}。可以稍后重新加载，或换个入口（官网 / 学校就业网）打开。`;
+}
+
 function usePreference(key: string, fallback: string) {
   return useSyncExternalStore(noop, () => readPreference(key, fallback), () => fallback);
 }
@@ -178,6 +193,8 @@ export function EmbeddedBrowser({
   const [findOpen, setFindOpen] = useState(false);
   const [findText, setFindText] = useState("");
   const [findResult, setFindResult] = useState<{ active: number; total: number } | null>(null);
+  // A page that couldn't load, crashed or hangs: said in an infobar, as Chrome's own error page would.
+  const [pageProblem, setPageProblem] = useState<DesktopBridgePageProblem | null>(null);
   // 资料方案: "" = 跟随简历 (the variant bound to the chosen resume, else the
   // default profile), "default" = always the default, otherwise a variant id.
   const [variantChoice, setVariantChoice] = useState("");
@@ -425,6 +442,7 @@ export function EmbeddedBrowser({
       }
     });
     const offFind = bridge.onFindResult((r) => setFindResult({ active: r.active, total: r.total }));
+    const offProblem = bridge.onPageProblem?.((problem) => setPageProblem((current) => problem.kind ? problem : current?.tabId === problem.tabId ? null : current));
     const offForm = bridge.onFormDetected((payload) => {
       const live = liveRef.current;
       if (live.autofilling || payload.tabId !== activeIdRef.current) return;
@@ -451,6 +469,7 @@ export function EmbeddedBrowser({
       offShortcut();
       offDownload();
       offFind();
+      offProblem?.();
       offForm();
       offSubmitted();
     };
@@ -1110,7 +1129,8 @@ export function EmbeddedBrowser({
             icon={status.phase === "error" ? <TriangleAlert /> : status.summary?.manual ? <ListChecks /> : <Check />}
             onClose={dismissStatus}
             closeLabel="收起填写结果"
-            actions={status.details?.length || status.summary?.excluded ? <>
+            actions={status.details?.length || status.summary?.excluded || status.summary?.expandable?.length ? <>
+              {!!status.summary?.expandable?.length && <Button size="xs" onClick={() => handleAutofill({ expandBlocks: true })} disabled={busy} title={`点页面上的「添加」补出${status.summary.expandable.join("、")}，再接着填（只这一次，不改「自动补齐栏目」设置）`}>补齐栏目再填</Button>}
               {!!status.summary?.excluded && <Button size="xs" onClick={() => { setFillModules([...ALL_FILL_MODULES]); handleAutofill({ modules: [...ALL_FILL_MODULES] }); }} disabled={busy}>全部模块再填一次</Button>}
               {!!status.details?.length && <Button size="xs" variant="outline" onClick={() => openPanel("result")}>{status.summary?.manual ? "查看待手填" : "查看结果"}</Button>}
             </> : undefined}
@@ -1120,6 +1140,18 @@ export function EmbeddedBrowser({
                 ? `已填 ${status.summary.filled} 项 · 保留原有 ${status.summary.preserved} 项 · 待手填 ${status.summary.manual} 项${status.summary.deliberate ? `（含 ${status.summary.deliberate} 项身份证/他人信息，故意不填）` : ""}${status.summary.excluded ? ` · 范围外 ${status.summary.excluded} 项` : ""}${status.summary.uploaded ? ` · 上传 ${status.summary.uploaded} 份简历` : ""}。提交前请核对网页上的紫色框。`
                 : status.message}
             </span>
+            {/* The steps left to the applicant used to sit only in the hover title. */}
+            {!!status.summary?.notes?.length && <span className="block text-muted-foreground">{status.summary.notes.join("；")}</span>}
+          </Infobar>
+        )}
+        {pageProblem && pageProblem.tabId === tabsState.activeId && (
+          <Infobar
+            tone={pageProblem.kind === "hang" ? "warning" : "danger"}
+            icon={<TriangleAlert />}
+            onClose={() => setPageProblem(null)}
+            actions={<Button size="xs" variant="outline" onClick={() => { setPageProblem(null); void bridge?.reload(); }}><RotateCw />重新加载</Button>}
+          >
+            {pageProblemText(pageProblem)}
           </Infobar>
         )}
         {capturing && (

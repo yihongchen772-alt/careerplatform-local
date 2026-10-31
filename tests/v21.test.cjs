@@ -7,7 +7,8 @@ const kind = (info) => (info ? `${info.group}:${info.kind}` : null);
 
 test("labels typed by hand after v1.20 map to the 网申资料 field they would fill", () => {
   const expected = {
-    研究方向: "researchDirection", "QQ号*": "qq", "作品链接*": "homepage", 个人主页链接: "homepage", "期望工作地点 *": null, 期望岗位: null,
+    // v1.34: a one-line box teaches the short 研究方向; a textarea the paragraph (tests/v34).
+    研究方向: "researchTopic", "QQ号*": "qq", "作品链接*": "homepage", 个人主页链接: "homepage", "期望工作地点 *": null, 期望岗位: null,
     "是否接受岗位调剂*": "acceptAdjust", "接受调剂*": "acceptAdjust", "本科学习成绩排名 *": "rank", 实验室: "lab", "个人爱好*": "hobbies",
     "毕业论文简介*": "thesis", 政治面貌: "politics",
     // Not 网申资料 facts, or not the applicant's: nothing is learned.

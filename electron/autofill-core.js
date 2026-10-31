@@ -214,9 +214,10 @@ function scanPageFields(prefix, readOnly = false) {
       if (text) return text;
     }
     const fromFormItem = labelFromFormItem(el);
-    if (fromFormItem) return fromFormItem;
-    // 飞书招聘 tags every box with its field's name.
-    const fieldName = clean(el.getAttribute("data-form-field-i18n-name"));
+    // 飞书招聘 tags every box (or its form item) with its field's name; it wins over a
+    // caption that is only 「…」 (a long one cut short, as 网申样本 store them).
+    const fieldName = clean(el.getAttribute("data-form-field-i18n-name") || el.closest("[data-form-field-i18n-name]")?.getAttribute("data-form-field-i18n-name"));
+    if (fromFormItem && !(fieldName && /^[.…⋯]+[*＊]?$/.test(fromFormItem))) return fromFormItem;
     if (fieldName) return fieldName;
     const fromTable = labelFromTable(el);
     if (fromTable) return fromTable;
@@ -983,8 +984,23 @@ async function fillFields(pairs) {
     mark(el, p.source || "profile", p.answerId);
     confirmManual(el, p);
     filled.push(p.id);
+    if (tag === "input") pickOwnWordsChoice(el);
   }
   return { filled, failed, skipped };
+
+  // 海康's 意向工作地: 国内任意 / 全球任意 / 自填, then the box for 自填. A box filled
+  // beside a choice nobody made picks the choice that means "what I typed".
+  function pickOwnWordsChoice(el) {
+    let row = el.parentElement;
+    for (let depth = 0; row && depth < 3; depth++, row = row.parentElement) {
+      const radios = Array.from(row.querySelectorAll('input[type="radio"]'));
+      if (!radios.length) continue;
+      if (radios.length > 6 || new Set(radios.map((radio) => radio.name)).size > 1 || radios.some((radio) => radio.checked)) return;
+      const own = radios.find((radio) => /^(?:自填|自定义|手动填写|自行填写|其他|其它|other)$/i.test(optionLabel(radio)));
+      if (own) (own.closest("label") || own).click();
+      return;
+    }
+  }
 }
 
 // Opens each custom dropdown, reads whatever options it renders, clicks the
@@ -1575,14 +1591,27 @@ const BASIC_FIELD_RULES = [
   // No `learn` here: which city and which job is usually picked per company.
   { keys: ["期望岗位", "期望职位", "意向岗位", "意向职位", "求职意向"], get: (p) => p.targetRole },
   { keys: ["自我评价", "个人评价", "自我描述", "评价内容"], get: (p) => p.selfIntro, learn: "selfIntro" },
+  // 「自我介绍（选填）」 too, but not a question built around one (「…自我介绍，并说明为何适合」 goes to the AI).
+  { keys: ["自我介绍", "个人介绍", "个人简介"], not: /英文|英语|english/i, when: (field) => bareLabel(field).replace(/[（(][^）)]*[）)]/g, "").length <= 8, get: (p) => p.selfIntro, learn: "selfIntro" },
   // Asked on most 校招 forms; filled by hand before these were in 网申资料.
-  { keys: ["研究方向", "研究领域", "research direction", "research interest"], get: (p) => p.researchDirection, learn: "researchDirection" },
+  // A one-line box wants the topic (「多传感器融合导航」, typed by hand on 9 sites
+  // next to a saved paragraph); a description box the paragraph.
+  { keys: ["研究方向", "研究领域", "research direction", "research interest"], when: (field) => !longTextBox(field), get: (p) => p.researchTopic || shortTopic(p.researchDirection), learn: "researchTopic" },
+  { keys: ["研究方向", "研究领域", "research direction", "research interest"], when: longTextBox, get: (p) => p.researchDirection || p.researchTopic, learn: "researchDirection" },
   { keys: ["成绩排名", "专业排名", "绩点排名", "年级排名", "班级排名", "排名"], not: /学校|院校|企业|公司|职位|岗位/, get: (p) => p.rank, learn: "rank" },
   { keys: ["主修课程", "专业课程", "核心课程", "主要课程"], get: (p) => p.courses, learn: "courses" },
   { keys: ["是否接受调剂", "服从调剂", "接受调剂", "岗位调剂", "是否服从"], not: /工作地|城市|地点/, get: (p) => p.acceptAdjust, learn: "acceptAdjust" },
   // 是否有交换生经历 (是 / 否) or a box for the exchange itself.
   { keys: ["交换生经历", "交换经历", "海外交换", "交换学习", "海外经历", "海外学习经历"], not: /是否接受|愿意|意向/, get: (p) => p.exchange, learn: "exchange", yesNo: true },
   { keys: ["是否学生干部", "是否担任学生干部", "是否担任过学生干部", "是否为学生干部"], get: (p) => (p.campus || []).some((row) => row.role) ? "是" : null },
+  // Still studying full time, read from the education rows (蔚来's 是否为全日制在校学生, 应届, 学习形式).
+  { keys: ["全日制在校", "是否全日制", "是否为全日制", "全日制学生", "是否为在校学生", "是否在校学生"], get: (p) => studyingNow(p) && studyMode(p) === "全日制" ? "是" : null },
+  // Only as a question: 「应届生求职登录」 is a page heading, not this.
+  { keys: ["是否应届", "是否为应届"], not: /往届|非应届/, get: (p) => studyingNow(p) ? "是" : null },
+  { keys: ["学习形式", "教育形式", "就读方式"], get: (p) => studyMode(p) },
+  // 国籍 is not the country of residence (studying in 新加坡 is still 中国): 民族 / 政治面貌 / 籍贯 say 中国.
+  { keys: ["国籍"], not: /父|母|配偶|家庭|亲属|紧急/, get: (p) => p.nationality || (p.ethnicity || p.politics || p.hometown ? "中国" : null), nationality: true },
+  { keys: ["招聘信息来源", "信息来源", "获知渠道", "了解渠道", "得知渠道", "从何处得知", "how did you hear", "where did you hear"], get: (p) => p.jobSource, learn: "jobSource" },
   // Seen filled by hand on 腾讯、网易、歌尔、中国移动 after v1.20.
   { keys: ["个人主页", "个人网站", "作品链接", "作品集链接", "作品地址", "个人博客", "github", "portfolio", "personal website"], not: /linkedin|领英/i, get: (p) => p.homepage, learn: "homepage" },
   { keys: ["实验室", "课题组", "所在实验室", "研究组"], not: /是否|安全|有无/, get: (p) => p.lab, learn: "lab" },
@@ -1598,7 +1627,43 @@ function basicKeyMatches(key, haystack) {
 
 function basicRuleMatches(rule, field) {
   const haystack = fieldHaystack(field);
-  return rule.keys.some((key) => basicKeyMatches(key, haystack)) && !(rule.not && rule.not.test(haystack));
+  return rule.keys.some((key) => basicKeyMatches(key, haystack)) && !(rule.not && rule.not.test(haystack)) && (!rule.when || rule.when(field));
+}
+
+// A box that takes a paragraph: a textarea, a long limit, or a label asking to describe.
+function longTextBox(field) {
+  return field.tag === "textarea" || field.tag === "richtext" || (field.maxLength || 0) >= 60 || /描述|介绍|详细|具体|说明/.test(field.label || "");
+}
+
+// The topic out of a saved paragraph: all of it when short, else its first phrase if that is short.
+function shortTopic(text) {
+  const value = String(text || "").trim();
+  if (!value) return null;
+  if (value.length <= 30) return value;
+  const first = value.split(/[，,、；;。.\n（(:：]/)[0].trim();
+  return first.length >= 2 && first.length <= 30 ? first : null;
+}
+
+function latestEducation(profile) {
+  const rows = educationRows(profile).filter((row) => row.school || row.end);
+  return rows.reduce((best, row) => (!best || educationEndKey(row) > educationEndKey(best) ? row : best), null);
+}
+function educationEndKey(row) {
+  if (UNTIL_NOW.test(String(row.end || "").trim())) return "9999-99";
+  const parts = dateParts(row.end);
+  return parts ? `${parts.y}-${parts.m || "12"}` : "";
+}
+/** Still enrolled: the latest education row ends this month or later (or 至今). */
+function studyingNow(profile, now = new Date()) {
+  const latest = latestEducation(profile);
+  if (!latest) return false;
+  const end = educationEndKey(latest);
+  return !!end && end >= `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+function studyMode(profile) {
+  const latest = latestEducation(profile);
+  if (!latest) return null;
+  return /非全日制|在职|业余|函授|自考|成人|网络教育|part.?time/i.test(Object.values(latest).join(" ")) ? "非全日制" : "全日制";
 }
 
 // Never sent to AI, never guessed, always left for the user — a resume
@@ -1750,7 +1815,7 @@ function fieldModule(field, repeat) {
   if (isThirdPartyField(field)) return "other";
   // 语言成绩 fills with the 基本信息 it grew out of (英语水平), not a module of its own.
   if (repeat?.group === "language" || (!repeat && sectionGroup(field.section || "") === "language")) return "basic";
-  if (/自我评价|个人评价|自我描述|个人优势|求职动机|职业规划/i.test(field.label || "")) return "questions";
+  if (/自我评价|个人评价|自我描述|自我介绍|个人介绍|个人简介|个人优势|求职动机|职业规划/i.test(field.label || "")) return "questions";
   if (repeat) return repeat.group;
   const group = sectionGroup(field.section || "");
   if (group) return group;
@@ -1848,6 +1913,8 @@ function awardPick(text) {
 function awardFieldKind(haystack, bare, inSection) {
   // 「获奖项」「获奖项目」「所获奖项」 (zhiye / 石头科技) name the award as well.
   if (/(?:奖项|获奖|荣誉|奖励|奖学金|评优表彰|评优|表彰)名称|award[ _-]*(?:name|title)|scholarship[ _-]*(?:name|title)/i.test(haystack) || /^(?:获奖项目?|所获奖项|获得奖项|奖项名|荣誉称号)$/.test(bare) || (inSection && /^(?:名称|奖项|荣誉|奖励|name|title)$/.test(bare))) return "name";
+  // 猎聘's 「奖学金情况」: the scholarships among the awards, in one box.
+  if (/^(?:获得?)?奖学金(?:获得)?(?:情况|经历)?$/.test(bare)) return "summary";
   if (!inSection && !/获奖|奖项|荣誉|奖励|颁奖|award/i.test(haystack)) return null;
   if (/颁发|颁奖|授予|单位|机构|issuer|organi[sz]ation/i.test(haystack)) return "issuer";
   if (/等级|级别|奖级|奖等|level|grade/i.test(haystack)) return "level";
@@ -1861,7 +1928,8 @@ function awardFieldKind(haystack, bare, inSection) {
 const CAMPUS_SUMMARY = /^(?:校内活动|校园活动|在校活动|校园经历|校内经历|在校经历|社会工作|学生工作|社团经历|社团活动|校内职务|在校任职|学生干部经历)$/;
 
 function campusFieldKind(haystack, bare = "", inSection = false) {
-  if (CAMPUS_SUMMARY.test(bare)) return "summary";
+  // 「就读期间担任学生干部情况」 (国机): the 学生干部 list in one box.
+  if (CAMPUS_SUMMARY.test(bare) || (/(?:学生)?干部(?:任职)?(?:情况|经历)$/.test(bare) && !/^(?:是否|有无)/.test(bare))) return "summary";
   if (!inSection && !/校内|在校|干部|社团|学生会|组织|团体|协会|班级/.test(haystack)) return null;
   if (/是否/.test(haystack)) return null;
   if (/(?:所在|学生)?组织(?:团体)?(?:名称)?|社团|团体名称|协会|学生会/.test(haystack) && !/职务|级别|描述|职位|角色/.test(haystack)) return "name";
@@ -2088,6 +2156,8 @@ function dateFormatFor(field) {
   if (pattern) return { precision: /d{2}/i.test(pattern[0]) ? "day" : "month", sep: pattern[1], order: "ymd" };
   const reversed = /\b(mm|dd)\s*([-./])\s*(?:(mm|dd)\s*\2\s*)?y{4}\b/i.exec(hint);
   if (reversed) return { precision: reversed[3] ? "day" : "month", sep: reversed[2], order: reversed[3] ? (reversed[1].toLowerCase() === "mm" ? "mdy" : "dmy") : "my" };
+  // 「YYYY」 on its own (飞书's 获奖时间) is a year picker: it turns 2023-11 down.
+  if (/(?:^|[^a-z])y{4}(?![a-z])/i.test(hint)) return { precision: "year", sep: "-", order: "ymd" };
   if (/^year/.test(field.pickerType || "")) return { precision: "year", sep: "-", order: "ymd" };
   if (/^month/.test(field.pickerType || "")) return { precision: "month", sep: "-", order: "ymd" };
   if (/^(?:date|week)/.test(field.pickerType || "")) return { precision: "day", sep: "-", order: "ymd" };
@@ -2351,11 +2421,32 @@ function classifyRepeatBlocks(fields, profile, pageText = "") {
     const known = block.fields.filter((field) => field.hasValue && field.currentValue && ["name", "company", "school", "role", "degree", "start", "end", "date"].includes(repeats.get(field.id).kind));
     if (!known.length) continue;
     const normalized = (value) => String(value || "").normalize("NFKC").replace(/\s+/g, "").toLowerCase();
-    const candidates = rows.map((row, index) => ({ row, index })).filter(({ index }) => known.every((field) => {
-      const info = repeats.get(field.id);
-      const value = repeatFieldValue(field, { ...info, row: index, degreeHint: 0 }, profile);
-      return value && normalized(value) === normalized(field.currentValue);
-    }));
+    // 学士 on the page for 本科 in 网申资料, 2020.09 for 2020-09: the same fact.
+    const same = (field, value) => {
+      if (!value) return false;
+      if (normalized(value) === normalized(field.currentValue)) return true;
+      const kind = repeats.get(field.id).kind;
+      if (kind === "degree") return !!degreeLevel(value) && degreeLevel(value) === degreeLevel(field.currentValue);
+      if (["start", "end", "date"].includes(kind)) {
+        const a = dateParts(value), b = dateParts(field.currentValue);
+        return !!a && !!b && a.y === b.y && (a.m || "") === (b.m || "");
+      }
+      return false;
+    };
+    const scored = rows.map((row, index) => ({ row, index, misses: known.filter((field) => !same(field, repeatFieldValue(field, { ...repeats.get(field.id), row: index, degreeHint: 0 }, profile))) }));
+    let candidates = scored.filter(({ misses }) => !misses.length);
+    // A page that read the résumé itself (飞书 parses the upload) can get one fact
+    // wrong: the row its school and dates point to is still this block's row, and
+    // the odd one out is reported, never overwritten.
+    if (!candidates.length && known.length >= 3) {
+      const near = scored.filter(({ misses }) => misses.length === 1 && !["school", "company", "name"].includes(repeats.get(misses[0].id).kind));
+      if (near.length === 1) {
+        candidates = near;
+        const [field] = near[0].misses;
+        const wanted = repeatFieldValue(field, { ...repeats.get(field.id), row: near[0].index, degreeHint: 0 }, profile);
+        block.conflict = `「${displayLabel(field)}」（页面：${String(field.currentValue).slice(0, 20)}，资料：${String(wanted).slice(0, 20)}）`;
+      }
+    }
     block.unmatched = candidates.length !== 1;
     if (candidates.length === 1) {
       block.row = candidates[0].index;
@@ -2451,6 +2542,7 @@ function fillDetail(field, pair, filledSet, failedSet) {
   if (isThirdPartyField(field)) return { label, state: "家庭成员 / 联系人等他人信息，请手填", source: "manual", deliberate: true };
   if (field.readonlyPicker) return { label, state: field.suggestion ? `日期需在网页上点选：${field.suggestion}` : "日期需在网页上点选", source: "manual" };
   if (pair && filledSet.has(field.id)) {
+    if (pair.shortened) return { label, state: `来自网申资料，按网页 ${pair.shortened} 字上限截短了，请核对`, source: "profile" };
     if (pair.source === "profile") return { label, state: "来自网申资料", source: "profile" };
     if (pair.source === "remembered-field") return { label, state: "来自记忆库", source: "memory" };
     if (pair.remembered) return { label, state: "复用你确认过的回答", source: "memory" };
@@ -2480,6 +2572,34 @@ function missingRepeatCounts(profile, rowIndexes) {
     .filter(({ saved, shown }) => shown > 0 && saved > shown);
 }
 
+// Modules the page shows with no row at all, only an 「添加」 (飞书's 社交账号 and
+// 自我评价, an empty 获奖情况): one is added like any missing row, and passed over
+// quietly when the page has no such module.
+const SOCIAL_TYPE = /^社交(?:平台|账号类型|软件)$/;
+function emptyModules(profile, rowIndexes, fields) {
+  // Any box of the module counts, not just its name: 海康's 学校 is a pop-up picker the scan can't see.
+  const present = (group) => [...rowIndexes.keys()].some((key) => key.startsWith(`${group}:`) && rowIndexes.get(key) > 0);
+  const lists = [
+    ["education", (profile.education || []).filter((row) => row?.school).length, "教育经历"],
+    ["experience", (profile.experiences || []).length, "实习/工作经历"],
+    ["project", (profile.projects || []).length, "项目经历"],
+    ["award", (profile.awards || []).length, "获奖情况"],
+    ["campus", (profile.campus || []).length, "校园经历"],
+    ["skill", (profile.skills || []).length, "专业技能"],
+  ];
+  const empty = lists.filter(([group, saved]) => saved > 0 && !present(group)).map(([group, saved, label]) => ({ group, label, saved, shown: 0 }));
+  const accounts = SOCIAL_ACCOUNTS.filter((account) => String(account.get(profile) || "").trim()).length;
+  const socialShown = fields.filter((field) => SOCIAL_TYPE.test(bareLabel(field))).length;
+  if (accounts > socialShown) empty.push({ group: "social", label: "社交账号", saved: accounts, shown: socialShown });
+  const selfIntroRules = BASIC_FIELD_RULES.filter((rule) => rule.learn === "selfIntro");
+  if (profile.selfIntro && !fields.some((field) => selfIntroRules.some((rule) => basicRuleMatches(rule, field)))) empty.push({ group: "selfIntro", label: "自我评价", saved: 1, shown: 0 });
+  return empty;
+}
+/** The 填写范围 module a page module belongs to. */
+function moduleOfGroup(group) {
+  return group === "social" ? "basic" : group === "selfIntro" ? "questions" : group;
+}
+
 function missingRepeatBlocks(profile, rowIndexes) {
   return missingRepeatCounts(profile, rowIndexes).map(({ saved, shown, label }) => `有 ${saved} 段${label}、页面只有 ${shown} 组`);
 }
@@ -2490,8 +2610,10 @@ function missingRepeatBlocks(profile, rowIndexes) {
 // "添加附件" or another section's "+ 添加" is never pressed. Reports whether a
 // modal opened, because a modal block has to be saved by the applicant before
 // the next one can be added.
-async function clickAddBlock(group) {
+async function clickAddBlock(group, dryRun = false) {
   const GROUP_WORDS = {
+    social: /社交|social/i,
+    selfIntro: /自我评价|自我介绍|个人评价|自我描述|self.?(?:evaluation|introduction)/i,
     education: /教育|学历|学习经历|education/i,
     experience: /实习|工作经历|工作经验|实践|internship|work experience|employment/i,
     project: /项目|project/i,
@@ -2524,6 +2646,7 @@ async function clickAddBlock(group) {
     })
     .map((el) => el.closest("button, a, [role='button'], .ant-btn, .el-button") || el);
   const target = candidates.find((el) => !el.disabled && el.getAttribute("aria-disabled") !== "true");
+  if (dryRun) return { found: !!target };
   if (!target) return { clicked: false };
   target.scrollIntoView({ block: "center" });
   target.click();
@@ -2607,7 +2730,72 @@ function matchFieldOption(field, value) {
   const exact = field.options.find((option) => option === value);
   if (exact) return exact;
   const fuzzy = field.options.filter((option) => option.includes(value) || value.includes(option));
-  return fuzzy.length === 1 ? fuzzy[0] : null;
+  if (fuzzy.length === 1) return fuzzy[0];
+  // 全日制 between 全日制 / 非全日制: the option that doesn't negate it.
+  const plain = /^[非不]/.test(value) ? [] : fuzzy.filter((option) => !option.includes(`非${value}`) && !option.includes(`不${value}`));
+  return plain.length === 1 ? plain[0] : null;
+}
+
+// 是 / 否 questions. 「接受」 saved for 是否接受调剂 answers 是; a dropdown of
+// 是 / 否 or 接受 / 不接受 takes the option that says the same thing.
+const YES_NO_OPTION = /^(?:是|否|有|无|没有|yes|no|接受|不接受|服从|不服从|愿意|不愿意|同意|不同意|可以|不可以|能|不能)$/i;
+function answerPolarity(value) {
+  const text = String(value || "").replace(/[\s。.!！，,]/g, "");
+  if (!text || text.length > 8) return null;
+  if (/^(?:否|不|无|没有|暂无|no|none|n\/?a|false)/i.test(text)) return "no";
+  if (/^(?:是|有|对|接受|服从|愿意|同意|可以|能|yes|y|true|ok)/i.test(text)) return "yes";
+  return null;
+}
+function isYesNoQuestion(field) {
+  return /^(?:是否|能否|可否|有无|是不是)|吗$/.test(bareLabel(field));
+}
+// What a yes / no field takes for `value`: the option that agrees, or 是 / 否
+// in a 是否 text box. undefined: not a yes / no field, keep the value as it is.
+// `describing`: a saved description (an exchange) means 是, 「无」 means 否.
+function yesNoAnswer(field, value, describing = false) {
+  const options = field.options?.length ? field.options : null;
+  if (options ? !options.every((option) => YES_NO_OPTION.test(String(option).trim())) : !isYesNoQuestion(field) || field.tag === "textarea" || field.tag === "richtext") return undefined;
+  // A box keeps a saved description (「是否有海外经历（如有请说明）」); only a dropdown reads it as 是.
+  const polarity = answerPolarity(value) || (describing && options ? "yes" : null);
+  if (!polarity) return options ? null : undefined;
+  if (options) return options.find((option) => answerPolarity(option) === polarity) || null;
+  return polarity === "yes" ? "是" : "否";
+}
+// A custom dropdown whose options aren't read yet: every way of saying the same answer.
+function yesNoAlternatives(value) {
+  const polarity = answerPolarity(value);
+  return polarity === "yes" ? ["是", "接受", "服从", "愿意", "同意", "可以", "有", "Yes"] : polarity === "no" ? ["否", "不接受", "不服从", "不愿意", "不同意", "无", "No"] : [];
+}
+
+// How many characters a box takes: its maxlength, or what it says in words or
+// with a counter (「限300字」「200字以内」「0/500」).
+const TEXT_LIMIT = /(?:限|不超过|不多于|最多|至多|控制在|少于)\s*(\d{2,5})\s*个?(?:汉)?字|(\d{2,5})\s*个?字(?:以内|之内|以下|内)|(?:^|[^\d/])0\s*\/\s*(\d{2,5})(?!\d)/;
+function textLimitFor(field) {
+  if (field.maxLength) return field.maxLength;
+  // The text after a box can be the next row's caption: only a hint that starts with the limit counts.
+  const hint = /^[\s（(]*(?:(?:限|不超过|不多于|最多|至多|控制在|少于)?\s*\d{2,5}\s*个?(?:汉)?字|0\s*\/\s*\d)/.test(field.hint || "") ? field.hint : "";
+  const m = TEXT_LIMIT.exec(`${field.label || ""} ${field.placeholder || ""} ${hint}`);
+  const limit = m ? Number(m[1] || m[2] || m[3]) : 0;
+  return limit >= 10 ? limit : null;
+}
+
+// Saved text cut back to the whole sentences (or, for a short box, the whole
+// phrases) that fit the limit. null: nothing sensible fits.
+function fitToLimit(value, limit) {
+  const text = String(value || "").trim();
+  if (!limit || text.length <= limit) return text;
+  for (const pattern of [/(?<=[。！？!?；;\n])/, /(?<=[，,、])/]) {
+    let out = "";
+    for (const piece of text.split(pattern)) {
+      if ((out + piece).trim().length > limit) break;
+      out += piece;
+    }
+    out = out.trim().replace(/[，,、；;]$/, "");
+    // Prose cut at a comma still ends as a sentence.
+    if (limit > 30 && out && !/[。！？!?.]$/.test(out) && out.length < limit) out += "。";
+    if (out.length >= 2 && (limit <= 30 || out.length >= limit * 0.3)) return out;
+  }
+  return null;
 }
 
 // A mainland mobile is wanted as its 11 digits by nearly every form;
@@ -2732,12 +2920,15 @@ function matchFlatField(field, profile) {
     if (!value) continue;
     if (rule.englishName) value = placeForField(field, value);
     if (rule.cities) value = citiesForField(field, value);
-    // A yes / no choice takes 否 for 「无」 and 是 for anything describing one.
-    if (rule.yesNo && field.options?.length && field.options.every((option) => /^(?:是|否|有|无|没有|yes|no)$/i.test(String(option).trim()))) {
-      const none = /^(?:无|否|没有|暂无|no|none|n\/?a)$/i.test(String(value).trim());
-      const found = field.options.find((option) => (none ? /^(?:否|无|没有|no)$/i : /^(?:是|有|yes)$/i).test(String(option).trim()));
-      if (found) return found;
+    // A yes / no question takes 是 / 否 (or its own wording of them), whatever the saved phrasing.
+    const yesNo = yesNoAnswer(field, value, !!rule.yesNo);
+    if (yesNo !== undefined) {
+      if (yesNo) return yesNo;
       continue;
+    }
+    if (rule.nationality && field.options) {
+      const own = field.options.find((option) => /^(?:中国|中国大陆|中华人民共和国|china|chinese)$/i.test(String(option).trim()));
+      if (own) return own;
     }
     // A choice field still has to hit one of its own options.
     const matched = rule.degree ? matchDegreeOption(field, value) : matchFieldOption(field, value);
@@ -3027,6 +3218,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     const pairs = [];
     let candidates = []; // fields going to AI: {id, label, kind, options?}
     const { repeats, blocks, rowIndexes } = classifyRepeatBlocks(fields, profile, pageText);
+    const conflicts = [...blocks.values()].map((block) => block.conflict).filter(Boolean);
     const pageContext = options.positionId ? `job:v1:${options.positionId}` : portalContext(initialUrl);
     let neverGuessCount = 0;
     let alreadyFilled = 0;
@@ -3081,7 +3273,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       if (repeat && !repeatFieldGoesToAi(repeat, profile)) continue;
       const value = repeat ? null : matchFlatField(field, profile);
       if (value) {
-        pairs.push({ id: field.id, value, source: "profile", label: field.label, tag: field.tag, alternatives: degreeAlternatives(field, value) });
+        pairs.push({ id: field.id, value, source: "profile", label: field.label, tag: field.tag, alternatives: [...(degreeAlternatives(field, value) || []), ...(field.tag === "custom-select" ? yesNoAlternatives(value) : [])] });
         continue;
       }
       const label = field.label || field.placeholder || field.name;
@@ -3124,7 +3316,20 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       return field?.savedEntries && !repeats.has(field.id) ? { ...question, saved: field.savedEntries } : question;
     });
     const tooLong = new Set();
-    function rejectOversize(from = 0) { for (let i = pairs.length - 1; i >= from; i--) { const field = fields.find((f) => f.id === pairs[i].id); if (options.mode !== "preview" && field?.maxLength && pairs[i].value.length > field.maxLength) { tooLong.add(field.id); pairs.splice(i, 1); } } }
+    // Saved text longer than the box allows (自我评价 496 字 into 300) is cut back
+    // to whole sentences that fit, and said so; what can't be is left as before.
+    const shortened = [];
+    function rejectOversize(from = 0) {
+      for (let i = pairs.length - 1; i >= from; i--) {
+        const field = fields.find((f) => f.id === pairs[i].id);
+        const limit = field && options.mode !== "preview" && !field.options ? textLimitFor(field) : null;
+        if (!limit || String(pairs[i].value).length <= limit) continue;
+        const fitted = fitToLimit(pairs[i].value, limit);
+        if (fitted) { pairs[i] = { ...pairs[i], value: fitted, shortened: limit }; shortened.push(displayLabel(field)); continue; }
+        tooLong.add(field.id);
+        pairs.splice(i, 1);
+      }
+    }
     rejectOversize();
     const basicCount = pairs.length;
     if (!adapter.stillOnPage(initialUrl)) throw new Error("页面或标签已切换，已停止写入；请在当前页面重新填充");
@@ -3160,7 +3365,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
         const answerRes = await adapter.api("answer-questions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ questions: candidates.map((q) => ({ ...q, maxLength: fields.find((f) => f.id === q.id)?.maxLength || undefined })), resumeVersionId, profile, contextKey: pageContext, positionId: options.positionId, regenerate: options.regenerate, answerLength: options.answerLength }),
+          body: JSON.stringify({ questions: candidates.map((q) => { const field = fields.find((f) => f.id === q.id); return { ...q, maxLength: (field && textLimitFor(field)) || undefined }; }), resumeVersionId, profile, contextKey: pageContext, positionId: options.positionId, regenerate: options.regenerate, answerLength: options.answerLength }),
         });
         if (answerRes.ok) {
           const { answers } = await answerRes.json();
@@ -3242,7 +3447,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       : repeatsSaved.has(field.id) && !field.hasValue && !filledSet.has(field.id)
       ? { label: displayLabel(field), id: field.id, state: `上面已保存过「${repeatsSaved.get(field.id).slice(0, 30)}」，这一组没重复填`, source: "prefilled" }
       : { ...fillDetail(field, pairs.find((p) => p.id === field.id), filledSet, failedSet), id: field.id, ...(allSavedOnPage(field) ? { state: "这类经历已全部保存在页面上，这一组不用再填", source: "prefilled" } : {}) });
-    const previous = options.accumulated || { filled: 0, uploaded: 0, details: [] };
+    const previous = options.accumulated || { filled: 0, uploaded: 0, details: [], shortened: [] };
     const earlier = new Map(previous.details.map((d) => [d.key, d]));
     const merged = new Map(earlier);
     let priorFillsOnPage = 0;
@@ -3304,11 +3509,12 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     }
     const added = options.added || [];
     const missing = missingRepeatCounts(profile, rowIndexes).filter(({ group }) => modules.has(group));
+    const empty = emptyModules(profile, rowIndexes, fields).filter(({ group }) => modules.has(moduleOfGroup(group)));
     const round = options.round || 0;
-    if (options.expandBlocks && missing.length && round < 4 && !options.modal && adapter.stillOnPage(initialUrl)) {
+    if (options.expandBlocks && (missing.length || empty.length) && round < 4 && !options.modal && adapter.stillOnPage(initialUrl)) {
       const clicked = [];
       let modal = false;
-      for (const { group, label } of missing) {
+      for (const { group, label } of [...missing, ...empty]) {
         for (const frame of await adapter.frames()) {
           assertActive();
           const result = await adapter.run(frame, clickAddBlock, [group]).catch(() => null);
@@ -3322,7 +3528,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       }
       if (clicked.length) {
         adapter.status({ phase: "scanning", message: `已点页面上的「添加」补出 ${clicked.join("、")}，继续填写…` });
-        return runAutofillCore(adapter, resumeVersionId, { ...options, round: round + 1, modal, added: [...added, ...clicked], accumulated: { filled: previous.filled + filled.length, uploaded: previous.uploaded + uploadedResumeCount, details: allDetails } });
+        return runAutofillCore(adapter, resumeVersionId, { ...options, round: round + 1, modal, added: [...added, ...clicked], accumulated: { filled: previous.filled + filled.length, uploaded: previous.uploaded + uploadedResumeCount, details: allDetails, shortened: [...(previous.shortened || []), ...shortened] } });
       }
     }
     if (added.length) {
@@ -3336,13 +3542,38 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
         ? `网申资料里${missingBlocks.join("、")}，没找到能自动点的「添加」按钮——请手动添加后再点一次一键填写`
         : `网申资料里${missingBlocks.join("、")}，但这页的对应栏目不够——先点页面上的「添加」再点一次一键填写，或勾选「自动补齐栏目」`);
     }
+    // With 自动补齐栏目 off, say which modules have an 「添加」 waiting (looked up, not pressed).
+    const emptyOnPage = [];
+    if (!options.expandBlocks && (missing.length || empty.length) && adapter.stillOnPage(initialUrl)) {
+      for (const item of [...missing, ...empty]) {
+        for (const frame of await adapter.frames()) {
+          const probe = await adapter.run(frame, clickAddBlock, [item.group, true]).catch(() => null);
+          if (probe?.found) { emptyOnPage.push(item); break; }
+        }
+      }
+      if (emptyOnPage.length) parts.push(`这页的${emptyOnPage.map(({ label }) => `「${label}」`).join("")}还少几组，要先点「添加」——点「补齐栏目再填」或勾选「自动补齐栏目」`);
+    }
     parts.push("你手填的内容：网申资料里还空着的会直接记进去（可撤销），其余的先放进待核对；提交前请核对所有填入内容");
 
     assertActive();
     const summary = { filled: previous.filled + filled.length, manual: allDetails.filter((d) => d.source === "manual").length, deliberate: allDetails.filter((d) => d.source === "manual" && d.deliberate).length, preserved: Math.max(0, alreadyFilled - priorFillsOnPage) + skipped.length, excluded: allDetails.filter((d) => d.source === "excluded").length, uploaded: previous.uploaded + uploadedResumeCount };
     if (round) parts.unshift(`本次累计填入 ${summary.filled} 个字段、上传 ${summary.uploaded} 个附件；以下为最后一轮说明`);
     const openedSection = options.openedSection;
-    if (openedSection) parts.unshift(`已点开${openedSection.section ? `「${openedSection.section}」的` : ""}「编辑」并填写${openedSection.more ? "——核对后点网页上的保存，再点一次一键填写会打开下一栏" : "——核对后记得点网页上的保存"}`);
+    // What needs the applicant's next step, shown on the result bar itself (the
+    // full message only shows on hover there).
+    const notes = [];
+    if (openedSection) {
+      const line = `已点开${openedSection.section ? `「${openedSection.section}」的` : ""}「编辑」并填写${openedSection.more ? "——核对后点网页上的保存，再点一次一键填写会打开下一栏" : "——核对后记得点网页上的保存"}`;
+      parts.unshift(line);
+      notes.push(line);
+    }
+    const expandable = options.expandBlocks ? [] : emptyOnPage.map(({ label }) => label);
+    if (expandable.length) notes.push(`这页还少${expandable.map((label) => `「${label}」`).join("")}，要先点页面上的「添加」`);
+    const allShortened = [...(previous.shortened || []), ...shortened];
+    if (allShortened.length) notes.push(`${allShortened.length} 项按网页字数上限截短了（${allShortened.slice(0, 2).join("、")}${allShortened.length > 2 ? "…" : ""}），核对一下`);
+    if (conflicts.length) notes.push(`页面上已有的${conflicts.slice(0, 2).join("、")}和你的网申资料不一样，没改动，核对一下`);
+    summary.notes = notes;
+    summary.expandable = expandable;
     const result = { phase: "done", message: parts.join("；"), details: allDetails, summary };
     adapter.status(result);
     return result;
@@ -3693,6 +3924,13 @@ module.exports = {
   clearSavedUserEdits,
   clickAddBlock,
   openEditSection,
+  emptyModules,
+  fitToLimit,
+  textLimitFor,
+  yesNoAnswer,
+  studyingNow,
+  studyMode,
+  shortTopic,
   countFillableFields,
   dateFormatFor,
   citiesForField,

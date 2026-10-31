@@ -40,7 +40,7 @@ export function FillStatsCard() {
         {rows.map((row) => (
           <div key={row.host} className="flex items-center gap-3 py-2">
             <span className="min-w-0 flex-1 truncate" title={row.host}>{row.host}</span>
-            <span className="shrink-0 text-xs text-muted-foreground">填了 {row.fills} 次 · 自动 {row.filled} 项 · 没填上 {row.missed} 项{row.deliberate ? ` · 故意不填 ${row.deliberate} 项` : ""}</span>
+            <span className="shrink-0 text-xs text-muted-foreground" title={row.lastError ? `最近一次出错：${row.lastError}` : undefined}>填了 {row.fills} 次 · 自动 {row.filled} 项 · 没填上 {row.missed} 项{row.deliberate ? ` · 故意不填 ${row.deliberate} 项` : ""}{row.errors ? ` · 出错 ${row.errors} 次` : ""}</span>
             <span className={`w-12 shrink-0 text-right text-xs font-medium ${row.rate === null ? "text-muted-foreground" : row.rate >= 80 ? "text-emerald-600" : row.rate >= 50 ? "text-amber-600" : "text-rose-600"}`}>{row.rate === null ? "—" : `${row.rate}%`}</span>
           </div>
         ))}

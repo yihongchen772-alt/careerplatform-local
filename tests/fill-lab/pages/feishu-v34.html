@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>飞书招聘式网申 v34（年份选择、是否题、空栏目、解析错的学历）</title>
+<style>
+body{font:14px sans-serif;max-width:860px;margin:20px auto}
+.applyFormModuleWrapper{display:flex;gap:16px;border-top:1px solid #eee;padding:10px 0}
+.applyFormModuleWrapper-left{width:120px;font-weight:600}
+.applyFormModuleWrapper-right{flex:1}
+.ud-formily-item{margin:8px 0}.ud-formily-item-label{color:#555;font-size:12px}
+.sel{border:1px solid #ccc;padding:6px;cursor:pointer;min-width:200px;min-height:18px}
+.ud__select__dropdown{border:1px solid #aaa;width:200px;background:#fff}.ud__select__dropdown-hidden{display:none}.ud__select__list__item{padding:4px;cursor:pointer}
+.addbtn{color:#36f;cursor:pointer;border:0;background:none}
+</style></head>
+<body>
+<!-- Shapes from the 2026-10-31 samples (蔚来 nio.jobs.feishu.cn, 千寻 *.jobs.feishu.cn): 获奖时间 is a year-only
+     picker (placeholder YYYY) that drops anything else on blur — ud__picker on one tenant, atsx-date-picker on the
+     other; 是否接受调剂 is a free text box; 是否为全日制在校学生 a 是/否 dropdown whose visible label is cut to 「…」;
+     社交账号 and 自我评价 start empty with only 「添加」; the 教育经历 block was filled by the site's own résumé parse
+     with the wrong 学历. 国机 / 猎聘 add 学生干部情况 and 奖学金情况 boxes. All values fictional. -->
+<form>
+<div class="applyFormModuleWrapper"><div class="applyFormModuleWrapper-left"><p class="applyFormModuleWrapper-text">基本信息</p></div><div class="applyFormModuleWrapper-right">
+  <div class="ud-formily-item" data-form-field-i18n-name="是否接受调剂"><div class="ud-formily-item-label"><span><label>是否接受调剂</label><span>*</span></span></div>
+    <div class="ud__input"><label class="ud__input-input-wrap"><div><input id="adjust" class="ud__native-input" data-form-field-i18n-name="是否接受调剂"></div></label></div></div>
+  <div class="ud-formily-item" data-form-field-i18n-name="是否为全日制在校学生（非全日制、非在校不可参加实习，请联系您的招聘HR）"><div class="ud-formily-item-label"><span><label>…</label><span>*</span></span></div>
+    <div><div class="ud__select__selector sel" id="fulltime-sel"><div class="ud__select__selector__content"><div class="ud__select__selector__selectItem"></div><div class="ud__select__selector__search"><input class="ud__select__selector__search__input ud__native-input" role="combobox" autocomplete="off" type="search" readonly></div></div></div></div></div>
+  <div class="ud-formily-item"><div class="ud-formily-item-label"><label for="nation">国籍</label></div>
+    <select id="nation"><option value="">请选择</option><option>中国香港</option><option>中国大陆</option><option>中国台湾</option><option>美国</option></select></div>
+  <div class="ud-formily-item"><div class="ud-formily-item-label"><label for="topic">研究方向</label></div><input id="topic"></div>
+  <div class="ud-formily-item"><div class="ud-formily-item-label"><label for="topic-long">专业描述（所修专业的具体研究方向）</label></div><textarea id="topic-long"></textarea></div>
+  <div class="ud-formily-item"><div class="ud-formily-item-label"><label for="cadre">就读期间担任学生干部情况</label></div><input id="cadre"></div>
+  <div class="ud-formily-item"><div class="ud-formily-item-label"><label for="scholar">奖学金情况</label></div><input id="scholar"></div>
+</div></div>
+
+<div class="applyFormModuleWrapper"><div class="applyFormModuleWrapper-left"><p class="applyFormModuleWrapper-text">教育经历</p></div><div class="applyFormModuleWrapper-right">
+  <div class="ud-formily-item"><div class="ud-formily-item-label"><label for="edu-school">学校名称</label></div><input id="edu-school" value="南京大学"></div>
+  <div class="ud-formily-item"><div class="ud-formily-item-label"><label for="edu-degree">学历</label></div>
+    <select id="edu-degree"><option value="">请选择</option><option>本科</option><option selected>硕士</option><option>博士</option></select></div>
+  <div class="ud-formily-item"><div class="ud-formily-item-label"><label for="edu-major">专业</label></div><input id="edu-major"></div>
+  <div class="ud-formily-item"><div class="ud-formily-item-label"><label for="edu-start">开始时间</label></div><input id="edu-start" value="2020-09"></div>
+  <div class="ud-formily-item"><div class="ud-formily-item-label"><label for="edu-end">结束时间</label></div><input id="edu-end" value="2024-06"></div>
+  <div class="ud-formily-item"><div class="ud-formily-item-label"><label for="edu-mode">学习形式</label></div>
+    <select id="edu-mode"><option value="">请选择</option><option>全日制</option><option>非全日制</option></select></div>
+  <div class="ud-formily-item"><div class="ud-formily-item-label"><label for="edu-kind">教育形式</label></div>
+    <select id="edu-kind"><option value="">请选择</option><option>非全日制</option><option>统招全日制</option><option>自考</option></select></div>
+</div></div>
+
+<div class="applyFormModuleWrapper"><div class="applyFormModuleWrapper-left"><p class="applyFormModuleWrapper-text">获奖经历</p></div><div class="applyFormModuleWrapper-right">
+  <div class="ud-formily-item"><div class="ud-formily-item-label"><label>获奖名称</label></div><input id="award1-name"></div>
+  <div class="ud-formily-item"><div class="ud-formily-item-label"><label>获奖时间</label></div>
+    <div class="ud__picker ud__picker--size-lg"><div class="ud__picker-dateInput ud__picker-inputWrapper"><div class="ud__picker-inputWrapper-inner"><input id="award1-date" class="ud__picker-input ud__native-input year-only" size="12" placeholder="YYYY"></div></div></div></div>
+  <div class="ud-formily-item"><div class="ud-formily-item-label"><label>获奖名称</label></div><input id="award2-name"></div>
+  <div class="ud-formily-item"><div class="ud-formily-item-label"><label>获奖时间</label></div>
+    <div class="atsx-date-picker"><input id="award2-date" autocomplete="off" placeholder="YYYY" class="atsx-input year-only" type="text"></div></div>
+</div></div>
+
+<div class="applyFormModuleWrapper"><div class="applyFormModuleWrapper-left"><p class="applyFormModuleWrapper-text">社交账号</p></div><div class="applyFormModuleWrapper-right" id="sns">
+  <button type="button" class="addbtn" id="sns-add">添加</button>
+</div></div>
+
+<div class="applyFormModuleWrapper"><div class="applyFormModuleWrapper-left"><p class="applyFormModuleWrapper-text">自我评价</p></div><div class="applyFormModuleWrapper-right" id="self">
+  <button type="button" class="addbtn" id="self-add">添加</button>
+</div></div>
+</form>
+<div id="portal"></div>
+<script>
+// Year pickers keep only a bare year, the way both real ones throw away 2023-11.
+document.querySelectorAll(".year-only").forEach((input) => {
+  const check = () => { if (!/^\d{4}$/.test(input.value)) input.value = ""; };
+  input.addEventListener("blur", check);
+  input.addEventListener("focusout", check);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") check(); });
+});
+// One shared dropdown, like the real page's body-level portal.
+const lists = { "fulltime-sel": ["是", "否"] };
+const dd = document.createElement("div"); dd.className = "ud__select__dropdown ud__select__dropdown-hidden";
+document.getElementById("portal").appendChild(dd);
+let current = null;
+function wire(sel) {
+  sel.addEventListener("click", () => {
+    current = sel; dd.className = "ud__select__dropdown";
+    dd.innerHTML = (lists[sel.id] || ["微信", "QQ", "领英", "其他"]).map((t) => `<div class="ud__select__list__item"><div class="ud__select__list__item__content"><span><span>${t}</span></span></div></div>`).join("");
+  });
+}
+document.querySelectorAll(".ud__select__selector").forEach(wire);
+dd.addEventListener("click", (e) => { const item = e.target.closest(".ud__select__list__item"); if (!item || !current) return; current.querySelector(".ud__select__selector__selectItem").textContent = item.textContent.trim(); dd.className = "ud__select__dropdown ud__select__dropdown-hidden"; });
+// 「添加」 grows one row, as the real modules do.
+let snsCount = 0;
+document.getElementById("sns-add").addEventListener("click", () => {
+  snsCount++;
+  const row = document.createElement("div");
+  row.innerHTML = `<div class="ud-formily-item"><div class="ud-formily-item-label"><span><label>社交平台</label><span>*</span></span></div><div><div class="ud__select__selector sel" id="sns${snsCount}-sel"><div class="ud__select__selector__content"><div class="ud__select__selector__selectItem"></div><div class="ud__select__selector__search"><input class="ud__select__selector__search__input ud__native-input" role="combobox" autocomplete="off" type="search" readonly></div></div></div></div></div>
+    <div class="ud-formily-item"><div class="ud-formily-item-label"><span><label>URL / ID</label><span>*</span></span></div><input id="sns${snsCount}-id"></div>`;
+  document.getElementById("sns").insertBefore(row, document.getElementById("sns-add"));
+  wire(row.querySelector(".ud__select__selector"));
+});
+document.getElementById("self-add").addEventListener("click", () => {
+  if (document.getElementById("self-text")) return;
+  const row = document.createElement("div");
+  row.innerHTML = `<div class="ud-formily-item"><div class="ud-formily-item-label"><label for="self-text">自我评价</label></div><textarea id="self-text" maxlength="120"></textarea></div>`;
+  document.getElementById("self").insertBefore(row, document.getElementById("self-add"));
+});
+</script>
+</body></html>
