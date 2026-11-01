@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>飞书招聘 v40：Universe Design 日期框（获奖时间、出生日期）</title>
+<style>
+body{font:14px sans-serif;max-width:860px;margin:20px auto}
+.applyFormModuleWrapper{display:flex;gap:16px;border-top:1px solid #eee;padding:10px 0}
+.applyFormModuleWrapper-left{width:120px;font-weight:600}
+.applyFormModuleWrapper-right{flex:1}
+.ud-formily-item{margin:8px 0}.ud-formily-item-label{color:#555;font-size:12px}
+.ud__picker-panel{position:absolute;border:1px solid #aaa;background:#fff;padding:6px}
+</style></head>
+<body>
+<!-- 小鹏 / 蔚来 (*.jobs.feishu.cn) samples 2026-10-24..11-01: 获奖名称 and 描述 filled, every 获奖时间 empty.
+     The picker is ByteDance Universe Design's (class ud__picker, no "date-picker" in it). Its real code
+     (saas-career async chunk): typing only parses into a draft; Enter while open, or the input's blur
+     (React onBlur = focusout), commits it; any re-render before that puts the committed text back.
+     Here a re-render happens whenever another box on the form changes, as the formily form does. -->
+<form>
+<div class="applyFormModuleWrapper"><div class="applyFormModuleWrapper-left"><p class="applyFormModuleWrapper-text">基本信息</p></div><div class="applyFormModuleWrapper-right">
+  <div class="ud-formily-item"><div class="ud-formily-item-label"><label for="name">姓名</label></div><input id="name"></div>
+  <div class="ud-formily-item"><div class="ud-formily-item-label"><span><label>出生日期</label><span>*</span></span></div>
+    <div class="ud__picker ud__picker--size-lg"><div class="ud__picker-dateInput ud__picker-inputWrapper"><div class="ud__picker-inputWrapper-inner"><input id="birth" class="ud__picker-input ud__native-input ud-date" data-mode="month" size="12" placeholder="YYYY-MM"></div></div></div></div>
+</div></div>
+
+<div class="applyFormModuleWrapper"><div class="applyFormModuleWrapper-left"><p class="applyFormModuleWrapper-text">获奖</p></div><div class="applyFormModuleWrapper-right">
+  <div class="ud-formily-item"><div class="ud-formily-item-label"><label for="award1-name">获奖名称</label></div><input id="award1-name"></div>
+  <div class="ud-formily-item"><div class="ud-formily-item-label"><span><label>获奖时间</label></span></div>
+    <div class="ud__picker ud__picker--size-lg"><div class="ud__picker-dateInput ud__picker-inputWrapper"><div class="ud__picker-inputWrapper-inner"><input id="award1-date" class="ud__picker-input ud__native-input ud-date" data-mode="year" size="12" placeholder="YYYY"></div></div></div></div>
+  <div class="ud-formily-item"><div class="ud-formily-item-label"><label for="award1-desc">描述</label></div><textarea id="award1-desc"></textarea></div>
+  <div class="ud-formily-item"><div class="ud-formily-item-label"><label for="award2-name">获奖名称</label></div><input id="award2-name"></div>
+  <div class="ud-formily-item"><div class="ud-formily-item-label"><span><label>获奖时间</label></span></div>
+    <div class="ud__picker ud__picker--size-lg"><div class="ud__picker-dateInput ud__picker-inputWrapper"><div class="ud__picker-inputWrapper-inner"><input id="award2-date" class="ud__picker-input ud__native-input ud-date" data-mode="year" size="12" placeholder="YYYY"></div></div></div></div>
+  <div class="ud-formily-item"><div class="ud-formily-item-label"><label for="award2-desc">描述</label></div><textarea id="award2-desc"></textarea></div>
+</div></div>
+</form>
+<script>
+const FORMAT = { year: /^\d{4}$/, month: /^\d{4}-\d{2}$/ };
+const pickers = [];
+for (const input of document.querySelectorAll(".ud-date")) {
+  const state = { committed: "", draft: "", open: false, panel: null };
+  const format = FORMAT[input.dataset.mode];
+  const show = (text) => { input.value = text; };
+  const setOpen = (open) => {
+    state.open = open;
+    if (open && !state.panel) { state.panel = document.createElement("div"); state.panel.className = "ud__picker-panel"; state.panel.textContent = "年份面板"; input.closest(".ud__picker").appendChild(state.panel); }
+    if (!open && state.panel) { state.panel.remove(); state.panel = null; }
+  };
+  const commit = () => { state.committed = state.draft; show(state.committed); setOpen(false); };
+  input.addEventListener("input", () => { state.draft = format.test(input.value) ? input.value : state.committed; });
+  input.addEventListener("keydown", (e) => { if (e.key === "Tab" || state.open) { if (e.keyCode === 13) commit(); } else setOpen(true); });
+  input.addEventListener("focusout", commit);
+  input.addEventListener("mouseup", () => setOpen(true));
+  // A re-render shows the committed value again; a draft never committed is gone.
+  pickers.push({ input, rerender: () => { state.draft = state.committed; show(state.committed); } });
+}
+document.addEventListener("input", (e) => { for (const p of pickers) if (p.input !== e.target) p.rerender(); }, true);
+</script>
+</body></html>

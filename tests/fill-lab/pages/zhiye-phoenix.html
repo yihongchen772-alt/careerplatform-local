@@ -93,7 +93,7 @@ function selectHtml(id, shown) {
     + '<div class="phoenix-select__placeHolder phoenix-select__placeHolder--large' + (shown ? '' : ' phoenix-select__placeHolder--show') + '">请选择</div>'
     + '<ul class="phoenix-select__content"><li class="phoenix-select__inputWrapper phoenix-select__inputWrapper--emptyMultiValue"><input placeholder="" class="phoenix-select__input phoenix-select__input--large"></li></ul>'
     + '<span class="phoenix-select__tipWrapper phoenix-select__tipWrapper--large' + (shown ? ' phoenix-select__tipWrapper--visible' : '') + '"><span class="phoenix-select__tipEle">' + (shown || '') + '</span></span>'
-    + '<div class="phoenix-select__switchArrow"></div></div></div></div></div></div>';
+    + '<div class="phoenix-select__switchArrow"></div><div class="phoenix-select__clearIcon"></div></div></div></div></div></div>';
 }
 const SLOTS = {
   "degree-slot": ["degree", "硕士", null],
@@ -119,6 +119,15 @@ function place(select, node) {
   document.body.appendChild(node); popup = node;
 }
 document.addEventListener("click", (event) => {
+  const clear = event.target.closest(".phoenix-select__clearIcon");
+  if (!clear) return;
+  const select = clear.closest(".phoenix-select");
+  select.querySelector(".phoenix-select__tipEle").textContent = "";
+  select.querySelector(".phoenix-select__tipWrapper").classList.remove("phoenix-select__tipWrapper--visible");
+  select.querySelector(".phoenix-select__placeHolder").classList.add("phoenix-select__placeHolder--show");
+  event.stopImmediatePropagation();
+}, true);
+document.addEventListener("click", (event) => {
   const select = event.target.closest(".phoenix-select");
   if (!select) return;
   const cfg = SLOTS[Object.keys(SLOTS).find((slot) => document.getElementById(slot).contains(select))][2];
@@ -129,7 +138,8 @@ document.addEventListener("click", (event) => {
     const need = cfg.date === "day" ? /^\d{4}-\d{2}-\d{2}$/ : /^\d{4}-\d{2}$/;
     box.innerHTML = '<div class="phoenix-calendar"><div class="phoenix-calendar-input-wrap"><input class="phoenix-calendar-input" placeholder="' + (cfg.date === "day" ? "请选择日期" : "请选择年月") + '"></div><a class="phoenix-calendar-ok-btn">确定</a></div>';
     const input = box.querySelector("input");
-    const commit = () => { if (need.test(input.value)) choose(select, input.value); };
+    // A full-date box shows 「Invalid date」 for a bare year-month, as the real one did on 海柔 / 上海微电子.
+    const commit = () => { if (need.test(input.value)) choose(select, input.value); else if (cfg.date === "day" && /^\d{4}-\d{2}$/.test(input.value)) choose(select, "Invalid date"); };
     input.addEventListener("keydown", (e) => { if (e.key === "Enter") commit(); });
     box.querySelector(".phoenix-calendar-ok-btn").addEventListener("click", commit);
   } else {

@@ -586,6 +586,13 @@ Object.assign(suites, {
     { label: "精通程度(飞书说法)", read: sel("#lang-feishu"), expect: "商务会话" },
     { label: "没选上的学校报给用户", result: (r) => (r.details || []).filter((d) => d.source === "manual").map((d) => `${d.label}:${d.state}`).join("|"), expect: /学校名称:网站的下拉列表里没有「南京大学」/ },
   ], { profile: (p) => { p.education[0].end = "2027-06"; p.educationEnd = "2027-06"; p.rank = "前15%"; } }],
+  "feishu-v40": [[
+    { label: "获奖1 名称", read: val("#award1-name"), expect: "全国大学生数学建模竞赛一等奖" },
+    { label: "获奖1 年份(ud 日期框要提交)", read: val("#award1-date"), expect: "2023" },
+    { label: "获奖2 年份(资料写 2023.5.20)", read: val("#award2-date"), expect: "2023" },
+    { label: "出生日期(ud 年月)", read: val("#birth"), expect: "2002-03" },
+    { label: "姓名(后面的框改动不冲掉日期)", read: val("#name"), expect: "林晓舟" },
+  ], { profile: (p) => { p.awards = [...p.awards, { name: "校级优秀学生干部", issuer: "", level: "校级", date: "2023.5.20", description: "" }]; } }],
   "wizard": [[
     { label: "第1步 姓名", read: val("#a1"), expect: "林晓舟" },
     { label: "第1步 性别", read: sel("#a4"), expect: "女" },

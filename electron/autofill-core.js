@@ -44,7 +44,8 @@ function scanPageFields(prefix, readOnly = false) {
   };
   // "姓　　名" (aligned with ideographic spaces on older portals) reads as 姓名.
   const clean = (text) => String(text || "").replace(/[​-‍﻿]/g, "").replace(/\s+/g, " ").replace(/([㐀-鿿]) (?=[㐀-鿿])/g, "$1").trim();
-  const PICKER = ".ant-picker, .el-date-editor, .el-range-editor, .arco-picker, .ivu-date-picker, .t-date-picker";
+  // ud__picker: 飞书招聘's Universe Design date box (获奖时间 YYYY, 出生日期 YYYY-MM).
+  const PICKER = ".ant-picker, .el-date-editor, .el-range-editor, .arco-picker, .ivu-date-picker, .t-date-picker, .ud__picker";
   const SITE_CHROME = "header, nav, footer, [role='banner'], [role='navigation'], [role='contentinfo'], [role='menubar'], [role='toolbar']";
   const OPTION_HOLDER = "[role='radio'], [role='checkbox'], [role='option'], [role='listbox'], [role='radiogroup'], .el-radio-group, .ant-radio-group, .el-checkbox-group, .ant-checkbox-group, .el-select-dropdown, .ant-select-dropdown";
   // Wizard pages keep earlier steps in the DOM, hidden. Their ids from the
@@ -803,8 +804,9 @@ async function fillFields(pairs) {
   // commit it: Enter plus a real blur (React listens for focusout, which a
   // synthetic "blur" event never produces). Their inputs may be read-only
   // (no free typing), yet still parse a value set through these events.
-  const PICKER = ".ant-picker, .el-date-editor, .el-range-editor, .arco-picker, .ivu-date-picker, .t-date-picker, [class*='date-picker'], [class*='datepicker']";
-  const LIBRARY_PICKER = ".ant-picker, .el-date-editor, .el-range-editor, .arco-picker, .ivu-date-picker, .t-date-picker";
+  // 飞书's Universe Design box (ud__picker) only keeps a typed date once it is committed the same way.
+  const PICKER = ".ant-picker, .el-date-editor, .el-range-editor, .arco-picker, .ivu-date-picker, .t-date-picker, .ud__picker, [class*='date-picker'], [class*='datepicker']";
+  const LIBRARY_PICKER = ".ant-picker, .el-date-editor, .el-range-editor, .arco-picker, .ivu-date-picker, .t-date-picker, .ud__picker";
   const UNTIL_NOW_TEXT = /至今|目前|在读|在职|present|current|till now|to date/i;
   const pickerDone = new Set();
 
@@ -1261,12 +1263,12 @@ async function fillCustomSelects(pairs, taskId) {
   // 的输入框再回车；只有年月时再补成当月 1 日重试（有的框要完整日期）。
   const calendarPanel = () => Array.from(document.querySelectorAll(".phoenix-calendar")).find((node) => visible(node) && !node.closest(".phoenix-popover-hidden"));
   async function fillCalendar(container, value) {
-    const panel = calendarPanel();
-    const input = panel?.querySelector(".phoenix-calendar-input");
-    if (!input) return false;
     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
     const text = String(value).trim();
     for (const attempt of /^\d{4}-\d{2}$/.test(text) ? [text, text + "-01"] : [text]) {
+      // Read each time: clearing a refused value can rebuild the panel.
+      const input = calendarPanel()?.querySelector(".phoenix-calendar-input");
+      if (!input) return false;
       setter.call(input, attempt);
       input.dispatchEvent(new Event("input", { bubbles: true }));
       input.dispatchEvent(new Event("change", { bubbles: true }));
@@ -1275,12 +1277,20 @@ async function fillCustomSelects(pairs, taskId) {
       input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true }));
       await sleep(300);
       assertActive();
-      if (selectedText(container)) return true;
+      if (taken(container)) return true;
       const ok = calendarPanel()?.querySelector(".phoenix-calendar-ok-btn:not(.phoenix-calendar-ok-btn-disabled)");
-      if (ok) { ok.click(); await sleep(300); assertActive(); if (selectedText(container)) return true; }
+      if (ok) { ok.click(); await sleep(300); assertActive(); if (taken(container)) return true; }
+      // 「Invalid date」 is the box refusing the text, not a date: clear it before the next try.
+      if (/invalid|nan/i.test(selectedText(container) || "")) {
+        container.querySelector(".phoenix-select__clearIcon")?.click();
+        await sleep(150);
+        assertActive();
+        if (!calendarPanel()) { open(container); await sleep(300); assertActive(); }
+      }
     }
     return false;
   }
+  const taken = (container) => { const shown = selectedText(container); return !!shown && !/invalid|nan/i.test(shown); };
 
   for (const p of pairs) {
     assertActive();
