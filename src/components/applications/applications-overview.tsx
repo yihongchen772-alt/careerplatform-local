@@ -30,7 +30,7 @@ const OUTCOME_TONE: Record<string, string> = { failed: "text-rose-600 dark:text-
  * 投递情况总表: the 总览's numbers, here next to the 投递 themselves — and every
  * number opens the 投递 it counts. `funnel` is the shared 阶段覆盖 card.
  */
-export function ApplicationsOverview({ applications, now, filter, onFilter, funnel }: { applications: OverviewApplication[]; now: number; filter: ApplicationFilter; onFilter: (filter: ApplicationFilter) => void; funnel?: ReactNode }) {
+export function ApplicationsOverview({ applications, now, filter, selectedRound = null, onFilter, funnel }: { applications: OverviewApplication[]; now: number; filter: ApplicationFilter; selectedRound?: ApplicationStage | null; onFilter: (filter: ApplicationFilter, round?: ApplicationStage | null) => void; funnel?: ReactNode }) {
   const [open, setOpen] = useStoredChoice("careerplatform.applications.overview", ["open", "closed"] as const, "open");
   const total = applications.length;
   if (!total) return null;
@@ -123,7 +123,7 @@ export function ApplicationsOverview({ applications, now, filter, onFilter, funn
             </table>
           </div>
           <div className="space-y-4">
-            {interviews.total > 0 && <InterviewTable breakdown={interviews} total={total} selected={filter === "interviewed"} onOpen={() => onFilter("interviewed")} />}
+            {interviews.total > 0 && <InterviewTable breakdown={interviews} total={total} selected={filter === "interviewed"} selectedRound={selectedRound} onOpen={(round) => onFilter("interviewed", round ?? null)} />}
             {funnel}
           </div>
         </div>
@@ -132,12 +132,12 @@ export function ApplicationsOverview({ applications, now, filter, onFilter, funn
   );
 }
 
-function InterviewTable({ breakdown, total, selected, onOpen }: { breakdown: ReturnType<typeof interviewBreakdown>; total: number; selected: boolean; onOpen: () => void }) {
+function InterviewTable({ breakdown, total, selected, selectedRound, onOpen }: { breakdown: ReturnType<typeof interviewBreakdown>; total: number; selected: boolean; selectedRound: ApplicationStage | null; onOpen: (round?: ApplicationStage | null) => void }) {
   return (
     <div className={cn("surface-card overflow-hidden rounded-xl", selected && "ring-2 ring-primary/30")} aria-label="面试走到哪一轮">
-      <button type="button" onClick={onOpen} className="block w-full px-4 pt-3 text-left">
+      <button type="button" onClick={() => onOpen(null)} className="block w-full px-4 pt-3 text-left">
         <span className="text-sm font-semibold">进过面试 {breakdown.total} 条</span>
-        <span className="ml-2 text-xs text-muted-foreground">占全部 {Math.round((breakdown.total / total) * 100)}% · 按面到的最后一轮算，二面没过记在二面</span>
+        <span className="ml-2 text-xs text-muted-foreground">占全部 {Math.round((breakdown.total / total) * 100)}% · 按面到的最后一轮算，点某一行只看那一轮</span>
       </button>
       <table className="mt-2 w-full text-sm">
         <thead>
@@ -148,16 +148,19 @@ function InterviewTable({ breakdown, total, selected, onOpen }: { breakdown: Ret
           </tr>
         </thead>
         <tbody>
-          {breakdown.rows.map((row) => (
-            <tr key={row.stage} onClick={() => row.total && onOpen()} className={cn("border-b border-border/40 last:border-0", row.total ? "cursor-pointer hover:bg-muted/50" : "text-muted-foreground")}>
-              <td className="px-4 py-2 font-medium">{row.label}</td>
-              {breakdown.columns.map((column) => {
-                const value = row.cells[column.key];
-                return <td key={column.key} className={cn("px-2 py-2 text-right tabular-nums", value ? OUTCOME_TONE[column.key] : "text-muted-foreground")}>{value || "—"}</td>;
-              })}
-              <td className="px-4 py-2 text-right font-semibold tabular-nums">{row.total || "—"}</td>
-            </tr>
-          ))}
+          {breakdown.rows.map((row) => {
+            const active = selected && selectedRound === row.stage;
+            return (
+              <tr key={row.stage} onClick={() => row.total && onOpen(active ? null : row.stage)} className={cn("border-b border-border/40 last:border-0 transition-colors", row.total ? "cursor-pointer hover:bg-muted/50" : "text-muted-foreground", active && "bg-primary/5")}>
+                <td className="px-4 py-2 font-medium">{row.label}</td>
+                {breakdown.columns.map((column) => {
+                  const value = row.cells[column.key];
+                  return <td key={column.key} className={cn("px-2 py-2 text-right tabular-nums", value ? OUTCOME_TONE[column.key] : "text-muted-foreground")}>{value || "—"}</td>;
+                })}
+                <td className="px-4 py-2 text-right font-semibold tabular-nums">{row.total || "—"}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

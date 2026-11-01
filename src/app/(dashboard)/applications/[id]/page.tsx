@@ -110,7 +110,11 @@ export default async function ApplicationDetailPage({
   const current = currentStageRow(application, application.stageHistory);
   const step = current && !closed ? stepView(current, now) : null;
   const offerStage = ["OFFER", "ACCEPTED", "DECLINED"].includes(application.currentStage);
-  const offerFilled = [application.salaryMin, application.salaryMax, application.offerNote, application.offerAnnualTotal, application.commuteMinutes, application.overtimeNote, application.growthNote].some((value) => value !== null && value !== "");
+  const offerFilled = [application.salaryMin, application.salaryMax, application.offerAnnualTotal, application.offerNote, application.commuteMinutes, application.overtimeNote, application.growthNote].some((value) => value !== null && value !== "");
+  const resolvedCities = applicationCities({ city: application.city, location: application.position?.location, title: application.title, companyName: application.company.name });
+  const citySummary = resolvedCities.length
+    ? `${cityText(resolvedCities)}${application.citySource === "公司所在地" ? "（推测）" : application.citySource ? `（${application.citySource}）` : ""}`
+    : "未标注";
 
   return (
     <div className="mx-auto max-w-[96rem] space-y-6">
@@ -130,10 +134,11 @@ export default async function ApplicationDetailPage({
           {application.currentStageLabel && <span className="hero-sub text-sm font-medium text-muted-foreground">{application.currentStageLabel}</span>}
           <QuickStageMenu applicationId={application.id} companyName={application.company.name} currentStage={application.currentStage} step={step} className="h-7" />
         </div>
-        <div className="hero-divider mt-6 grid grid-cols-2 gap-3 border-t border-border/55 pt-5 sm:grid-cols-4">
+        <div className="hero-divider mt-6 grid grid-cols-2 gap-3 border-t border-border/55 pt-5 sm:grid-cols-5">
           {[
             { label: "投递日期", value: application.appliedDate.toLocaleDateString("zh-CN") },
             { label: "最近更新", value: application.currentStageDate.toLocaleDateString("zh-CN") },
+            { label: "工作城市", value: citySummary },
             { label: "投递渠道", value: application.source || "未记录" },
             { label: "简历版本", value: application.resumeVersion?.name || "未关联" },
           ].map((item) => (
@@ -242,6 +247,7 @@ export default async function ApplicationDetailPage({
               source: application.source,
               resumeVersionId: application.resumeVersionId,
               city: application.city,
+              citySource: application.citySource,
             }}
             // What the 岗位 or title says, shown when no city is set by hand.
             inferredCity={cityText(applicationCities({ location: application.position?.location, title: application.title, companyName: application.company.name }))}

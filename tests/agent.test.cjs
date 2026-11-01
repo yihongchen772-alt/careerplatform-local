@@ -227,16 +227,34 @@ test("find_jobs passes the query and the applicant's cities, and reports boards 
 });
 
 function agentTools(db, cityTools = { MAX_RESEARCH: 4, listCityGaps: async () => ({ content: "", summary: "" }), researchCities: async () => ({ content: "", summary: "", evidence: new Map() }) }) {
+  const stageLabels = loadTs("src/lib/stage-labels.ts");
+  const appCity = loadTs("src/lib/application-city.ts");
+  const interviewSchedule = loadTs("src/lib/interview-schedule.ts", { "@/lib/stage-labels": stageLabels });
+  const appFilters = loadTs("src/lib/application-filters.ts", {
+    "@/lib/interview-schedule": interviewSchedule,
+    "@/lib/stage-labels": stageLabels,
+  });
+  const companyIndustry = loadTs("src/lib/company-industry.ts");
+  const workspaceTools = loadTs("src/lib/agent/workspace-tools.ts", {
+    "@/lib/db": { db },
+    "@/lib/application-city": appCity,
+    "@/lib/application-filters": appFilters,
+    "@/lib/company-industry": companyIndustry,
+    "@/lib/interview-schedule": interviewSchedule,
+    "@/lib/pending-mail": { pendingMailRows: () => [] },
+    "@/lib/stage-labels": stageLabels,
+  });
   return loadTs("src/lib/agent/tools.ts", {
     "@/lib/agent/city-tools": cityTools,
-    "@/lib/application-city": loadTs("src/lib/application-city.ts"),
+    "@/lib/agent/workspace-tools": workspaceTools,
+    "@/lib/application-city": appCity,
     "@/lib/closest-id": loadTs("src/lib/closest-id.ts"),
     "next/cache": { revalidatePath: () => {} },
     "@/lib/db": { db },
     "@/lib/action-result": actionResult,
     "@/lib/agent-tools": { executeAgentTool: async () => ({ data: "{}", summary: "ok" }) },
     "@/lib/fetch-job-page": { fetchJobPage: async () => "<p>x</p>", htmlToText: (html) => html },
-    "@/lib/stage-labels": { STAGE_LABELS: { APPLIED: "已投递" } },
+    "@/lib/stage-labels": stageLabels,
     "@/lib/validation": { applicationStageValues: ["APPLIED"] },
     "@/lib/assistant-shared": loadTs("src/lib/assistant-shared.ts"),
   });
@@ -366,4 +384,98 @@ test("agent loop: an answer written beside a tool call is kept when the last rep
   });
   assert.ok(result.reply.startsWith(body));
   assert.ok(result.reply.endsWith("简报完毕，按钮在下面"));
+});
+
+test("workspace tools: filter_applications and get_workspace_overview filter and summarize across all user records", async () => {
+  const apps = [
+    {
+      id: "app-tx-1",
+      title: "后端开发",
+      currentStage: "INTERVIEW_1",
+      currentStageLabel: null,
+      currentStageDate: new Date(Date.now() - 12 * 86_400_000),
+      appliedDate: new Date(Date.now() - 15 * 86_400_000),
+      channel: "官网",
+      city: "深圳",
+      citySource: "岗位页面",
+      salaryMin: 25,
+      salaryMax: 30,
+      offerAnnualTotal: 42,
+      commuteMinutes: 30,
+      overtimeNote: "10-9-5",
+      growthNote: "核心组",
+      offerNote: "16薪",
+      company: { name: "腾讯", industry: "互联网", sector: null, aliases: [{ alias: "鹅厂" }] },
+      position: { location: "深圳" },
+      stageHistory: [
+        { id: "st-1", stage: "APPLIED", stageLabel: null, enteredAt: new Date(Date.now() - 15 * 86_400_000), nextDeadline: null, nextDeadlineEnd: null, nextHasTime: false, completedAt: new Date(Date.now() - 12 * 86_400_000), followedUpAt: null, terminatedAtStageLabel: null },
+        { id: "st-2", stage: "INTERVIEW_1", stageLabel: null, enteredAt: new Date(Date.now() - 12 * 86_400_000), nextDeadline: null, nextDeadlineEnd: null, nextHasTime: false, completedAt: new Date(Date.now() - 12 * 86_400_000), followedUpAt: null, terminatedAtStageLabel: null },
+      ],
+    },
+    {
+      id: "app-ali-2",
+      title: "Java开发",
+      currentStage: "APPLIED",
+      currentStageLabel: null,
+      currentStageDate: new Date(),
+      appliedDate: new Date(),
+      channel: "内推",
+      city: "杭州",
+      citySource: "公司所在地",
+      salaryMin: null,
+      salaryMax: null,
+      offerAnnualTotal: null,
+      commuteMinutes: null,
+      overtimeNote: null,
+      growthNote: null,
+      offerNote: null,
+      company: { name: "阿里巴巴", industry: "电商", sector: null, aliases: [{ alias: "淘天" }] },
+      position: { location: null },
+      stageHistory: [
+        { id: "st-3", stage: "APPLIED", stageLabel: null, enteredAt: new Date(), nextDeadline: null, nextDeadlineEnd: null, nextHasTime: false, completedAt: null, followedUpAt: null, terminatedAtStageLabel: null },
+      ],
+    },
+  ];
+  const tools = agentTools({
+    application: { findMany: async ({ where }) => { assert.equal(where.userId, "owner"); return apps; } },
+    stageHistory: { findMany: async () => [] },
+    interviewIntelligence: { findUnique: async () => null },
+    personalTask: { findMany: async () => [] },
+    calendarEvent: { findMany: async () => [{ id: "ev-1", title: "秋招双选会", allDay: true, dateKey: "2026-11-05", startsAt: new Date(Date.now() + 86_400_000), meetingInfo: "体育馆" }] },
+    contact: { findMany: async () => [{ id: "c-1", name: "张HR", role: "HR", companyName: "腾讯", contactInfo: null, note: null, nextFollowUpAt: null }] },
+    journeyEntry: { findMany: async () => [{ id: "j-1", text: "完成一面", mood: "蓄力", about: "腾讯", createdAt: new Date() }] },
+    user: { findUnique: async () => ({ name: "陈同学", school: "某大", graduationYear: "2026", targetTrack: "后端", preferredCities: "深圳,杭州", expectedSalaryMin: 25, skills: "Java, Go", applicationProfile: {} }) },
+  });
+
+  const byRound = await tools.executeTool("owner", call("filter_applications", { filter: "interviewed", stage: "INTERVIEW_1" }), []);
+  assert.match(byRound.content, /app-tx-1/);
+  assert.doesNotMatch(byRound.content, /app-ali-2/);
+
+  const byGuessed = await tools.executeTool("owner", call("filter_applications", { filter: "guessed_city" }), []);
+  assert.match(byGuessed.content, /app-ali-2/);
+  assert.doesNotMatch(byGuessed.content, /app-tx-1/);
+
+  const overview = await tools.executeTool("owner", call("get_workspace_overview", { section: "all" }), []);
+  assert.match(overview.content, /Offer 与薪资对比/);
+  assert.match(overview.content, /面试统计与面经复盘/);
+  assert.match(overview.content, /独立日历事项与待确认邮件日程/);
+  assert.match(overview.content, /心路历程/);
+});
+
+test("propose_actions and applyAssistantAction: new action types validate and smart target resolution handles miscopied IDs and applicationId-to-step fallback", async () => {
+  const tools = agentTools({});
+  const proposed = [];
+  await tools.executeTool("owner", call("propose_actions", {
+    actions: [
+      { type: "update_offer", label: "记录腾讯 Offer 薪资", targetId: "app-tx-1", salaryMin: 25, salaryMax: 30, offerAnnualTotal: 42, commuteMinutes: 30, overtimeNote: "10-9-5" },
+      { type: "update_position", label: "字节岗位优先级调为 5", targetId: "pos-1", priority: 5, positionStatus: "TO_APPLY" },
+      { type: "add_calendar_event", label: "添加宣讲会日程", title: "华为宣讲会", date: "2026-11-05 19:00", category: "CAMPUS_TALK", note: "带纸质简历" },
+      { type: "update_profile", label: "更新意向城市", city: "深圳、杭州" },
+      { type: "update_company_industry", label: "标记腾讯行业为互联网", companyName: "腾讯", note: "互联网/游戏" },
+      { type: "add_journey", label: "记一条心路", title: "拿到第一个一面", note: "继续稳扎稳打", mood: "突破" },
+    ],
+  }), proposed);
+  assert.equal(proposed.length, 6);
+  assert.equal(proposed[0].type, "update_offer");
+  assert.equal(proposed[0].offerAnnualTotal, 42);
 });

@@ -38,6 +38,13 @@ export const assistantActionSchema = z.object({
     "save_note",
     "mark_followed_up",
     "set_city",
+    "update_offer",
+    "update_position",
+    "add_calendar_event",
+    "complete_calendar_event",
+    "update_profile",
+    "update_company_industry",
+    "add_journey",
   ]),
   label: z.string(),
   companyName: z.string().nullish(),
@@ -56,8 +63,19 @@ export const assistantActionSchema = z.object({
   note: z.string().nullish(),
   /// A job's link, for add_position (from 「找岗位」).
   url: z.string().nullish(),
-  /// The work city for set_city (小欧's city lookup).
+  /// The work city for set_city / update_position / update_profile / log_application.
   city: z.string().nullish(),
+  /// Offer / position salary fields (monthly in K, annual total in 万元).
+  salaryMin: z.number().int().min(0).max(500).nullish(),
+  salaryMax: z.number().int().min(0).max(500).nullish(),
+  offerAnnualTotal: z.number().int().min(0).max(5000).nullish(),
+  commuteMinutes: z.number().int().min(0).max(600).nullish(),
+  overtimeNote: z.string().nullish(),
+  growthNote: z.string().nullish(),
+  /// For update_position: EVALUATING | PLANNED | DROPPED (or Chinese equivalents).
+  positionStatus: z.string().nullish(),
+  /// For add_journey: happy | ok | down | angry | cry (or Chinese equivalents).
+  mood: z.string().nullish(),
 });
 
 export type AssistantAction = z.infer<typeof assistantActionSchema>;

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Send, Check, Plus, Loader2, CircleAlert, CircleCheck, Trash2, Copy, MessageSquareText } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -153,6 +154,7 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
   onFillField?: (draft: PageDraft) => Promise<boolean>;
   className?: string;
 }) {
+  const router = useRouter();
   const [tab, setTab] = useState<Tab>("chat");
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [threadId, setThreadId] = useState<string | null>(null);
@@ -358,6 +360,7 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
       toast.success(res.data.done);
       update((prev) => prev.map((m) => (m.id === messageId ? { ...m, applied: [...(m.applied ?? []), index] } : m)));
       addMessage("assistant", `操作已完成：${res.data.done}`);
+      router.refresh();
     } catch {
       toast.error("未能确认保存结果，请先检查记录再重试。");
     } finally {
@@ -384,6 +387,7 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
       if (saved.length) toast.success(`已保存 ${saved.length} 项`);
       if (failed.length) toast.error(`${failed.length} 项没保存，可以单独再点`);
       addMessage("assistant", `操作已完成：保存了 ${saved.length} 项${failed.length ? `；没保存：${failed.join("、")}` : ""}`);
+      if (saved.length) router.refresh();
       setApplying(null);
     }
   }
@@ -571,6 +575,11 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
                       </button>
                     );
                   })}
+                  {m.steps?.some((step) => step.tool === "research_cities" || step.tool === "list_missing_cities") && /(?:还剩|还有|其余|下一批|接着查|继续查)/.test(m.content) && (
+                    <Button size="sm" variant="secondary" className="w-full text-xs" disabled={sending || !!applying} onClick={() => handleSend("继续查下一批还没查的投递城市，查到的给我按钮保存")}>
+                      继续查下一批城市
+                    </Button>
+                  )}
                 </div>
               ))
             )}

@@ -34,6 +34,7 @@ const REMOTE = ["远程", "全国", "不限"];
 
 export const MULTI_CITY = "多城市";
 export const NO_CITY = "未标城市";
+export const GUESSED_CITY = "推测的城市";
 
 /** Three or more places is a choice left to later, not a home for a group of its own. */
 const MULTI_FROM = 3;

@@ -77,7 +77,8 @@ export default async function ApplicationsPage() {
 
   // 投递 with no city from any source: how many the lookup hasn't tried yet.
   const cityless = applications.filter((app) => !applicationCities({ city: app.city, location: app.position?.location, title: app.title, companyName: app.company.name }).length);
-  const cityLookup = { missing: cityless.length, pending: cityless.filter((app) => !app.cityLookupAt).length };
+  const guessedCities = applications.filter((app) => app.city !== null && app.citySource === "公司所在地").length;
+  const cityLookup = { missing: cityless.length, pending: cityless.filter((app) => !app.cityLookupAt).length, guessed: guessedCities };
 
   const defaultResumeVersionId =
     resumeVersions.find((r) => r.isDefault)?.id ?? null;

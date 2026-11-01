@@ -13,7 +13,8 @@ import { matchApplication, type ApplicationHits } from "@/lib/application-search
 import { APPLICATION_FILTERS, FILTER_HINTS, FILTER_LABELS, filterCounts, matchesFilter, parseFilter, type ApplicationFilter } from "@/lib/application-filters";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { GROUP_KINDS, GROUP_LABELS, TIME_LABELS, TIME_WINDOWS, groupApplications, inTimeWindow, monthLabel, monthsPresent, parseTime, type GroupKind } from "@/lib/application-groups";
-import { NO_CITY } from "@/lib/application-city";
+import { GUESSED_CITY, NO_CITY } from "@/lib/application-city";
+import { STAGE_LABELS } from "@/lib/stage-labels";
 import { useStoredChoice } from "@/components/applications/use-stored-choice";
 import {
   ApplicationsTable,
@@ -61,7 +62,7 @@ function toBoard(a: ApplicationRow): BoardApplication {
   };
 }
 
-export function ApplicationsView({ applications, now: serverNow, funnel, cityLookup }: { applications: ApplicationRow[]; now: number; funnel?: ReactNode; cityLookup?: { missing: number; pending: number } }) {
+export function ApplicationsView({ applications, now: serverNow, funnel, cityLookup }: { applications: ApplicationRow[]; now: number; funnel?: ReactNode; cityLookup?: { missing: number; pending: number; guessed?: number } }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -72,11 +73,13 @@ export function ApplicationsView({ applications, now: serverNow, funnel, cityLoo
   // otherwise flash through the filter.
   const urlQuery = searchParams.get("q") ?? "";
   const urlFilter = parseFilter(searchParams.get("f"));
+  const urlRound = searchParams.get("r") ?? "";
   const urlCity = searchParams.get("c") ?? "";
   const urlTime = parseTime(searchParams.get("t"));
   const [draft, setDraft] = useState(urlQuery);
   const [query, setQuery] = useState(urlQuery);
   const [filter, setFilterState] = useState<ApplicationFilter>(urlFilter);
+  const [round, setRoundState] = useState<string>(urlRound);
   const [city, setCityState] = useState(urlCity);
   const [time, setTimeState] = useState(urlTime);
   // How the lists are laid out: kept on this device, like 看板 / 列表.
@@ -90,13 +93,14 @@ export function ApplicationsView({ applications, now: serverNow, funnel, cityLoo
     setFoldState({ kind: groupBy, keys });
   }
   const [classifying, setClassifying] = useState(false);
-  const urlKey = `${urlQuery}|${urlFilter}|${urlCity}|${urlTime}`;
+  const urlKey = `${urlQuery}|${urlFilter}|${urlRound}|${urlCity}|${urlTime}`;
   const [seenUrl, setSeenUrl] = useState(urlKey);
   // Opened again with another ?q= / ?f= (from ⌘K search, say) while already here.
   if (urlKey !== seenUrl) {
     setSeenUrl(urlKey);
     if (urlCity !== city) setCityState(urlCity);
     if (urlTime !== time) setTimeState(urlTime);
+    if (urlRound !== round) setRoundState(urlRound);
     if (urlQuery !== query.trim()) {
       setDraft(urlQuery);
       setQuery(urlQuery);
@@ -108,7 +112,7 @@ export function ApplicationsView({ applications, now: serverNow, funnel, cityLoo
   const listRef = useRef<HTMLDivElement>(null);
 
   // In the address too, so coming back from a 投递 shows the same results.
-  function writeUrl(change: { q?: string; f?: ApplicationFilter; c?: string; t?: string }) {
+  function writeUrl(change: { q?: string; f?: ApplicationFilter; r?: string; c?: string; t?: string }) {
     const params = new URLSearchParams(window.location.search);
     if (change.q !== undefined) {
       if (change.q.trim()) params.set("q", change.q.trim());
@@ -117,6 +121,10 @@ export function ApplicationsView({ applications, now: serverNow, funnel, cityLoo
     if (change.f !== undefined) {
       if (change.f !== "all") params.set("f", change.f);
       else params.delete("f");
+    }
+    if (change.r !== undefined) {
+      if (change.r) params.set("r", change.r);
+      else params.delete("r");
     }
     if (change.c !== undefined) {
       if (change.c) params.set("c", change.c);
@@ -136,9 +144,10 @@ export function ApplicationsView({ applications, now: serverNow, funnel, cityLoo
   }
 
   function chooseFilter(next: ApplicationFilter) {
-    const value = next === filter ? "all" : next;
+    const value = next === filter && !round ? "all" : next;
     setFilterState(value);
-    writeUrl({ f: value });
+    setRoundState("");
+    writeUrl({ f: value, r: "" });
   }
 
   // Companies still without a 行业: the AI can name them from their names alone.
@@ -173,9 +182,11 @@ export function ApplicationsView({ applications, now: serverNow, funnel, cityLoo
   }
 
   // From the 总表: open exactly those 投递, and bring the list into view.
-  function showFilter(next: ApplicationFilter) {
+  function showFilter(next: ApplicationFilter, nextRound: string | null = null) {
+    const r = next === "interviewed" && nextRound ? nextRound : "";
     setFilterState(next);
-    writeUrl({ f: next });
+    setRoundState(r);
+    writeUrl({ f: next, r });
     listRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
@@ -207,25 +218,37 @@ export function ApplicationsView({ applications, now: serverNow, funnel, cityLoo
   }, [applications, term]);
   const searched = hits ? applications.filter((app) => hits.has(app.id)) : applications;
   const timed = time === "all" ? searched : searched.filter((app) => inTimeWindow(app.appliedDate, time, now));
-  const inCity = (app: ApplicationRow) => !city || (city === NO_CITY ? app.cities.length === 0 : app.cities.includes(city));
+  const inCity = (app: ApplicationRow) =>
+    !city ||
+    (city === NO_CITY
+      ? app.cities.length === 0
+      : city === GUESSED_CITY
+        ? app.citySource === "公司所在地"
+        : app.cities.includes(city));
   const scoped = city ? timed.filter(inCity) : timed;
   const counts = filterCounts(scoped, now);
-  const shown = filter === "all" ? scoped : scoped.filter((app) => matchesFilter(app, filter, now));
+  const activeRound = filter === "interviewed" && ["INTERVIEW_1", "INTERVIEW_2", "INTERVIEW_3", "HR_INTERVIEW"].includes(round) ? (round as ApplicationRow["currentStage"]) : null;
+  const shown = (filter === "all" ? scoped : scoped.filter((app) => matchesFilter(app, filter, now)))
+    .filter((app) => !activeRound || app.interviewReach === activeRound);
   const companies = new Set(shown.map((app) => app.company.name)).size;
   const narrowed = !!term || filter !== "all" || !!city || time !== "all";
-  const orderLabel = [filter !== "all" ? FILTER_LABELS[filter] : "", city ? `城市 ${city}` : "", time !== "all" ? timeLabel(time) : "", term ? `搜索「${term}」` : ""].filter(Boolean).join(" · ");
+  const roundLabel = activeRound ? `面到${STAGE_LABELS[activeRound]}` : "";
+  const orderLabel = [roundLabel || (filter !== "all" ? FILTER_LABELS[filter] : ""), city ? `城市 ${city}` : "", time !== "all" ? timeLabel(time) : "", term ? `搜索「${term}」` : ""].filter(Boolean).join(" · ");
 
   // Cities to pick from, counted over what the other filters already leave.
   const cityOptions = useMemo(() => {
     const base = timed.filter((app) => filter === "all" || matchesFilter(app, filter, now));
     const found = new Map<string, number>();
     let none = 0;
+    let guessed = 0;
     for (const app of base) {
       if (!app.cities.length) none += 1;
+      if (app.citySource === "公司所在地") guessed += 1;
       for (const name of app.cities) found.set(name, (found.get(name) ?? 0) + 1);
     }
-    if (city && city !== NO_CITY && !found.has(city)) found.set(city, 0);
+    if (city && city !== NO_CITY && city !== GUESSED_CITY && !found.has(city)) found.set(city, 0);
     const list = [...found].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "zh-Hans-CN")).map(([name, count]) => ({ name, count }));
+    if (guessed || city === GUESSED_CITY) list.push({ name: GUESSED_CITY, count: guessed });
     if (none || city === NO_CITY) list.push({ name: NO_CITY, count: none });
     return list;
   }, [timed, filter, now, city]);
@@ -259,9 +282,10 @@ export function ApplicationsView({ applications, now: serverNow, funnel, cityLoo
     setDraft("");
     commit("");
     setFilterState("all");
+    setRoundState("");
     setCityState("");
     setTimeState("all");
-    writeUrl({ q: "", f: "all", c: "", t: "all" });
+    writeUrl({ q: "", f: "all", r: "", c: "", t: "all" });
   }
 
   return (
@@ -274,8 +298,8 @@ export function ApplicationsView({ applications, now: serverNow, funnel, cityLoo
         suggestedStage: a.portalSuggestedStage!,
         portalStatus: a.portalStatus ?? null,
       }))} />
-      {cityLookup && <CityLookupBar missing={cityLookup.missing} pending={cityLookup.pending} showList={groupBy === "city"} />}
-      <ApplicationsOverview applications={applications} now={now} filter={filter} onFilter={showFilter} funnel={funnel} />
+      {cityLookup && <CityLookupBar missing={cityLookup.missing} pending={cityLookup.pending} guessed={cityLookup.guessed} showList={groupBy === "city"} onFilterGuessed={() => { chooseCity(GUESSED_CITY); listRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }} />}
+      <ApplicationsOverview applications={applications} now={now} filter={filter} selectedRound={activeRound} onFilter={showFilter} funnel={funnel} />
       <div ref={listRef} className="flex scroll-mt-4 flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h2 className="text-base font-semibold tracking-tight">进度视图</h2>

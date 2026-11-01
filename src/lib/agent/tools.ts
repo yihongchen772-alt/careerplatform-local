@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { UserFacingError } from "@/lib/action-result";
 import { executeAgentTool } from "@/lib/agent-tools";
 import { MAX_RESEARCH, listCityGaps, researchCities } from "@/lib/agent/city-tools";
+import { filterApplicationsTool, getWorkspaceOverviewTool } from "@/lib/agent/workspace-tools";
 import { closestId } from "@/lib/closest-id";
 import { parseCities } from "@/lib/application-city";
 import { fetchJobPage, htmlToText } from "@/lib/fetch-job-page";
@@ -21,9 +22,20 @@ export const MAX_MEMORIES = 60;
 const ACTION_TYPES = assistantActionSchema.shape.type.options;
 
 const str = (description: string) => ({ type: "string" as const, description });
+const num = (description: string) => ({ type: "integer" as const, description });
 
 export const AGENT_TOOLS: ToolSpec[] = [
-  { name: "search_records", description: "在本地数据库里按一个关键词（公司名/岗位名/方向/城市）查候选岗位、线索、投递和待办；空字符串查最近的。不要把整句话当关键词。", parameters: { type: "object", properties: { query: str("一个关键词") }, required: ["query"] } },
+  { name: "search_records", description: "在本地数据库里按一个关键词（公司名/别名/岗位名/方向/城市/行业/面经）查候选岗位、线索、投递和待办；空字符串查最近的。不要把整句话当关键词。", parameters: { type: "object", properties: { query: str("一个关键词") }, required: ["query"] } },
+  { name: "filter_applications", description: "按条件筛选全部投递记录（支持按状态/进过面试/面到哪一轮/久未更新/城市/推测城市/未标城市/行业/公司筛选），返回匹配的完整列表及[投递ID][进度ID]。当用户问「我在上海投了哪些」「哪些进过面试/二面」「哪些超过两周没动静」「看某个行业的投递」时用这个。", parameters: { type: "object", properties: {
+    filter: { type: "string", enum: ["all", "active", "applied", "exam", "interview", "interviewed", "waiting", "offer", "stale", "rejected", "closed", "missing_city", "guessed_city"], description: "筛选类型" },
+    stage: str("可选：具体阶段或面到的轮次（如 INTERVIEW_1 / INTERVIEW_2 / INTERVIEW_3 / HR_INTERVIEW / OFFER）"),
+    city: str("可选：城市名（如 上海、杭州）"),
+    industry: str("可选：行业关键词（如 机器人、半导体、汽车）"),
+    company: str("可选：公司名或简称"),
+  } } },
+  { name: "get_workspace_overview", description: "读取全软件指定模块的完整数据：offers（所有Offer与薪资/年包/通勤/加班对比）、interviews（各轮面试统计与最近面经复盘）、calendar（独立日历事项与邮件识别待确认的安排）、profile（求职偏好与网申资料经历）、contacts（HR/内推人/面试官名录）、journey（心路历程）、all（全部概览）。", parameters: { type: "object", properties: {
+    section: { type: "string", enum: ["offers", "interviews", "calendar", "profile", "contacts", "journey", "all"], description: "要查看的模块" },
+  }, required: ["section"] } },
   { name: "get_application", description: "读一条投递的完整详情：每一轮的时间、会议/测评链接、面经复盘、结果、渠道、薪资备注，以及对应岗位的 JD。分析某家进展、准备面试前用。", parameters: { type: "object", properties: { applicationId: str("[投递ID]") }, required: ["applicationId"] } },
   { name: "get_position", description: "读候选池里一个岗位的完整 JD、地点、截止、薪资和 AI 匹配分析。比较岗位、判断值不值得投前用。", parameters: { type: "object", properties: { positionId: str("[岗位ID]") }, required: ["positionId"] } },
   { name: "resume_context", description: "读简历内容摘要（不填 resumeId 读默认简历）。做匹配分析、写材料前用。", parameters: { type: "object", properties: { resumeId: str("[简历ID]，可留空") } } },
@@ -37,16 +49,20 @@ export const AGENT_TOOLS: ToolSpec[] = [
   { name: "remember", description: "把用户长期有效的信息记进你的长期记忆（目标方向、城市、薪资底线、不考虑的公司或行业、时间安排、个人情况）。只记用户明确说过的，一条一件事；与已有记忆冲突时先 forget 旧的。不要记一次性的事。", parameters: { type: "object", properties: { content: str("一句话，如「不考虑外包和销售岗」") }, required: ["content"] } },
   { name: "forget", description: "删掉一条过时或错误的长期记忆。", parameters: { type: "object", properties: { memoryId: str("[记忆ID]") }, required: ["memoryId"] } },
   { name: "update_plan", description: "整份重写你为用户维护的求职计划（Markdown）。做规划、排优先级、复盘后更新：本周重点、按优先级的待推进事项（带日期）、策略和要注意的风险。保留仍有效的旧内容。", parameters: { type: "object", properties: { plan: str("完整的新计划，Markdown，800 字以内") }, required: ["plan"] } },
-  { name: "propose_actions", description: "提出要改用户记录的操作（记投递、改阶段、加岗位、记时间、记面经、加待办等），用户点按钮确认后才执行。可以多次调用，按「操作说明」填字段。", parameters: { type: "object", properties: { actions: { type: "array", items: { type: "object", properties: {
+  { name: "propose_actions", description: "提出要改用户记录的操作（记投递、改阶段、记Offer薪资总包、加/改岗位、记时间、确认邮件日程、记面经、加待办、改求职偏好、记心路历程等），用户点按钮确认后才执行。可以多次调用，按「操作说明」填字段。", parameters: { type: "object", properties: { actions: { type: "array", items: { type: "object", properties: {
     type: { type: "string", enum: [...ACTION_TYPES] },
-    label: str("按钮上的字，12 字以内，说清对象，如「宝洁一面加准备待办」"),
+    label: str("按钮上的字，14 字以内，说清对象，如「宝洁一面加准备待办」"),
     companyName: str(""), title: str(""), contactName: str(""), date: str("YYYY-MM-DD 或 YYYY-MM-DDTHH:mm"), dateEnd: str(""),
-    stage: { type: "string", enum: [...applicationStageValues] }, targetId: str("对应的 ID"), note: str(""), url: str(""), city: str("set_city 用：城市，多个用顿号隔开"),
+    stage: { type: "string", enum: [...applicationStageValues] }, targetId: str("对应的 ID"), note: str(""), url: str(""), city: str("城市，多个用顿号隔开"),
+    salaryMin: num("月薪下限（整数K）"), salaryMax: num("月薪上限（整数K）"), offerAnnualTotal: num("年总包（整数万元）"), commuteMinutes: num("单程通勤分钟数"),
+    overtimeNote: str("加班强度备注"), growthNote: str("团队与成长备注"),
+    positionStatus: { type: "string", enum: ["EVALUATING", "PLANNED", "DROPPED"] },
+    mood: { type: "string", enum: ["happy", "ok", "down", "angry", "cry"] },
   }, required: ["type", "label"] } } }, required: ["actions"] } },
 ];
 
 const TOOL_LABELS: Record<string, string> = {
-  search_records: "查记录", get_application: "看投递详情", get_position: "看岗位 JD", resume_context: "读简历",
+  search_records: "查记录", filter_applications: "筛选投递记录", get_workspace_overview: "读全库模块数据", get_application: "看投递详情", get_position: "看岗位 JD", resume_context: "读简历",
   research_web: "联网研究", find_jobs: "到官网找岗位", read_webpage: "读网页", prepare_application: "准备投递",
   list_missing_cities: "看哪些投递没写城市", research_cities: "联网查工作城市", recall_conversations: "翻以前的对话", remember: "记住", forget: "忘掉一条记忆", update_plan: "更新求职计划", propose_actions: "提出操作",
 };
@@ -67,7 +83,7 @@ function cityBacked(action: AssistantAction, found: Map<string, string> | undefi
 const text = (value: unknown, max = 2000) => (typeof value === "string" ? value.trim().slice(0, max) : "");
 
 export function describeToolCall(call: ToolCall): string {
-  const detail = text(call.args.query ?? call.args.keywords ?? call.args.question ?? call.args.content ?? call.args.url, 40);
+  const detail = text(call.args.query ?? call.args.keywords ?? call.args.question ?? call.args.content ?? call.args.url ?? call.args.section ?? call.args.city ?? call.args.company ?? call.args.filter, 40);
   return `${TOOL_LABELS[call.name] ?? call.name}${detail ? `：${detail}` : ""}`;
 }
 
@@ -82,6 +98,20 @@ export async function executeTool(userId: string, call: ToolCall, proposed: Assi
     case "search_records": {
       const result = await executeAgentTool(userId, { tool: "search_records", query: text(call.args.query, 100), targetId: "" });
       return { content: result.data, label, summary: result.summary };
+    }
+    case "filter_applications": {
+      const result = await filterApplicationsTool(userId, {
+        filter: text(call.args.filter, 40) || undefined,
+        stage: text(call.args.stage, 40) || undefined,
+        city: text(call.args.city, 40) || undefined,
+        industry: text(call.args.industry, 40) || undefined,
+        company: text(call.args.company, 60) || undefined,
+      });
+      return { ...result, label };
+    }
+    case "get_workspace_overview": {
+      const result = await getWorkspaceOverviewTool(userId, text(call.args.section, 40) || "all");
+      return { ...result, label };
     }
     case "resume_context": {
       const result = await executeAgentTool(userId, { tool: "resume_context", query: "", targetId: text(call.args.resumeId, 150) });

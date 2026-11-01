@@ -4,6 +4,8 @@ import { STAGE_LABELS } from "@/lib/stage-labels";
 import { applicationStageValues } from "@/lib/validation";
 import { loadUpcomingSchedule } from "@/lib/schedule-loader";
 import { SCHEDULE_KIND_LABELS, currentStageRow, extractMeetingUrl, isTerminalStage, relativeText, stepView, whenText } from "@/lib/interview-schedule";
+import { applicationCities } from "@/lib/application-city";
+import { furthestInterview, interviewBreakdown } from "@/lib/application-filters";
 
 // What 小欧 knows about the user's search at the start of every turn: a
 // bounded snapshot of the pool, 投递, schedule, leads, to-dos and contacts,
@@ -62,14 +64,12 @@ export async function buildSnapshot(userId: string): Promise<string> {
         where: { userId },
         include: { company: true },
         orderBy: { createdAt: "desc" },
-        take: MAX_ITEMS,
       }),
       db.position.count({ where: { userId } }),
       db.application.findMany({
         where: { userId },
-        include: { company: true, stageHistory: { orderBy: { enteredAt: "desc" }, take: 8, select: { stage: true, terminatedAtStage: true, terminatedAtStageLabel: true } } },
+        include: { company: true, position: { select: { location: true } }, stageHistory: { orderBy: { enteredAt: "desc" }, take: 8, select: { stage: true, terminatedAtStage: true, terminatedAtStageLabel: true } } },
         orderBy: { appliedDate: "desc" },
-        take: MAX_ITEMS,
       }),
       db.application.count({ where: { userId } }),
       // Only the two fields the highlight logic below needs to rank and
@@ -181,6 +181,11 @@ export async function buildSnapshot(userId: string): Promise<string> {
 
   const applicationStageCounts = new Map<string, number>();
   for (const a of applications) applicationStageCounts.set(a.currentStage, (applicationStageCounts.get(a.currentStage) ?? 0) + 1);
+  const interviewStats = interviewBreakdown(
+    applications.map((a) => ({ currentStage: a.currentStage, interviewReach: furthestInterview(a.currentStage, a.stageHistory) }))
+  );
+  const missingCityCount = applications.filter((a) => !applicationCities({ city: a.city, location: a.position?.location, title: a.title, companyName: a.company.name }).length).length;
+  const guessedCityCount = applications.filter((a) => a.city !== null && a.citySource === "公司所在地").length;
   const nextDeadlineByApplicationId = new Map(
     stageHistories
       .filter((h): h is typeof h & { nextDeadline: Date } => h.nextDeadline !== null)
@@ -197,15 +202,17 @@ export async function buildSnapshot(userId: string): Promise<string> {
     .slice(0, MAX_HIGHLIGHTS);
 
   sections.push(
-    `投递记录（共 ${applicationCount} 条${applicationCount > applications.length ? `，本快照只取了最近 ${applications.length} 条算高亮，更早的用 search_records 查` : ""}；按阶段：${[...applicationStageCounts.entries()].map(([s, n]) => `${STAGE_LABELS[s as keyof typeof STAGE_LABELS]}:${n}`).join("，") || "空"}）：\n` +
+    `投递记录（共 ${applicationCount} 条；按当前阶段：${[...applicationStageCounts.entries()].map(([s, n]) => `${STAGE_LABELS[s as keyof typeof STAGE_LABELS]}:${n}`).join("，") || "空"}；累计进过面试：${interviewStats.total} 条（${interviewStats.rows.map((r) => `${r.label}:${r.total}`).join("，")}）；城市未标：${missingCityCount} 条，按公司推测：${guessedCityCount} 条）：\n` +
       (highlightedApplications.length === 0
         ? "（还没有投递记录）"
-        : "以下是有临近下一步/最近更新的几条，其余用 search_records 按公司名查：\n" +
+        : "以下是有临近下一步/最近更新的几条，其余按条件筛选用 filter_applications，按关键词查用 search_records：\n" +
           highlightedApplications
             .map((a) => {
               const nextDeadline = nextDeadlineByApplicationId.get(a.id);
+              const cities = applicationCities({ city: a.city, location: a.position?.location, title: a.title, companyName: a.company.name });
               const parts = [
                 `阶段：${STAGE_LABELS[a.currentStage]}`,
+                cities.length ? `城市：${cities.join("、")}${a.citySource === "公司所在地" ? "（推测）" : ""}` : "未标城市",
                 ["REJECTED", "WITHDRAWN", "CANCELLED"].includes(a.currentStage) ? `结束阶段：${a.stageHistory.find(h => h.stage === a.currentStage)?.terminatedAtStageLabel || a.stageHistory.find(h => h.stage === a.currentStage)?.terminatedAtStage || "历史未记录"}` : null,
                 `投递日期：${ymd(a.appliedDate)}`,
                 nextDeadline ? `下一步：${ymd(nextDeadline)}` : null,
@@ -351,6 +358,13 @@ export const ACTION_GUIDE = `当用户说的话意味着数据该被记下来或
 - save_note：把用户说的面经/复盘记到那一轮上（追加，不会覆盖已有的）。targetId 填 [进度ID]，note 填整理好的内容：问了什么、怎么答的、感觉如何，保留用户原话里的题目
 - mark_followed_up：用户说已经发邮件/打电话催过结果了。targetId 填 [进度ID]
 - set_city：给一条投递记工作城市（覆盖原来推测的）。targetId 填 [投递ID]，city 填城市（多个用顿号），label 写「公司 · 岗位 → 城市」。只用 research_cities 查到的资料，查不到的不给按钮
+- update_offer：记或修改某条投递的薪资与 Offer 详情。targetId 填 [投递ID]（或填 companyName + title），salaryMin / salaryMax 填月薪（整数 K，如 24），offerAnnualTotal 填年总包（整数万元，如 35），commuteMinutes 填单程通勤分钟数，overtimeNote 填加班情况（如「大小周」「早10晚8」），growthNote 填团队与成长评价，note 填其他薪资备注（如「15薪+签字费2万」）。用户如果同时说拿到了 Offer，可再配一个 update_stage 设为 OFFER
+- update_position：更新候选岗位池里的岗位信息或状态。targetId 填 [岗位ID]（或 companyName + title），positionStatus 可填 EVALUATING（观望）/ PLANNED（计划投）/ DROPPED（不投了），city 填工作地点，date 填截止日，salaryMin / salaryMax 填月薪范围（K），note 填补充 JD，url 填岗位链接
+- add_calendar_event：往日历里加一个独立日程（宣讲会、答辩、自定义面试/笔试提醒）。title 填日程标题，date 填开始时间 YYYY-MM-DDTHH:mm（全天事项填 YYYY-MM-DD），dateEnd 可选，note 填地点或链接
+- complete_calendar_event：把日历里的独立日程（targetId 填 [日程ID]）标为已完成，或者把邮件里识别到但还没进日历的安排（targetId 填 [邮件待办ID]）确认加入日历
+- update_profile：修改用户的个人求职偏好。title 填目标方向（targetTrack），city 填意向城市（preferredCities，顿号隔开），salaryMin 填期望月薪下限（整数 K），note 填技能栈（skills）。只填用户要求改的字段
+- update_company_industry：给公司设置行业分类。companyName 必填，title（或 note）填行业（如「机器人」「半导体」「工业自动化」「汽车」「新能源」「互联网」等）
+- add_journey：帮用户记一条「心路历程」求职日记。mood 填 happy / ok / down / angry / cry，note 填正文内容，title（或 companyName）填关联标签（如「大疆 · 二面后」）
 每个 action 的 label 写成用户一眼能看懂的按钮文案，比如"记一条投递：字节跳动 后端开发"或"更新为一面，面试时间 3月5日"。label 只是按钮上的字，不能代替上面那些字段——该填 title/companyName/targetId 的一个都不能少，别只写 label 就交差。
 问到安排（"今天有什么""下一场是什么时候"）直接按上面的「接下来」回答，带上时间和会议/测评链接；用户说"宝洁一面改到周五下午三点""刚面完腾讯二面，问了…"就给 reschedule / complete_step + save_note。
 举例：用户说"我今天投了美团的数据分析，下周三一面"，就给两个 action —— 一个 log_application（如果候选池里没有这条，对上号就用 mark_position_applied），一个提醒他准备面试的 add_task。`;

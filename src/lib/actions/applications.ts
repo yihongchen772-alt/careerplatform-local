@@ -154,6 +154,8 @@ export async function updateApplication(
   if (!application) throw new Error("未找到该投递记录");
 
   const data = applicationCoreUpdateSchema.parse(input);
+  const nextCity = data.city !== undefined ? (data.city?.trim() || null) : undefined;
+  const cityChanged = nextCity !== undefined && nextCity !== (application.city ?? null);
 
   await db.application.update({
     where: { id: applicationId },
@@ -162,8 +164,9 @@ export async function updateApplication(
       referrer: data.referrer || null,
       source: data.source || null,
       resumeVersionId: data.resumeVersionId || null,
-      // Left alone when the caller does not send one.
-      ...(data.city !== undefined ? { city: data.city || null, citySource: null } : {}),
+      // Only clear citySource when the city value actually changed; editing
+      // channel or referrer alone must not turn a guessed city into manual.
+      ...(cityChanged ? { city: nextCity, citySource: null } : {}),
     },
   });
 

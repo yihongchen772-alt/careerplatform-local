@@ -340,6 +340,66 @@ test("isolated DB: batch stage change and its undo; to-dos and ICS list a step o
   assert.ok(ics.includes("TRIGGER:-PT30M"));
   assert.ok(ics.includes("DTSTART;VALUE=DATE:20270105"));
   assert.ok(ics.includes("DTEND;VALUE=DATE:20270108"));
+
+  // City source is preserved on unrelated edits and restored on bulk city undo.
+  const appActions = load("src/lib/actions/applications.ts", mocks);
+  await db.application.update({ where: { id: "one" }, data: { city: "杭州", citySource: "公司所在地" } });
+  await appActions.updateApplication("one", { appliedDate: new Date("2026-10-02"), source: "内推", referrer: "王工" });
+  const afterUnrelated = await db.application.findUnique({ where: { id: "one" } });
+  assert.equal(afterUnrelated.city, "杭州");
+  assert.equal(afterUnrelated.citySource, "公司所在地");
+
+  const bulkCity = await scheduleActions.bulkSetCity(["one", "two"], "上海");
+  assert.equal(bulkCity.ok, true);
+  assert.equal((await db.application.findUnique({ where: { id: "one" } })).city, "上海");
+  assert.equal((await db.application.findUnique({ where: { id: "one" } })).citySource, null);
+
+  assert.equal((await scheduleActions.undoBulkCity(bulkCity.data.before)).ok, true);
+  const afterUndo = await db.application.findUnique({ where: { id: "one" } });
+  assert.equal(afterUndo.city, "杭州");
+  assert.equal(afterUndo.citySource, "公司所在地");
+
+  // Assistant actions: smart target resolution (applicationId passed to save_note, miscopied ID, update_offer, add_journey).
+  const assistantActions = load("src/lib/actions/assistant.ts", mocks);
+  const saveNoteByAppId = await assistantActions.applyAssistantAction({
+    type: "save_note",
+    label: "记录示例科技复盘",
+    targetId: "one",
+    note: "问了分布式事务和 Redis",
+  });
+  assert.equal(saveNoteByAppId.ok, true);
+  const oneCurrentStep = await db.stageHistory.findFirst({ where: { applicationId: "one" }, orderBy: { enteredAt: "desc" } });
+  assert.match(oneCurrentStep.note, /问了分布式事务和 Redis/);
+
+  const offerRes = await assistantActions.applyAssistantAction({
+    type: "update_offer",
+    label: "记录薪资",
+    companyName: "示例科技",
+    title: "one 岗位",
+    salaryMin: 25,
+    salaryMax: 30,
+    offerAnnualTotal: 45,
+    commuteMinutes: 25,
+    overtimeNote: "10-8-5",
+  });
+  assert.equal(offerRes.ok, true);
+  const oneAfterOffer = await db.application.findUnique({ where: { id: "one" } });
+  assert.equal(oneAfterOffer.salaryMin, 25);
+  assert.equal(oneAfterOffer.offerAnnualTotal, 45);
+  assert.equal(oneAfterOffer.overtimeNote, "10-8-5");
+
+  const journeyRes = await assistantActions.applyAssistantAction({
+    type: "add_journey",
+    label: "记一条心路",
+    companyName: "示例科技",
+    title: "一面顺利",
+    note: "状态渐入佳境",
+    mood: "突破",
+  });
+  assert.equal(journeyRes.ok, true);
+  const journeyRow = await db.journeyEntry.findFirst({ where: { userId: "local-user" } });
+  assert.equal(journeyRow.mood, "happy");
+  assert.equal(journeyRow.text, "状态渐入佳境");
 });
 
 async function setup(name) {

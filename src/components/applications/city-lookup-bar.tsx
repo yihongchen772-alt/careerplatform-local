@@ -14,7 +14,7 @@ type Run = { state: "running" | "done"; checked: number; total: number; filled: 
  * looked up are read from their JD, their job page and a web search, a few at
  * a time, and the result can be taken back in one click.
  */
-export function CityLookupBar({ missing, pending, showList }: { missing: number; pending: number; showList: boolean }) {
+export function CityLookupBar({ missing, pending, guessed = 0, showList, onFilterGuessed }: { missing: number; pending: number; guessed?: number; showList: boolean; onFilterGuessed?: () => void }) {
   const router = useRouter();
   const [run, setRun] = useState<Run | null>(null);
   const [hidden, setHidden] = useState(false);
@@ -77,6 +77,7 @@ export function CityLookupBar({ missing, pending, showList }: { missing: number;
     const by = (source: CityFill["source"]) => run.filled.filter((fill) => fill.source === source).length;
     // From this run, not the page's count, which catches up only after the refresh lands.
     const unfound = run.checked - run.filled.length;
+    const guessedCount = by("公司所在地") || guessed;
     const parts = [["岗位页面", by("岗位页面")], ["JD", by("JD")], ["联网搜索", by("联网搜索")], ["按公司推测", by("公司所在地")]].filter(([, count]) => count).map(([label, count]) => `${label} ${count}`);
     return (
       <Bar>
@@ -88,20 +89,28 @@ export function CityLookupBar({ missing, pending, showList }: { missing: number;
         </span>
         {run.filled.length > 0 && <Button type="button" size="sm" variant="outline" className="h-7 rounded-full text-xs" onClick={() => void undo(run.filled)}>撤销</Button>}
         {unfound > 0 && <Button type="button" size="sm" variant="outline" className="h-7 rounded-full text-xs" onClick={askXiaoou}><Sparkles className="size-3.5" />让小欧联网查</Button>}
+        {unfound === 0 && guessedCount > 0 && <Button type="button" size="sm" variant="outline" className="h-7 rounded-full text-xs" onClick={askXiaoouVerifyGuessed}><Sparkles className="size-3.5" />让小欧核对推测城市</Button>}
         {unfound > 0 && <Button type="button" size="sm" variant="ghost" className="h-7 rounded-full text-xs" onClick={() => void lookup(Date.now())}>再查一次</Button>}
         <button type="button" aria-label="关闭" onClick={() => setHidden(true)} className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground"><X className="size-3.5" /></button>
       </Bar>
     );
   }
 
-  // Listing by city: the 未标城市 ones can be looked up again by hand.
-  if (showList && missing > 0) {
+  // Listing by city, or whenever there are still missing / guessed cities the user can check.
+  if (!hidden && (missing > 0 || (showList && guessed > 0))) {
     return (
       <Bar>
         <MapPin className="size-4 shrink-0 text-muted-foreground" />
-        <span className="min-w-0 flex-1">有 {missing} 条投递还没有城市。</span>
-        <Button type="button" size="sm" variant="outline" className="h-7 rounded-full text-xs" onClick={() => void lookup(Date.now())}>联网查城市</Button>
-        <Button type="button" size="sm" variant="ghost" className="h-7 rounded-full text-xs" onClick={askXiaoou}><Sparkles className="size-3.5" />让小欧查</Button>
+        <span className="min-w-0 flex-1">
+          {missing > 0 ? `有 ${missing} 条投递还没有城市` : ""}
+          {missing > 0 && guessed > 0 ? "，" : ""}
+          {guessed > 0 ? `${missing > 0 ? "" : "有 "}${guessed} 条城市是按公司所在地推测的` : ""}。
+        </span>
+        {missing > 0 && <Button type="button" size="sm" variant="outline" className="h-7 rounded-full text-xs" onClick={() => void lookup(Date.now())}>联网查城市</Button>}
+        {missing > 0 && <Button type="button" size="sm" variant="ghost" className="h-7 rounded-full text-xs" onClick={askXiaoou}><Sparkles className="size-3.5" />让小欧查</Button>}
+        {guessed > 0 && onFilterGuessed && <Button type="button" size="sm" variant="ghost" className="h-7 rounded-full text-xs" onClick={onFilterGuessed}>看推测的</Button>}
+        {guessed > 0 && <Button type="button" size="sm" variant="ghost" className="h-7 rounded-full text-xs" onClick={askXiaoouVerifyGuessed}><Sparkles className="size-3.5" />让小欧核对</Button>}
+        {!showList && <button type="button" aria-label="关闭" onClick={() => setHidden(true)} className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground"><X className="size-3.5" /></button>}
       </Bar>
     );
   }
@@ -111,6 +120,10 @@ export function CityLookupBar({ missing, pending, showList }: { missing: number;
 /** 小欧 digs further: more searches per 投递, read by it, saved by the user's click. */
 function askXiaoou() {
   window.dispatchEvent(new CustomEvent("xiaoou:ask", { detail: { text: "帮我联网查一下还没写城市的投递，查到的给我按钮保存", send: true } }));
+}
+
+function askXiaoouVerifyGuessed() {
+  window.dispatchEvent(new CustomEvent("xiaoou:ask", { detail: { text: "帮我联网核对一下城市是按公司推测的投递，查到确切工作地点的给我按钮保存", send: true } }));
 }
 
 function Bar({ children }: { children: React.ReactNode }) {
