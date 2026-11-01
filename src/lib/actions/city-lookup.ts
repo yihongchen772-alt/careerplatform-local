@@ -8,17 +8,12 @@ import { callTextAi, getUserAiConfig } from "@/lib/ai-providers";
 import { renderPageText } from "@/lib/render-bridge-client";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
 import { applicationCities, cityFromJobText, isJobPageUrl, pageShowsTitle, parseCities } from "@/lib/application-city";
+import { SEARCH_GAP, searchBlocked, searchResults } from "@/lib/city-search";
 
 /** Per call: the page asks again until nothing is left, showing progress in between. */
 const CHUNK = 8;
 // Page text the AI reads: the top, where the title and location are.
 const PAGE_HEAD = 1500;
-// Search results the AI reads per job.
-const SEARCH_TEXT = 2500;
-const SEARCH_GAP = 1500;
-// After a challenge, searching rests this long (the rest of a run falls back to the company's city).
-const BLOCK_PAUSE = 30 * 60_000;
-let blockedUntil = 0;
 
 export type CitySource = "JD" | "岗位页面" | "联网搜索" | "公司所在地";
 export type CityFill = { id: string; city: string; source: CitySource };
@@ -87,13 +82,11 @@ export async function lookupApplicationCities(options: { since?: number } = {}):
     const config = await getUserAiConfig(user.id);
     const toSearch = ask.filter((app) => !found.has(app.id));
     const results = new Map<string, string>();
-    // One at a time with a pause, and none once Bing has asked for a check.
-    for (const app of blockedUntil > Date.now() ? [] : toSearch) {
+    // One at a time with a pause, and none once Bing has asked for a check
+    // (the rest of a run then falls back to the company's city).
+    for (const app of searchBlocked() ? [] : toSearch) {
       const result = await searchResults(`${app.company} ${app.title} 校招 工作城市`);
-      if ("blocked" in result) {
-        blockedUntil = Date.now() + BLOCK_PAUSE;
-        break;
-      }
+      if ("blocked" in result) break;
       if (result.text) results.set(app.id, result.text);
       await new Promise((resolve) => setTimeout(resolve, SEARCH_GAP));
     }
@@ -174,27 +167,6 @@ ${apps.map((app, index) => `### ${index + 1}. ${app.company} · ${app.title}\n${
 }
 
 type AiConfig = Awaited<ReturnType<typeof getUserAiConfig>>;
-
-// Bing's "最后一步 / 请解决以下难题" challenge: searching stops for this run, it is never answered.
-const CHALLENGE = /最后一步|请解决以下难题|captcha|verify you are human|unusual traffic/i;
-
-type SearchResult = { text: string } | { blocked: true };
-
-/**
- * A Bing results page's text, rendered like a job page since Bing builds its
- * results with script, in a session of its own. An almost empty page means
- * the results had not come in, so it is asked once more. (Baidu answers a
- * hidden window with a captcha straight away.)
- */
-async function searchResults(query: string): Promise<SearchResult> {
-  const url = `https://www.bing.com/search?q=${encodeURIComponent(query)}`;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const text = (await renderPageText(url, { useSearchSession: true }).catch(() => "")).trim();
-    if (CHALLENGE.test(text.slice(0, 200))) return { blocked: true };
-    if (text.length >= 300) return { text: text.slice(0, SEARCH_TEXT) };
-  }
-  return { text: "" };
-}
 
 /** The AI reads each job's city off its search results. */
 async function citiesFromSearch(config: AiConfig, apps: Candidate[], results: Map<string, string>): Promise<Map<string, string[]>> {

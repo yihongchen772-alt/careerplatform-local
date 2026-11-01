@@ -135,7 +135,7 @@ function when(iso: string) {
  * 小欧's conversation, plan and memory — the floating window on every page
  * and the 网申浏览器's side panel (with the open page as context) both show this.
  */
-export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIONS, quickQuestions = DEFAULT_QUICK_QUESTIONS, intro, askText, onAskConsumed, onNavigate, onReply, onFillField, className }: {
+export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIONS, quickQuestions = DEFAULT_QUICK_QUESTIONS, intro, askText, askSend = false, onAskConsumed, onNavigate, onReply, onFillField, className }: {
   header: ReactNode;
   pageContext?: () => Promise<AgentPageContext | null>;
   suggestions?: string[];
@@ -143,6 +143,8 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
   intro?: ReactNode;
   /** A question typed in from elsewhere (「接着问小欧」). */
   askText?: string | null;
+  /** Send askText as soon as the chat is ready instead of only typing it in. */
+  askSend?: boolean;
   onAskConsumed?: () => void;
   onNavigate?: () => void;
   /** A turn finished (answered or failed) — for a dot when the panel is closed. */
@@ -199,14 +201,6 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
     })();
     return () => { cancelled = true; };
   }, []);
-
-  useEffect(() => {
-    if (!askText) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- a question handed over from another page
-    setTab("chat");
-    setInput(askText.slice(0, 6000));
-    onAskConsumed?.();
-  }, [askText, onAskConsumed]);
 
   // Saved shortly after each change, once the turn is over.
   useEffect(() => {
@@ -338,6 +332,19 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
     }
   }
 
+  useEffect(() => {
+    if (!askText) return;
+    // A question to send waits for the saved conversation to load, and for a turn already running.
+    if (askSend && (!loaded || sending)) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- a question handed over from another page
+    setTab("chat");
+    if (askSend) void handleSend(askText);
+    else setInput(askText.slice(0, 6000));
+    onAskConsumed?.();
+    // handleSend reads the latest messages itself; re-running on its identity would send twice.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [askText, askSend, loaded, sending, onAskConsumed]);
+
   async function handleApply(messageId: number, index: number, action: AssistantAction) {
     const token = `${messageId}:${index}`;
     if (applying) return;
@@ -354,6 +361,29 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
     } catch {
       toast.error("未能确认保存结果，请先检查记录再重试。");
     } finally {
+      setApplying(null);
+    }
+  }
+
+  /** Every button of one message not yet saved, one after another; a failed one stays clickable. */
+  async function handleApplyAll(messageId: number) {
+    const message = messages.find((m) => m.id === messageId);
+    if (applying || !message?.actions) return;
+    const pending = message.actions.map((action, index) => ({ action, index })).filter(({ index }) => !message.applied?.includes(index));
+    setApplying(`${messageId}:all`);
+    const saved: number[] = [];
+    const failed: string[] = [];
+    try {
+      for (const { action, index } of pending) {
+        const res = await applyAssistantAction(action).catch(() => null);
+        if (res?.ok) saved.push(index);
+        else failed.push(`${action.label}${res && !res.ok ? `（${res.message}）` : ""}`);
+      }
+    } finally {
+      if (saved.length) update((prev) => prev.map((m) => (m.id === messageId ? { ...m, applied: [...(m.applied ?? []), ...saved] } : m)));
+      if (saved.length) toast.success(`已保存 ${saved.length} 项`);
+      if (failed.length) toast.error(`${failed.length} 项没保存，可以单独再点`);
+      addMessage("assistant", `操作已完成：保存了 ${saved.length} 项${failed.length ? `；没保存：${failed.join("、")}` : ""}`);
       setApplying(null);
     }
   }
@@ -517,6 +547,11 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
                     );
                   })}
 
+                  {(m.actions?.length ?? 0) - (m.applied?.length ?? 0) >= 2 && (
+                    <Button size="sm" variant="outline" className="w-full text-xs" disabled={!!applying} onClick={() => handleApplyAll(m.id)}>
+                      {applying === `${m.id}:all` ? <><Loader2 className="size-3.5 animate-spin" />保存中…</> : <><Check className="size-3.5" />全部保存（{(m.actions?.length ?? 0) - (m.applied?.length ?? 0)} 项）</>}
+                    </Button>
+                  )}
                   {m.actions?.map((action, i) => {
                     const done = m.applied?.includes(i);
                     const busy = applying === `${m.id}:${i}`;

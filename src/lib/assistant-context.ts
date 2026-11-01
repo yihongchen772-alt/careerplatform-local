@@ -350,6 +350,7 @@ export const ACTION_GUIDE = `当用户说的话意味着数据该被记下来或
 - complete_step：把某一轮标记为已面完/已做完（开始等结果）。targetId 填 [进度ID]
 - save_note：把用户说的面经/复盘记到那一轮上（追加，不会覆盖已有的）。targetId 填 [进度ID]，note 填整理好的内容：问了什么、怎么答的、感觉如何，保留用户原话里的题目
 - mark_followed_up：用户说已经发邮件/打电话催过结果了。targetId 填 [进度ID]
+- set_city：给一条投递记工作城市（覆盖原来推测的）。targetId 填 [投递ID]，city 填城市（多个用顿号），label 写「公司 · 岗位 → 城市」。只用 research_cities 查到的资料，查不到的不给按钮
 每个 action 的 label 写成用户一眼能看懂的按钮文案，比如"记一条投递：字节跳动 后端开发"或"更新为一面，面试时间 3月5日"。label 只是按钮上的字，不能代替上面那些字段——该填 title/companyName/targetId 的一个都不能少，别只写 label 就交差。
 问到安排（"今天有什么""下一场是什么时候"）直接按上面的「接下来」回答，带上时间和会议/测评链接；用户说"宝洁一面改到周五下午三点""刚面完腾讯二面，问了…"就给 reschedule / complete_step + save_note。
 举例：用户说"我今天投了美团的数据分析，下周三一面"，就给两个 action —— 一个 log_application（如果候选池里没有这条，对上号就用 mark_position_applied），一个提醒他准备面试的 add_task。`;

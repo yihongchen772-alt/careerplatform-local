@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2, MapPin, X } from "lucide-react";
+import { Loader2, MapPin, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { lookupApplicationCities, undoApplicationCities, type CityFill } from "@/lib/actions/city-lookup";
 
@@ -87,6 +87,7 @@ export function CityLookupBar({ missing, pending, showList }: { missing: number;
           {unfound > 0 && ` 还有 ${unfound} 条没查到，可以在投递里手填。`}
         </span>
         {run.filled.length > 0 && <Button type="button" size="sm" variant="outline" className="h-7 rounded-full text-xs" onClick={() => void undo(run.filled)}>撤销</Button>}
+        {unfound > 0 && <Button type="button" size="sm" variant="outline" className="h-7 rounded-full text-xs" onClick={askXiaoou}><Sparkles className="size-3.5" />让小欧联网查</Button>}
         {unfound > 0 && <Button type="button" size="sm" variant="ghost" className="h-7 rounded-full text-xs" onClick={() => void lookup(Date.now())}>再查一次</Button>}
         <button type="button" aria-label="关闭" onClick={() => setHidden(true)} className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground"><X className="size-3.5" /></button>
       </Bar>
@@ -100,10 +101,16 @@ export function CityLookupBar({ missing, pending, showList }: { missing: number;
         <MapPin className="size-4 shrink-0 text-muted-foreground" />
         <span className="min-w-0 flex-1">有 {missing} 条投递还没有城市。</span>
         <Button type="button" size="sm" variant="outline" className="h-7 rounded-full text-xs" onClick={() => void lookup(Date.now())}>联网查城市</Button>
+        <Button type="button" size="sm" variant="ghost" className="h-7 rounded-full text-xs" onClick={askXiaoou}><Sparkles className="size-3.5" />让小欧查</Button>
       </Bar>
     );
   }
   return null;
+}
+
+/** 小欧 digs further: more searches per 投递, read by it, saved by the user's click. */
+function askXiaoou() {
+  window.dispatchEvent(new CustomEvent("xiaoou:ask", { detail: { text: "帮我联网查一下还没写城市的投递，查到的给我按钮保存", send: true } }));
 }
 
 function Bar({ children }: { children: React.ReactNode }) {

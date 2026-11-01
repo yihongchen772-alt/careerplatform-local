@@ -16,6 +16,7 @@ import { markContacted } from "@/lib/actions/contacts";
 import { revalidateContactPaths } from "@/lib/revalidate-contacts";
 import { addStageSchedule, markFollowedUp, saveStepNote, setStageSchedule, setStepCompleted } from "@/lib/actions/schedule";
 import { assistantActionSchema, type AssistantAction } from "@/lib/assistant-shared";
+import { parseCities } from "@/lib/application-city";
 
 /** One step of a 投递, owned by this user, for the step actions. */
 async function stepRow(userId: string, id: string | null | undefined) {
@@ -338,6 +339,19 @@ export async function applyAssistantAction(
         if (!contact) throw new UserFacingError("找不到这个联系人");
         await markContacted(contact.id);
         return { done: `已记录联系：${contact.name}` };
+      }
+
+      case "set_city": {
+        if (!a.targetId) throw new UserFacingError("没指明是哪条投递，到投递里手动改吧");
+        const cities = parseCities(a.city ?? a.note);
+        if (!cities.length) throw new UserFacingError("没认出城市名，到投递里手动改吧");
+        const application = await db.application.findFirst({ where: { id: a.targetId, userId: user.id }, select: { id: true, title: true, company: { select: { name: true } } } });
+        if (!application) throw new UserFacingError("找不到这条投递记录");
+        const city = cities.slice(0, 12).join("、");
+        // Confirmed by the user, so no longer a guess: it shows like one typed in.
+        await db.application.update({ where: { id: application.id }, data: { city, citySource: null, cityLookupAt: new Date() } });
+        revalidatePath("/applications");
+        return { done: `${application.company.name} · ${application.title} 的城市记为 ${city}` };
       }
     }
   });

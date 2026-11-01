@@ -37,6 +37,7 @@ export const assistantActionSchema = z.object({
     "complete_step",
     "save_note",
     "mark_followed_up",
+    "set_city",
   ]),
   label: z.string(),
   companyName: z.string().nullish(),
@@ -55,6 +56,8 @@ export const assistantActionSchema = z.object({
   note: z.string().nullish(),
   /// A job's link, for add_position (from 「找岗位」).
   url: z.string().nullish(),
+  /// The work city for set_city (小欧's city lookup).
+  city: z.string().nullish(),
 });
 
 export type AssistantAction = z.infer<typeof assistantActionSchema>;

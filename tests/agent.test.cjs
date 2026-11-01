@@ -226,8 +226,11 @@ test("find_jobs passes the query and the applicant's cities, and reports boards 
   await assert.rejects(execute("owner", decision("find_jobs", " ")), /要找什么岗位/);
 });
 
-function agentTools(db) {
+function agentTools(db, cityTools = { MAX_RESEARCH: 4, listCityGaps: async () => ({ content: "", summary: "" }), researchCities: async () => ({ content: "", summary: "", evidence: new Map() }) }) {
   return loadTs("src/lib/agent/tools.ts", {
+    "@/lib/agent/city-tools": cityTools,
+    "@/lib/application-city": loadTs("src/lib/application-city.ts"),
+    "@/lib/closest-id": loadTs("src/lib/closest-id.ts"),
     "next/cache": { revalidatePath: () => {} },
     "@/lib/db": { db },
     "@/lib/action-result": actionResult,
@@ -238,6 +241,23 @@ function agentTools(db) {
     "@/lib/assistant-shared": loadTs("src/lib/assistant-shared.ts"),
   });
 }
+test("tools: a city button needs that city in this turn's research; a miscopied ID is fixed", async () => {
+  const evidence = new Map([["ckaaa111b222c333d444e5550", "搜索结果：工作地点：江苏省无锡市"], ["ckzzz999y888x777w666v5550", "页面和搜索都没拿到内容"]]);
+  const tools = agentTools({}, { MAX_RESEARCH: 4, listCityGaps: async () => ({ content: "", summary: "" }), researchCities: async () => ({ content: "资料", summary: "查了 2 条", evidence }) });
+  const proposed = [];
+  // Before any research nothing is backed.
+  await tools.executeTool("owner", call("propose_actions", { actions: [{ type: "set_city", label: "甲公司 → 无锡", targetId: "ckaaa111b222c333d444e5550", city: "无锡" }] }), proposed);
+  assert.equal(proposed.length, 0);
+  await tools.executeTool("owner", call("research_cities", { applicationIds: ["ckaaa111b222c333d444e5550", "ckzzz999y888x777w666v5550"] }), proposed);
+  const outcome = await tools.executeTool("owner", call("propose_actions", { actions: [
+    { type: "set_city", label: "甲公司 → 无锡", targetId: "ckaaa111b222c33d444e5550", city: "无锡" },
+    { type: "set_city", label: "另一家 → 杭州", targetId: "ckzzz999y888x777w666v5550", city: "杭州" },
+  ] }), proposed);
+  assert.equal(proposed.length, 1);
+  assert.equal(proposed[0].targetId, "ckaaa111b222c333d444e5550");
+  assert.match(outcome.content, /1 个城市在这轮 research_cities 查到的资料里没有出现/);
+});
+
 test("tools: proposals are validated (empty strings dropped), never applied, and the model is told they are not done", async () => {
   const tools = agentTools({});
   const proposed = [];

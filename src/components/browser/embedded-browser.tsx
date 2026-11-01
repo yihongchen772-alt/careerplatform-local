@@ -307,7 +307,8 @@ export function EmbeddedBrowser({
   // 「接着问小欧」 from elsewhere opens 小欧 here, beside the page.
   useEffect(() => {
     const ask = (event: Event) => {
-      const text = (event as CustomEvent<string>).detail;
+      const detail = (event as CustomEvent<string | { text?: unknown }>).detail;
+      const text = typeof detail === "string" ? detail : detail?.text;
       openAgent(typeof text === "string" ? text : undefined);
     };
     window.addEventListener("xiaoou:ask", ask);

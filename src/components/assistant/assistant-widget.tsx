@@ -38,6 +38,7 @@ export function AssistantWidget() {
   const [wide, setWide] = useState(false);
   const [width, setWidth] = useState(460);
   const [askText, setAskText] = useState<string | null>(null);
+  const [askSend, setAskSend] = useState(false);
   const dragging = useRef(false);
   const openRef = useRef(open);
   useEffect(() => { openRef.current = open; }, [open]);
@@ -48,13 +49,20 @@ export function AssistantWidget() {
     setWidth(readWidth());
   }, []);
 
-  // 「接着问小欧」 elsewhere (the 总览 brief): open with the question typed in.
+  // 「接着问小欧」 elsewhere (the 总览 brief): open with the question typed in;
+  // { text, send: true } (「让小欧查」 on the 投递 page) sends it straight away.
   useEffect(() => {
     if (inBrowser) return;
     const ask = (event: Event) => {
-      const text = (event as CustomEvent<string>).detail;
+      const detail = (event as CustomEvent<string | { text?: unknown; send?: unknown }>).detail;
       setOpen(true);
-      if (typeof text === "string") setAskText(text);
+      if (typeof detail === "string") {
+        setAskText(detail);
+        setAskSend(false);
+      } else if (detail && typeof detail.text === "string") {
+        setAskText(detail.text);
+        setAskSend(detail.send === true);
+      }
     };
     window.addEventListener("xiaoou:ask", ask);
     return () => window.removeEventListener("xiaoou:ask", ask);
@@ -88,7 +96,8 @@ export function AssistantWidget() {
           {!wide && <div role="separator" aria-orientation="vertical" aria-label="拖动调整宽度" title="拖动调整宽度" onPointerDown={startDrag} className="absolute inset-y-0 left-0 z-10 w-1.5 cursor-col-resize hover:bg-primary/20" />}
           <AgentChat
             askText={askText}
-            onAskConsumed={() => setAskText(null)}
+            askSend={askSend}
+            onAskConsumed={() => { setAskText(null); setAskSend(false); }}
             onNavigate={() => setOpen(false)}
             onReply={() => { if (!openRef.current) setUnread(true); }}
             header={(
