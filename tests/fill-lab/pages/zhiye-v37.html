@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>v1.37 实测补丁：北森学校联想框、在校职务、语言程度、成绩排名</title>
+<style>
+body{font:14px sans-serif;max-width:900px;margin:20px auto}
+.fields-col{margin:8px 0}.form-item{display:flex;gap:10px;align-items:center}
+.form-item__title{width:150px;text-align:right;color:#555;font-size:12px}
+.form-item__control{flex:1;position:relative}
+.sec{font-weight:600;margin-top:18px}
+.phoenix-input__input{border:1px solid #ccc;border-radius:4px;padding:6px;width:100%;box-sizing:border-box}
+.phoenix-popover{position:absolute;z-index:9;background:#fff;border:1px solid #ddd;box-shadow:0 2px 8px #0002;min-width:220px;left:0;top:34px}
+.phoenix-selectList__listItem{padding:6px 10px;cursor:pointer}.phoenix-selectList__listItem:hover{background:#eef}
+</style></head>
+<body>
+<!-- Shapes seen 2026-11-01 on efort / smee .zhiye.com (北森) and flexivrobotics.jobs.feishu.cn. -->
+<div class="sec">个人信息</div>
+<div class="fields-col"><div class="form-item"><div class="form-item__title"><label class="form-item__text">目前职位</label></div>
+  <div class="form-item__control"><div class="phoenix-input"><input id="position" class="phoenix-input__input" type="text" placeholder="请输入"></div></div></div></div>
+<div class="fields-col"><div class="form-item"><div class="form-item__title"><label>推荐方式</label></div>
+  <div class="form-item__control"><label><input type="radio" name="refer" value="0"> 无</label> <label><input type="radio" name="refer" value="1"> 内推</label> <label><input type="radio" name="refer" value="2"> 大使推荐</label></div></div></div>
+
+<div class="sec">教育经历</div>
+<!-- 学校名称: 北森 AutoComplete. Typed text is wiped on blur unless a suggestion was picked. -->
+<div class="fields-col"><div class="form-item"><div class="form-item__title"><label class="form-item__text">学校名称</label></div>
+  <div class="form-item__control"><div class="phoenix-auto-complete-container"><div class="phoenix-input"><input id="school1" class="phoenix-input__input" type="text" placeholder="请输入"></div></div></div></div></div>
+<div class="fields-col"><div class="form-item"><div class="form-item__title"><label class="form-item__text">专业名称</label></div>
+  <div class="form-item__control"><div class="phoenix-input"><input id="major1" class="phoenix-input__input" type="text" placeholder="请输入"></div></div></div></div>
+<div class="fields-col"><div class="form-item"><div class="form-item__title"><label class="form-item__text">成绩排名</label></div>
+  <div class="form-item__control"><select id="rank1"><option value="">请选择</option><option>前 5%</option><option>前 10%</option><option>前 20%</option><option>前 30%</option><option>其他</option></select></div></div></div>
+<div class="fields-col"><div class="form-item"><div class="form-item__title"><label class="form-item__text">学校名称</label></div>
+  <div class="form-item__control"><div class="phoenix-auto-complete-container"><div class="phoenix-input"><input id="school2" class="phoenix-input__input" type="text" placeholder="请输入"></div></div></div></div></div>
+<div class="fields-col"><div class="form-item"><div class="form-item__title"><label class="form-item__text">专业名称</label></div>
+  <div class="form-item__control"><div class="phoenix-input"><input id="major2" class="phoenix-input__input" type="text" placeholder="请输入"></div></div></div></div>
+
+<div class="sec">工作经历</div>
+<!-- Filled by the site's own résumé parse with something that is not an internship in 网申资料. -->
+<div class="fields-col"><div class="form-item"><div class="form-item__title"><label class="form-item__text">公司名称</label></div>
+  <div class="form-item__control"><div class="phoenix-input"><input id="work1-company" class="phoenix-input__input" type="text" placeholder="请输入" value="某某智能科技"></div></div></div></div>
+<div class="fields-col"><div class="form-item"><div class="form-item__title"><label class="form-item__text">职位名称</label></div>
+  <div class="form-item__control"><div class="phoenix-input"><input id="work1-role" class="phoenix-input__input" type="text" placeholder="请输入" value="算法工程师"></div></div></div></div>
+<div class="fields-col"><div class="form-item"><div class="form-item__title"><label class="form-item__text">公司名称</label></div>
+  <div class="form-item__control"><div class="phoenix-input"><input id="work2-company" class="phoenix-input__input" type="text" placeholder="请输入" value="另一家公司"></div></div></div></div>
+<div class="fields-col"><div class="form-item"><div class="form-item__title"><label class="form-item__text">职位名称</label></div>
+  <div class="form-item__control"><div class="phoenix-input"><input id="work2-role" class="phoenix-input__input" type="text" placeholder="请输入" value="队长"></div></div></div></div>
+
+<div class="sec">实习经历</div>
+<div class="fields-col"><div class="form-item"><div class="form-item__title"><label class="form-item__text">单位名称</label></div>
+  <div class="form-item__control"><div class="phoenix-input"><input id="intern-company" class="phoenix-input__input" type="text" placeholder="请输入"></div></div></div></div>
+<div class="fields-col"><div class="form-item"><div class="form-item__title"><label class="form-item__text">职位名称</label></div>
+  <div class="form-item__control"><div class="phoenix-input"><input id="intern-role" class="phoenix-input__input" type="text" placeholder="请输入"></div></div></div></div>
+
+<div class="sec">在校职务</div>
+<div class="fields-col"><div class="form-item"><div class="form-item__title"><label class="form-item__text">职务名称</label></div>
+  <div class="form-item__control"><div class="phoenix-input"><input id="duty-name" class="phoenix-input__input" type="text" placeholder="请输入"></div></div></div></div>
+<div class="fields-col"><div class="form-item"><div class="form-item__title"><label class="form-item__text">职务描述</label></div>
+  <div class="form-item__control"><textarea id="duty-desc" class="phoenix-textarea__realTextarea" placeholder="请输入"></textarea></div></div></div>
+
+<div class="sec">语言能力</div>
+<div class="fields-col"><div class="form-item"><div class="form-item__title"><label class="form-item__text">语言类型</label></div>
+  <div class="form-item__control"><select id="lang"><option value="">请选择</option><option>英语</option><option>日语</option></select></div></div></div>
+<div class="fields-col"><div class="form-item"><div class="form-item__title"><label class="form-item__text">掌握程度</label></div>
+  <div class="form-item__control"><select id="lang-level"><option value="">请选择</option><option>一般</option><option>良好</option><option>熟练</option><option>精通</option></select></div></div></div>
+<div class="fields-col"><div class="form-item"><div class="form-item__title"><label class="form-item__text">听说</label></div>
+  <div class="form-item__control"><select id="lang-listen"><option value="">请选择</option><option>一般</option><option>良好</option><option>熟练</option><option>精通</option></select></div></div></div>
+<div class="fields-col"><div class="form-item"><div class="form-item__title"><label class="form-item__text">读写</label></div>
+  <div class="form-item__control"><select id="lang-write"><option value="">请选择</option><option>一般</option><option>良好</option><option>熟练</option><option>精通</option></select></div></div></div>
+<div class="fields-col"><div class="form-item"><div class="form-item__title"><label class="form-item__text">精通程度</label></div>
+  <div class="form-item__control"><select id="lang-feishu"><option value="">请选择</option><option>入门</option><option>日常会话</option><option>商务会话</option><option>母语</option></select></div></div></div>
+
+<script>
+// The AutoComplete as 北森 builds it: suggestions under the box while typing;
+// on blur, text that was not picked from the list goes back to the last pick.
+const SCHOOLS = ["复旦大学", "复旦大学上海医学院", "南开大学", "南昌大学", "东南大学"];
+for (const input of document.querySelectorAll(".phoenix-auto-complete-container input")) {
+  let selected = "";
+  let layer = null;
+  const close = () => { if (layer) { layer.remove(); layer = null; } };
+  input.addEventListener("input", () => {
+    close();
+    const typed = input.value.trim();
+    const hits = typed ? SCHOOLS.filter((name) => name.includes(typed)) : [];
+    if (!hits.length) return;
+    // Results come back from the server a little later.
+    setTimeout(() => {
+      if (input.value.trim() !== typed) return;
+      layer = document.createElement("div");
+      layer.className = "phoenix-popover";
+      layer.innerHTML = '<div class="phoenix-selectList"><div class="phoenix-selectList__list">' + hits.map((name) => '<div class="phoenix-selectList__listItem">' + name + "</div>").join("") + "</div></div>";
+      layer.addEventListener("click", (event) => {
+        const item = event.target.closest(".phoenix-selectList__listItem");
+        if (!item) return;
+        selected = item.textContent.trim();
+        input.value = selected;
+        close();
+      });
+      input.closest(".form-item__control").appendChild(layer);
+    }, 250);
+  });
+  input.addEventListener("blur", () => {
+    setTimeout(() => { if (input.value !== selected) input.value = selected; close(); }, 30);
+  });
+}
+</script>
+</body></html>

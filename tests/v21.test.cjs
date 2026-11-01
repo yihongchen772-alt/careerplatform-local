@@ -22,7 +22,8 @@ test("专业技能 rows: name, level, category; language levels and certificates
   assert.equal(kind(core.resolveRepeatField(field("掌握程度", "专业技能", { tag: "select", options: ["一般", "良好", "熟练", "精通"] }), new Map())), "skill:level");
   assert.equal(kind(core.resolveRepeatField(field("技能类别"), new Map())), "skill:category");
   assert.equal(kind(core.resolveRepeatField(field("专业技能", "", { tag: "textarea" }), new Map())), "skill:summary");
-  assert.equal(core.resolveRepeatField(field("熟练程度", "语言能力", { tag: "select", options: ["一般", "良好"] }), new Map()), null);
+  // A language's level is the language row's (v1.37), never a skill's.
+  assert.equal(kind(core.resolveRepeatField(field("熟练程度", "语言能力", { tag: "select", options: ["一般", "良好"] }), new Map())), "language:level");
   assert.equal(core.resolveRepeatField(field("使用时长", "专业技能"), new Map()), null);
   assert.equal(core.sectionGroup("技能证书"), null);
   assert.equal(core.fieldModule(field("技能名称", "专业技能"), core.resolveRepeatField(field("技能名称", "专业技能"), new Map())), "skill");

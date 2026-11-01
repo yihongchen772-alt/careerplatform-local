@@ -263,12 +263,15 @@ function scanPageFields(prefix, readOnly = false) {
   // link reads too long as a whole; its title element is the heading.
   // "项目职务" / "单位名称" beside its box is the box's caption, not a module title.
   const CAPTION_LIKE = /(?:名称|职务|职位|角色|时间|日期|描述|内容|地点|类别|级别|排名|单位|方向|类型|专业|电话|邮箱)[*＊?？：:\s]*$|^是否|[?？]/;
+  // …except module titles that end like a caption (上海微电子's 「在校职务」).
+  const CAPTION_TITLE = /^(?:在校职务|校内职务|学生职务)$/;
+  const isHeadingText = (text) => text && text.length <= 30 && ((SECTION_HEADING.test(text) && !CAPTION_LIKE.test(text)) || CAPTION_TITLE.test(text));
   // 海康威视's title carries a 「必填」 badge and a long tip inside itself
   // ("教育经历 必填 从最高学历开始…"); its own text nodes are the title.
   const directText = (el) => clean(Array.from(el.childNodes).filter((child) => child.nodeType === 3).map((child) => child.textContent).join(" "));
   function headerTitle(node, text) {
     if (!text || text.length > 200) return "";
-    const isTitle = (value) => value && value.length <= 30 && SECTION_HEADING.test(value) && !CAPTION_LIKE.test(value);
+    const isTitle = isHeadingText;
     const titles = Array.from(node.querySelectorAll("h1, h2, h3, h4, h5, h6, strong, b, [class*='title'], [class*='Title'], [class*='name'], [class*='head']"));
     return titles.map((child) => clean(child.textContent)).find(isTitle) || titles.map(directText).find(isTitle) || "";
   }
@@ -286,7 +289,7 @@ function scanPageFields(prefix, readOnly = false) {
       const text = clean(sibling.textContent);
       // A form item's own caption ("证书名称") is neither a heading nor an entry.
       if (!text || captions.has(text.replace(/[*＊：:]/g, ""))) return "";
-      if ((text.length <= 30 && SECTION_HEADING.test(text) && !CAPTION_LIKE.test(text)) || headerTitle(sibling, text)) return "heading";
+      if (isHeadingText(text) || headerTitle(sibling, text)) return "heading";
       // Only a saved entry carries its own 编辑 / 删除: that tells it apart
       // from a module's description or tips.
       const editable = /编辑|删除|修改|edit|delete|remove/i.test(text) || !!sibling.querySelector("[class*='edit' i], [class*='delete' i], [class*='remove' i], [title*='编辑'], [title*='删除'], [aria-label*='编辑'], [aria-label*='删除'], [aria-label*='edit' i], [aria-label*='delete' i]");
@@ -321,7 +324,7 @@ function scanPageFields(prefix, readOnly = false) {
       while (sibling && textHops < 4 && scanned < 40) {
         if (!sibling.matches("input, select, textarea, button, label") && !sibling.querySelector("input, select, textarea")) {
           const text = clean(sibling.textContent);
-          if (text && text.length <= 30 && SECTION_HEADING.test(text) && !CAPTION_LIKE.test(text)) return text;
+          if (isHeadingText(text)) return text;
           const title = headerTitle(sibling, text);
           if (title) return title;
           if (text) textHops++;
@@ -526,7 +529,7 @@ function scanPageFields(prefix, readOnly = false) {
   const groupFor = (field) => {
     const section = field.section || "";
     const text = section || field.label || "";
-    return /校园经历|校内经历|在校经历|学生工作|学生干部|社团|校内任职|任职经历|学生会/.test(text) ? "campus" : /获奖|荣誉|奖项|奖励|award|honou?r/i.test(text) ? "award" : /(?<!语言|外语)技能(?!证书)|专业特长|(?:^|\W)skills?(?:\W|$)/i.test(text) && !/语言|外语|language/i.test(text) ? "skill" : /项目|project/i.test(text) ? "project" : /实习|工作经历|工作经验|实践经历|internship|employment|work experience/i.test(text) ? "experience" : /教育|学习经历|本科|硕士|博士|大专|学校|education|academic/i.test(text) ? "education" : /语言(?:能力|成绩|水平|证书|技能|考试)|外语(?:能力|水平|成绩|证书|技能|考试)|英语(?:能力|水平|成绩|考试)(?:情况)?$|^(?:外语|语言)$|language(?:s|\s*skills?|\s*proficiency|\s*tests?)?$/i.test(text) ? "language" : null;
+    return /校园经历|校内经历|在校经历|学生工作|学生干部|学生职务|社团|校内任职|校内职务|在校任职|在校职务|任职经历|学生会/.test(text) ? "campus" : /获奖|荣誉|奖项|奖励|award|honou?r/i.test(text) ? "award" : /(?<!语言|外语)技能(?!证书)|专业特长|(?:^|\W)skills?(?:\W|$)/i.test(text) && !/语言|外语|language/i.test(text) ? "skill" : /项目|project/i.test(text) ? "project" : /实习|工作经历|工作经验|实践经历|internship|employment|work experience/i.test(text) ? "experience" : /教育|学习经历|本科|硕士|博士|大专|学校|education|academic/i.test(text) ? "education" : /语言(?:能力|成绩|水平|证书|技能|考试)|外语(?:能力|水平|成绩|证书|技能|考试)|英语(?:能力|水平|成绩|考试)(?:情况)?$|^(?:外语|语言)$|language(?:s|\s*skills?|\s*proficiency|\s*tests?)?$/i.test(text) ? "language" : null;
   };
   const isAnchor = (field, group) => {
     const text = field.label || field.placeholder || "";
@@ -736,6 +739,8 @@ async function fillFields(pairs) {
   const filled = [];
   const failed = [];
   const skipped = [];
+  // Why a box was not written, when there is more to say than 「写入没成功」.
+  const reasons = {};
   // Most 网申 forms are React/Vue-controlled: writing `el.value = x` directly
   // gets silently ignored, because those frameworks override the native
   // value property's setter to track changes themselves — an event fired
@@ -964,6 +969,13 @@ async function fillFields(pairs) {
     const write = el.type === "number" ? (String(p.value).match(/-?\d+(?:\.\d+)?/) || [""])[0]
       : el.type === "date" || el.type === "month" ? normalizeDate(p.value, el.type) : p.value;
     if (!write) { failed.push(p.label || p.id); continue; }
+    // 北森's 学校名称 is an AutoComplete that keeps only a name picked from its
+    // list: typed text is wiped as soon as the box loses focus.
+    if (tag === "input" && el.closest(".phoenix-auto-complete-container")) {
+      if (await pickSuggestion(el, write)) { mark(el, p.source || "profile", p.answerId); confirmManual(el, p); filled.push(p.id); }
+      else { failed.push(p.label || p.id); reasons[p.label || p.id] = `网站的下拉列表里没有「${write.slice(0, 20)}」，请输入后从列表里点选`; }
+      continue;
+    }
     if (tag === "select") {
       const match = Array.from(el.options).find((o) => !o.disabled && clean(o.textContent) === p.value);
       if (!match) { failed.push(p.label || p.id); continue; }
@@ -986,7 +998,37 @@ async function fillFields(pairs) {
     filled.push(p.id);
     if (tag === "input") pickOwnWordsChoice(el);
   }
-  return { filled, failed, skipped };
+  return { filled, failed, skipped, reasons };
+
+  // Types the value, waits for the suggestions, and clicks the one that is
+  // the value (or the value with an English name / campus after it).
+  async function pickSuggestion(el, value) {
+    const want = clean(value);
+    el.focus();
+    nativeInputSetter.call(el, want);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    const shown = (node) => { const r = node.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+    const bare = (text) => text.replace(/[（(][^）)]*[）)]/g, "").trim();
+    let hit = null;
+    // The list can come from the server a moment after typing.
+    for (let waited = 0, sawList = 0; waited < 3000 && !hit && sawList < 800; waited += 100) {
+      await sleep(100);
+      const items = findAll(".phoenix-selectList__listItem:not(.phoenix-selectList__listItem--disabled)").filter(shown);
+      if (!items.length) continue;
+      sawList += 100;
+      hit = items.find((item) => clean(item.textContent) === want) || items.find((item) => bare(clean(item.textContent)) === want) || items.find((item) => clean(item.textContent).startsWith(want)) || null;
+    }
+    // Nothing to pick: clear the text the site would wipe anyway, so the box
+    // reads as empty (and 需手填) rather than looking filled until it blurs.
+    if (!hit) {
+      nativeInputSetter.call(el, "");
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      return false;
+    }
+    hit.click();
+    await sleep(150);
+    return !!clean(el.value) && clean(el.value) === clean(hit.textContent);
+  }
 
   // 海康's 意向工作地: 国内任意 / 全球任意 / 自填, then the box for 自填. A box filled
   // beside a choice nobody made picks the choice that means "what I typed".
@@ -1576,6 +1618,8 @@ const BASIC_FIELD_RULES = [
   { keys: ["籍贯", "户籍", "户口所在地", "hometown"], not: /地址|详细|街道|门牌/, get: (p) => p.hometown, learn: "hometown" },
   { keys: ["民族", "ethnic", "ethnicity"], get: (p) => p.ethnicity, learn: "ethnicity" },
   { keys: ["微信", "wechat", "weixin"], get: (p) => p.wechat, learn: "wechat" },
+  // 「推荐方式：无 / 内推 / 大使推荐」: nobody referred the applicant unless they type a code themselves.
+  { keys: ["推荐方式", "内推方式", "推荐渠道", "推荐类型"], when: (field) => (field.options || []).some((option) => NO_REFERRAL.test(String(option).trim())), get: () => "无", noReferral: true },
   { keys: ["qq", "qq号", "qq号码"], get: (p) => p.qq, learn: "qq" },
   { keys: ["期望薪资", "期望月薪", "期望年薪", "期望薪酬", "期望待遇", "薪资要求", "薪资期望", "expected salary", "salary expectation"], get: (p) => p.expectedSalary, learn: "expectedSalary" },
   { keys: ["到岗时间", "到岗日期", "可入职", "最早入职", "available from", "availability date", "earliest start"], get: (p) => p.availableFrom, date: true, learn: "availableFrom" },
@@ -1590,6 +1634,8 @@ const BASIC_FIELD_RULES = [
   // 资料方案 fields: the direction-specific target role and self-assessment.
   // No `learn` here: which city and which job is usually picked per company.
   { keys: ["期望岗位", "期望职位", "意向岗位", "意向职位", "求职意向"], get: (p) => p.targetRole },
+  // 社招表单 (Moka) asks a student for 目前职位: 学生 (typed by hand on 主线科技).
+  { keys: ["目前职位", "当前职位", "现任职位", "目前职务", "当前职务", "现职位", "current position", "current job title"], not: /期望|意向|desired|expected/i, get: (p) => studyingNow(p) ? "学生" : p.latestRole },
   { keys: ["自我评价", "个人评价", "自我描述", "评价内容"], get: (p) => p.selfIntro, learn: "selfIntro" },
   // 「自我介绍（选填）」 too, but not a question built around one (「…自我介绍，并说明为何适合」 goes to the AI).
   { keys: ["自我介绍", "个人介绍", "个人简介"], not: /英文|英语|english/i, when: (field) => bareLabel(field).replace(/[（(][^）)]*[）)]/g, "").length <= 8, get: (p) => p.selfIntro, learn: "selfIntro" },
@@ -1598,7 +1644,7 @@ const BASIC_FIELD_RULES = [
   // next to a saved paragraph); a description box the paragraph.
   { keys: ["研究方向", "研究领域", "research direction", "research interest"], when: (field) => !longTextBox(field), get: (p) => p.researchTopic || shortTopic(p.researchDirection), learn: "researchTopic" },
   { keys: ["研究方向", "研究领域", "research direction", "research interest"], when: longTextBox, get: (p) => p.researchDirection || p.researchTopic, learn: "researchDirection" },
-  { keys: ["成绩排名", "专业排名", "绩点排名", "年级排名", "班级排名", "排名"], not: /学校|院校|企业|公司|职位|岗位/, get: (p) => p.rank, learn: "rank" },
+  { keys: ["成绩排名", "专业排名", "绩点排名", "年级排名", "班级排名", "排名"], not: /学校|院校|企业|公司|职位|岗位/, get: (p) => p.rank, learn: "rank", rank: true },
   { keys: ["主修课程", "专业课程", "核心课程", "主要课程"], get: (p) => p.courses, learn: "courses" },
   { keys: ["是否接受调剂", "服从调剂", "接受调剂", "岗位调剂", "是否服从", "接受其他岗位", "考虑其他岗位"], not: /工作地|城市|地点/, get: (p) => p.acceptAdjust, learn: "acceptAdjust" },
   // The job being applied for: the one this tab was opened for (比亚迪 / 钉钉表单's 「投递岗位」).
@@ -1791,7 +1837,7 @@ function listKey(group) {
 
 // 校园经历 / 学生工作: student union, clubs, class roles — a list of its own,
 // not an internship (seen filled by hand on 51job、中国移动、吉利、歌尔、智联).
-const CAMPUS_SECTION = /校园经历|校内经历|在校经历|学生工作|学生干部|社团|校内(?:任职|职务|实践)|在校(?:任职|实践)|任职经历|组织经历|学生会|校园活动|campus|student (?:leadership|organi[sz]ation)|extracurricular/i;
+const CAMPUS_SECTION = /校园经历|校内经历|在校经历|学生工作|学生干部|学生职务|社团|校内(?:任职|职务|实践)|在校(?:任职|职务|实践)|任职经历|组织经历|学生会|校园活动|campus|student (?:leadership|organi[sz]ation)|extracurricular/i;
 
 // 专业技能 / 技能特长 (技能名称、掌握程度): a list of its own on Moka、网易、
 // 中国移动、智联. 语言能力 and 技能证书 are other modules.
@@ -1939,7 +1985,8 @@ function campusFieldKind(haystack, bare = "", inSection = false) {
   if (/是否/.test(haystack)) return null;
   if (/(?:所在|学生)?组织(?:团体)?(?:名称)?|社团|团体名称|协会|学生会/.test(haystack) && !/职务|级别|描述|职位|角色/.test(haystack)) return "name";
   if (/级别|层级/.test(haystack)) return "level";
-  if (/职务|干部名称|职位|角色|任职/.test(haystack)) return "role";
+  // 「职务描述」 describes the role: it is the description, not the role's name.
+  if (/职务|干部名称|职位|角色|任职/.test(haystack) && !/描述|内容|职责|说明|description/i.test(haystack)) return "role";
   if (!inSection) return /描述|说明|经历/.test(haystack) && /干部|校内|社团|组织/.test(haystack) ? "description" : null;
   if (RANGE_LABEL.test(bare)) return "range";
   if (START_LABEL.test(haystack)) return "start";
@@ -1992,7 +2039,9 @@ function languageFieldKind(field, haystack, bare = "", inSection = false) {
   if (/是否|有无|证书编号|编号|准考证|number|\bid\b/i.test(haystack)) return null;
   if (/时间|日期|年月|年份|date|when|year/i.test(haystack)) return "date";
   if (/成绩|分数|得分|总分|分值|score|marks?\b|result|grade/i.test(haystack) || (named && !field.options)) return "score";
-  if (/语种|^语言$|^外语$|^language$|language(?:type|name)/i.test(bare)) return "language";
+  // 掌握程度 / 精通程度 / 听说 / 读写 (中微、上海微电子、飞书): how well, read from the exam.
+  if (/程度|熟练|精通|掌握|听说|读写|口语|书面|听力|阅读|写作|proficiency|fluency/i.test(bare) && !/考试|证书|exam|certific/i.test(haystack)) return "level";
+  if (/语种|^(?:语言|外语)(?:类型|种类|类别|名称)?$|^language$|language(?:type|name)/i.test(bare)) return "language";
   if (/考试|证书|等级|级别|水平|类型|类别|名称|exam|test|certificat|level|type|name/i.test(haystack) || named) return "name";
   return null;
 }
@@ -2058,7 +2107,9 @@ function resolveRepeatField(field, rowIndexes) {
   // A stray "预计毕业时间" in 基本信息 must not push the education blocks
   // below it down a row, so in-block and loose fields count separately.
   const pickTag = info.pick ? `:${info.pick}` : "";
-  const key = `${info.group}${pickTag}:${info.kind}:${group === info.group ? "in" : "out"}`;
+  // 听说 and 读写 are two levels of the same language row, each counted on its own.
+  const kindTag = info.kind === "level" && info.group === "language" ? `level:${bare}` : info.kind;
+  const key = `${info.group}${pickTag}:${kindTag}:${group === info.group ? "in" : "out"}`;
   // The 月 / 日 dropdown of a split date continues its 年 dropdown's row.
   const continuesDate = field.datePart === "month" || field.datePart === "day";
   const counted = continuesDate ? Math.max(0, (rowIndexes?.get(key) || 1) - 1) : rowIndexes?.get(key) || 0;
@@ -2236,6 +2287,7 @@ function repeatFieldValue(field, info, profile) {
       if (field.options) return field.options.find((option) => option === language) || field.options.find((option) => option.includes(language) || (/英语/.test(language) && /^english$/i.test(option))) || null;
       return /[㐀-鿿]/.test(field.label || "") || !/英语/.test(language) ? language : "English";
     }
+    if (info.kind === "level") return skillLevelOption(field, ["一般", "良好", "熟练"][languageLevelRank(row)]);
     if (field.options) return englishValue({ ...field, label: "等级", placeholder: "", section: "" }, row.name);
     // A 等级 / 水平 text box takes the level with its score ("CET-6 560"); 考试 / 证书名称 just the name.
     return /等级|水平|level|考试成绩|考试情况/i.test(fieldHaystack(field)) ? [row.name, row.score].filter(Boolean).join(" ") : row.name;
@@ -2282,13 +2334,47 @@ function repeatFieldValue(field, info, profile) {
   return info.kind === "degree" ? matchDegreeOption(field, row.degree) : matchFieldOption(field, rowDateValue(field, info.kind, row));
 }
 
+const NO_REFERRAL = /^(?:无|否|没有|无推荐|非内推|自主投递|自主申请|none|no)$/i;
+
+// A saved rank as a top percentage: "前15%", "top 15%", "3/40" (3rd of 40).
+function rankPercent(rank) {
+  const text = String(rank || "").replace(/\s+/g, "");
+  const percent = /(\d+(?:\.\d+)?)%/.exec(text);
+  if (percent) return Number(percent[1]);
+  const place = /^(?:第|前)?(\d+)(?:名)?[/／](\d+)(?:人|名)?$/.exec(text);
+  if (place && Number(place[2]) > 0) return (Number(place[1]) / Number(place[2])) * 100;
+  return null;
+}
+
+// 飞书招聘's 成绩排名 offers 前 5% / 前 10% / 前 20% / 前 30% / 其他.
+function rankBucketOption(options, rank) {
+  const percent = rankPercent(rank);
+  if (percent == null) return null;
+  const buckets = options.map((option) => ({ option, top: /(?:前|top)\s*(\d+(?:\.\d+)?)\s*%/i.exec(String(option))?.[1] })).filter((item) => item.top).map((item) => ({ ...item, top: Number(item.top) })).sort((a, b) => a.top - b.top);
+  if (!buckets.length) return null;
+  return buckets.find((item) => percent <= item.top)?.option || options.find((option) => /^(?:其他|其它|other)$/i.test(String(option).trim())) || null;
+}
+
 // 了解 < 熟悉 < 熟练 < 精通, with each portal's own words for the four steps.
 const SKILL_LEVELS = [
   ["了解", "一般", "入门", "初级", "基础", "basic", "beginner"],
-  ["熟悉", "良好", "中级", "较熟练", "intermediate", "good"],
-  ["熟练", "掌握", "较好", "advanced", "proficient"],
-  ["精通", "专家", "高级", "expert", "master", "fluent"],
+  ["熟悉", "良好", "中级", "较熟练", "日常会话", "日常交流", "intermediate", "good"],
+  ["熟练", "掌握", "较好", "商务会话", "商务交流", "工作语言", "流利", "advanced", "proficient"],
+  ["精通", "专家", "高级", "母语", "expert", "master", "fluent", "native"],
 ];
+
+// A language row's level step from its exam: 雅思 7 / 六级 550 / 专八 → 熟练,
+// a pass → 良好, a low score → 一般. Never 精通 — that is the applicant's call.
+function languageLevelRank(row) {
+  const key = examKey(row.name);
+  const score = Number.parseFloat(row.score);
+  const known = Number.isFinite(score);
+  const strong = { ielts: 7, toefl: 100, cet6: 550, toeic: 850 }[key];
+  const pass = { ielts: 5.5, toefl: 80, cet6: 425, cet4: 425, toeic: 600 }[key];
+  if (key === "tem8" || (strong && known && score >= strong)) return 2;
+  if (pass && known && score < pass) return 0;
+  return 1;
+}
 
 // The longest word decides: "较熟练" is a step below "熟练".
 function skillLevelRank(text) {
@@ -2483,7 +2569,10 @@ function classifyRepeatBlocks(fields, profile, pageText = "") {
         const used = reserved.get(block.group) || new Set();
         const rows = rowsForGroup(profile, block.group);
         let row = block.row;
-        if (used.has(row)) row = rows.findIndex((_, index) => !used.has(index));
+        // Past the last record because earlier blocks the page already filled
+        // with something else used up the count (埃夫特: 工作经历 ×2 parsed from
+        // the résumé, then an empty 实习经历): the first record nobody holds.
+        if (used.has(row) || row >= rows.length) row = rows.findIndex((_, index) => !used.has(index));
         if (row >= 0) { used.add(row); reserved.set(block.group, used); }
         // Every record is already saved on the page: nothing left for this
         // empty form (filling the first one again would duplicate it).
@@ -2540,7 +2629,7 @@ function displayLabel(field) {
   return String(field.label || field.placeholder || field.name || "").replace(/^[*＊\s]+|[*＊：:\s]+$/g, "") || "未命名字段";
 }
 
-function fillDetail(field, pair, filledSet, failedSet) {
+function fillDetail(field, pair, filledSet, failedSet, reasons = {}) {
   const own = displayLabel(field);
   const label = field.section && !own.includes(field.section) && (sectionGroup(field.section) || THIRD_PARTY.test(field.section)) ? `${field.section} · ${own}` : own;
   if (field.hasValue || field.userEdited) return { label, state: field.userEdited ? "手动修改过，保持不动" : "页面已有内容，未改动", source: "prefilled" };
@@ -2554,7 +2643,7 @@ function fillDetail(field, pair, filledSet, failedSet) {
     return { label, state: pair.reused ? "AI 草稿（复用），请核对" : "AI 生成，请核对", source: "ai" };
   }
   if (isNeverGuessField(field)) return { label, state: "敏感或需核对，请手填", source: "manual", deliberate: true };
-  if (pair && failedSet.has(pair.label || pair.id)) return { label, state: "写入没成功，请手填", source: "manual" };
+  if (pair && failedSet.has(pair.label || pair.id)) return { label, state: reasons[pair.label || pair.id] || "写入没成功，请手填", source: "manual" };
   return { label, state: "没有对应资料，请手填", source: "manual" };
 }
 
@@ -2931,10 +3020,16 @@ function matchFlatField(field, profile) {
       if (yesNo) return yesNo;
       continue;
     }
+    if (rule.noReferral) return field.options.find((option) => NO_REFERRAL.test(String(option).trim()));
     if (rule.workYears && field.options) {
       const none = field.options.find((option) => /应届|无工作|无经验|^无$|^0\s*年?$|在校/.test(String(option).trim())) || field.options.find((option) => /1\s*年以下|一年以下|1年以内/.test(String(option)));
       if (none) return none;
       continue;
+    }
+    // 「前 20%」-style buckets: the narrowest one the saved rank fits in.
+    if (rule.rank && field.options) {
+      const bucket = rankBucketOption(field.options, value);
+      if (bucket) return bucket;
     }
     if (rule.nationality && field.options) {
       const own = field.options.find((option) => /^(?:中国|中国大陆|中华人民共和国|china|chinese)$/i.test(String(option).trim()));
@@ -3167,6 +3262,7 @@ async function fillFrames(adapter, pairs, frameById, initialUrl) {
   const filled = [];
   const failed = [];
   const skipped = [];
+  const reasons = {};
   for (const [frame, subset] of byFrame) {
     if (!adapter.stillOnPage(initialUrl)) throw new Error("页面或标签已切换，已停止写入；请在当前页面重新填充");
     const plain = subset.filter((p) => !/-s\d+$/.test(p.id));
@@ -3179,12 +3275,13 @@ async function fillFrames(adapter, pairs, frameById, initialUrl) {
         filled.push(...result.filled);
         failed.push(...result.failed);
         skipped.push(...(result.skipped || []));
+        Object.assign(reasons, result.reasons || {});
       } catch {
         failed.push(...batch.map((p) => p.label || p.id));
       }
     }
   }
-  return { filled, failed, skipped };
+  return { filled, failed, skipped, reasons };
 }
 
 // `options`: { variantId, expandBlocks } from the UI, plus round/modal/added
@@ -3446,6 +3543,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     const essayReused = pairs.filter((p) => isEssay(p) && p.reused && filledSet.has(p.id)).length;
     const aiReused = essayReused - rememberedFilled;
     const failedSet = new Set(failed);
+    const reasons = { ...basicResult.reasons, ...aiResult.reasons };
     const skippedSet = new Set(skipped);
     // An empty form below saved cards with no record left for it.
     const allSavedOnPage = (field) => {
@@ -3458,7 +3556,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       ? { label: displayLabel(field), state: "填写期间已有修改，已保留", source: "prefilled" }
       : repeatsSaved.has(field.id) && !field.hasValue && !filledSet.has(field.id)
       ? { label: displayLabel(field), id: field.id, state: `上面已保存过「${repeatsSaved.get(field.id).slice(0, 30)}」，这一组没重复填`, source: "prefilled" }
-      : { ...fillDetail(field, pairs.find((p) => p.id === field.id), filledSet, failedSet), id: field.id, ...(allSavedOnPage(field) ? { state: "这类经历已全部保存在页面上，这一组不用再填", source: "prefilled" } : {}) });
+      : { ...fillDetail(field, pairs.find((p) => p.id === field.id), filledSet, failedSet, reasons), id: field.id, ...(allSavedOnPage(field) ? { state: "这类经历已全部保存在页面上，这一组不用再填", source: "prefilled" } : {}) });
     const previous = options.accumulated || { filled: 0, uploaded: 0, details: [], shortened: [] };
     const earlier = new Map(previous.details.map((d) => [d.key, d]));
     const merged = new Map(earlier);
