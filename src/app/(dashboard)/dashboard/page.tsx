@@ -36,6 +36,7 @@ import { loadBriefState } from "@/lib/agent/brief";
 import { loadJustFinished, loadUpcomingSchedule } from "@/lib/schedule-loader";
 import { isTerminalStage } from "@/lib/interview-schedule";
 import { currentTimeMs } from "@/lib/dates";
+import { dashboardBrief } from "@/lib/dashboard-brief";
 
 function greeting(now: Date) {
   const hour = now.getHours();
@@ -113,15 +114,8 @@ export default async function DashboardPage() {
   // A result in the last two days with nothing written about it: one gentle line, not a card.
   const recentEntries = await db.journeyEntry.findMany({ where: { userId: user.id, createdAt: { gte: new Date(now - 8 * 86_400_000) } }, select: { about: true, createdAt: true } });
   const journeyNudge = nudgeEvent(await loadJourneyEvents(user.id, now), recentEntries.map((entry) => ({ about: entry.about, createdAt: entry.createdAt.toISOString() })), now);
-  // One line under the greeting: this week's interviews / tests, the next one, what is pressing.
-  const scheduled = upcoming.filter((item) => item.source !== "mail");
-  const next = scheduled[0];
-  const pressing = todos.filter((todo) => todo.urgency !== "soon").length;
-  const heroSummary = [
-    scheduled.length ? `7 天内 ${scheduled.length} 场面试 / 笔试` : "7 天内没有面试和笔试",
-    next ? `下一场：${next.companyName ? `${next.companyName} · ` : ""}${next.title}` : null,
-    pressing ? `${pressing} 件事今明两天要处理` : "眼前没有要赶的事",
-  ].filter(Boolean).join("　·　");
+  // One line under the greeting: today's / the next sitting, open 测评, what is pressing.
+  const heroSummary = dashboardBrief(upcoming, todos, now);
   const dailyDigest = await getTodayDigest();
   const weeklyReview = await getWeeklyReview();
 
@@ -180,13 +174,14 @@ export default async function DashboardPage() {
           <span className="absolute -right-10 -top-16 size-56 rounded-full bg-white/15 blur-2xl" />
           <span className="absolute right-[18%] top-6 size-10 rotate-12 rounded-2xl bg-white/25 shadow-[0_10px_24px_-8px_rgba(0,0,0,0.25)]" />
           <span className="absolute right-[8%] bottom-6 size-16 -rotate-6 rounded-[1.4rem] bg-gradient-to-br from-white/45 to-white/10 shadow-[0_14px_30px_-10px_rgba(0,0,0,0.3)]" />
-          <span className="absolute right-[28%] bottom-8 size-6 rounded-full bg-amber-200/80 shadow-[0_6px_14px_-4px_rgba(0,0,0,0.25)]" />
         </div>
         <div className="relative flex flex-wrap items-end justify-between gap-4">
           <div className="min-w-0">
             <p className="hero-sub text-sm text-muted-foreground">{new Date(now).toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "long" })}</p>
             <h1 className="mt-1 font-semibold">{greeting(new Date(now))}{dbUser?.name && dbUser.name !== "我" ? `，${dbUser.name}` : ""}</h1>
-            <p className="hero-sub mt-2 max-w-xl text-sm text-muted-foreground">{heroSummary}</p>
+            <ul aria-label="今天的概况" className="mt-3 flex max-w-4xl flex-wrap gap-2">
+              {heroSummary.map((part) => <li key={part} className="hero-pill rounded-full px-3 py-1 text-xs font-medium">{part}</li>)}
+            </ul>
           </div>
           <Link href="/applications" className="hero-action inline-flex items-center gap-1 rounded-full px-3.5 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
             投递记录 <ArrowUpRight className="size-3.5" />

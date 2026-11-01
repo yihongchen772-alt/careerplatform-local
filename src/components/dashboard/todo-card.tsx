@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ChevronDown, Hourglass } from "lucide-react";
+import { BellRing, ChevronDown, Hourglass } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -60,8 +60,8 @@ export function TodoCard({ todos }: { todos: Todo[] }) {
 
   return (
     <Card className="surface-card rounded-xl">
-      <CardHeader className="flex-row items-center justify-between space-y-0">
-        <CardTitle>待办</CardTitle>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0">
+        <CardTitle className="flex items-center gap-2.5"><span className="section-chip flex size-8 items-center justify-center rounded-xl bg-primary/10 text-primary"><BellRing className="size-4" /></span>待办</CardTitle>
         <SendDigestButton />
       </CardHeader>
       <CardContent className="space-y-2">

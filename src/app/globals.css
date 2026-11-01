@@ -638,13 +638,38 @@ html[data-style="soft"] body {
   background: var(--hero-bg);
   box-shadow: 0 22px 48px -24px color-mix(in oklch, var(--primary), transparent 25%);
 }
-/* Inner pages open with a lighter version of 总览's card. */
+/* Inner pages open with a light card: brand-tinted at the left, white at the
+   right, a gradient icon tile — the same family as 总览's card, quieter, so
+   the pages read as one app and 总览 keeps its welcome. */
+.page-hero {
+  position: relative;
+  overflow: hidden;
+}
+.page-hero-decor {
+  display: none;
+}
 [data-style="soft"] .page-hero {
-  padding: 1.35rem 1.75rem;
+  padding: 1.25rem 1.6rem;
   border-radius: 1.5rem;
+  background:
+    radial-gradient(70% 160% at 0% 0%, color-mix(in oklch, var(--primary) 12%, transparent) 0%, transparent 62%),
+    radial-gradient(50% 140% at 100% 100%, color-mix(in oklch, var(--glow-2) 10%, transparent) 0%, transparent 70%),
+    var(--card);
+  box-shadow: inset 0 0 0 1px var(--card-edge), var(--card-shadow);
 }
 [data-style="soft"] .page-hero h1 {
-  font-size: 1.6rem;
+  font-size: 1.45rem;
+  letter-spacing: -0.02em;
+}
+[data-style="soft"] .page-hero-chip {
+  background: var(--gradient-accent);
+  color: var(--primary-foreground);
+  box-shadow: 0 8px 18px -8px color-mix(in oklch, var(--primary), transparent 30%);
+}
+.dark[data-style="soft"] .page-hero {
+  background:
+    radial-gradient(70% 160% at 0% 0%, color-mix(in oklch, var(--primary) 16%, transparent) 0%, transparent 62%),
+    var(--card);
 }
 [data-style="soft"] .hero-card .hero-sub,
 [data-style="soft"] .hero-card .text-muted-foreground {
@@ -694,6 +719,25 @@ html[data-style="soft"] body {
   background: color-mix(in oklch, white 24%, transparent);
   color: var(--primary-foreground);
   box-shadow: inset 0 0 0 1px color-mix(in oklch, white 35%, transparent);
+}
+/* A section's icon tile: the brand gradient in 柔光, a tint elsewhere. */
+[data-style="soft"] .section-chip {
+  background: var(--gradient-accent);
+  color: var(--primary-foreground);
+  box-shadow: 0 6px 14px -6px color-mix(in oklch, var(--primary), transparent 35%);
+}
+/* 总览's one-line facts, as pills: muted elsewhere, frosted on the gradient. */
+.hero-pill {
+  background: var(--muted);
+  color: var(--foreground);
+}
+[data-style="soft"] .hero-card .hero-pill {
+  background: color-mix(in oklch, white 18%, transparent);
+  color: var(--primary-foreground);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, white 26%, transparent);
+}
+.dark[data-style="soft"] .hero-card .hero-pill {
+  color: #fff;
 }
 [data-style="soft"] .hero-card .hero-divider {
   border-color: color-mix(in oklch, white 25%, transparent);

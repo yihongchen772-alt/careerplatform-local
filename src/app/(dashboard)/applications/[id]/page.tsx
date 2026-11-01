@@ -114,15 +114,11 @@ export default async function ApplicationDetailPage({
 
   return (
     <div className="mx-auto max-w-[96rem] space-y-6">
-      <div className="hero-card surface-card rounded-xl p-5 sm:p-7">
-        <div aria-hidden="true" className="hero-decor pointer-events-none absolute inset-0">
-          <span className="absolute -right-12 -top-20 size-60 rounded-full bg-white/15 blur-2xl" />
-          <span className="absolute right-[12%] bottom-8 size-14 rotate-12 rounded-[1.2rem] bg-gradient-to-br from-white/40 to-white/10 shadow-[0_14px_30px_-10px_rgba(0,0,0,0.3)]" />
-        </div>
+      <div className="page-hero surface-card rounded-xl p-5 sm:p-7">
         <div className="relative">
         <ApplicationPager id={application.id} fallbackIds={order.map((row) => row.id)} />
         <div className="mt-5 flex flex-wrap items-start gap-4">
-          <span className="hero-chip flex size-14 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-xl font-semibold text-primary ring-1 ring-primary/15">{application.company.name.slice(0, 1)}</span>
+          <span className="page-hero-chip flex size-14 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-xl font-semibold text-primary ring-1 ring-primary/15">{application.company.name.slice(0, 1)}</span>
           <div className="min-w-0 flex-1">
             <p className="hero-sub text-sm font-medium text-muted-foreground">{application.company.name}</p>
             <h1 className="mt-0.5 text-2xl font-semibold tracking-[-0.04em] sm:text-3xl">{application.title}</h1>

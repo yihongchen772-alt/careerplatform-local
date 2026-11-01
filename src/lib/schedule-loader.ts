@@ -13,6 +13,7 @@ import {
 } from "@/lib/interview-schedule";
 import { STAGE_LABELS } from "@/lib/stage-labels";
 import { mailTime } from "@/lib/mail-time";
+import { recognizeSchedule } from "@/lib/schedule-recognize";
 import type { ApplicationStage } from "@prisma/client";
 
 /**
@@ -135,13 +136,15 @@ function dedupe(items: ScheduleItem[]): ScheduleItem[] {
 export async function loadUpcomingSchedule(userId: string, now = new Date(), days = 7): Promise<ScheduleItem[]> {
   const nowMs = now.getTime();
   const horizon = new Date(nowMs + days * DAY);
-  const [apps, linkedEventIds, drafts] = await Promise.all([
+  const [apps, linkedEventIds, drafts, active] = await Promise.all([
     db.application.findMany({
       where: { userId, currentStage: { notIn: TERMINAL }, stageHistory: { some: { nextDeadline: { not: null } } } },
       select: { id: true, title: true, currentStage: true, currentStageDate: true, company: { select: { name: true } }, stageHistory: { select: scheduleRowSelect } },
     }),
     db.personalTask.findMany({ where: { userId, mailEventId: { not: null } }, select: { mailEventId: true } }),
     db.personalTask.findMany({ where: { userId, done: false, mailEventId: null, mailAppliedAt: null, mailUndoneAt: null }, select: draftTaskSelect }),
+    // Every active 投递, for naming the company of an invitation not linked to one.
+    db.application.findMany({ where: { userId, currentStage: { notIn: TERMINAL } }, select: { id: true, title: true, company: { select: { name: true, aliases: { select: { alias: true } } } } } }),
   ]);
   const ids = linkedEventIds.map((task) => task.mailEventId!).filter(Boolean);
   // Only job-search items: the ones made from mail. The applicant's own
@@ -159,7 +162,8 @@ export async function loadUpcomingSchedule(userId: string, now = new Date(), day
     const item = draftItem(task);
     if (item) items.push(item);
   }
-  return dedupe(items.filter((item) => isUpcoming(item, nowMs, days)));
+  const recognizable = active.map((app) => ({ id: app.id, title: app.title, companyName: app.company.name, aliases: app.company.aliases.map((entry) => entry.alias) }));
+  return recognizeSchedule(dedupe(items.filter((item) => isUpcoming(item, nowMs, days))), recognizable);
 }
 
 /** One 投递: its steps' times (past current one included) and its unwritten mail times. */

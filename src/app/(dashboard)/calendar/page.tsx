@@ -105,15 +105,20 @@ export default async function CalendarPage() {
 
   return (
     <div className="space-y-6">
-      <PageHero title="日历视图" icon={CalendarDays} description="候选岗位投递截止日期 + 投递记录里填写的下一步截止日期 + 你自己写的日程 + 联系人跟进提醒，一次看清楚有没有撞期" />
-      <div className="flex flex-wrap items-center gap-2">
-        <AddScheduleDialog applications={scheduleApps} />
-        <a className={buttonVariants({ variant: "outline", size: "sm" })} href="/api/calendar-export">导出 ICS 到系统 / 手机日历</a>
-      </div>
-      <p className="text-xs text-muted-foreground">加面试、笔试、截止日，统一点「添加面试 / 笔试」；邮件里读到的会自动进日历，读不出时间的在下面等你补。导出的是当前快照，之后改动需要重新导入。</p>
+      <PageHero
+        title="日历"
+        icon={CalendarDays}
+        description="面试、笔试、投递截止、自己的日程和跟进提醒都在这里；邮件里读到的时间会自动写进来，读不出的在下面等你补。"
+        actions={
+          <>
+            <AddScheduleDialog applications={scheduleApps} />
+            <a className={buttonVariants({ variant: "outline", size: "sm" })} href="/api/calendar-export" title="导出的是当前快照，之后改动需要重新导入">导出到系统 / 手机日历</a>
+          </>
+        }
+      />
       <PendingMailPanel items={pending} />
-      <DesktopLinks />
       <DeadlineCalendar events={events} scheduleApps={scheduleApps} />
+      <DesktopLinks />
     </div>
   );
 }

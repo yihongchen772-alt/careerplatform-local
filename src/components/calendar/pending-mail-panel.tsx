@@ -74,7 +74,7 @@ export function PendingMailPanel({ items }: { items: PendingMail[] }) {
     <section aria-label="邮件里读到、还没进日历的事" className="surface-card rounded-xl p-4 sm:p-5">
       <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h2 className="flex items-center gap-2 text-base font-semibold tracking-tight"><Mail className="size-4 text-primary" />邮件里的安排，还没进日历{shown.length > 0 && <span className="text-sm font-normal text-muted-foreground">· {shown.length}</span>}</h2>
+          <h2 className="flex items-center gap-2.5 text-base font-semibold tracking-tight"><span className="section-chip flex size-8 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><Mail className="size-4" /></span>邮件里的安排，还没进日历{shown.length > 0 && <span className="text-sm font-normal text-muted-foreground">· {shown.length}</span>}</h2>
           <p className="mt-0.5 text-xs text-muted-foreground">读到了面试 / 笔试邮件，但时间要你确认或补上。处理完就会从这里消失。</p>
         </div>
         <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" disabled={rereading} onClick={reread}>

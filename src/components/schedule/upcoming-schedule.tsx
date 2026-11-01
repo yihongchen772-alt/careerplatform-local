@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowUpRight, CalendarClock, CalendarPlus, CheckCircle2, Link2, Mail, Pencil, TriangleAlert } from "lucide-react";
+import { ArrowUpRight, CalendarClock, CalendarPlus, CheckCircle2, Link2, Mail, Pencil, Sparkles, TriangleAlert } from "lucide-react";
 import type { ApplicationStage } from "@prisma/client";
 import { AddScheduleDialog } from "@/components/calendar/add-schedule-dialog";
 import { EditScheduleDialog } from "@/components/schedule/edit-schedule-dialog";
@@ -28,15 +28,9 @@ import { attachEventToApplication, dismissMailDraft, writeMailSchedule } from "@
 import { MeetingActions } from "@/components/schedule/meeting-actions";
 import { useNow } from "@/components/schedule/use-now";
 import { completeEvent, completeStep } from "@/components/schedule/step-actions";
+import { KIND_STYLE } from "@/components/schedule/kind-style";
 
 export type LinkableApplication = { id: string; companyName: string; title: string; aliases?: string[]; currentStage: ApplicationStage };
-
-const KIND_STYLE: Record<ScheduleKind, string> = {
-  interview: "bg-violet-500/12 text-violet-700 dark:text-violet-300",
-  exam: "bg-amber-500/12 text-amber-700 dark:text-amber-300",
-  deadline: "bg-slate-500/12 text-slate-600 dark:text-slate-300",
-  event: "bg-sky-500/12 text-sky-700 dark:text-sky-300",
-};
 
 const URGENCY_TEXT = {
   now: "text-emerald-700 dark:text-emerald-300 font-semibold",
@@ -106,8 +100,8 @@ export function UpcomingSchedule({ items, now: serverNow, applications, days = 7
     <section aria-label="接下来的面试和笔试" className="surface-card rounded-xl p-4 sm:p-5">
       <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
         <div>
-          <h2 className="flex items-center gap-2 text-base font-semibold tracking-tight"><CalendarClock className="size-4 text-primary" />接下来</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">
+          <h2 className="flex items-center gap-2.5 text-base font-semibold tracking-tight"><span className="section-chip flex size-8 items-center justify-center rounded-xl bg-primary/10 text-primary"><CalendarClock className="size-4" /></span>接下来</h2>
+          <p className="mt-1 pl-[2.625rem] text-xs text-muted-foreground">
             {days} 天内 · {(Object.keys(counts) as ScheduleKind[]).map((kind) => `${SCHEDULE_KIND_LABELS[kind]} ${counts[kind]}`).join(" · ")}
           </p>
         </div>
@@ -143,6 +137,7 @@ export function UpcomingSchedule({ items, now: serverNow, applications, days = 7
                     onWrite={() => run(item, () => writeMailSchedule(item.sourceId), item.applicationId ? `已写进 ${item.companyName ?? "投递"} 的进度和日历` : "已加入日历")}
                     onDismiss={() => run(item, () => dismissMailDraft(item.sourceId), "已忽略这封邮件里的时间")}
                     onLink={() => setLinking(item)}
+                    onAccept={() => item.suggestion && run(item, () => attachEventToApplication(item.sourceId, item.suggestion!.applicationId), `已关联到 ${item.suggestion.label}`)}
                     onEdit={() => setEditing(item)}
                   />
                 ))}
@@ -172,7 +167,7 @@ export function UpcomingSchedule({ items, now: serverNow, applications, days = 7
   );
 }
 
-function ScheduleRow({ item, now, busy, clash, onComplete, onWrite, onDismiss, onLink, onEdit }: { item: ScheduleItem; now: number; busy: boolean; clash: boolean; onComplete: () => void; onWrite: () => void; onDismiss: () => void; onLink: () => void; onEdit: () => void }) {
+function ScheduleRow({ item, now, busy, clash, onComplete, onWrite, onDismiss, onLink, onAccept, onEdit }: { item: ScheduleItem; now: number; busy: boolean; clash: boolean; onComplete: () => void; onWrite: () => void; onDismiss: () => void; onLink: () => void; onAccept: () => void; onEdit: () => void }) {
   const urgency = urgencyOf(item, now);
   const start = new Date(item.startsAt);
   const end = item.endsAt ? new Date(item.endsAt) : null;
@@ -213,7 +208,17 @@ function ScheduleRow({ item, now, busy, clash, onComplete, onWrite, onDismiss, o
             </p>
           )}
           {item.source === "event" && !item.applicationId && (
-            <p className="mt-0.5 text-[11px] text-muted-foreground">{item.fromMail ? "邮件里的安排，已在日历中；没认出是哪条投递" : "你自己加的日程，不属于任何投递"}</p>
+            item.suggestion ? (
+              <p className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                <Sparkles className="size-3 text-primary" />
+                <span>像是「{item.suggestion.label}」的安排</span>
+                <button type="button" disabled={busy} onClick={onAccept} className="rounded-full bg-primary/10 px-2 py-0.5 font-medium text-primary transition-colors hover:bg-primary/15 disabled:opacity-50">{busy ? "关联中…" : "是，关联"}</button>
+              </p>
+            ) : item.companyName && item.companyApplications ? (
+              <p className="mt-0.5 text-[11px] text-muted-foreground">{item.companyName} 有 {item.companyApplications} 条进行中的投递，点「关联投递」选是哪一条</p>
+            ) : (
+              <p className="mt-0.5 text-[11px] text-muted-foreground">{item.fromMail ? "邮件里的安排，已在日历中；没认出是哪条投递" : "你自己加的日程，不属于任何投递"}</p>
+            )
           )}
         </div>
       </div>
@@ -233,7 +238,7 @@ function ScheduleRow({ item, now, busy, clash, onComplete, onWrite, onDismiss, o
           <Button type="button" size="sm" variant="outline" className="h-7 gap-1 rounded-full px-2.5 text-xs" disabled={busy} onClick={onComplete} title={item.kind === "interview" ? "面完了：开始等结果，趁记得写两句" : "做完了：不再提醒截止，开始等结果"}><CheckCircle2 className="size-3.5" />{item.kind === "interview" && start.getTime() <= now ? "已面完" : "已完成"}</Button>
         ) : null}
         {item.source !== "mail" && (
-          <Button type="button" size="sm" variant="ghost" className="h-7 gap-1 rounded-full px-2 text-xs text-muted-foreground" disabled={busy} onClick={onEdit} aria-label={`修改 ${heading}`}><Pencil className="size-3.5" />修改</Button>
+          <Button type="button" size="sm" variant="ghost" className="size-7 rounded-full p-0 text-muted-foreground" disabled={busy} onClick={onEdit} aria-label={`修改 ${heading}`} title="修改时间、链接和提醒"><Pencil className="size-3.5" /></Button>
         )}
         {item.applicationId && (
           <Link href={`/applications/${item.applicationId}#interview`} className="inline-flex h-7 items-center gap-0.5 rounded-full px-2 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={`打开 ${heading}`}>
@@ -252,6 +257,8 @@ function LinkDialog({ item, applications, onClose, onPick }: { item: ScheduleIte
   const suggested = useMemo(() => {
     if (!item) return [];
     const title = item.title;
+    // 接下来 already named the company (and dropped it from the title).
+    if (item.companyName) return applications.filter((app) => app.companyName === item.companyName);
     return applications.filter((app) => title.includes(app.companyName) || (app.aliases ?? []).some((alias) => alias && title.includes(alias)));
   }, [item, applications]);
   const results = term
@@ -262,7 +269,7 @@ function LinkDialog({ item, applications, onClose, onPick }: { item: ScheduleIte
       <DialogContent>
         <DialogHeader>
           <DialogTitle>这个安排属于哪条投递？</DialogTitle>
-          <DialogDescription>{item ? `${item.title} · ${absoluteWhen(item.startsAt, item.hasTime)}` : ""}。关联后{item?.hasTime ? "时间写进那条投递的当前进度，日历和提醒跟着它走" : "这个截止日写进那条投递的当前进度，日历跟着它走"}。</DialogDescription>
+          <DialogDescription>{item ? `${[item.companyName, item.title].filter(Boolean).join(" · ")} · ${absoluteWhen(item.startsAt, item.hasTime)}` : ""}。关联后{item?.hasTime ? "时间写进那条投递的当前进度，日历和提醒跟着它走" : "这个截止日写进那条投递的当前进度，日历跟着它走"}。</DialogDescription>
         </DialogHeader>
         <input
           autoFocus
@@ -272,7 +279,7 @@ function LinkDialog({ item, applications, onClose, onPick }: { item: ScheduleIte
           className="h-9 w-full rounded-xl border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40"
         />
         <div className="max-h-72 space-y-1 overflow-y-auto">
-          {!term && suggested.length > 0 && <p className="px-1 text-[11px] text-muted-foreground">标题里提到的公司</p>}
+          {!term && suggested.length > 0 && <p className="px-1 text-[11px] text-muted-foreground">{item?.companyName ? `${item.companyName} 的投递` : "标题里提到的公司"}</p>}
           {results.map((app) => (
             <button key={app.id} type="button" onClick={() => { setQuery(""); onPick(app); }} className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-muted">
               <span className="font-medium">{app.companyName}</span>

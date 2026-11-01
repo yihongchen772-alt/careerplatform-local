@@ -1,8 +1,31 @@
 "use client";
 
-import { Building2, Clock, Compass, ListChecks, Radar, Search, Sparkles } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Building2, Clock, Compass, ListChecks, NotebookPen, Radar, Search, Sparkles } from "lucide-react";
 import { displayUrl, type QuickLinks } from "@/components/browser/omnibox";
 import type { DesktopBridgeHistoryEntry } from "@/types/desktop-bridge";
+
+type ExamLink = { key: string; label: string; relative: string; meetingUrl: string };
+
+/**
+ * 笔试 / 测评 still to do whose link opens in a web page — the ones this
+ * browser is for. Video meetings open their own apps, so they stay on 接下来.
+ */
+function useExamLinks(): ExamLink[] {
+  const [links, setLinks] = useState<ExamLink[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/upcoming?days=14")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { items?: { key: string; kind: string; label: string; relative: string; meetingUrl: string | null }[] } | null) => {
+        if (cancelled || !data?.items) return;
+        setLinks(data.items.filter((item) => item.kind === "exam" && item.meetingUrl).slice(0, 4).map((item) => ({ key: item.key, label: item.label, relative: item.relative, meetingUrl: item.meetingUrl! })));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  return links;
+}
 
 type Tile = { key: string; title: string; url: string; kind: string; icon: typeof Radar };
 
@@ -33,6 +56,7 @@ export function NewTabPage({
     ...links.companies.map((c) => ({ key: `c:${c.id}`, title: c.name, url: c.url, kind: "企业官网", icon: Building2 })),
   ].slice(0, 10);
   const recent = history.slice(0, 5);
+  const exams = useExamLinks();
 
   return (
     <div className="absolute inset-0 overflow-y-auto bg-card">
@@ -49,6 +73,22 @@ export function NewTabPage({
           <Search className="size-4" />
           输入网址，或搜索企业官网 / 岗位
         </button>
+        {exams.length > 0 && (
+          <div className="mt-6 w-full max-w-xl rounded-2xl border border-amber-500/25 bg-amber-500/[0.06] p-3">
+            <p className="mb-1.5 flex items-center gap-1.5 px-1 text-xs font-medium text-amber-800 dark:text-amber-300"><NotebookPen className="size-3.5" />待完成的笔试 / 测评</p>
+            <ul className="space-y-1">
+              {exams.map((exam) => (
+                <li key={exam.key}>
+                  <button type="button" title={exam.meetingUrl} onClick={(event) => onOpen(exam.meetingUrl, event.metaKey || event.ctrlKey)} className="flex w-full min-w-0 items-center gap-3 rounded-lg px-2 py-1.5 text-left text-[13px] hover:bg-amber-500/10">
+                    <span className="min-w-0 flex-1 truncate">{exam.label}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">{exam.relative}</span>
+                    <span className="shrink-0 text-xs font-medium text-primary">打开</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {tiles.length > 0 && (
           <div className="mt-8 flex w-full max-w-2xl flex-wrap justify-center gap-x-2 gap-y-3">
             {tiles.map((tile) => (

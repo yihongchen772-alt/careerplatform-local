@@ -3,7 +3,7 @@ import { MailEventDialog } from "@/components/dashboard/mail-event-dialog";
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { Plus } from "lucide-react";
+import { ListChecks, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -76,8 +76,8 @@ export function PersonalTaskCard({
 
   return (
     <Card className="surface-card rounded-xl">
-      <CardHeader className="flex-col items-start justify-between gap-2 space-y-0 sm:flex-row sm:items-center">
-        <CardTitle>我的待办</CardTitle>
+      <CardHeader className="flex flex-col items-start justify-between gap-2 space-y-0 sm:flex-row sm:items-center">
+        <CardTitle className="flex items-center gap-2.5"><span className="section-chip flex size-8 items-center justify-center rounded-xl bg-primary/10 text-primary"><ListChecks className="size-4" /></span>我的待办</CardTitle>
         <div className="flex flex-wrap items-center gap-2">
           {duplicateMailTaskCount > 0 && <ConfirmDeleteButton
             trigger={<Button size="sm" variant="ghost">清理重复邮件（{duplicateMailTaskCount}）</Button>}

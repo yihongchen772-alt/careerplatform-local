@@ -44,7 +44,7 @@ export function ContactList({
 
   return (
     <Card>
-      <CardHeader className="flex-row items-center justify-between space-y-0">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0">
         <CardTitle>联系人</CardTitle>
         <ContactFormDialog
           positions={positions}

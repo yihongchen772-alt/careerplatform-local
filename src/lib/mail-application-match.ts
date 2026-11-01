@@ -6,10 +6,10 @@
  */
 export type MatchableApplication = { id: string; companyName: string; aliases?: string[]; title: string };
 
-const fold = (value: string) => value.normalize("NFKC").toLowerCase().replace(/\s+/g, "");
+export const fold = (value: string) => value.normalize("NFKC").toLowerCase().replace(/\s+/g, "");
 
 /** A name worth matching on: two characters or more, and for Latin names a whole word. */
-function mentions(haystack: string, rawName: string): boolean {
+export function mentions(haystack: string, rawName: string): boolean {
   const name = fold(rawName);
   if (name.length < 2) return false;
   if (/^[a-z0-9&.\-]+$/.test(name)) {

@@ -190,7 +190,7 @@ export function InterviewHub({
     <section id="interview" aria-label="面试与准备" className="surface-card scroll-mt-20 rounded-xl p-4 sm:p-5">
       <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
         <div>
-          <h2 className="flex items-center gap-2 text-base font-semibold tracking-tight"><CalendarClock className="size-4 text-primary" />面试与准备</h2>
+          <h2 className="flex items-center gap-2.5 text-base font-semibold tracking-tight"><span className="section-chip flex size-8 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><CalendarClock className="size-4" /></span>面试与准备</h2>
           <p className="mt-0.5 text-xs text-muted-foreground">下一场的时间和会议入口、面完后的记录和结果、准备工具都在这里。</p>
         </div>
         {!closed && mode === "view" && (next || waiting) && (

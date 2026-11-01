@@ -74,7 +74,7 @@ export function JustFinishedStrip({ items, now: serverNow }: { items: JustFinish
 
   return (
     <section aria-label="刚结束的面试" className="surface-card space-y-3 rounded-xl p-4 sm:p-5">
-      <h2 className="flex items-center gap-2 text-base font-semibold tracking-tight"><PenLine className="size-4 text-primary" />刚结束，趁记得记两句</h2>
+      <h2 className="flex items-center gap-2.5 text-base font-semibold tracking-tight"><span className="section-chip flex size-8 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><PenLine className="size-4" /></span>刚结束，趁记得记两句</h2>
       {shown.slice(0, 3).map((item) => {
         const interview = item.kind === "interview";
         const id = `recap-${item.stageHistoryId}`;

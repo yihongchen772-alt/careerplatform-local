@@ -33,7 +33,7 @@ export function WeeklyReviewCard({ initial }: { initial: WeeklyReviewResult | nu
 
   return (
     <Card className="surface-card rounded-xl">
-      <CardHeader className="flex-row items-center justify-between space-y-0">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0">
         <CardTitle className="flex items-center gap-1.5">
           <NotebookPen className="size-4" />
           本周复盘
