@@ -22,6 +22,7 @@ import {
 import { ApplicationsBoard, type BoardApplication } from "@/components/applications/applications-board";
 import { PortalReviewBanner } from "@/components/applications/portal-review-banner";
 import { ApplicationsOverview } from "@/components/applications/applications-overview";
+import { CityLookupBar } from "@/components/applications/city-lookup-bar";
 import { useNow } from "@/components/schedule/use-now";
 
 /**
@@ -50,6 +51,7 @@ function toBoard(a: ApplicationRow): BoardApplication {
     appliedDate: a.appliedDate,
     currentStageDate: a.currentStageDate,
     cities: a.cities,
+    citySource: a.citySource,
     industry: a.industry,
     waiting: a.waiting,
     nextSchedule: a.nextSchedule,
@@ -59,7 +61,7 @@ function toBoard(a: ApplicationRow): BoardApplication {
   };
 }
 
-export function ApplicationsView({ applications, now: serverNow, funnel }: { applications: ApplicationRow[]; now: number; funnel?: ReactNode }) {
+export function ApplicationsView({ applications, now: serverNow, funnel, cityLookup }: { applications: ApplicationRow[]; now: number; funnel?: ReactNode; cityLookup?: { missing: number; pending: number } }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -272,6 +274,7 @@ export function ApplicationsView({ applications, now: serverNow, funnel }: { app
         suggestedStage: a.portalSuggestedStage!,
         portalStatus: a.portalStatus ?? null,
       }))} />
+      {cityLookup && <CityLookupBar missing={cityLookup.missing} pending={cityLookup.pending} showList={groupBy === "city"} />}
       <ApplicationsOverview applications={applications} now={now} filter={filter} onFilter={showFilter} funnel={funnel} />
       <div ref={listRef} className="flex scroll-mt-4 flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>

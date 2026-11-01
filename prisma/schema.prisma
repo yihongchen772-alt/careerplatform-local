@@ -669,6 +669,10 @@ model Application {
   source           String?
   /// City set by hand; otherwise the list reads the 岗位's location or the title.
   city             String?
+  /// Where an automatically filled city came from (JD / 岗位页面 / 联网搜索); null when set by hand.
+  citySource       String?
+  /// When the city lookup last ran for this 投递, so it is not repeated on every visit.
+  cityLookupAt     DateTime?
   currentStage     ApplicationStage @default(APPLIED)
   /// Company's own wording for the current step, separate from the broad stage.
   currentStageLabel String?

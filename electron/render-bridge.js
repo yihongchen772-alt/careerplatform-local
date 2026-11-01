@@ -48,6 +48,9 @@ function enqueueRender(url, partition) {
 // logged into. Whitelisted by name rather than accepting arbitrary
 // partitions — this bridge is reachable by anything holding the token.
 const APPLICATION_BROWSER_PARTITION = "persist:job-application-browser";
+// An in-memory session of its own for web searches (the city lookup), so
+// they carry neither the 网申浏览器's logins nor the job pages' cookies.
+const SEARCH_PARTITION = "cp-search";
 
 async function renderOne(url, partition) {
   const { BrowserWindow, session } = require("electron");
@@ -56,8 +59,8 @@ async function renderOne(url, partition) {
     webPreferences: {
       javascript: true,
       images: false,
-      ...(partition === APPLICATION_BROWSER_PARTITION
-        ? { session: session.fromPartition(APPLICATION_BROWSER_PARTITION) }
+      ...(partition === APPLICATION_BROWSER_PARTITION || partition === SEARCH_PARTITION
+        ? { session: session.fromPartition(partition) }
         : {}),
     },
   });
@@ -127,7 +130,7 @@ function startRenderBridge() {
         res.writeHead(400, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "无效 URL" }));
         return;
       }
-      if (partition != null && partition !== APPLICATION_BROWSER_PARTITION) {
+      if (partition != null && partition !== APPLICATION_BROWSER_PARTITION && partition !== SEARCH_PARTITION) {
         res.writeHead(400, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "不支持的会话分区" }));
         return;
       }

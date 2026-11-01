@@ -163,7 +163,7 @@ export async function updateApplication(
       source: data.source || null,
       resumeVersionId: data.resumeVersionId || null,
       // Left alone when the caller does not send one.
-      ...(data.city !== undefined ? { city: data.city || null } : {}),
+      ...(data.city !== undefined ? { city: data.city || null, citySource: null } : {}),
     },
   });
 

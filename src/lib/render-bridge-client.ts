@@ -16,7 +16,7 @@ const RENDER_TIMEOUT_MS = 25000;
  */
 export async function renderPageText(
   url: string,
-  options: { useApplicationSession?: boolean } = {}
+  options: { useApplicationSession?: boolean; useSearchSession?: boolean } = {}
 ): Promise<string> {
   const bridgeUrl = process.env.CAREERPLATFORM_RENDER_BRIDGE_URL;
   const token = process.env.CAREERPLATFORM_RENDER_BRIDGE_TOKEN;
@@ -33,7 +33,7 @@ export async function renderPageText(
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({
         url,
-        ...(options.useApplicationSession ? { partition: "persist:job-application-browser" } : {}),
+        ...(options.useApplicationSession ? { partition: "persist:job-application-browser" } : options.useSearchSession ? { partition: "cp-search" } : {}),
       }),
     });
     const data: unknown = await res.json().catch(() => null);

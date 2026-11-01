@@ -75,6 +75,10 @@ export default async function ApplicationsPage() {
   const funnelApps = applications.map((app) => ({ currentStage: app.currentStage, stageHistory: app.stageHistory.map((row) => ({ stage: row.stage })) }));
   const funnel = <FunnelCard levels={computeFunnel(funnelApps).levels} total={applications.length} outcomes={computeOutcomes(funnelApps)} />;
 
+  // 投递 with no city from any source: how many the lookup hasn't tried yet.
+  const cityless = applications.filter((app) => !applicationCities({ city: app.city, location: app.position?.location, title: app.title, companyName: app.company.name }).length);
+  const cityLookup = { missing: cityless.length, pending: cityless.filter((app) => !app.cityLookupAt).length };
+
   const defaultResumeVersionId =
     resumeVersions.find((r) => r.isDefault)?.id ?? null;
 
@@ -103,6 +107,7 @@ export default async function ApplicationsPage() {
       <ApplicationsView
         now={now}
         funnel={funnel}
+        cityLookup={cityLookup}
         applications={applications.map(({ stageHistory, position, ...a }) => {
           // The step's time or deadline that matters now: live, else the
           // next one ahead, else the current step's (past) one.

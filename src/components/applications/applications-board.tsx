@@ -28,6 +28,7 @@ export type BoardApplication = {
   appliedDate: string;
   currentStageDate: string;
   cities?: string[];
+  citySource?: string | null;
   industry?: string;
   waiting?: boolean;
   /** The step's time or deadline that matters now (see nextScheduleItem). */
@@ -79,7 +80,7 @@ function ApplicationCard({ app, closed = false, hit, now }: { app: BoardApplicat
           <Link href={`/applications/${app.id}`} className="block truncate text-sm font-semibold leading-5 before:absolute before:inset-0 before:rounded-xl before:content-[''] group-hover:text-primary focus-visible:outline-none focus-visible:before:ring-3 focus-visible:before:ring-ring/40">
             <Highlight text={app.companyName} ranges={hit?.company} />{hit?.alias && <span className="ml-1 text-xs font-normal text-muted-foreground">（{hit.alias}）</span>}
           </Link>
-          <p className="truncate text-xs text-muted-foreground" title={app.title}><Highlight text={app.title} ranges={hit?.title} />{cityHint(app.cities ?? [], app.title) ? <span className="ml-1.5 text-muted-foreground/80">· {cityHint(app.cities ?? [], app.title)}</span> : null}</p>
+          <p className="truncate text-xs text-muted-foreground" title={app.title}><Highlight text={app.title} ranges={hit?.title} />{cityHint(app.cities ?? [], app.title, app.citySource === "公司所在地") ? <span className="ml-1.5 text-muted-foreground/80">· {cityHint(app.cities ?? [], app.title, app.citySource === "公司所在地")}</span> : null}</p>
         </div>
       </div>
       <div className="mt-2 flex items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground">

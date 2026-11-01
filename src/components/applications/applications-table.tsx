@@ -68,6 +68,8 @@ export type ApplicationRow = {
   source: string | null;
   /** Cities this 投递 is in: set by hand, else the 岗位's, else the title's. */
   cities: string[];
+  /** How an automatically filled city was found (city-lookup); null when typed by hand. */
+  citySource?: string | null;
   /** The company's 行业 (industryLabel), 未分类 when unknown. */
   industry: string;
   salaryMin: number | null;
@@ -337,7 +339,7 @@ export function ApplicationsTable({
   }
 
   // The city under a title, unless the title or the section already says it.
-  const cityNote = (app: ApplicationRow) => (groupBy === "city" ? "" : cityHint(app.cities, app.title));
+  const cityNote = (app: ApplicationRow) => (groupBy === "city" ? "" : cityHint(app.cities, app.title, app.citySource === "公司所在地"));
 
   // One 投递 as a card (phones).
   const mobileCard = (app: ApplicationRow) => {

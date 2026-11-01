@@ -428,7 +428,7 @@ export async function bulkSetCity(applicationIds: string[], city: string): Promi
     const value = z.string().trim().max(40).safeParse(city);
     if (!ids.success || !value.success) throw new UserFacingError("请先选择投递，城市最多 40 个字");
     const apps = await db.application.findMany({ where: { id: { in: ids.data }, userId: user.id }, select: { id: true, city: true } });
-    await db.application.updateMany({ where: { id: { in: apps.map((app) => app.id) }, userId: user.id }, data: { city: value.data || null } });
+    await db.application.updateMany({ where: { id: { in: apps.map((app) => app.id) }, userId: user.id }, data: { city: value.data || null, citySource: null } });
     revalidate(apps.map((app) => app.id));
     return { before: apps.map((app) => ({ id: app.id, city: app.city })) };
   });
