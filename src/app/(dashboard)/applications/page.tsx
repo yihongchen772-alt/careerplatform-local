@@ -20,6 +20,7 @@ import { currentTimeMs } from "@/lib/dates";
 import { PageHero } from "@/components/layout/page-hero";
 import { FunnelCard } from "@/components/insights/funnel-card";
 import { computeFunnel, computeOutcomes } from "@/lib/funnel";
+import { furthestInterview } from "@/lib/application-filters";
 import { Send } from "lucide-react";
 
 export default async function ApplicationsPage() {
@@ -121,6 +122,7 @@ export default async function ApplicationsPage() {
             nextSchedule,
             step,
             waiting: step?.phase === "waiting",
+            interviewReach: furthestInterview(a.currentStage, stageHistory),
           };
         })}
       />

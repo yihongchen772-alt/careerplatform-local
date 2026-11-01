@@ -77,6 +77,8 @@ export type ApplicationRow = {
   /** 等结果 / 截止已过 / a round still to do, for the current step. */
   step: StepView | null;
   waiting: boolean;
+  /** Last interview round reached (furthestInterview), null if none. */
+  interviewReach?: ApplicationStage | null;
   /** Verbatim wording from the company's portal, via 网申进度同步. */
   portalStatus?: string | null;
   portalSuggestedStage?: ApplicationStage | null;

@@ -4,10 +4,10 @@ import type { ReactNode } from "react";
 import type { ApplicationStage } from "@prisma/client";
 import { ChevronDown, Clock, Send, Trophy, Video, XCircle, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { STALE_DAYS, type ApplicationFilter } from "@/lib/application-filters";
+import { STALE_DAYS, interviewBreakdown, type ApplicationFilter } from "@/lib/application-filters";
 import { useStoredChoice } from "@/components/applications/use-stored-choice";
 
-type OverviewApplication = { currentStage: ApplicationStage; appliedDate: string; currentStageDate: string; waiting?: boolean; company: { name: string } };
+type OverviewApplication = { currentStage: ApplicationStage; appliedDate: string; currentStageDate: string; waiting?: boolean; interviewReach?: ApplicationStage | null; company: { name: string } };
 
 const TERMINAL: ApplicationStage[] = ["REJECTED", "ACCEPTED", "DECLINED", "WITHDRAWN", "CANCELLED"];
 
@@ -23,6 +23,9 @@ const ROWS: { label: string; hint: string; filter: ApplicationFilter; bar: strin
 
 const DAY = 86_400_000;
 
+// Interview outcome columns that get a colour.
+const OUTCOME_TONE: Record<string, string> = { failed: "text-rose-600 dark:text-rose-400", offer: "text-emerald-600 dark:text-emerald-400" };
+
 /**
  * 投递情况总表: the 总览's numbers, here next to the 投递 themselves — and every
  * number opens the 投递 it counts. `funnel` is the shared 阶段覆盖 card.
@@ -34,6 +37,7 @@ export function ApplicationsOverview({ applications, now, filter, onFilter, funn
   const weekAgo = now - 7 * DAY;
   const active = applications.filter((app) => !TERMINAL.includes(app.currentStage));
   const interviewing = applications.filter(ROWS[2].match).length;
+  const interviews = interviewBreakdown(applications);
   const offers = applications.filter(ROWS[3].match).length;
   const closed = total - active.length;
   const companies = new Set(applications.map((app) => app.company.name)).size;
@@ -42,8 +46,11 @@ export function ApplicationsOverview({ applications, now, filter, onFilter, funn
   const answered = applications.filter((app) => !ROWS[0].match(app)).length;
   const rows = ROWS.map((row) => {
     const items = applications.filter(row.match);
+    // 未通过 that came after an interview, so 「14 条未通过」 doesn't read as 14 简历挂.
+    const afterInterview = row.filter === "rejected" ? items.filter((app) => app.interviewReach).length : 0;
     return {
       ...row,
+      hint: afterInterview ? `${row.hint} · 其中 ${afterInterview} 条是面试后` : row.hint,
       count: items.length,
       movedThisWeek: items.filter((app) => new Date(app.currentStageDate).getTime() >= weekAgo).length,
       stale: items.filter((app) => !TERMINAL.includes(app.currentStage) && now - new Date(app.currentStageDate).getTime() >= STALE_DAYS * DAY).length,
@@ -68,7 +75,7 @@ export function ApplicationsOverview({ applications, now, filter, onFilter, funn
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
           <Tile label="总投递" value={total} icon={Send} tone="brand" selected={filter === "all"} onClick={() => onFilter("all")} />
           <Tile label="进行中" value={active.length} icon={Clock} tone="amber" selected={filter === "active"} onClick={() => onFilter("active")} />
-          <Tile label="面试中" value={interviewing} icon={Video} tone="brand" selected={filter === "interview"} onClick={() => onFilter("interview")} />
+          <Tile label="进过面试" value={interviews.total} note={interviewing ? `现在在面 ${interviewing}` : undefined} icon={Video} tone="brand" selected={filter === "interviewed"} onClick={() => onFilter("interviewed")} />
           <Tile label="Offer" value={offers} icon={Trophy} tone="emerald" selected={filter === "offer"} onClick={() => onFilter("offer")} />
           <Tile label="已结束" value={closed} icon={XCircle} tone="slate" selected={filter === "closed"} onClick={() => onFilter("closed")} />
         </div>
@@ -115,19 +122,54 @@ export function ApplicationsOverview({ applications, now, filter, onFilter, funn
               </tbody>
             </table>
           </div>
-          {funnel}
+          <div className="space-y-4">
+            {interviews.total > 0 && <InterviewTable breakdown={interviews} total={total} selected={filter === "interviewed"} onOpen={() => onFilter("interviewed")} />}
+            {funnel}
+          </div>
         </div>
       </>}
     </section>
   );
 }
 
-function Tile({ label, value, icon: Icon, tone, selected, onClick }: { label: string; value: number; icon: LucideIcon; tone: "brand" | "amber" | "emerald" | "slate"; selected: boolean; onClick: () => void }) {
+function InterviewTable({ breakdown, total, selected, onOpen }: { breakdown: ReturnType<typeof interviewBreakdown>; total: number; selected: boolean; onOpen: () => void }) {
+  return (
+    <div className={cn("surface-card overflow-hidden rounded-xl", selected && "ring-2 ring-primary/30")} aria-label="面试走到哪一轮">
+      <button type="button" onClick={onOpen} className="block w-full px-4 pt-3 text-left">
+        <span className="text-sm font-semibold">进过面试 {breakdown.total} 条</span>
+        <span className="ml-2 text-xs text-muted-foreground">占全部 {Math.round((breakdown.total / total) * 100)}% · 按面到的最后一轮算，二面没过记在二面</span>
+      </button>
+      <table className="mt-2 w-full text-sm">
+        <thead>
+          <tr className="border-b border-border/60 text-xs text-muted-foreground">
+            <th className="px-4 py-2 text-left font-medium">面到</th>
+            {breakdown.columns.map((column) => <th key={column.key} className="px-2 py-2 text-right font-medium">{column.label}</th>)}
+            <th className="px-4 py-2 text-right font-medium">合计</th>
+          </tr>
+        </thead>
+        <tbody>
+          {breakdown.rows.map((row) => (
+            <tr key={row.stage} onClick={() => row.total && onOpen()} className={cn("border-b border-border/40 last:border-0", row.total ? "cursor-pointer hover:bg-muted/50" : "text-muted-foreground")}>
+              <td className="px-4 py-2 font-medium">{row.label}</td>
+              {breakdown.columns.map((column) => {
+                const value = row.cells[column.key];
+                return <td key={column.key} className={cn("px-2 py-2 text-right tabular-nums", value ? OUTCOME_TONE[column.key] : "text-muted-foreground")}>{value || "—"}</td>;
+              })}
+              <td className="px-4 py-2 text-right font-semibold tabular-nums">{row.total || "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function Tile({ label, value, note, icon: Icon, tone, selected, onClick }: { label: string; value: number; note?: string; icon: LucideIcon; tone: "brand" | "amber" | "emerald" | "slate"; selected: boolean; onClick: () => void }) {
   return (
     // stat-tile + data-tone: the same pastel tiles as 总览 (globals.css).
     <button type="button" onClick={onClick} aria-pressed={selected} data-tone={tone} className={cn("stat-tile surface-card flex min-h-24 flex-col justify-between rounded-xl px-4 py-3 text-left transition-all hover:-translate-y-0.5", selected && "ring-2 ring-primary/40")}>
       <span className="flex items-center justify-between text-sm font-medium text-muted-foreground">{label}<Icon className="size-4" /></span>
-      <span className="text-3xl font-semibold tracking-tight tabular-nums">{value}</span>
+      <span className="flex items-baseline gap-2"><span className="text-3xl font-semibold tracking-tight tabular-nums">{value}</span>{note && <span className="text-xs text-muted-foreground">{note}</span>}</span>
     </button>
   );
 }
