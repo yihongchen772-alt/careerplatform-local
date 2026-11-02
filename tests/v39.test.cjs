@@ -30,7 +30,8 @@ test("a job page's city is read from the line of places under its title", () => 
   for (const [text, expected] of cases) assert.deepEqual(plain(city.cityFromJobText(text)), expected, text);
   // A footer address or a subtitle that only starts with a city is not the job's place.
   assert.deepEqual(plain(city.cityFromJobText("首页\n地址：深圳市南山区\n热门职位")), []);
-  assert.deepEqual(plain(city.cityFromJobText("测试开发工程师\n上海校招正式数字技术 - 软件测试\n职位描述")), []);
+  assert.deepEqual(plain(city.cityFromJobText("测试开发工程师\n上海电气集团 - 软件测试\n职位描述")), []);
+  assert.deepEqual(plain(city.cityFromJobText("首页\n北京实验室开放日\n职位描述")), []);
 });
 
 test("only one job's own page is opened, and only when it shows that job", () => {

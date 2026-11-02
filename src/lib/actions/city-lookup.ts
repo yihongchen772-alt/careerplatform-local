@@ -119,6 +119,43 @@ export async function lookupApplicationCities(options: { since?: number } = {}):
   });
 }
 
+const submittedJobSchema = z.object({
+  company: z.string().trim().min(1).max(120),
+  title: z.string().trim().min(1).max(200),
+  urls: z.array(z.string().max(2000)).max(15),
+  pageText: z.string().max(4000).optional(),
+});
+
+/**
+ * Where the job just applied for is, for the 记为已投递 dialog when the form and
+ * the current page didn't say in so many words: the job pages this tab went
+ * through (newest first), read as above, then the AI on the page top. Nothing
+ * is written; the dialog shows it for the applicant to keep or change.
+ */
+export async function cityForSubmittedJob(input: z.input<typeof submittedJobSchema>): Promise<ActionResult<{ cities: string[] }>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const parsed = submittedJobSchema.safeParse(input);
+    if (!parsed.success) throw new UserFacingError("请刷新后重试");
+    const { company, title, pageText } = parsed.data;
+    const urls = [...new Set(parsed.data.urls.filter(isJobPageUrl))].reverse().slice(0, 3);
+    let head = pageText && pageShowsTitle(pageText, title) ? pageText.slice(0, PAGE_HEAD) : "";
+    for (const url of urls) {
+      let text = "";
+      for (let attempt = 0; attempt < 2 && !(text && pageShowsTitle(text, title)); attempt += 1) {
+        text = await renderPageText(url, { useApplicationSession: true }).catch(() => "");
+      }
+      if (!text || !pageShowsTitle(text, title)) continue;
+      const fromPage = cityFromJobText(text);
+      if (fromPage.length) return { cities: fromPage };
+      head ||= text.slice(0, PAGE_HEAD);
+    }
+    if (!head) return { cities: [] };
+    const app = { id: "job", title, company, url: null, jd: null };
+    return { cities: (await citiesFromPages(user.id, [app], new Map([[app.id, head]]))).get(app.id) ?? [] };
+  });
+}
+
 const answerSchema = z.object({ jobs: z.array(z.object({ index: z.unknown(), cities: z.unknown() })) });
 const ANSWER_SCHEMA = {
   type: "OBJECT",

@@ -148,11 +148,14 @@ export function cityFromSubmission(fields: { label: string; value: string }[], p
 const BODY_HEADING = /^(?:工作职责|岗位职责|职位职责|职位描述|岗位描述|工作内容|岗位要求|任职要求|职位要求|任职资格|职位详情|岗位详情|Job\s*Description|Responsibilities|Requirements|About\s+the\s+(?:role|job))/i;
 // A line that is only places: "浙江省·杭州市", "佛山市、上海市", "上海市|智能制造", "上海嘉定区".
 const PLACE_LINE = /^(?:[一-龥]{2,8}(?:省|市|区|县|自治区)?\s*[·・\-—/|、,，\s]*){1,14}(?:\s*[|｜].{0,12})?$/;
+// 飞书's line under the title: the cities, then the hiring type.
+const FEISHU_META = /^([一-龥、,，/]{2,40}?)(?:校招|社招|实习|正式)/;
 
 /**
  * The job's cities from a job page's text or a JD: a "工作地点：…" line if there
  * is one, else a line of nothing but places above the description (how 北森,
- * Moka, 美的, 理想 show it under the title). Only places on the city list count.
+ * Moka, 美的, 理想 show it under the title), or 飞书's "城市+校招/正式" line.
+ * Only places on the city list count.
  */
 export function cityFromJobText(text: string | null | undefined): string[] {
   const value = (text ?? "").normalize("NFKC");
@@ -166,14 +169,27 @@ export function cityFromJobText(text: string | null | undefined): string[] {
   const end = lines.findIndex((line) => BODY_HEADING.test(line));
   for (const line of lines.slice(0, end > 0 ? end : 30)) {
     if (line.length > 140) continue;
-    const head = line.split(/[|｜]/)[0];
-    // "北京市、成都市…新加坡2026-10-28更新本科及以上" runs the date and degree on.
-    const places = head.replace(/\d{4}[-./年].*$/, "");
-    if (!/[省市区]|[·・、]/.test(places) || !PLACE_LINE.test(places)) continue;
-    const named = unique(scanNames(places));
-    if (named.length) return named.slice(0, 12);
+    // 飞书 runs the cities into the hiring type: "深圳校招正式智能制造 / 工业互联网", "上海正式软件类".
+    const feishu = line.match(FEISHU_META);
+    if (feishu && onlyCityNames(feishu[1])) return unique(scanNames(feishu[1])).slice(0, 12);
+    // Moka puts the pay first: "20 - 40 K/月|广东·深圳市|硕士".
+    for (const part of line.split(/[|｜]/)) {
+      // "北京市、成都市…新加坡2026-10-28更新本科及以上" runs the date and degree on.
+      const places = part.trim().replace(/\d{4}[-./年].*$/, "");
+      if (!/[省市区]|[·・、]/.test(places) || !PLACE_LINE.test(places)) continue;
+      const named = unique(scanNames(places));
+      if (named.length) return named.slice(0, 12);
+    }
   }
   return [];
+}
+
+
+/** Nothing but listed city names and separators: "深圳", "北京、上海" — not "上海电气". */
+function onlyCityNames(text: string): boolean {
+  let rest = text;
+  for (const name of CITY_NAMES) rest = rest.split(name).join("");
+  return rest !== text && !/[一-龥]/.test(rest);
 }
 
 // Pages that are a list, a login or the applicant's own records, not one job.

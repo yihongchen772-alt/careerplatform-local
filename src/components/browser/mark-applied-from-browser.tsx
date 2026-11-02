@@ -24,7 +24,8 @@ import {
 } from "@/components/ui/select";
 import type { ApplicationSnapshot } from "@/types/desktop-bridge";
 import type { IdentitySite } from "@/lib/application-identity";
-import { cityFromSubmission } from "@/lib/application-city";
+import { citiesInTitle, cityFromJobText, cityFromSubmission, pageShowsTitle } from "@/lib/application-city";
+import { cityForSubmittedJob } from "@/lib/actions/city-lookup";
 import { sourceFromUrl } from "@/lib/source-from-url";
 import { recognizeApplication, type Recognition } from "@/components/browser/recognize-application";
 
@@ -82,21 +83,47 @@ export function MarkAppliedFromBrowserDialog({
   const [archive, setArchive] = useState(true);
   const [loading, setLoading] = useState(false);
 
+  // Once the job is known: the form's 应聘城市, the page's 工作地点, the title,
+  // then the job pages this tab went through. A city typed meanwhile wins.
+  const selectedPosition = positions.find((p) => p.id === positionId);
+  const jobCompany = selectedPosition?.companyName || companyName.trim();
+  const jobTitle = selectedPosition?.title || title.trim();
+  const autoCity = useRef("");
+  const [findingCity, setFindingCity] = useState(false);
   useEffect(() => {
-    if (!open) return;
+    if (!open || recognizing) return;
     let cancelled = false;
+    const show = (cities: string[]) => {
+      if (cancelled || touched.current.city || !cities.length) return false;
+      autoCity.current = cities.join("、");
+      setCity(autoCity.current);
+      return true;
+    };
     void (async () => {
       try {
+        // Typing a company or title by hand: look once they pause.
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        if (cancelled) return;
         const snapshot = await window.desktopBridge?.applicationSnapshot();
         if (!snapshot || cancelled || touched.current.city) return;
-        const found = cityFromSubmission(snapshot.fields || [], snapshot.text);
-        if (found.length) setCity(found.join("、"));
+        const onJobPage = !!jobTitle && !!snapshot.text && pageShowsTitle(snapshot.text, jobTitle);
+        if (show(cityFromSubmission(snapshot.fields || [], snapshot.text))) return;
+        if (onJobPage && show(cityFromJobText(snapshot.text))) return;
+        if (show(citiesInTitle(jobTitle))) return;
+        // A different job picked since: its own city or none, not the last one's.
+        if (autoCity.current) { autoCity.current = ""; setCity(""); }
+        if (!jobCompany || !jobTitle) return;
+        setFindingCity(true);
+        const result = await cityForSubmittedJob({ company: jobCompany, title: jobTitle, urls: [...(snapshot.history ?? []).map((entry) => entry.url), snapshot.url], pageText: onJobPage ? snapshot.text : undefined });
+        if (result.ok) show(result.data.cities);
       } catch {
         // No city read: left blank, and the list works it out from the 岗位.
+      } finally {
+        if (!cancelled) setFindingCity(false);
       }
     })();
-    return () => { cancelled = true; };
-  }, [open]);
+    return () => { cancelled = true; setFindingCity(false); };
+  }, [open, recognizing, jobCompany, jobTitle]);
 
   useEffect(() => {
     if (!open || initialPositionId || initialRecognition) return;
@@ -195,7 +222,7 @@ export function MarkAppliedFromBrowserDialog({
           )}
           <div className="space-y-1">
             <Label className="text-xs text-muted-foreground">工作城市</Label>
-            <Input value={city} onChange={(e) => { touched.current.city = true; setCity(e.target.value); }} placeholder="从页面读不到就留空，列表会按岗位信息识别" maxLength={40} />
+            <Input value={city} onChange={(e) => { touched.current.city = true; setCity(e.target.value); }} placeholder={recognizing || findingCity ? "正在从岗位页面找城市…" : "从页面读不到就留空，列表会按岗位信息识别"} maxLength={40} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
