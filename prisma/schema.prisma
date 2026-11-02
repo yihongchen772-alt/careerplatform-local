@@ -21,6 +21,8 @@ datasource db {
 // ---------- Auth (NextAuth / Auth.js) ----------
 
 model User {
+  postingSources PostingSource[]
+  campusPostings CampusPosting[]
   applicationDrafts ApplicationDraft[]
   desktopNotes DesktopNote[]
   calendarEvents CalendarEvent[]
@@ -570,6 +572,60 @@ enum PositionStatus {
 /// to, and dumping hundreds of leads into it would bury that. Leads live here
 /// until the user promotes one, at which point promotedPositionId is set so
 /// the library can show it's already been taken.
+/// A shared 校招信息表 the user subscribes to (an online 飞书多维表格 link), synced daily into CampusPosting.
+model PostingSource {
+  id           String    @id @default(cuid())
+  userId       String
+  url          String
+  name         String?
+  lastSyncedAt DateTime?
+  lastError    String?
+  total        Int       @default(0)
+  createdAt    DateTime  @default(now())
+
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  postings CampusPosting[]
+
+  @@index([userId])
+}
+
+/// One row of a subscribed sheet: usually one company's 招聘公告 with a list of 岗位方向.
+/// Re-synced from the source, so not part of backups.
+model CampusPosting {
+  id           String    @id @default(cuid())
+  userId       String
+  sourceId     String
+  /// The row's own id in the sheet (飞书 record id), so a re-sync updates it in place.
+  externalId   String
+  company      String
+  roles        String?
+  cohort       String?
+  kind         String?
+  cities       String?
+  industry     String?
+  degree       String?
+  writtenTest  String?
+  applyUrl     String?
+  noticeUrl    String?
+  startDate    DateTime?
+  deadline     DateTime?
+  deadlineText String?
+  note         String?
+  salary       String?
+  /// The 候选岗位 made from it with 「加入」.
+  positionId   String?
+  /// When this row first appeared in a sync: 「今日新增」 when the sheet gives no start date.
+  firstSeenAt  DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  source PostingSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceId, externalId])
+  @@index([userId, startDate])
+  @@index([userId, deadline])
+}
+
 model JobLead {
   id                 String    @id @default(cuid())
   userId             String

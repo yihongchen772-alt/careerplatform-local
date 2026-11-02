@@ -50,3 +50,25 @@ export async function renderPageText(
     clearTimeout(timer);
   }
 }
+
+export type SheetRows = { name: string; columns: string[]; rows: { id: string; cells: Record<string, string> }[] };
+
+/**
+ * Every row of a shared 飞书多维表格, read by the Electron main process in a
+ * hidden window of its own (electron/feishu-base.js). A big sheet (10k+ rows)
+ * takes some seconds, hence the longer wait.
+ */
+export async function readFeishuBase(url: string): Promise<SheetRows> {
+  const bridgeUrl = process.env.CAREERPLATFORM_RENDER_BRIDGE_URL;
+  const token = process.env.CAREERPLATFORM_RENDER_BRIDGE_TOKEN;
+  if (!bridgeUrl || !token) throw new Error("读取飞书表格需要在桌面 App 里运行");
+  const res = await fetch(`${bridgeUrl}/feishu-base`, {
+    method: "POST",
+    signal: AbortSignal.timeout(180000),
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ url }),
+  });
+  const data = (await res.json().catch(() => null)) as (SheetRows & { error?: string }) | null;
+  if (!res.ok || !data || !Array.isArray(data.rows)) throw new Error(data?.error || `读取飞书表格失败：HTTP ${res.status}`);
+  return data;
+}

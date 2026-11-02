@@ -1,5 +1,6 @@
 const http = require("http");
 const crypto = require("crypto");
+const { readFeishuBase } = require("./feishu-base");
 
 // Job radar's static-HTML fetch runs in the Next.js server child process,
 // which has no Electron APIs of its own (it's a plain Node process this
@@ -22,6 +23,7 @@ const POST_LOAD_SETTLE_MS = 3000;
 const MAX_CONCURRENT_RENDERS = 2;
 
 let activeCount = 0;
+let sheetQueue = Promise.resolve();
 const queue = [];
 
 function runNext() {
@@ -99,7 +101,7 @@ function startRenderBridge() {
   const token = crypto.randomBytes(24).toString("hex");
 
   const server = http.createServer((req, res) => {
-    if (req.method !== "POST" || req.url !== "/render") {
+    if (req.method !== "POST" || (req.url !== "/render" && req.url !== "/feishu-base")) {
       res.writeHead(404).end();
       return;
     }
@@ -122,8 +124,16 @@ function startRenderBridge() {
       let partition;
       try {
         ({ url, partition } = JSON.parse(body));
-      } catch {
-        res.writeHead(400, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "无效请求体" }));
+        // A subscribed 校招信息表: every row of a shared 飞书多维表格, one sheet at a time.
+        if (req.url === "/feishu-base") {
+          sheetQueue = sheetQueue.catch(() => {}).then(() => readFeishuBase(url));
+          const sheet = await sheetQueue;
+          res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify(sheet));
+          return;
+        }
+      } catch (err) {
+        const message = req.url === "/feishu-base" && err && err.message ? err.message : "无效请求体";
+        res.writeHead(req.url === "/feishu-base" ? 502 : 400, { "Content-Type": "application/json" }).end(JSON.stringify({ error: message }));
         return;
       }
       if (typeof url !== "string" || !/^https?:\/\//i.test(url)) {
