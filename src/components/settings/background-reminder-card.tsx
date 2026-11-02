@@ -16,6 +16,7 @@ import { setAutoApplyProgress } from "@/lib/actions/auto-progress";
 import {
   SCAN_INTERVAL_OPTIONS,
   RADAR_INTERVAL_OPTIONS,
+  POSTING_SHEET_INTERVAL_OPTIONS,
   type AppSettings,
 } from "@/lib/app-settings-shared";
 
@@ -158,6 +159,31 @@ export function BackgroundReminderCard({ initial, autoApplyProgress }: { initial
               需要先打开上面的「常驻托盘」——App 不在后台跑就没人执行定时扫描。
             </p>
           )}
+        </div>
+
+        <div className="space-y-1 rounded-md border p-3">
+          <p className="text-sm font-medium">校招信息表检查频率</p>
+          <p className="text-xs text-muted-foreground">
+            秋招信息库里订阅的在线校招信息表，App 开着（包括常驻托盘）时按这个频率看一眼表格有没有改动——只发一个很小的请求，
+            表主改了才把整张表重新同步，有新加的招聘信息会弹通知。
+          </p>
+          <Select
+            value={String(settings.postingSheetIntervalHours ?? 1)}
+            onValueChange={(v) => v && set({ postingSheetIntervalHours: Number(v) })}
+          >
+            <SelectTrigger className="mt-1 w-full sm:w-64" disabled={saving}>
+              <SelectValue>
+                {() => POSTING_SHEET_INTERVAL_OPTIONS.find((o) => o.value === (settings.postingSheetIntervalHours ?? 1))?.label ?? "每 1 小时"}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {POSTING_SHEET_INTERVAL_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={String(o.value)}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="space-y-1 rounded-md border p-3">

@@ -38,6 +38,12 @@ export type AppSettings = {
    */
   applicationSyncIntervalHours?: number;
   /**
+   * How often, in hours, the App checks subscribed 校招信息表 (秋招信息库) for
+   * changes while it runs. Unset means 1: the user subscribed on purpose, and
+   * a check is one small request. 0 = only when 秋招信息库 is opened.
+   */
+  postingSheetIntervalHours?: number;
+  /**
    * Written by the Electron main process when the OS refused to register the
    * login item (sandboxing, MDM policy, unsigned build). Read-only from the
    * app's side — it exists so a silently-ignored setting shows up as a
@@ -82,6 +88,13 @@ export const SCAN_INTERVAL_OPTIONS: { value: number; label: string }[] = [
  * checking more than once every 6 hours, and 0 means "off" rather than
  * "once on launch" (see jobRadarIntervalHours above).
  */
+export const POSTING_SHEET_INTERVAL_OPTIONS: { value: number; label: string }[] = [
+  { value: 0, label: "只在打开秋招信息库时" },
+  { value: 1, label: "每 1 小时" },
+  { value: 3, label: "每 3 小时" },
+  { value: 6, label: "每 6 小时" },
+];
+
 export const RADAR_INTERVAL_OPTIONS: { value: number; label: string }[] = [
   { value: 0, label: "不自动检查" },
   { value: 6, label: "每 6 小时" },

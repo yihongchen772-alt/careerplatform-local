@@ -548,6 +548,7 @@ function setTrayMenu(upcoming) {
           maybeCheckJobRadar(true);
         },
       },
+      { label: "立即检查校招信息表", click: () => { void maybeCheckPostingSheets(true); } },
       {
         label: "立即同步网申进度",
         click: () => {
@@ -830,6 +831,44 @@ function startScanLoop() {
   }, 5 * 60 * 1000);
 }
 
+// 校招信息表 subscribed in 秋招信息库: every hour (settings: postingSheetIntervalHours;
+// 0 = only when the page is opened) while the App runs, tray included. The
+// check itself is one small request per sheet; only a changed sheet is read in full.
+const postingSheetSchedule = createApplicationSyncSchedule();
+let postingSheetTimer = null;
+async function maybeCheckPostingSheets(force = false) {
+  const hours = Number(readAppSettings().postingSheetIntervalHours ?? 1);
+  if (!force && !(hours > 0)) return;
+  const intervalMs = (hours > 0 ? hours : 1) * 3600000;
+  if (force) postingSheetSchedule.reset();
+  if (!postingSheetSchedule.begin(intervalMs)) return;
+  let healthy = false;
+  try {
+    const res = await fetch(`http://localhost:${PORT}/api/postings/check`, { method: "POST", signal: AbortSignal.timeout(300000) });
+    if (!res.ok) throw new Error(`postings endpoint returned ${res.status}`);
+    const outcome = await res.json();
+    healthy = !outcome.errors?.length;
+    const fresh = (outcome.synced || []).filter((sheet) => sheet.fresh > 0);
+    const { Notification } = require("electron");
+    if (fresh.length && Notification.isSupported()) {
+      const added = fresh.reduce((sum, sheet) => sum + sheet.fresh, 0);
+      const mine = fresh.reduce((sum, sheet) => sum + sheet.freshMine, 0);
+      const closing = fresh.reduce((sum, sheet) => sum + sheet.freshClosing, 0);
+      new Notification({
+        title: `校招信息表更新：新增 ${added} 条`,
+        body: mine ? `适合你这一届的 ${mine} 条${closing ? `，其中 ${closing} 条 7 天内截止` : ""}。点开查看` : "都不是你这一届的，点开可以查看",
+      }).on("click", () => { showWindow(); mainWindow?.loadURL(`http://localhost:${PORT}/leads?view=postings&fresh=1`).catch(() => {}); }).show();
+    }
+  } catch { /* Tried again within 15 minutes. */ }
+  finally { postingSheetSchedule.finish(intervalMs, healthy); }
+}
+function startPostingSheetLoop() {
+  if (postingSheetTimer || process.env.CAREERPLATFORM_TEST_MODE === "1") return;
+  // A first look two minutes after launch, then the 5-minute tick lets the schedule decide.
+  setTimeout(() => { void maybeCheckPostingSheets(); }, 2 * 60 * 1000);
+  postingSheetTimer = setInterval(() => { void maybeCheckPostingSheets(); }, 5 * 60 * 1000);
+}
+
 function startEmailReminderLoop() {
   if (emailReminderTimer) return;
   if (process.env.CAREERPLATFORM_TEST_MODE !== "1") {
@@ -948,6 +987,7 @@ app.whenReady().then(async () => {
     // user's real backup folder and WebDAV settings.
     if (process.env.CAREERPLATFORM_TEST_MODE !== "1") startAutoBackupLoop();
     startEmailReminderLoop();
+    startPostingSheetLoop();
     // After an app update, bring an already-installed unpacked extension copy
     // up to the new version (Chrome picks it up on its next reload/restart).
     try {

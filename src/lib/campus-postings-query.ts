@@ -5,9 +5,12 @@ import { cohortLabel } from "@/lib/campus-sheet";
  * The 订阅的招聘信息 list's filters, read from the page address so every
  * view can be linked and the back button works: q (search), chip (今日新增 /
  * 近3天 / 7天内截止), kind, industry, cohort=all (every 届次), closed=1
- * (include past deadlines), page.
+ * (include past deadlines), fresh=1 (added to the sheet since it was first synced), page.
  */
-export type PostingFilters = { q: string; chip: "" | "today" | "recent" | "closing"; kind: string; industry: string; allCohorts: boolean; withClosed: boolean; page: number };
+export type PostingFilters = { q: string; chip: "" | "today" | "recent" | "closing"; kind: string; industry: string; allCohorts: boolean; withClosed: boolean; fresh: boolean; page: number };
+
+/** How long a row the sheet's owner added stays marked 新. */
+export const FRESH_DAYS = 3;
 
 export const PAGE_SIZE = 50;
 export const KIND_OPTIONS = ["秋招", "秋招提前批", "秋招补录", "春招", "暑期实习", "实习", "人才计划"];
@@ -22,6 +25,7 @@ export function readPostingFilters(params: Record<string, string | string[] | un
     industry: one("industry"),
     allCohorts: one("cohort") === "all",
     withClosed: one("closed") === "1",
+    fresh: one("fresh") === "1",
     page: Math.max(1, Math.min(1000, Number(one("page")) || 1)),
   };
 }
@@ -66,6 +70,14 @@ export function postingsHref(filters: PostingFilters, change: Partial<PostingFil
   if (next.industry) params.set("industry", next.industry);
   if (next.allCohorts) params.set("cohort", "all");
   if (next.withClosed) params.set("closed", "1");
+  if (next.fresh) params.set("fresh", "1");
   if (next.page > 1) params.set("page", String(next.page));
   return `/leads?${params}`;
+}
+
+/** Rows first seen after the sheet's first sync, in the last few days: what its owner just added. */
+export function freshSince(firstSyncedAt: Date | null, now = new Date()): Date | null {
+  if (!firstSyncedAt) return null;
+  const window = new Date(now.getTime() - FRESH_DAYS * 86400_000);
+  return firstSyncedAt > window ? firstSyncedAt : window;
 }

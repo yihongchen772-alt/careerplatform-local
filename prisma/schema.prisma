@@ -581,6 +581,11 @@ model PostingSource {
   lastSyncedAt DateTime?
   lastError    String?
   total        Int       @default(0)
+  /// The sheet's own revision at the last sync: a background check reads only this and syncs when it moved.
+  rev           Int?
+  lastCheckedAt DateTime?
+  /// The first successful sync. Rows first seen after it are what the sheet's owner added since (marked 新).
+  firstSyncedAt DateTime?
   createdAt    DateTime  @default(now())
 
   user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)

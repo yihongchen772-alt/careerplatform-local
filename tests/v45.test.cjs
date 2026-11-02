@@ -74,10 +74,35 @@ test("the sheet is read in the desktop app only from 飞书 base links, and neve
   assert.equal(reader.isBaseLink("http://abc123.feishu.cn/base/AbCdEf123"), false);
   assert.equal(reader.isBaseLink("https://evil.example.com/base/AbCdEf123"), false);
   assert.match(read("electron/render-bridge.js"), /req\.url === "\/feishu-base"/);
-  const action = read("src/lib/actions/campus-postings.ts");
-  assert.match(action, /cleanLink\(String\(rawUrl/);
-  assert.match(action, /!rows\.has\(row\.externalId\) && !row\.positionId/, "rows gone from the sheet go, unless added to the pool");
+  assert.match(read("src/lib/actions/campus-postings.ts"), /cleanLink\(String\(rawUrl/);
+  assert.match(read("src/lib/campus-sync.ts"), /!rows\.has\(row\.externalId\) && !row\.positionId/, "rows gone from the sheet go, unless added to the pool");
   assert.doesNotMatch(read("src/lib/backup-core.ts"), /"campusPosting"/);
   // The subscribed link is the user's own: none is written into the app.
-  for (const file of ["src/lib/actions/campus-postings.ts", "src/components/leads/postings-controls.tsx", "electron/feishu-base.js"]) assert.doesNotMatch(read(file), /https:\/\/[a-z0-9]+\.feishu\.cn\/base\/[A-Za-z0-9]{10,}/);
+  for (const file of ["src/lib/actions/campus-postings.ts", "src/lib/campus-sync.ts", "src/components/leads/postings-controls.tsx", "electron/feishu-base.js"]) assert.doesNotMatch(read(file), /https:\/\/[a-z0-9]+\.feishu\.cn\/base\/[A-Za-z0-9]{10,}/);
+});
+
+test("the background check asks only the revision, and syncs a sheet only when it moved", () => {
+  const sync = read("src/lib/campus-sync.ts");
+  assert.match(sync, /const rev = source\.rev == null \? null : await feishuBaseRevision\(source\.url\);\s*if \(rev != null && rev === source\.rev\)/);
+  assert.match(sync, /const fresh = source\.firstSyncedAt \? toCreate : \[\]/, "the first sync is not news");
+  const reader = read("electron/feishu-base.js");
+  assert.match(reader, /const SHEET_PARTITION = "persist:cp-sheets"/);
+  assert.match(reader, /searchParams\.set\("recordLimit", "1"\)/);
+  const main = read("electron/main.js");
+  assert.match(main, /api\/postings\/check/);
+  assert.match(main, /readAppSettings\(\)\.postingSheetIntervalHours \?\? 1/);
+  assert.match(main, /leads\?view=postings&fresh=1/);
+  assert.match(read("src/lib/actions/app-settings.ts"), /postingSheetIntervalHours: z\.number\(\)\.refine\(\(v\) => \[0, 1, 3, 6\]\.includes\(v\)\)/);
+  // Not a server action: it takes a userId.
+  assert.doesNotMatch(sync, /^"use server"/);
+});
+
+test("rows the owner added are marked 新 for a few days after the first sync", () => {
+  const q = load("src/lib/campus-postings-query.ts", { "@/lib/campus-sheet": sheet });
+  const now = new Date(2026, 10, 10, 12);
+  assert.equal(q.freshSince(null, now), null);
+  const first = new Date(2026, 10, 9);
+  assert.equal(q.freshSince(first, now).getTime(), first.getTime(), "since the first sync");
+  assert.equal(q.freshSince(new Date(2026, 9, 1), now).getTime(), now.getTime() - 3 * 86400_000, "at most three days back");
+  assert.equal(q.readPostingFilters({ fresh: "1" }).fresh, true);
 });

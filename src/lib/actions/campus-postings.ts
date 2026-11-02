@@ -4,8 +4,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
-import { readFeishuBase } from "@/lib/render-bridge-client";
-import { mapSheetRow, samePosting, type PostingFields } from "@/lib/campus-sheet";
+import { checkPostingSources, syncSource, type SyncSummary } from "@/lib/campus-sync";
 import { resolveCompanyId } from "@/lib/company-resolver";
 import { computeInterestScore } from "@/lib/scoring";
 
@@ -13,7 +12,7 @@ import { computeInterestScore } from "@/lib/scoring";
 const STALE_MS = 12 * 3600_000;
 const FEISHU_BASE = /^https:\/\/[a-z0-9-]+\.(?:feishu\.cn|larksuite\.com)\/(?:share\/)?base\/[A-Za-z0-9]+/i;
 
-export type SyncSummary = { added: number; updated: number; removed: number; total: number; name: string | null };
+export type { SyncSummary };
 
 /** The link as pasted, trimmed to the share address (people paste it with surrounding text). */
 function cleanLink(raw: string): string {
@@ -40,15 +39,13 @@ export async function syncPostingSource(sourceId: string): Promise<ActionResult<
   });
 }
 
-/** Syncs every subscribed sheet not synced in the last 12 hours (opening the page). */
+/** Opening the page: a sheet not looked at in the last 12 hours is checked (and synced if it changed). */
 export async function syncStalePostingSources(): Promise<ActionResult<SyncSummary | null>> {
   return toActionResult(async () => {
     const user = await requireUser();
-    const stale = await db.postingSource.findFirst({
-      where: { userId: user.id, OR: [{ lastSyncedAt: null }, { lastSyncedAt: { lt: new Date(Date.now() - STALE_MS) } }] },
-      orderBy: { lastSyncedAt: "asc" },
-    });
-    return stale ? syncSource(user.id, stale.id) : null;
+    const result = await checkPostingSources(user.id, new Date(Date.now() - STALE_MS));
+    if (result.errors.length && !result.synced.length) throw new UserFacingError(result.errors[0]);
+    return result.synced[0] ?? null;
   });
 }
 
@@ -59,67 +56,6 @@ export async function removePostingSource(sourceId: string): Promise<ActionResul
     revalidatePath("/leads");
     return null;
   });
-}
-
-const running = new Set<string>();
-
-/**
- * Reads the whole sheet, then writes only what changed: new rows are added,
- * changed rows updated, rows gone from the sheet removed (unless already
- * added to the 候选岗位池, which keeps them). A failed read leaves the stored
- * rows as they were and records the reason.
- */
-async function syncSource(userId: string, sourceId: string): Promise<SyncSummary> {
-  const source = await db.postingSource.findFirst({ where: { id: sourceId, userId } });
-  if (!source) throw new UserFacingError("没找到这个订阅，请刷新后重试");
-  if (running.has(source.id)) throw new UserFacingError("正在同步，请稍候");
-  running.add(source.id);
-  try {
-    let sheet;
-    try {
-      sheet = await readFeishuBase(source.url);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "读取失败";
-      await db.postingSource.update({ where: { id: source.id }, data: { lastError: message.slice(0, 300) } });
-      throw new UserFacingError(`飞书表格没读到：${message}`);
-    }
-    const now = new Date();
-    const rows = new Map<string, PostingFields>();
-    for (const row of sheet.rows) {
-      const fields = mapSheetRow(row, now);
-      if (fields) rows.set(fields.externalId, fields);
-    }
-    if (!rows.size) throw new UserFacingError("这个表格里没认出公司列，确认是校招信息表的链接");
-
-    const stored = await db.campusPosting.findMany({ where: { sourceId: source.id } });
-    const byExternal = new Map(stored.map((row) => [row.externalId, row]));
-    const toCreate: PostingFields[] = [];
-    const toUpdate: { id: string; data: Omit<PostingFields, "externalId"> }[] = [];
-    for (const fields of rows.values()) {
-      const old = byExternal.get(fields.externalId);
-      const { externalId, ...data } = fields;
-      void externalId;
-      if (!old) toCreate.push(fields);
-      else if (!samePosting(data, old)) toUpdate.push({ id: old.id, data });
-    }
-    const gone = stored.filter((row) => !rows.has(row.externalId) && !row.positionId).map((row) => row.id);
-
-    for (let at = 0; at < toCreate.length; at += 500) {
-      await db.campusPosting.createMany({ data: toCreate.slice(at, at + 500).map((fields) => ({ ...fields, userId, sourceId: source.id, firstSeenAt: now })) });
-    }
-    for (let at = 0; at < toUpdate.length; at += 200) {
-      await db.$transaction(toUpdate.slice(at, at + 200).map(({ id, data }) => db.campusPosting.update({ where: { id }, data })));
-    }
-    for (let at = 0; at < gone.length; at += 500) {
-      await db.campusPosting.deleteMany({ where: { id: { in: gone.slice(at, at + 500) } } });
-    }
-    const total = await db.campusPosting.count({ where: { sourceId: source.id } });
-    await db.postingSource.update({ where: { id: source.id }, data: { lastSyncedAt: now, lastError: null, total, name: sheet.name?.slice(0, 120) || source.name } });
-    revalidatePath("/leads");
-    return { added: toCreate.length, updated: toUpdate.length, removed: gone.length, total, name: sheet.name || null };
-  } finally {
-    running.delete(source.id);
-  }
 }
 
 /**

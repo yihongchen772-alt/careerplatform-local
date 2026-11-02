@@ -3,7 +3,7 @@ import { ExternalLink, FileText } from "lucide-react";
 import { db } from "@/lib/db";
 import { cn } from "@/lib/utils";
 import { cohortLabel } from "@/lib/campus-sheet";
-import { KIND_OPTIONS, PAGE_SIZE, baseWhere, chipWhere, postingsHref, startOfDay, type PostingFilters } from "@/lib/campus-postings-query";
+import { KIND_OPTIONS, PAGE_SIZE, baseWhere, chipWhere, freshSince, postingsHref, startOfDay, type PostingFilters } from "@/lib/campus-postings-query";
 import { AddToPoolButton, PostingSearch, SubscribeCard, SyncControls } from "@/components/leads/postings-controls";
 
 const STALE_MS = 12 * 3600_000;
@@ -42,7 +42,9 @@ export async function PostingsPanel({ userId, filters }: { userId: string; filte
   const today = startOfDay(now);
   const graduationYear = profile?.graduationYear ?? null;
   const base = baseWhere(userId, filters, graduationYear, now);
-  const where = filters.chip ? { AND: [base, chipWhere(filters.chip, now)] } : base;
+  const since = freshSince(source.firstSyncedAt, now);
+  const freshWhere = since ? { firstSeenAt: { gt: since } } : { id: "" };
+  const where = { AND: [base, ...(filters.chip ? [chipWhere(filters.chip, now)] : []), ...(filters.fresh ? [freshWhere] : [])] };
   const [rows, total, todayCount, recentCount, closingCount, industryRows] = await Promise.all([
     db.campusPosting.findMany({ where, orderBy: filters.chip === "closing" ? [{ deadline: "asc" }, { company: "asc" }] : [{ startDate: { sort: "desc", nulls: "last" } }, { company: "asc" }], skip: (filters.page - 1) * PAGE_SIZE, take: PAGE_SIZE }),
     db.campusPosting.count({ where }),
@@ -51,6 +53,7 @@ export async function PostingsPanel({ userId, filters }: { userId: string; filte
     db.campusPosting.count({ where: { AND: [base, chipWhere("closing", now)] } }),
     db.campusPosting.groupBy({ by: ["industry"], where: { userId }, _count: { _all: true } }),
   ]);
+  const freshCount = since ? await db.campusPosting.count({ where: { AND: [base, freshWhere] } }) : 0;
   const industryCounts = new Map<string, number>();
   for (const row of industryRows) for (const name of (row.industry ?? "").split("、").filter(Boolean)) industryCounts.set(name, (industryCounts.get(name) ?? 0) + row._count._all);
   const industries = [...industryCounts].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([name]) => name);
@@ -67,6 +70,7 @@ export async function PostingsPanel({ userId, filters }: { userId: string; filte
   if (filters.industry) hidden.industry = filters.industry;
   if (filters.allCohorts) hidden.cohort = "all";
   if (filters.withClosed) hidden.closed = "1";
+  if (filters.fresh) hidden.fresh = "1";
   const pill = (active: boolean) => cn("inline-flex h-7 items-center gap-1 rounded-full border px-2.5 text-xs whitespace-nowrap transition-colors", active ? "border-primary bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground");
 
   return (
@@ -74,9 +78,9 @@ export async function PostingsPanel({ userId, filters }: { userId: string; filte
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate font-medium" title={source.url}>{source.name || "校招信息表"}</p>
-          <p className="text-xs text-muted-foreground">共 {source.total} 条 · {syncedText(source.lastSyncedAt)}{source.lastError ? <span className="text-destructive"> · 上次同步失败：{source.lastError}</span> : null}</p>
+          <p className="text-xs text-muted-foreground">共 {source.total} 条 · {syncedText(source.lastSyncedAt)}{source.lastCheckedAt && source.lastSyncedAt && source.lastCheckedAt > source.lastSyncedAt ? `，${syncedText(source.lastCheckedAt).replace("同步", "检查过、没有改动")}` : ""}{source.lastError ? <span className="text-destructive"> · 上次同步失败：{source.lastError}</span> : null}</p>
         </div>
-        <SyncControls sourceId={source.id} stale={!source.lastSyncedAt || now.getTime() - source.lastSyncedAt.getTime() > STALE_MS} />
+        <SyncControls sourceId={source.id} stale={!source.lastSyncedAt || now.getTime() - (source.lastCheckedAt ?? source.lastSyncedAt).getTime() > STALE_MS} />
       </div>
 
       <div className="grid grid-cols-3 gap-2">
@@ -92,6 +96,7 @@ export async function PostingsPanel({ userId, filters }: { userId: string; filte
         <PostingSearch q={filters.q} hidden={hidden} />
         {cohort && <Link href={postingsHref(filters, { allCohorts: !filters.allCohorts })} className={pill(!filters.allCohorts)} title="只看写着你这一届、或没写届次的">只看{cohort}</Link>}
         <Link href={postingsHref(filters, { withClosed: !filters.withClosed })} className={pill(filters.withClosed)}>含已截止</Link>
+        {(freshCount > 0 || filters.fresh) && <Link href={postingsHref(filters, { fresh: !filters.fresh })} className={pill(filters.fresh)} title="表主最近几天新加进表里的">新加的 {freshCount}</Link>}
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
         <span className="mr-1 text-xs text-muted-foreground">类型</span>
@@ -127,7 +132,7 @@ export async function PostingsPanel({ userId, filters }: { userId: string; filte
                 return (
                   <tr key={row.id} className="border-t align-top">
                     <td className="max-w-48 px-3 py-2">
-                      <p className="font-medium">{row.company}</p>
+                      <p className="font-medium">{row.company}{since && row.firstSeenAt > since && <span className="ml-1.5 rounded bg-red-500/10 px-1 py-px align-middle text-[10px] font-medium text-red-600">新</span>}</p>
                       <p className="text-xs text-muted-foreground">{[row.industry, row.degree, row.writtenTest].filter(Boolean).join(" · ")}</p>
                     </td>
                     <td className="max-w-72 px-3 py-2"><p className="line-clamp-2 text-xs leading-relaxed whitespace-pre-line" title={[row.roles, row.note].filter(Boolean).join("\n\n")}>{row.roles || row.note || "—"}</p></td>

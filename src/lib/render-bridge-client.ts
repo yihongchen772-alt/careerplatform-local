@@ -51,7 +51,7 @@ export async function renderPageText(
   }
 }
 
-export type SheetRows = { name: string; columns: string[]; rows: { id: string; cells: Record<string, string> }[] };
+export type SheetRows = { name: string; rev: number | null; columns: string[]; rows: { id: string; cells: Record<string, string> }[] };
 
 /**
  * Every row of a shared 飞书多维表格, read by the Electron main process in a
@@ -71,4 +71,18 @@ export async function readFeishuBase(url: string): Promise<SheetRows> {
   const data = (await res.json().catch(() => null)) as (SheetRows & { error?: string }) | null;
   if (!res.ok || !data || !Array.isArray(data.rows)) throw new Error(data?.error || `读取飞书表格失败：HTTP ${res.status}`);
   return data;
+}
+
+/** The sheet's revision from one small request, or null when it can't be told that way (read the whole sheet then). */
+export async function feishuBaseRevision(url: string): Promise<number | null> {
+  const bridgeUrl = process.env.CAREERPLATFORM_RENDER_BRIDGE_URL;
+  const token = process.env.CAREERPLATFORM_RENDER_BRIDGE_TOKEN;
+  if (!bridgeUrl || !token) return null;
+  try {
+    const res = await fetch(`${bridgeUrl}/feishu-base-rev`, { method: "POST", signal: AbortSignal.timeout(30000), headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ url }) });
+    const data = (await res.json().catch(() => null)) as { rev?: unknown } | null;
+    return res.ok && typeof data?.rev === "number" ? data.rev : null;
+  } catch {
+    return null;
+  }
 }

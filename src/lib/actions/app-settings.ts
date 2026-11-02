@@ -43,6 +43,7 @@ export async function updateAppSettings(
       inboxScanIntervalHours: z.number().refine((v) => [0, 1, 2, 4, 6, 12].includes(v)).optional(),
       jobRadarIntervalHours: z.number().refine((v) => [0, 6, 12, 24].includes(v)).optional(),
       applicationSyncIntervalHours: z.number().refine((v) => [0, 6, 12, 24].includes(v)).optional(),
+      postingSheetIntervalHours: z.number().refine((v) => [0, 1, 3, 6].includes(v)).optional(),
       proxyUrl: z.string().trim().max(1000).optional(),
     }).strict().safeParse(next);
     if (!patch.success) throw new UserFacingError("设置格式或检查频率不支持");

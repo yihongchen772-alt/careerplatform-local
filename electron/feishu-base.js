@@ -4,7 +4,10 @@
 // inside that page, a page of rows at a time. Only feishu.cn / larksuite.com
 // base links are accepted; nothing is written to the sheet.
 
-const SHEET_PARTITION = "cp-sheets";
+// Kept across launches: the share's cookies are what let a later revision check skip the page.
+const SHEET_PARTITION = "persist:cp-sheets";
+// Each sheet's table address, learned from its page; a revision check asks it alone.
+const tableAddress = new Map();
 const LOAD_TIMEOUT_MS = 45000;
 const MAX_ROWS = 50000;
 
@@ -73,7 +76,7 @@ async function readAllRows(clientvarsUrl, maxRows) {
     }
     return { id, cells };
   });
-  return { name: document.title.replace(/\s*-\s*飞书.*$/, "").trim(), columns: Object.values(names), rows };
+  return { name: document.title.replace(/\s*-\s*飞书.*$/, "").trim(), rev: (table.meta || {}).rev ?? null, columns: Object.values(names), rows };
 }
 
 async function readFeishuBase(url) {
@@ -94,11 +97,39 @@ async function readFeishuBase(url) {
   try {
     const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("飞书表格打开超时：检查链接是否完整、网络能否打开飞书（别挂 VPN）")), LOAD_TIMEOUT_MS));
     await Promise.race([win.loadURL(url).then(() => seen), timeout]);
-    return await win.webContents.executeJavaScript(`(${readAllRows.toString()})(${JSON.stringify(clientvarsUrl)}, ${MAX_ROWS})`);
+    const sheet = await win.webContents.executeJavaScript(`(${readAllRows.toString()})(${JSON.stringify(clientvarsUrl)}, ${MAX_ROWS})`);
+    tableAddress.set(url, clientvarsUrl);
+    return sheet;
   } finally {
     ses.webRequest.onBeforeRequest(null);
     if (!win.isDestroyed()) win.destroy();
   }
 }
 
-module.exports = { readFeishuBase, isBaseLink };
+/**
+ * The sheet's current revision, from one small request (the table header and
+ * a single row) in the session its page was last read in — no page, no rows.
+ * Null when this sheet has not been read since launch or the answer is not
+ * usable; the caller then reads the whole sheet.
+ */
+async function feishuBaseRevision(url) {
+  const address = tableAddress.get(url);
+  if (!address || !isBaseLink(url)) return null;
+  const { session } = require("electron");
+  const zlib = require("zlib");
+  try {
+    const small = new URL(address);
+    small.searchParams.set("recordLimit", "1");
+    small.searchParams.set("ondemandLimit", "1");
+    const res = await session.fromPartition(SHEET_PARTITION).fetch(small.toString(), { signal: AbortSignal.timeout(20000) });
+    const body = await res.json();
+    if (body.code !== 0 || !body.data || typeof body.data.table !== "string") return null;
+    const table = JSON.parse(zlib.gunzipSync(Buffer.from(body.data.table, "base64")).toString("utf8"));
+    const rev = table && table.meta && table.meta.rev;
+    return typeof rev === "number" ? rev : null;
+  } catch {
+    return null;
+  }
+}
+
+module.exports = { readFeishuBase, feishuBaseRevision, isBaseLink };
