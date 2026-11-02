@@ -40,7 +40,7 @@ export const FILTER_HINTS: Record<ApplicationFilter, string> = {
 };
 
 const TERMINAL: ApplicationStage[] = ["REJECTED", "ACCEPTED", "DECLINED", "WITHDRAWN", "CANCELLED"];
-const EXAM: ApplicationStage[] = ["ASSESSMENT", "OA"];
+const EXAM: ApplicationStage[] = ["ASSESSMENT", "OA", "AI_INTERVIEW"];
 const INTERVIEW: ApplicationStage[] = ["INTERVIEW_1", "INTERVIEW_2", "INTERVIEW_3", "HR_INTERVIEW"];
 const OFFER: ApplicationStage[] = ["OFFER", "ACCEPTED", "DECLINED"];
 

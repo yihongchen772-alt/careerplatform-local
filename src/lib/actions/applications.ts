@@ -290,3 +290,21 @@ export async function deleteStageHistory(id: string): Promise<ActionResult<null>
     return null;
   });
 }
+
+/**
+ * 投递记录 sorted 自定义: the whole list in the order the user dragged it into.
+ * Only the user's own rows are touched; the order is just their position.
+ */
+export async function reorderApplications(ids: string[]): Promise<ActionResult<null>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const parsed = z.array(z.string().min(1).max(100)).max(5000).safeParse(ids);
+    if (!parsed.success) throw new UserFacingError("排序数据不对，请刷新后重试");
+    const order = [...new Set(parsed.data)];
+    const owned = new Set((await db.application.findMany({ where: { userId: user.id, id: { in: order } }, select: { id: true } })).map((row) => row.id));
+    const mine = order.filter((id) => owned.has(id));
+    await db.$transaction(mine.map((id, index) => db.application.update({ where: { id }, data: { sortOrder: index } })));
+    revalidatePath("/applications");
+    return null;
+  });
+}

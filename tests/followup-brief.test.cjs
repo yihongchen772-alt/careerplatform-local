@@ -36,8 +36,8 @@ test("a time goes on the round it is for", () => {
   assert.equal(schedule.targetStageFor("OA", "笔试提醒"), "OA");
   assert.equal(schedule.defaultScheduleStage("APPLIED"), "INTERVIEW_1");
   assert.equal(schedule.defaultScheduleStage("ASSESSMENT"), "ASSESSMENT");
-  assert.deepEqual(plain(schedule.scheduleStageChoices("INTERVIEW_2")), ["ASSESSMENT", "OA", "INTERVIEW_2", "INTERVIEW_3", "HR_INTERVIEW", "OFFER"]);
-  assert.equal(schedule.scheduleStageChoices("APPLIED").length, 7);
+  assert.deepEqual(plain(schedule.scheduleStageChoices("INTERVIEW_2")), ["ASSESSMENT", "OA", "AI_INTERVIEW", "INTERVIEW_2", "INTERVIEW_3", "HR_INTERVIEW", "OFFER"]);
+  assert.equal(schedule.scheduleStageChoices("APPLIED").length, 8);
 });
 
 test("a finished round waits for the result and asks to follow up after a week", () => {

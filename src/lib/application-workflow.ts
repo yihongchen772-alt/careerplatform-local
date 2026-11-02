@@ -5,7 +5,8 @@ export function parseWorkflowChecklist(value: unknown): Record<string, WorkflowI
   return parsed.success ? parsed.data : null;
 }
 export function stageChecklist(stage: string): WorkflowItem[] {
-  const titles = /INTERVIEW/.test(stage) ? ["核对面试时间、时区和会议入口", "复习岗位要求与本次提交材料", "检查设备并准备作品或项目说明", "完成面试复盘"]
+  const titles = stage === "AI_INTERVIEW" ? ["核对 AI 面试的截止时间和作答次数", "检查摄像头、麦克风、网络和光线", "找安静的地方，先练几道常见题再正式录"]
+    : /INTERVIEW/.test(stage) ? ["核对面试时间、时区和会议入口", "复习岗位要求与本次提交材料", "检查设备并准备作品或项目说明", "完成面试复盘"]
     : ["OFFER", "ACCEPTED"].includes(stage) ? ["核对薪资结构、工作地点和入职条件", "记录决策截止日期", "准备需要澄清的问题或谈薪方案"]
     : ["OA", "ASSESSMENT"].includes(stage) ? ["核对测评窗口和截止时间", "检查考试设备与要求", "安排模拟练习"]
     : ["REJECTED", "WITHDRAWN", "DECLINED", "CANCELLED"].includes(stage) ? ["记录结果与原因", "复盘并调整下一次申请"]

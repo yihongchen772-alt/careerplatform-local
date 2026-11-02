@@ -28,7 +28,7 @@ export const AGENT_TOOLS: ToolSpec[] = [
   { name: "search_records", description: "在本地数据库里按一个关键词（公司名/别名/岗位名/方向/城市/行业/面经）查候选岗位、线索、投递和待办；空字符串查最近的。不要把整句话当关键词。", parameters: { type: "object", properties: { query: str("一个关键词") }, required: ["query"] } },
   { name: "filter_applications", description: "按条件筛选全部投递记录（支持按状态/进过面试/面到哪一轮/久未更新/城市/推测城市/未标城市/行业/公司筛选），返回匹配的完整列表及[投递ID][进度ID]。当用户问「我在上海投了哪些」「哪些进过面试/二面」「哪些超过两周没动静」「看某个行业的投递」时用这个。", parameters: { type: "object", properties: {
     filter: { type: "string", enum: ["all", "active", "applied", "exam", "interview", "interviewed", "waiting", "offer", "stale", "rejected", "closed", "missing_city", "guessed_city"], description: "筛选类型" },
-    stage: str("可选：具体阶段或面到的轮次（如 INTERVIEW_1 / INTERVIEW_2 / INTERVIEW_3 / HR_INTERVIEW / OFFER）"),
+    stage: str("可选：具体阶段或面到的轮次（如 AI_INTERVIEW / INTERVIEW_1 / INTERVIEW_2 / INTERVIEW_3 / HR_INTERVIEW / OFFER）"),
     city: str("可选：城市名（如 上海、杭州）"),
     industry: str("可选：行业关键词（如 机器人、半导体、汽车）"),
     company: str("可选：公司名或简称"),

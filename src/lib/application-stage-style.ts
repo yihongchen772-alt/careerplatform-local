@@ -30,7 +30,7 @@ export function applicationStageStyle(stage: ApplicationStage) {
       border: "border-cyan-500/25",
     };
   }
-  if (stage === "OA" || stage === "ASSESSMENT") {
+  if (stage === "OA" || stage === "ASSESSMENT" || stage === "AI_INTERVIEW") {
     return {
       dot: "bg-violet-500",
       pill: "bg-violet-500/10 text-violet-700 dark:text-violet-300",

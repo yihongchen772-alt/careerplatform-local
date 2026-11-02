@@ -704,6 +704,8 @@ enum ApplicationStage {
   SCREENING
   ASSESSMENT
   OA
+  /// AI 视频面试 / 机器人面试: recorded answers scored by software, before the first human round.
+  AI_INTERVIEW
   INTERVIEW_1
   INTERVIEW_2
   INTERVIEW_3
@@ -733,6 +735,8 @@ model Application {
   /// Where an automatically filled city came from (JD / 岗位页面 / 联网搜索); null when set by hand.
   citySource       String?
   /// When the city lookup last ran for this 投递, so it is not repeated on every visit.
+  /// 投递记录 sorted 自定义: the place the user dragged it to (smaller first); null = never placed, shown first.
+  sortOrder         Float?
   cityLookupAt     DateTime?
   currentStage     ApplicationStage @default(APPLIED)
   /// Company's own wording for the current step, separate from the broad stage.

@@ -352,7 +352,7 @@ export const ACTION_GUIDE = `当用户说的话意味着数据该被记下来或
 - withdraw_application：删掉一条投递记录，仅用于记错了且明确要求删除。主动撤回必须使用 update_stage 的 WITHDRAWN；岗位取消使用 CANCELLED；企业淘汰使用 REJECTED。targetId 填 [投递ID]，仅当用户明确说要删/记错了才提，不要因为用户说"这家跪了""被拒了"就提删除——被拒也是投递记录的一部分，应该用 update_stage 改成 REJECTED，不是删掉
 - complete_task：把一条自建待办标记完成。targetId 填上面"自建待办"里对上的 [待办ID]
 - mark_contacted：记一下刚联系过某个联系人（会自动清掉这个人的跟进提醒）。targetId 填上面"联系人"里对上的 [联系人ID]
-- set_schedule：给某条投递记一个面试/笔试时间（新的一场）。targetId 填 [投递ID]，stage 填是哪一轮（INTERVIEW_1 一面、INTERVIEW_2 二面、INTERVIEW_3 终面、HR_INTERVIEW、ASSESSMENT 测评、OA 笔试），date 填开始时间 YYYY-MM-DDTHH:mm（只知道日期就 YYYY-MM-DD；笔试/测评「某日前完成」填截止日），dateEnd 可填结束时间，note 填会议链接/会议号/测评链接（原样）。比 update_stage 更合适：记面试时间一律用它
+- set_schedule：给某条投递记一个面试/笔试时间（新的一场）。targetId 填 [投递ID]，stage 填是哪一轮（INTERVIEW_1 一面、INTERVIEW_2 二面、INTERVIEW_3 终面、HR_INTERVIEW、ASSESSMENT 测评、OA 笔试、AI_INTERVIEW AI 面试），date 填开始时间 YYYY-MM-DDTHH:mm（只知道日期就 YYYY-MM-DD；笔试/测评「某日前完成」填截止日），dateEnd 可填结束时间，note 填会议链接/会议号/测评链接（原样）。比 update_stage 更合适：记面试时间一律用它
 - reschedule：改期——已经记了时间的那一场换了时间。targetId 填"接下来"里那一场的 [进度ID]，date 填新时间 YYYY-MM-DDTHH:mm，note 只有会议链接也变了才填
 - complete_step：把某一轮标记为已面完/已做完（开始等结果）。targetId 填 [进度ID]
 - save_note：把用户说的面经/复盘记到那一轮上（追加，不会覆盖已有的）。targetId 填 [进度ID]，note 填整理好的内容：问了什么、怎么答的、感觉如何，保留用户原话里的题目

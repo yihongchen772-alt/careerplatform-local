@@ -14,7 +14,7 @@ const TERMINAL: ApplicationStage[] = ["REJECTED", "ACCEPTED", "DECLINED", "WITHD
 // One row per place a 投递 can be in now; each row is also the filter that opens those 投递.
 const ROWS: { label: string; hint: string; filter: ApplicationFilter; bar: string; match: (app: OverviewApplication) => boolean }[] = [
   { label: "已投递 · 筛选中", hint: "等简历反馈", filter: "applied", bar: "bg-primary/60", match: (app) => app.currentStage === "APPLIED" || app.currentStage === "SCREENING" },
-  { label: "测评 · 笔试", hint: "含考完等结果", filter: "exam", bar: "bg-sky-500/70", match: (app) => app.currentStage === "ASSESSMENT" || app.currentStage === "OA" },
+  { label: "测评 · 笔试 · AI 面", hint: "含考完等结果", filter: "exam", bar: "bg-sky-500/70", match: (app) => app.currentStage === "ASSESSMENT" || app.currentStage === "OA" || app.currentStage === "AI_INTERVIEW" },
   { label: "面试中", hint: "一面到 HR 面", filter: "interview", bar: "bg-violet-500/70", match: (app) => ["INTERVIEW_1", "INTERVIEW_2", "INTERVIEW_3", "HR_INTERVIEW"].includes(app.currentStage) },
   { label: "Offer", hint: "含已接受 / 已拒绝", filter: "offer", bar: "bg-emerald-500/70", match: (app) => ["OFFER", "ACCEPTED", "DECLINED"].includes(app.currentStage) },
   { label: "未通过", hint: "企业未通过", filter: "rejected", bar: "bg-rose-500/60", match: (app) => app.currentStage === "REJECTED" },

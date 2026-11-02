@@ -378,7 +378,7 @@ export async function dismissMailSchedules(taskIds: string[]): Promise<ActionRes
   });
 }
 
-const BULK_STAGES = ["SCREENING", "ASSESSMENT", "OA", "INTERVIEW_1", "INTERVIEW_2", "INTERVIEW_3", "HR_INTERVIEW", "OFFER", "REJECTED", "WITHDRAWN", "CANCELLED"] as const;
+const BULK_STAGES = ["SCREENING", "ASSESSMENT", "OA", "AI_INTERVIEW", "INTERVIEW_1", "INTERVIEW_2", "INTERVIEW_3", "HR_INTERVIEW", "OFFER", "REJECTED", "WITHDRAWN", "CANCELLED"] as const;
 
 /**
  * One stage for many 投递 at once — typically a batch that never heard back,

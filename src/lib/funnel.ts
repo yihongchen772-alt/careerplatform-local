@@ -20,6 +20,7 @@ export const FUNNEL_STAGES: ApplicationStage[] = [
   "SCREENING",
   "ASSESSMENT",
   "OA",
+  "AI_INTERVIEW",
   "INTERVIEW_1",
   "INTERVIEW_2",
   "INTERVIEW_3",

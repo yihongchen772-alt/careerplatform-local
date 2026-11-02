@@ -32,7 +32,7 @@ export type ShareCardOptions = {
   showOfferCompanies: boolean;
 };
 
-const ASSESS = new Set(["ASSESSMENT", "OA"]);
+const ASSESS = new Set(["ASSESSMENT", "OA", "AI_INTERVIEW"]);
 const INTERVIEW = new Set(["INTERVIEW_1", "INTERVIEW_2", "INTERVIEW_3", "HR_INTERVIEW"]);
 // A declined offer is still in the history as OFFER, so it still counts.
 const OFFER = new Set(["OFFER", "ACCEPTED"]);

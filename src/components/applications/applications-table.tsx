@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Download, Send, Trash2, X } from "lucide-react";
+import { ChevronDown, Download, GripVertical, Send, Trash2, X } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -37,7 +37,7 @@ import { downloadCsv, toCsv } from "@/lib/csv";
 import { todayKey } from "@/lib/dates";
 import { toast } from "sonner";
 import { ConfirmDeleteButton } from "@/components/ui/confirm-delete-button";
-import { deleteApplication } from "@/lib/actions/applications";
+import { deleteApplication, reorderApplications } from "@/lib/actions/applications";
 import { bulkDeleteApplications, bulkSetCity, bulkUpdateStage, undoBulkCity, undoBulkStage } from "@/lib/actions/schedule";
 import { applicationStageStyle } from "@/lib/application-stage-style";
 import { QuickStageMenu } from "@/components/applications/quick-stage-menu";
@@ -85,12 +85,27 @@ export type ApplicationRow = {
   portalStatus?: string | null;
   portalSuggestedStage?: ApplicationStage | null;
   company: { name: string; aliases?: { alias: string }[] };
+  /** Where 自定义 sorting put it (smaller first); null = never placed, so it shows first. */
+  sortOrder?: number | null;
 };
 
-const SORTS = ["applied", "updated", "schedule", "company"] as const;
-const SORT_LABELS: Record<(typeof SORTS)[number], string> = { applied: "最近投递", updated: "最近有进展", schedule: "最近的安排", company: "公司名 A→Z" };
+const SORTS = ["applied", "updated", "schedule", "company", "custom"] as const;
+const SORT_LABELS: Record<(typeof SORTS)[number], string> = { applied: "最近投递", updated: "最近有进展", schedule: "最近的安排", company: "公司名 A→Z", custom: "自定义（拖动）" };
 
-const BULK_PROGRESS: ApplicationStage[] = ["SCREENING", "ASSESSMENT", "OA", "INTERVIEW_1", "INTERVIEW_2", "INTERVIEW_3", "HR_INTERVIEW", "OFFER"];
+/** 自定义 order: never-placed ones first (newest first), then where they were dragged to. */
+function customRank(app: ApplicationRow, placed: Map<string, number> | null): number {
+  const order = placed?.get(app.id) ?? app.sortOrder;
+  return order == null ? -Infinity : order;
+}
+function byCustomOrder(placed: Map<string, number> | null) {
+  return (a: ApplicationRow, b: ApplicationRow) => {
+    const ra = customRank(a, placed);
+    const rb = customRank(b, placed);
+    return ra === rb ? b.appliedDate.localeCompare(a.appliedDate) : ra - rb;
+  };
+}
+
+const BULK_PROGRESS: ApplicationStage[] = ["SCREENING", "ASSESSMENT", "OA", "AI_INTERVIEW", "INTERVIEW_1", "INTERVIEW_2", "INTERVIEW_3", "HR_INTERVIEW", "OFFER"];
 const BULK_OUTCOMES: { stage: ApplicationStage; label: string }[] = [
   { stage: "REJECTED", label: "未通过（企业）" },
   { stage: "WITHDRAWN", label: "主动撤回" },
@@ -130,11 +145,16 @@ export function ApplicationsTable({
   // Deleted in a batch, waiting out the 撤销 window.
   const [hidden, setHidden] = useState<Set<string>>(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  // 自定义: the order just dragged, shown before the save comes back.
+  const [placed, setPlaced] = useState<Map<string, number> | null>(null);
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [dropAt, setDropAt] = useState<{ id: string; after: boolean } | null>(null);
 
   const filtered = useMemo(() => {
     const list = (stageFilter === "ALL" ? [...applications] : applications.filter((a) => a.currentStage === stageFilter)).filter((a) => !hidden.has(a.id));
     // Arrives newest application first; the other orders are re-sorts.
     if (sort === "updated") list.sort((a, b) => b.currentStageDate.localeCompare(a.currentStageDate));
+    if (sort === "custom") list.sort(byCustomOrder(placed));
     if (sort === "company") list.sort((a, b) => compareCompanyNames(a.company.name, b.company.name) || b.appliedDate.localeCompare(a.appliedDate));
     if (sort === "schedule") {
       list.sort((a, b) => {
@@ -144,7 +164,24 @@ export function ApplicationsTable({
       });
     }
     return list;
-  }, [applications, stageFilter, sort, hidden, now]);
+  }, [applications, stageFilter, sort, hidden, now, placed]);
+
+  /**
+   * 自定义: puts one 投递 just before or after another and saves the whole
+   * order. It moves within the full list, so rows a filter hides keep their places.
+   */
+  async function place(id: string, targetId: string, after: boolean) {
+    if (id === targetId) return;
+    const order = [...applications].sort(byCustomOrder(placed)).map((app) => app.id).filter((other) => other !== id);
+    const at = order.indexOf(targetId);
+    if (at < 0) return;
+    order.splice(after ? at + 1 : at, 0, id);
+    const before = placed;
+    setPlaced(new Map(order.map((other, index) => [other, index])));
+    const result = await reorderApplications(order);
+    if (!result.ok) { setPlaced(before); toast.error(result.message); }
+  }
+  const customSort = sort === "custom";
 
   const grouped = groupBy !== "none";
   const sections = useMemo<Group<ApplicationRow>[]>(() => groupApplications(filtered, groupBy, now, (app) => app.company.name), [filtered, groupBy, now]);
@@ -406,9 +443,56 @@ export function ApplicationsTable({
             const terminal = isTerminalStage(app.currentStage);
             const checked = selected.has(app.id);
             return (
-              <TableRow key={app.id} data-state={checked ? "selected" : undefined} className={cn("border-border/45 transition-colors hover:bg-primary/[0.035]", checked && "bg-primary/[0.05]")}>
+              <TableRow
+                key={app.id}
+                data-state={checked ? "selected" : undefined}
+                className={cn("border-border/45 transition-colors hover:bg-primary/[0.035]", checked && "bg-primary/[0.05]", dragging === app.id && "opacity-40", dropAt?.id === app.id && (dropAt.after ? "shadow-[inset_0_-2px_0_var(--color-primary)]" : "shadow-[inset_0_2px_0_var(--color-primary)]"))}
+                onDragOver={customSort ? (event) => {
+                  if (!event.dataTransfer.types.includes("application/x-cp-application")) return;
+                  event.preventDefault();
+                  const box = event.currentTarget.getBoundingClientRect();
+                  const after = event.clientY > box.top + box.height / 2;
+                  if (dropAt?.id !== app.id || dropAt.after !== after) setDropAt({ id: app.id, after });
+                } : undefined}
+                onDrop={customSort ? (event) => {
+                  const moved = event.dataTransfer.getData("application/x-cp-application");
+                  if (!moved) return;
+                  event.preventDefault();
+                  // Where the drop landed decides, not the last dragover the state caught.
+                  const box = event.currentTarget.getBoundingClientRect();
+                  const after = event.clientY > box.top + box.height / 2;
+                  setDragging(null);
+                  setDropAt(null);
+                  void place(moved, app.id, after);
+                } : undefined}
+              >
                 <TableCell className="w-8 pr-0">
-                  <Checkbox aria-label={`选择 ${app.company.name} · ${app.title}`} checked={checked} onCheckedChange={(value) => toggle(app.id, value === true)} />
+                  <span className="flex items-center gap-1">
+                    {customSort && (
+                      <button
+                        type="button"
+                        draggable
+                        aria-label={`拖动调整「${app.company.name}」的位置（也可以按 ↑ ↓）`}
+                        title="拖动调整顺序，或按 ↑ ↓"
+                        className="-ml-1.5 cursor-grab rounded p-0.5 text-muted-foreground/60 hover:bg-muted hover:text-foreground active:cursor-grabbing"
+                        onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("application/x-cp-application", app.id); setDragging(app.id); }}
+                        onDragEnd={() => { setDragging(null); setDropAt(null); }}
+                        onKeyDown={(event) => {
+                          if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+                          event.preventDefault();
+                          const visible = sections.flatMap((section) => section.items);
+                          const index = visible.findIndex((row) => row.id === app.id);
+                          const neighbor = visible[event.key === "ArrowUp" ? index - 1 : index + 1];
+                          if (neighbor) void place(app.id, neighbor.id, event.key === "ArrowDown");
+                          const handle = event.currentTarget;
+                          requestAnimationFrame(() => handle.focus());
+                        }}
+                      >
+                        <GripVertical className="size-4" />
+                      </button>
+                    )}
+                    <Checkbox aria-label={`选择 ${app.company.name} · ${app.title}`} checked={checked} onCheckedChange={(value) => toggle(app.id, value === true)} />
+                  </span>
                 </TableCell>
                 {/* max-w-0 + w-full: the name column takes what the others leave and truncates, instead of stretching the table. */}
                 <TableCell className="w-full min-w-56 max-w-0">

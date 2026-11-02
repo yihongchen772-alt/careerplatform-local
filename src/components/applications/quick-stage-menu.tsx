@@ -22,7 +22,7 @@ import { SCHEDULE_STAGES, scheduleKindOf, type StepView } from "@/lib/interview-
 import { completeStep } from "@/components/schedule/step-actions";
 import { cn } from "@/lib/utils";
 
-const PROGRESS: ApplicationStage[] = ["SCREENING", "ASSESSMENT", "OA", "INTERVIEW_1", "INTERVIEW_2", "INTERVIEW_3", "HR_INTERVIEW", "OFFER"];
+const PROGRESS: ApplicationStage[] = ["SCREENING", "ASSESSMENT", "OA", "AI_INTERVIEW", "INTERVIEW_1", "INTERVIEW_2", "INTERVIEW_3", "HR_INTERVIEW", "OFFER"];
 const OUTCOMES: { stage: ApplicationStage; label: string }[] = [
   { stage: "REJECTED", label: "未通过（企业）" },
   { stage: "ACCEPTED", label: "已接受 Offer" },

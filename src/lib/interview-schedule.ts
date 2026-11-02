@@ -57,7 +57,8 @@ export function isTerminalStage(stage: ApplicationStage): boolean {
 
 export function scheduleKindOf(stage: ApplicationStage): ScheduleKind {
   if (stage.startsWith("INTERVIEW") || stage === "HR_INTERVIEW") return "interview";
-  if (stage === "ASSESSMENT" || stage === "OA") return "exam";
+  // AI 面试 is done alone within a window, like a 测评.
+  if (stage === "ASSESSMENT" || stage === "OA" || stage === "AI_INTERVIEW") return "exam";
   return "deadline";
 }
 
@@ -65,6 +66,7 @@ export const SCHEDULE_KIND_LABELS: Record<ScheduleKind, string> = { interview: "
 
 /** For a calendar item or an invitation, which only has words to go on. */
 export function kindFromText(text: string): ScheduleKind {
+  if (AI_INTERVIEW_TEXT.test(text)) return "exam";
   if (/笔试|测评|机试|测验|在线测试|\bOA\b|assessment|online test|coding test/i.test(text)) return "exam";
   if (/面试|一面|二面|三面|终面|复试|群面|HR\s*面|interview/i.test(text)) return "interview";
   return "event";
@@ -332,11 +334,16 @@ export function nextScheduleItem(items: ScheduleItem[], now: number): ScheduleIt
 // ---------- which round a time is for ----------
 
 /** Rounds a time can be booked for. */
-export const SCHEDULE_STAGES: ApplicationStage[] = ["ASSESSMENT", "OA", "INTERVIEW_1", "INTERVIEW_2", "INTERVIEW_3", "HR_INTERVIEW", "OFFER"];
+export const SCHEDULE_STAGES: ApplicationStage[] = ["ASSESSMENT", "OA", "AI_INTERVIEW", "INTERVIEW_1", "INTERVIEW_2", "INTERVIEW_3", "HR_INTERVIEW", "OFFER"];
+/** AI 视频面试 / 机器人面试: recorded answers, scored by software. */
+export const AI_INTERVIEW_TEXT = /AI\s*(?:视频)?面试|AI\s*面|智能面试|机器人面试|视频面试[（(]AI[)）]|AI\s*interview|HireVue|录屏面试|单向视频面试/i;
+
 const INTERVIEW_ROUNDS: ApplicationStage[] = ["INTERVIEW_1", "INTERVIEW_2", "INTERVIEW_3", "HR_INTERVIEW"];
 
 /** The round an invitation names outright (「二面」「终面」「在线测评」), if any. */
 export function stageFromText(text: string): ApplicationStage | null {
+  // Before the rounds: 「AI 面试」 says 面试 but is no human round.
+  if (AI_INTERVIEW_TEXT.test(text)) return "AI_INTERVIEW";
   if (/HR\s*面|人力面|综合面/i.test(text)) return "HR_INTERVIEW";
   if (/三面|终面|最终面|final interview/i.test(text)) return "INTERVIEW_3";
   if (/二面|复试|第二轮|second interview/i.test(text)) return "INTERVIEW_2";

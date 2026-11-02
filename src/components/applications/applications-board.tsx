@@ -42,7 +42,7 @@ export type BoardApplication = {
 // repeat a step; the detailed timeline is maintained per application.
 const LANES: { title: string; description: string; stages: ApplicationStage[] }[] = [
   { title: "投递与筛选", description: "等待申请与简历反馈", stages: ["APPLIED", "SCREENING"] },
-  { title: "测评与笔试", description: "可跳过，也可能在面试后", stages: ["ASSESSMENT", "OA"] },
+  { title: "测评与笔试", description: "含 AI 面试，可跳过，也可能在面试后", stages: ["ASSESSMENT", "OA", "AI_INTERVIEW"] },
   { title: "面试", description: "轮次和顺序由企业决定", stages: ["INTERVIEW_1", "INTERVIEW_2", "INTERVIEW_3", "HR_INTERVIEW"] },
   { title: "Offer", description: "录用意向或待签约", stages: ["OFFER"] },
 ];

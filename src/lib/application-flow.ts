@@ -1,7 +1,7 @@
 import type { ApplicationStage } from "@prisma/client";
 
 const TERMINAL = new Set<ApplicationStage>(["REJECTED", "ACCEPTED", "DECLINED", "WITHDRAWN", "CANCELLED"]);
-const ORDER: ApplicationStage[] = ["APPLIED", "SCREENING", "ASSESSMENT", "OA", "INTERVIEW_1", "INTERVIEW_2", "INTERVIEW_3", "HR_INTERVIEW", "OFFER"];
+const ORDER: ApplicationStage[] = ["APPLIED", "SCREENING", "ASSESSMENT", "OA", "AI_INTERVIEW", "INTERVIEW_1", "INTERVIEW_2", "INTERVIEW_3", "HR_INTERVIEW", "OFFER"];
 
 export type PortalTransition = "none" | "apply" | "review";
 

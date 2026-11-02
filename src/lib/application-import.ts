@@ -24,6 +24,7 @@ export type ImportStage =
   | "SCREENING"
   | "ASSESSMENT"
   | "OA"
+  | "AI_INTERVIEW"
   | "INTERVIEW_1"
   | "INTERVIEW_2"
   | "INTERVIEW_3"
@@ -33,7 +34,7 @@ export type ImportStage =
   | "REJECTED"
   | "WITHDRAWN";
 
-export const IMPORT_STAGES: ImportStage[] = ["APPLIED", "SCREENING", "ASSESSMENT", "OA", "INTERVIEW_1", "INTERVIEW_2", "INTERVIEW_3", "HR_INTERVIEW", "OFFER", "ACCEPTED", "REJECTED", "WITHDRAWN"];
+export const IMPORT_STAGES: ImportStage[] = ["APPLIED", "SCREENING", "ASSESSMENT", "OA", "AI_INTERVIEW", "INTERVIEW_1", "INTERVIEW_2", "INTERVIEW_3", "HR_INTERVIEW", "OFFER", "ACCEPTED", "REJECTED", "WITHDRAWN"];
 
 export const MAX_IMPORT_ROWS = 300;
 
@@ -70,6 +71,7 @@ export function stageFromStatus(raw: string): ImportStage | "SKIP" {
   if (/hr\s*面|hrbp面|人事面/i.test(text)) return "HR_INTERVIEW";
   if (/三面|终面|最后一面|总监面|交叉面|(?:^|\D)3\s*面/.test(text)) return "INTERVIEW_3";
   if (/二面|复试|(?:^|\D)2\s*面/.test(text)) return "INTERVIEW_2";
+  if (/AI\s*(?:视频)?面|智能面试|机器人面试|录屏面试/i.test(text)) return "AI_INTERVIEW";
   if (/一面|初面|面试|面谈|(?:^|\D)1\s*面|群面|电话面/.test(text)) return "INTERVIEW_1";
   if (/笔试|OA|在线考试|机考/i.test(text)) return "OA";
   if (/测评|测试|性格|游戏|素质/.test(text)) return "ASSESSMENT";
@@ -177,6 +179,7 @@ export const IMPORT_STAGE_LABELS: Record<ImportStage, string> = {
   SCREENING: "筛选中",
   ASSESSMENT: "测评",
   OA: "笔试",
+  AI_INTERVIEW: "AI 面试",
   INTERVIEW_1: "一面",
   INTERVIEW_2: "二面",
   INTERVIEW_3: "三面",

@@ -6,11 +6,11 @@ import { SMALL_SAMPLE_THRESHOLD, type FunnelApplication } from "@/lib/funnel";
 // there for why (breaking a circular import between the two files).
 export { SMALL_SAMPLE_THRESHOLD };
 
-const ASSESSMENT_STAGES: ApplicationStage[] = ["ASSESSMENT", "OA"];
+const ASSESSMENT_STAGES: ApplicationStage[] = ["ASSESSMENT", "OA", "AI_INTERVIEW"];
 const INTERVIEW_STAGES: ApplicationStage[] = ["INTERVIEW_1", "INTERVIEW_2", "INTERVIEW_3", "HR_INTERVIEW"];
 const OFFER_STAGES: ApplicationStage[] = ["OFFER", "ACCEPTED"];
 // Past 简历筛选 in any way (a 笔试 counts): what 岗位机会评分 reads as "they responded".
-const ENGAGED_STAGES: ApplicationStage[] = ["OA", ...INTERVIEW_STAGES, ...OFFER_STAGES];
+const ENGAGED_STAGES: ApplicationStage[] = ["OA", "AI_INTERVIEW", ...INTERVIEW_STAGES, ...OFFER_STAGES];
 
 export type ConversionRow = {
   key: string;

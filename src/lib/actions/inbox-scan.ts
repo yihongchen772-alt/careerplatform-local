@@ -25,7 +25,7 @@ import { matchMailApplication, type MatchableApplication } from "@/lib/mail-appl
 const TERMINAL_STAGES: ApplicationStage[] = ["REJECTED", "ACCEPTED", "DECLINED", "WITHDRAWN", "CANCELLED"];
 // What an email can tell us. Offers and rejections included; accepting,
 // declining and withdrawing are the user's own decisions.
-const AUTO_STAGES: ApplicationStage[] = ["SCREENING", "ASSESSMENT", "OA", "INTERVIEW_1", "INTERVIEW_2", "INTERVIEW_3", "HR_INTERVIEW", "OFFER", "REJECTED", "CANCELLED"];
+const AUTO_STAGES: ApplicationStage[] = ["SCREENING", "ASSESSMENT", "OA", "AI_INTERVIEW", "INTERVIEW_1", "INTERVIEW_2", "INTERVIEW_3", "HR_INTERVIEW", "OFFER", "REJECTED", "CANCELLED"];
 
 /**
  * Moves the matched application to what the email says. Only forward steps
@@ -120,7 +120,7 @@ ${applications.map((a) => `- applicationId=${a.id}：${a.companyName} · ${a.tit
 
 另外返回：
 - applicationId：只有邮件明确来自上面某条投递的公司、且岗位对得上（或该公司只有这一条投递）时才填写；对不上、同公司多条分不清时填 null，不要硬凑。
-- stage：这封邮件说明的当前进度，只能是 ${AUTO_STAGES.join("、")} 之一。测评 → ASSESSMENT；笔试/机试/OA → OA；一面/初面/群面/业务面 → INTERVIEW_1；二面/复试 → INTERVIEW_2；三面/终面 → INTERVIEW_3；HR 面 → HR_INTERVIEW；Offer/录用意向/待签约 → OFFER；明确写了未通过/未录用/不合适/很遗憾 → REJECTED；明确说明岗位取消/招聘终止 → CANCELLED；简历筛选中 → SCREENING。投递成功确认、宣讲会、推广、只是提醒登录等不代表进度变化的填 null。
+- stage：这封邮件说明的当前进度，只能是 ${AUTO_STAGES.join("、")} 之一。测评 → ASSESSMENT；笔试/机试/OA → OA；AI 面试/AI 视频面试/机器人面试（录视频作答、机器评分） → AI_INTERVIEW；一面/初面/群面/业务面 → INTERVIEW_1；二面/复试 → INTERVIEW_2；三面/终面 → INTERVIEW_3；HR 面 → HR_INTERVIEW；Offer/录用意向/待签约 → OFFER；明确写了未通过/未录用/不合适/很遗憾 → REJECTED；明确说明岗位取消/招聘终止 → CANCELLED；简历筛选中 → SCREENING。投递成功确认、宣讲会、推广、只是提醒登录等不代表进度变化的填 null。
 - stageLabel：邮件里原样的阶段说法（例如"技术一面""综合测评""终面"），没有就填 null。` : ""}`;
 
   const raw = await callTextAi({
