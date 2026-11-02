@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ClipboardCopy, Crosshair, FileText, ListChecks, ScanSearch, Settings2, X } from "lucide-react";
+import { ClipboardCopy, Crosshair, FileText, ListChecks, ScanSearch, Settings2, SquareDashedMousePointer, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -27,13 +27,15 @@ const FILL_SOURCES: { source: DesktopBridgeFillSource; label: string; dot: strin
   { source: "excluded", label: "未选择的模块", dot: "bg-muted-foreground/40" },
 ];
 
+type Card = { group: string; label: string; value: string };
+
 function copyChoices(profile: Record<string, unknown>) {
-  const choices: { label: string; value: string }[] = [];
+  const choices: Card[] = [];
   const labels: Record<string, string> = { name: "姓名", phone: "手机", email: "邮箱", gender: "性别", birthDate: "出生日期", currentCity: "现居地", selfIntro: "自我评价", targetRole: "期望岗位", politics: "政治面貌", hometown: "籍贯", ethnicity: "民族", english: "英语水平", expectedSalary: "期望薪资", availableFrom: "最早到岗时间", internshipDuration: "可实习时长", wechat: "微信号", address: "通讯地址" };
-  for (const [key, label] of Object.entries(labels)) if (typeof profile[key] === "string" && profile[key]) choices.push({ label, value: profile[key] as string });
+  for (const [key, label] of Object.entries(labels)) if (typeof profile[key] === "string" && profile[key]) choices.push({ group: "基本信息", label, value: profile[key] as string });
   const columns: Record<string, string> = { school: "学校", company: "公司", name: "名称", role: "职位 / 角色", start: "开始", end: "结束", major: "专业", degree: "学历", description: "描述", responsibilities: "职责与成果", link: "项目链接", teamSize: "参加人数", issuer: "颁发单位", level: "等级", date: "获奖时间", score: "分数", language: "语种" };
   for (const [key, label] of [["education", "教育"], ["experiences", "工作/实习"], ["projects", "项目"], ["awards", "获奖"]]) if (Array.isArray(profile[key])) (profile[key] as Record<string, string>[]).forEach((row, i) => {
-    for (const [name, value] of Object.entries(row)) if (typeof value === "string" && value) choices.push({ label: `${label} ${i + 1} · ${columns[name] || name}`, value });
+    for (const [name, value] of Object.entries(row)) if (typeof value === "string" && value) choices.push({ group: `${label} ${i + 1}`, label: columns[name] || name, value });
   });
   return choices;
 }
@@ -51,14 +53,14 @@ const TABS: { id: AssistantTab; label: string; icon: typeof ScanSearch }[] = [
  * copying profile facts by hand, and the fill settings. It sits beside the
  * page, so the page stays visible and clickable while it is open.
  */
-export function ApplicationAssistant({ bridge, status, busy, hasPage, resumeId, variantId, positionId, tab, onTab, onClose, onPosition, onPreview, onApply, settings, onOpenProfile }: {
-  bridge: DesktopBridge; status: DesktopBridgeAutofillStatus | null; busy: boolean; hasPage: boolean; resumeId: string; variantId: string; positionId: string;
+export function ApplicationAssistant({ bridge, status, busy, hasPage, resumeId, variantId, positionId, onRegion, tab, onTab, onClose, onPosition, onPreview, onApply, settings, onOpenProfile }: {
+  bridge: DesktopBridge; status: DesktopBridgeAutofillStatus | null; busy: boolean; hasPage: boolean; resumeId: string; variantId: string; positionId: string; onRegion: () => void;
   tab: AssistantTab; onTab: (tab: AssistantTab) => void; onClose: () => void;
   onPosition: (id: string) => void; onPreview: (extra?: DesktopBridgeAutofillOptions) => void; onApply: (options: DesktopBridgeAutofillOptions) => void;
   settings: React.ReactNode; onOpenProfile: () => void;
 }) {
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [cards, setCards] = useState<{ label: string; value: string }[]>([]);
+  const [cards, setCards] = useState<Card[]>([]);
   const [length, setLength] = useState(200);
   const edits = useRef<NonNullable<DesktopBridgeAutofillOptions["previewEdits"]>>([]);
   const rememberEdits = useCallback((rows: NonNullable<DesktopBridgeAutofillOptions["previewEdits"]>) => { edits.current = rows; }, []);
@@ -107,6 +109,7 @@ export function ApplicationAssistant({ bridge, status, busy, hasPage, resumeId, 
         </label>
         <div className="flex gap-2">
           <Button size="sm" disabled={busy || !hasPage} title={hasPage ? undefined : "先打开网申页面"} onClick={() => onPreview({ answerLength: length, previewEdits: status?.plan ? edits.current : [] })}><ScanSearch />扫描并预览</Button>
+          <Button size="sm" variant="outline" disabled={busy || !hasPage} title={hasPage ? "在网页上框住一块（比如一条实习经历），只填这一块" : "先打开网申页面"} onClick={onRegion}><SquareDashedMousePointer />框选</Button>
           <Button size="sm" variant="outline" disabled={busy || !hasPage || !resumeId} title={!hasPage ? "先打开网申页面" : resumeId ? "重新生成还没填写的 AI 回答" : "先在设置里选择简历"} onClick={() => onPreview({ regenerate: true, answerLength: length, previewEdits: status?.plan ? edits.current : [] })}>重写未填回答</Button>
         </div>
         {status?.plan ? (
@@ -128,15 +131,39 @@ export function ApplicationAssistant({ bridge, status, busy, hasPage, resumeId, 
         </div>
       ))}
 
-      {tab === "cards" && <>
-        <p className="text-xs text-muted-foreground">网页不支持自动填时，点一下复制，再粘贴到网页里。</p>
-        <div className="space-y-1.5">{cards.map((c, i) => <button key={i} type="button" className="block w-full rounded-md border p-2 text-left text-xs transition-colors hover:bg-muted" onClick={() => copyText(c.value).then(() => toast.success(`已复制「${c.label}」`)).catch(() => toast.error("复制失败"))}><span className="font-medium">{c.label}</span><p className="mt-0.5 line-clamp-3 whitespace-pre-wrap text-muted-foreground">{c.value}</p></button>)}</div>
-        {cards.length === 0 && <p className="text-xs text-muted-foreground">还没有网申资料。<button type="button" className="text-primary hover:underline" onClick={onOpenProfile}>去账号设置填写</button></p>}
-      </>}
+      {tab === "cards" && <ProfileCards cards={cards} bridge={bridge} hasPage={hasPage} onOpenProfile={onOpenProfile} />}
 
       {tab === "settings" && settings}
     </div>
   </aside>;
+}
+
+/**
+ * 资料点填: click into a box on the page, then a card here, and the value goes
+ * in at the caret (⌘Z takes it back). With no box picked it is copied instead.
+ */
+function ProfileCards({ cards, bridge, hasPage, onOpenProfile }: { cards: Card[]; bridge: DesktopBridge; hasPage: boolean; onOpenProfile: () => void }) {
+  const groups = [...new Set(cards.map((card) => card.group))];
+  async function use(card: Card) {
+    const result = hasPage ? await bridge.insertProfileValue(card.value).catch(() => null) : null;
+    if (result?.ok) {
+      toast.success(`已填入「${card.label}」${result.label ? `到「${result.label}」` : ""}，⌘Z 可撤销`);
+      return;
+    }
+    await copyText(card.value).then(() => toast.success(`${result?.reason || "没有选中网页上的输入框"}；已复制「${card.label}」，可以直接粘贴`)).catch(() => toast.error("复制失败"));
+  }
+  if (!cards.length) return <p className="text-xs text-muted-foreground">还没有网申资料。<button type="button" className="text-primary hover:underline" onClick={onOpenProfile}>去账号设置填写</button></p>;
+  return <>
+    <p className="text-xs leading-relaxed text-muted-foreground">先在网页上点一下要填的输入框，再点下面的资料，就填进去了（⌘Z 可撤销）。没选中输入框时会复制，粘贴即可。</p>
+    {groups.map((group, index) => <details key={group} open={index === 0} className="group rounded-md border">
+      <summary className="cursor-pointer px-2 py-1.5 text-xs font-medium select-none">{group}</summary>
+      <div className="flex flex-wrap gap-1.5 border-t p-2">{cards.filter((card) => card.group === group).map((card, i) => (
+        <button key={i} type="button" title={card.value} className="max-w-full rounded-md border bg-background px-2 py-1 text-left text-xs transition-colors hover:border-primary/50 hover:bg-primary/5" onMouseDown={(event) => event.preventDefault()} onClick={() => void use(card)}>
+          <span className="text-muted-foreground">{card.label}：</span><span className="line-clamp-2 whitespace-pre-wrap">{card.value}</span>
+        </button>
+      ))}</div>
+    </details>)}
+  </>;
 }
 
 function FillResult({ status, bridge, onOpenProfile }: { status: DesktopBridgeAutofillStatus; bridge: DesktopBridge; onOpenProfile: () => void }) {

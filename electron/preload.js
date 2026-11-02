@@ -34,6 +34,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   stop: () => ipcRenderer.invoke("browser:stop"),
   setBounds: (rect) => ipcRenderer.invoke("browser:set-bounds", rect),
   focusField: (id) => ipcRenderer.invoke("browser:focus-field", id),
+  insertProfileValue: (value) => ipcRenderer.invoke("browser:insert-profile-value", value),
+  pickRegion: () => ipcRenderer.invoke("browser:pick-region"),
   applicationSnapshot: () => ipcRenderer.invoke("browser:application-snapshot"),
   autofill: (resumeVersionId, options) => ipcRenderer.invoke("browser:autofill", resumeVersionId, options),
   cancelAutofill: (tabId) => ipcRenderer.invoke("browser:cancel-autofill", tabId),

@@ -69,6 +69,7 @@ const {
   snapshotFormStructure,
   applyAutofillPlan, focusFormField, collectApplicationFields, readCurrentApplicationFields,
   trackUserEdits,
+  insertIntoLastField, lastFieldFocusAt, pickPageRegion, iframeOffsets,
   runAutofillCore,
   saveCorrectionsCore,
 } = require("./autofill-core.js");
@@ -246,7 +247,9 @@ const pendingPlans = new Map();
 const savingAnswersForTabs = new Set();
 const fillingTabs = new Set();
 const fillTasks = new Map();
-function stopFillTask(tabId, reason = "已停止填写，已填入的内容保留") {
+// The applicant pressed 暂停: what is filled stays, and 继续填写 runs the fill again for the rest.
+const PAUSED = "已暂停填写，已填入的内容保留";
+function stopFillTask(tabId, reason = PAUSED) {
   const task = fillTasks.get(tabId);
   if (!task || task.controller.signal.aborted) return;
   task.reason = reason;
@@ -1213,6 +1216,20 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
         return uploadResumeFiles(wc, file.path, stillOnPage);
       },
       jobId: () => tab.positionId,
+      // Where a child frame sits in the top frame's viewport: its <iframe>, found by address, up each level.
+      frameOffset: async (frame) => {
+        let x = 0;
+        let y = 0;
+        for (let current = frame; current.parent; current = current.parent) {
+          const frames = (await current.parent.executeJavaScript(`(${iframeOffsets.toString()})()`).catch(() => [])) || [];
+          const match = frames.filter((item) => item.src && item.src === current.url);
+          const only = match.length === 1 ? match[0] : frames.length === 1 ? frames[0] : null;
+          if (!only) return null;
+          x += only.x;
+          y += only.y;
+        }
+        return { x, y };
+      },
       archiveScope: () => tab.positionId ? `job:v1:${tab.positionId}` : portalContext(tab.archiveUrl || wc.getURL()),
       getPlan: () => { const plan = pendingPlans.get(tab.id); return plan?.revision === tab.revision ? plan : null; },
       setPlan: (plan) => plan ? pendingPlans.set(tab.id, { ...plan, revision: tab.revision }) : pendingPlans.delete(tab.id),
@@ -1247,7 +1264,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       else { tab.archiveUrl = tab.view.webContents.getURL(); tab.positionId = options?.positionId; tab.resumeVersionId = resumeVersionId; tab.variantId = options?.variantId; await rememberPreFill(tab); const result = await runAutofillCore(electronAdapter(tab, task), resumeVersionId, options || {});
         if (result?.phase === "done" && result.summary) { tab.filledAt = Date.now(); tab.typedSinceFill = 0; tab.typedPage = tab.view.webContents.getURL().split("#")[0]; recordFillStats(tab.archiveUrl, { fills: 1, filled: result.summary.filled || 0, manual: result.summary.manual || 0, deliberate: result.summary.deliberate || 0 }); noteMissedFields(tab, result); }
         // A run that ended in an error used to leave no trace in 填写统计 (fills 0, typed 11 on 国机).
-        else if (result?.phase === "error" && !/已停止/.test(result.message || "")) recordFillStats(tab.archiveUrl, { errors: 1, lastError: String(result.message || "").slice(0, 80) }); }
+        else if (result?.phase === "error" && !/已停止|已暂停/.test(result.message || "")) recordFillStats(tab.archiveUrl, { errors: 1, lastError: String(result.message || "").slice(0, 80) }); }
     } finally { fillingTabs.delete(tab.id); fillTasks.delete(tab.id); }
   });
 
@@ -1255,6 +1272,32 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     const tab = activeTab(); if (!tab || typeof id !== "string") return;
     for (const frame of allFrames(tab.view.webContents)) if (await frame.executeJavaScript(`(${focusFormField.toString()})(${JSON.stringify(id)})`).catch(() => false)) break;
   });
+  // 资料卡: the value goes into the box last clicked into on the page, in whichever frame that was.
+  handle("browser:insert-profile-value", async (_e, value) => {
+    const tab = activeTab();
+    if (!tab || typeof value !== "string" || !value || value.length > 20000) return { ok: false, reason: "先打开网申页面" };
+    const wc = tab.view.webContents;
+    let target = null;
+    let latest = 0;
+    for (const frame of allFrames(wc)) {
+      const at = await frame.executeJavaScript(`(${lastFieldFocusAt.toString()})()`).catch(() => 0);
+      if (at > latest) { latest = at; target = frame; }
+    }
+    if (!target) return { ok: false, reason: "先在网页上点一下要填的输入框" };
+    wc.focus();
+    return target.executeJavaScript(`(${insertIntoLastField.toString()})(${JSON.stringify(value)})`).catch(() => ({ ok: false, reason: "这个页面不让写入，请复制后粘贴" }));
+  });
+
+  // 框选填写: the applicant drags a box over the page; null when cancelled.
+  handle("browser:pick-region", async () => {
+    const tab = activeTab();
+    if (!tab) return null;
+    const wc = tab.view.webContents;
+    wc.focus();
+    const rect = await wc.mainFrame.executeJavaScript(`(${pickPageRegion.toString()})()`, true).catch(() => null);
+    return rect && activeTab() === tab ? rect : null;
+  });
+
   handle("browser:application-snapshot", async () => {
     const tab = activeTab(); if (!tab) return null;
     const wc = tab.view.webContents;

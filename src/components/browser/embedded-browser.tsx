@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, Bookmark, Camera, Check, ChevronDown, ChevronUp, Copy, Eraser, ExternalLink, FileCode, ListChecks, Loader2, KeyRound, LogOut, Maximize2, Minus, MoreVertical, NotebookPen, PanelRight, PanelRightClose, Plus, Radar, RotateCw, ScanSearch, Search, Send, Settings2, Sparkles, Trash2, TriangleAlert, X, Bug } from "lucide-react";
+import { ArrowLeft, Pause, Play, SquareDashedMousePointer, ArrowRight, Bookmark, Camera, Check, ChevronDown, ChevronUp, Copy, Eraser, ExternalLink, FileCode, ListChecks, Loader2, KeyRound, LogOut, Maximize2, Minus, MoreVertical, NotebookPen, PanelRight, PanelRightClose, Plus, Radar, RotateCw, ScanSearch, Search, Send, Settings2, Sparkles, Trash2, TriangleAlert, X, Bug } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { AiProgress } from "@/components/ui/ai-progress";
@@ -242,6 +242,8 @@ export function EmbeddedBrowser({
   // pages as soon as 投递成功 shows; handed to the 记为已投递 dialog.
   const [submittedRecognition, setSubmittedRecognition] = useState<{ tabId: number; url: string; result: Recognition | null } | null>(null);
   const [markRecognition, setMarkRecognition] = useState<Recognition | null>(null);
+  // The last fill's options, for 继续填写 after a 暂停.
+  const lastFill = useRef<DesktopBridgeAutofillOptions>({});
   const autoFillPreference = usePreference("careerplatform.browser.autofillEveryPage", "1") !== "0";
   const [autoFillOverride, setAutoFillOverride] = useState<boolean | null>(null);
   const autoFill = autoFillOverride ?? autoFillPreference;
@@ -695,10 +697,22 @@ export function EmbeddedBrowser({
   function handleAutofill(extra: DesktopBridgeAutofillOptions = {}) {
     if (!bridge || autofilling) return;
     if (!fillModules.length) { toast.info("请先在「填写范围」里至少勾选一个模块"); return; }
+    if (extra.mode !== "preview") lastFill.current = extra;
     setDetected(null);
     setAutofilling(true);
     setStatus((old) => ({ phase: "scanning", message: "正在读取页面…", plan: old?.plan }));
     bridge.autofill(resumeVersionId || undefined, { expandBlocks, variantId: variantChoice || undefined, modules: fillModules, positionId: positionId || undefined, ...extra });
+  }
+
+  // 框选填写: drag a box over the page, then preview just the fields in it.
+  async function handleRegionFill() {
+    if (!bridge || autofilling) return;
+    setFillMenuOpen(false);
+    // The panel first: opening it narrows the page, which would move the fields under the box.
+    openPanel("preview");
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const region = await bridge.pickRegion();
+    if (region) handleAutofill({ mode: "preview", answerLength: 200, region });
   }
 
   function dismissStatus() {
@@ -928,8 +942,8 @@ export function EmbeddedBrowser({
           )}
 
           {busy ? (
-            <Button size="sm" variant="outline" className="shrink-0" onClick={() => void bridge.cancelAutofill(tabsState.activeId ?? undefined)} title="停止填写，已填入的内容保留">
-              <Loader2 className="animate-spin" />填写中 · 停止
+            <Button size="sm" variant="outline" className="shrink-0" onClick={() => void bridge.cancelAutofill(tabsState.activeId ?? undefined)} title="暂停填写，已填入的内容保留；之后可以继续填写">
+              <Loader2 className="animate-spin" />填写中 · 暂停
             </Button>
           ) : (
             <div className="flex shrink-0 items-center">
@@ -989,6 +1003,7 @@ export function EmbeddedBrowser({
                   <DropdownMenuCheckboxItem closeOnClick={false} checked={autoFill} onCheckedChange={(checked) => setAutoFillEveryPage(!!checked)}>每页自动填</DropdownMenuCheckboxItem>
                   <DropdownMenuCheckboxItem closeOnClick={false} checked={expandBlocks} onCheckedChange={(checked) => setExpandBlocks(!!checked)}>自动补齐栏目</DropdownMenuCheckboxItem>
                   <DropdownMenuSeparator />
+                  <DropdownMenuItem disabled={!currentUrl} onClick={() => void handleRegionFill()}><SquareDashedMousePointer />框选一块区域填写…</DropdownMenuItem>
                   <DropdownMenuItem disabled={!currentUrl} onClick={() => { openPanel("preview"); handleAutofill({ mode: "preview", answerLength: 200 }); }}><ScanSearch />逐字段预览后再填…</DropdownMenuItem>
                   <DropdownMenuItem onClick={() => openPanel("settings")}><Settings2 />全部填写设置…</DropdownMenuItem>
                 </DropdownMenuContent>
@@ -1115,7 +1130,7 @@ export function EmbeddedBrowser({
           <Infobar
             tone="info"
             icon={<Loader2 className="animate-spin" />}
-            actions={<Button size="xs" variant="outline" onClick={() => void bridge.cancelAutofill(tabsState.activeId ?? undefined)}>停止填写</Button>}
+            actions={<Button size="xs" variant="outline" onClick={() => void bridge.cancelAutofill(tabsState.activeId ?? undefined)}>暂停</Button>}
           >
             {status.phase === "ai" ? (
               <AiProgress active className="space-y-1" expectedSeconds={30} stages={["基础资料已填，AI 正在生成回答…", "正在从简历中核对信息…", "AI 仍在生成，请稍候…"]} />
@@ -1124,7 +1139,18 @@ export function EmbeddedBrowser({
             )}
           </Infobar>
         )}
-        {status && (status.phase === "done" || status.phase === "error") && (
+        {status?.phase === "error" && status.message.startsWith("已暂停") && (
+          <Infobar
+            tone="info"
+            icon={<Pause />}
+            onClose={dismissStatus}
+            closeLabel="收起"
+            actions={<Button size="xs" disabled={busy} onClick={() => handleAutofill(lastFill.current)}><Play />继续填写</Button>}
+          >
+            已暂停，填好的内容都留着。可以先在网页上改一改、补一补，再点「继续填写」——已经有内容的框不会被覆盖。
+          </Infobar>
+        )}
+        {status && (status.phase === "done" || (status.phase === "error" && !status.message.startsWith("已暂停"))) && (
           <Infobar
             tone={status.phase === "error" ? "danger" : status.summary?.manual ? "warning" : "success"}
             icon={status.phase === "error" ? <TriangleAlert /> : status.summary?.manual ? <ListChecks /> : <Check />}
@@ -1274,6 +1300,7 @@ export function EmbeddedBrowser({
               onClose={closePanel}
               onPosition={(id) => { if (activeTab) setJobBindings((bindings) => ({ ...bindings, [activeTab.id]: id })); setStatus(null); }}
               onPreview={(extra) => handleAutofill({ mode: "preview", ...extra })}
+              onRegion={() => void handleRegionFill()}
               onApply={(options) => handleAutofill(options)}
               settings={settingsPanel}
               onOpenProfile={() => router.push("/settings?tab=autofill")}

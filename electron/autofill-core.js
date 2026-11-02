@@ -1453,6 +1453,16 @@ function trackUserEdits() {
   };
   document.addEventListener("input", mark, true);
   document.addEventListener("change", mark, true);
+  // The box last clicked into, for 资料卡 to fill (insertIntoLastField).
+  document.addEventListener("focusin", (event) => {
+    if (!event.isTrusted) return;
+    const el = origin(event);
+    if (el && el.matches?.("input, textarea, [contenteditable='true'], [contenteditable='']")) document.__cpLastFocus = { el, at: Date.now() };
+  }, true);
+  // A click anywhere else after it (a dropdown, a 保存 button) means that box is no longer the one meant.
+  document.addEventListener("pointerdown", (event) => {
+    if (event.isTrusted) document.__cpLastPointer = { el: origin(event), at: Date.now() };
+  }, true);
   let selected = null;
   const shownValue = (el) => (el.querySelector(".ant-select-selection-item, .ud__select__selector__selectItem, .phoenix-select__tipEle, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent)")?.textContent || el.value || (el.matches("button, [role='combobox']") ? el.textContent : "") || "").trim();
   document.addEventListener("pointerdown", (event) => {
@@ -1475,6 +1485,120 @@ function trackUserEdits() {
       }
     }, 150);
   }, true);
+}
+
+// When the applicant last clicked into a box on this frame (0: never, or it is gone).
+function lastFieldFocusAt() {
+  const last = document.__cpLastFocus;
+  const pointer = document.__cpLastPointer;
+  // A later click elsewhere on this frame still makes it the frame the applicant was in.
+  return last && last.el.isConnected ? Math.max(last.at, pointer?.at || 0) : pointer?.at || 0;
+}
+
+// 资料卡: put one profile value into the box last clicked into, at the caret,
+// the way typing would (so ⌘Z takes it back). Never into a disabled, read-only
+// or non-text box.
+function insertIntoLastField(value) {
+  const last = document.__cpLastFocus;
+  const el = last && last.el;
+  const pointer = document.__cpLastPointer;
+  const clickedAway = pointer && pointer.at > last.at + 500 && !(pointer.el && (pointer.el === el || el.contains?.(pointer.el) || pointer.el.control === el || pointer.el.closest?.("label")?.control === el));
+  if (!el || !el.isConnected || clickedAway) return { ok: false, reason: "先在网页上点一下要填的输入框" };
+  const textInput = el.matches("textarea, input:not([type]), input[type='text'], input[type='email'], input[type='tel'], input[type='number'], input[type='url'], input[type='search']");
+  if (!textInput && !el.isContentEditable) return { ok: false, reason: "这个框不能直接输入，请在网页上选择" };
+  if (el.disabled || el.readOnly) return { ok: false, reason: "这个框是只读的，请在网页上选择" };
+  el.focus();
+  let inserted = false;
+  try { inserted = document.execCommand("insertText", false, value); } catch { inserted = false; }
+  if (!inserted && textInput) {
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? el.value.length;
+    const next = el.value.slice(0, start) + value + el.value.slice(end);
+    const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), "value")?.set;
+    if (setter) setter.call(el, next); else el.value = next;
+    el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    inserted = true;
+  }
+  const label = (el.getAttribute("aria-label") || el.getAttribute("placeholder") || el.name || "").trim().slice(0, 30);
+  return { ok: inserted, label, reason: inserted ? "" : "这个框没接受输入，请复制后粘贴" };
+}
+
+// 框选填写: let the applicant drag a box over part of the page. Resolves to
+// the box in this frame's viewport pixels, or null for Esc / a stray click.
+function pickPageRegion() {
+  return new Promise((resolve) => {
+    document.getElementById("cp-region-picker")?.remove();
+    const layer = document.createElement("div");
+    layer.id = "cp-region-picker";
+    layer.setAttribute("style", "position:fixed;inset:0;z-index:2147483647;cursor:crosshair;background:rgba(15,23,42,.18);user-select:none");
+    const hint = document.createElement("div");
+    hint.textContent = "拖动鼠标，框住要填写的那一块（比如一条教育经历）· Esc 取消";
+    hint.setAttribute("style", "position:fixed;top:12px;left:50%;transform:translateX(-50%);padding:6px 12px;border-radius:999px;background:#4f46e5;color:#fff;font:13px/1.4 system-ui,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.2);pointer-events:none");
+    const box = document.createElement("div");
+    box.setAttribute("style", "position:fixed;display:none;border:2px solid #6366f1;background:rgba(99,102,241,.12);border-radius:4px;pointer-events:none");
+    layer.append(hint, box);
+    document.documentElement.append(layer);
+    let start = null;
+    let rect = null;
+    const finish = (result) => {
+      layer.remove();
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("mousemove", onMove, true);
+      window.removeEventListener("mouseup", onUp, true);
+      clearTimeout(timer);
+      resolve(result);
+    };
+    const onKey = (event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); finish(null); } };
+    const timer = setTimeout(() => finish(null), 120000);
+    window.addEventListener("keydown", onKey, true);
+    layer.addEventListener("mousedown", (event) => { event.preventDefault(); start = { x: event.clientX, y: event.clientY }; rect = null; });
+    // On the window, not the layer: a drag that ends past the page's edge still ends.
+    const clamp = (event) => ({ x: Math.max(0, Math.min(innerWidth, event.clientX)), y: Math.max(0, Math.min(innerHeight, event.clientY)) });
+    const onMove = (event) => {
+      if (!start) return;
+      const end = clamp(event);
+      rect = { x: Math.min(start.x, end.x), y: Math.min(start.y, end.y), width: Math.abs(end.x - start.x), height: Math.abs(end.y - start.y) };
+      box.style.display = "block";
+      Object.assign(box.style, { left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.width}px`, height: `${rect.height}px` });
+    };
+    // The box is where the press and the release were: a quick drag may bring few move events.
+    const onUp = (event) => {
+      if (!start) return;
+      const end = clamp(event);
+      rect = { x: Math.min(start.x, end.x), y: Math.min(start.y, end.y), width: Math.abs(end.x - start.x), height: Math.abs(end.y - start.y) };
+      start = null;
+      if (rect.width > 20 && rect.height > 20) finish(rect);
+      else box.style.display = "none";
+    };
+    window.addEventListener("mousemove", onMove, true);
+    window.addEventListener("mouseup", onUp, true);
+  });
+}
+
+// The scanned fields whose middle lies inside `rect` (this frame's viewport pixels).
+function fieldIdsInRect(rect) {
+  const roots = [document];
+  (function walk(root) { for (const node of root.querySelectorAll("*")) if (node.shadowRoot) { roots.push(node.shadowRoot); walk(node.shadowRoot); } })(document);
+  const ids = new Set();
+  for (const root of roots) {
+    for (const el of root.querySelectorAll("[data-cp-fill-id]")) {
+      const r = el.getBoundingClientRect();
+      if (!r.width && !r.height) continue;
+      const x = r.left + r.width / 2;
+      const y = r.top + r.height / 2;
+      if (x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height) ids.add(el.getAttribute("data-cp-fill-id").replace(/:\d+$/, ""));
+    }
+  }
+  return [...ids];
+}
+
+// Where each <iframe> sits in this frame's viewport, for 框选填写 across frames.
+function iframeOffsets() {
+  return Array.from(document.querySelectorAll("iframe, frame")).map((frame) => {
+    const r = frame.getBoundingClientRect();
+    return { src: frame.src || "", x: r.left + frame.clientLeft, y: r.top + frame.clientTop };
+  });
 }
 
 function hasUserEditedFields() {
@@ -3238,6 +3362,20 @@ async function scanFrames(adapter) {
   return { fields, frameById, pageText };
 }
 
+// Ids of the fields inside `region` (the top frame's viewport pixels). A
+// child frame counts once the adapter can say where it sits; else it is left out.
+async function fieldsInRegion(adapter, region) {
+  const ids = new Set();
+  const frames = await adapter.frames();
+  for (let i = 0; i < frames.length; i++) {
+    const offset = i === 0 ? { x: 0, y: 0 } : await adapter.frameOffset?.(frames[i]).catch(() => null);
+    if (!offset) continue;
+    const rect = { x: region.x - offset.x, y: region.y - offset.y, width: region.width, height: region.height };
+    for (const id of (await adapter.run(frames[i], fieldIdsInRect, [rect]).catch(() => [])) || []) ids.add(id);
+  }
+  return ids;
+}
+
 // What each listed custom dropdown offers: { id: [option text, …] }. Dropdowns that
 // can't be read (search-only lists, cascaders, very long lists) are simply absent.
 async function readSelectOptions(adapter, questions, frameById, initialUrl) {
@@ -3305,6 +3443,9 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
   try {
     const modules = new Set(Array.isArray(options.modules) ? options.modules.filter((id) => AUTOFILL_MODULES.includes(id)) : AUTOFILL_MODULES);
     if (!modules.size) throw new Error("请先在「填写范围」里至少勾选一个模块");
+    // 框选填写 fills that one block: no attachment, no pressing 添加 for more.
+    if (options.region && !["x", "y", "width", "height"].every((key) => Number.isFinite(options.region[key]))) throw new Error("框选的范围不对，请重新框一次");
+    if (options.region) modules.delete("resume");
     assertActive();
     adapter.status({ phase: "scanning", message: "正在读取页面…" });
 
@@ -3318,7 +3459,10 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     assertActive();
     const { fields, frameById, pageText } = await scanFrames(adapter);
     assertActive();
-    if (fields.length === 0 && !options.openedSection && adapter.stillOnPage(initialUrl)) {
+    // 框选填写: only what lies in the box; the rest still counts for which row is which.
+    const inRegion = options.region ? await fieldsInRegion(adapter, options.region) : null;
+    if (inRegion && !fields.some((field) => inRegion.has(field.id))) throw new Error("框住的地方没有可以填的输入框，换个范围再框一次");
+    if (fields.length === 0 && !inRegion && !options.openedSection && adapter.stillOnPage(initialUrl)) {
       for (const frame of await adapter.frames()) {
         assertActive();
         const opened = await adapter.run(frame, openEditSection, []).catch(() => null);
@@ -3342,11 +3486,16 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     let thirdPartyCount = 0;
     let pickOnPageCount = 0;
     const excluded = new Set();
+    const outside = new Set();
     const social = socialValues(fields, profile);
     for (const field of fields) {
       // Classify before skipping prefilled fields: a filled first education
       // block still occupies row one, so the next empty "学校" gets row two.
       const repeat = repeats.get(field.id);
+      if (inRegion && !inRegion.has(field.id)) {
+        outside.add(field.id);
+        continue;
+      }
       if (!modules.has(fieldModule(field, repeat))) {
         excluded.add(field.id);
         continue;
@@ -3515,7 +3664,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       const choices = profileChoices(profile);
       const restored = await adapter.api(`application-draft?${new URLSearchParams({ contextKey: pageContext, url: initialUrl, resumeVersionId: resumeVersionId || "", variantId: options.variantId || "" })}`).then((r) => r.ok ? r.json() : null).catch(() => null);
       const plan = { id: adapter.taskId || String(Date.now()), url: initialUrl, at: Date.now(), fields, pairs, frameById, profile, options, resumeVersionId };
-      const proposals = fields.map((field) => {
+      const proposals = fields.filter((field) => !outside.has(field.id)).map((field) => {
         const pair = pairs.find((p) => p.id === field.id);
         const eligible = !excluded.has(field.id) && !field.hasValue && !field.userEdited && !isNeverGuessField(field) && !isThirdPartyField(field) && !field.readonlyPicker;
         const oldField = priorPlan?.fields.find((f) => f.mappingKey === field.mappingKey);
@@ -3631,7 +3780,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     const missing = missingRepeatCounts(profile, rowIndexes).filter(({ group }) => modules.has(group));
     const empty = emptyModules(profile, rowIndexes, fields).filter(({ group }) => modules.has(moduleOfGroup(group)));
     const round = options.round || 0;
-    if (options.expandBlocks && (missing.length || empty.length) && round < 4 && !options.modal && adapter.stillOnPage(initialUrl)) {
+    if (options.expandBlocks && !options.region && (missing.length || empty.length) && round < 4 && !options.modal && adapter.stillOnPage(initialUrl)) {
       const clicked = [];
       let modal = false;
       for (const { group, label } of [...missing, ...empty]) {
@@ -3657,14 +3806,14 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       if (options.modal) parts.push("新栏目在弹窗里：核对后点弹窗的保存，再点一次一键填写继续下一段");
     }
     const missingBlocks = missing.map(({ saved, shown, label }) => `有 ${saved} 段${label}、页面只有 ${shown} 组`);
-    if (missingBlocks.length) {
+    if (missingBlocks.length && !options.region) {
       parts.push(options.expandBlocks
         ? `网申资料里${missingBlocks.join("、")}，没找到能自动点的「添加」按钮——请手动添加后再点一次一键填写`
         : `网申资料里${missingBlocks.join("、")}，但这页的对应栏目不够——先点页面上的「添加」再点一次一键填写，或勾选「自动补齐栏目」`);
     }
     // With 自动补齐栏目 off, say which modules have an 「添加」 waiting (looked up, not pressed).
     const emptyOnPage = [];
-    if (!options.expandBlocks && (missing.length || empty.length) && adapter.stillOnPage(initialUrl)) {
+    if (!options.expandBlocks && !options.region && (missing.length || empty.length) && adapter.stillOnPage(initialUrl)) {
       for (const item of [...missing, ...empty]) {
         for (const frame of await adapter.frames()) {
           const probe = await adapter.run(frame, clickAddBlock, [item.group, true]).catch(() => null);
@@ -4014,6 +4163,11 @@ async function applyAutofillPlan(adapter, input) {
 }
 
 module.exports = {
+  fieldIdsInRect,
+  iframeOffsets,
+  insertIntoLastField,
+  lastFieldFocusAt,
+  pickPageRegion,
   isThirdPartyField, displayLabel, basicRuleMatches, normalizePhone, englishValue, matchPhoneChoice,
   classifyRepeatBlocks, savedRecordsOnPage, repeatsSavedEntry, previewRecordBlocks, formSkeleton, rowsForGroup, recordReference, awardFieldKind,
   profileChoices, applyAutofillPlan, validatePageFields, focusFormField, collectApplicationFields, readCurrentApplicationFields, watchApplicationFields,

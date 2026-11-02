@@ -25,6 +25,7 @@ export type ApplicationSnapshot = {
   /** The current page's title, visible text (capped) and og:site_name, and this tab's earlier pages. */
   title?: string; text?: string; siteName?: string; history?: { url: string; title: string }[];
 };
+export type DesktopBridgeRegion = { x: number; y: number; width: number; height: number };
 export type DesktopBridgeAutofillOptions = {
   mode?: "preview" | "apply";
   positionId?: string;
@@ -37,6 +38,8 @@ export type DesktopBridgeAutofillOptions = {
   uploadResume?: boolean;
   /** Only fill these modules; omitted = all, empty = none. */
   modules?: DesktopBridgeAutofillModule[];
+  /** 框选填写: only the fields inside this box (page viewport pixels). */
+  region?: DesktopBridgeRegion;
   /** Press the page's 添加 button when the profile has more 教育/实习/项目 rows than blocks shown. */
   expandBlocks?: boolean;
   /** 网申资料方案 id; omitted = the default profile. */
@@ -88,6 +91,10 @@ export type DesktopBridge = {
   stop(): Promise<void>;
   setBounds(rect: DesktopBridgeRect | null): Promise<void>;
   focusField(id: string): Promise<void>;
+  /** 资料卡: into the box last clicked into on the page. */
+  insertProfileValue(value: string): Promise<{ ok: boolean; label?: string; reason?: string }>;
+  /** 框选填写: the box dragged over the page, or null when cancelled. */
+  pickRegion(): Promise<DesktopBridgeRegion | null>;
   applicationSnapshot(): Promise<ApplicationSnapshot | null>;
   autofill(resumeVersionId?: string, options?: DesktopBridgeAutofillOptions): Promise<void>;
   cancelAutofill(tabId?: number): Promise<void>;
