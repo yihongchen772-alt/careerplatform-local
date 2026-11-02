@@ -119,18 +119,22 @@ export default async function DashboardPage() {
   const dailyDigest = await getTodayDigest();
   const weeklyReview = await getWeeklyReview();
 
-  const [dbUser, resumeCount, leadCount] = await Promise.all([
+  const [dbUser, resumeCount, leadCount, sheetCount, filledCount] = await Promise.all([
     db.user.findUnique({ where: { id: user.id }, select: { name: true, phone: true, contactEmail: true, defaultAiProvider: true, agentWeeklyReview: true, agentDailyBrief: true } }),
     db.resumeVersion.count({ where: { userId: user.id } }),
     db.jobLead.count({ where: { userId: user.id } }),
+    db.postingSource.count({ where: { userId: user.id } }),
+    // A form the 网申浏览器 filled leaves a draft or a learned answer behind.
+    Promise.all([db.applicationDraft.count({ where: { userId: user.id } }), db.applicationMemory.count({ where: { userId: user.id } })]).then(([drafts, memories]) => drafts + memories),
   ]);
+  // 上手四步, in the order they pay off: your details, an AI, where the jobs are, the first 一键填写.
   const onboardingSteps = [
     {
-      key: "resume",
-      title: "上传一份简历",
-      hint: "简历体检、岗位匹配、网申自动填充、简历深挖都从它出发",
-      href: "/resumes",
-      done: resumeCount > 0,
+      key: "profile",
+      title: "上传简历，填好网申资料",
+      hint: "姓名、手机、邮箱、学校和一份简历——一键填写、岗位匹配、简历深挖都从这里出发",
+      href: resumeCount > 0 ? "/settings?tab=autofill" : "/resumes",
+      done: resumeCount > 0 && !!(dbUser?.name && dbUser.phone && dbUser.contactEmail),
     },
     {
       key: "ai",
@@ -140,18 +144,18 @@ export default async function DashboardPage() {
       done: !!dbUser?.defaultAiProvider,
     },
     {
-      key: "profile",
-      title: "填好网申资料",
-      hint: "姓名、手机、邮箱、学校——网申表单一键填充靠它",
-      href: "/settings",
-      done: !!(dbUser?.name && dbUser.phone && dbUser.contactEmail),
+      key: "sheet",
+      title: "订阅一份校招信息表",
+      hint: "贴一个在线校招表（飞书多维表格）的链接，每天自动同步，按届次、快截止筛",
+      href: "/leads?view=postings",
+      done: sheetCount > 0 || leadCount > 0,
     },
     {
-      key: "position",
-      title: "加第一个岗位",
-      hint: "导入秋招信息表，或在网申浏览器里逛到岗位直接「收藏」",
-      href: allPositions.length > 0 || leadCount > 0 ? "/pool" : "/leads",
-      done: allPositions.length > 0 || leadCount > 0 || applications.length > 0,
+      key: "fill",
+      title: "在网申浏览器里一键填写一次",
+      hint: "打开任意公司的网申页，点右上角「一键填写」，看看能填多少",
+      href: "/browser",
+      done: filledCount > 0 || applications.some((app) => app.applyUrl),
     },
   ];
 
@@ -168,7 +172,7 @@ export default async function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-[110rem] space-y-7">
-      {/* The opening card: a brand gradient in 柔光, a plain heading in the other styles. */}
+      {/* The opening card: the same light card as the other pages, with today in one line. */}
       <header className="hero-card">
         <div aria-hidden="true" className="hero-decor pointer-events-none absolute inset-0">
           <span className="absolute -right-10 -top-16 size-56 rounded-full bg-white/15 blur-2xl" />

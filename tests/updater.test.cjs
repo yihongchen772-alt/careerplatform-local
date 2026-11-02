@@ -49,6 +49,9 @@ function fixture(options = {}) {
     autoUpdater: updater,
     networkSession,
     openExternal: async (url) => { opened.push(url); },
+    downloadsDir: options.downloadsDir,
+    openPath: async (file) => { opened.push(file); return ""; },
+    quit: () => { calls.quit = (calls.quit || 0) + 1; },
   });
   const invoke = (channel, source = event, ...args) => handlers.get(channel)(source, ...args);
   return { updater, controller, handlers, events, event, window, contents, calls, installs, opened, proxySettings, invoke };
@@ -233,8 +236,8 @@ test("development and non-Mac/non-win64 architectures offer release downloads wi
   }
 });
 
-test("Mac can check for updates but never downloads or installs in-app", async () => {
-  const f = fixture({ platform: "darwin", arch: "arm64" });
+test("an Intel Mac can check for updates but never downloads or installs in-app", async () => {
+  const f = fixture({ platform: "darwin", arch: "x64" });
   assert.equal(f.controller.getState().status, "idle");
   assert.equal(f.controller.getState().mode, "check-only");
   await f.invoke(CHANNELS.check);
@@ -282,4 +285,55 @@ test("dispose unregisters IPC and updater events", () => {
   f.controller.dispose();
   assert.equal(f.handlers.size, 0);
   assert.equal(f.updater.listenerCount("update-downloaded"), 0);
+});
+
+// Apple-chip Mac: the release's DMG, held to its size and SHA-256.
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const crypto = require("node:crypto");
+function dmgRelease(bytes, { digest, url } = {}) {
+  const sha = crypto.createHash("sha256").update(bytes).digest("hex");
+  const asset = { name: "JobCompass-0.9.0-mac-arm64.dmg", size: bytes.length, digest: digest ?? `sha256:${sha}`, browser_download_url: url ?? "https://github.com/yihongchen772-alt/careerplatform-local/releases/download/v0.9.0/JobCompass-0.9.0-mac-arm64.dmg" };
+  return async (address) => address.includes("api.github.com")
+    ? { ok: true, json: async () => ({ tag_name: "v0.9.0", draft: false, prerelease: false, assets: [asset] }) }
+    : { ok: true, body: new Response(bytes).body };
+}
+
+test("an Apple-chip Mac downloads the DMG, checks it, and opens it after a backup", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cp-dmg-"));
+  const bytes = Buffer.from("fake dmg bytes ".repeat(5000));
+  const f = fixture({ platform: "darwin", arch: "arm64", downloadsDir: dir, fetchRelease: dmgRelease(bytes) });
+  assert.equal(f.controller.getState().mode, "dmg");
+  assert.equal((await f.invoke(CHANNELS.check)).status, "available");
+  const downloaded = await f.invoke(CHANNELS.download);
+  assert.equal(downloaded.status, "downloaded");
+  const file = path.join(dir, "JobCompass-0.9.0-mac-arm64.dmg");
+  assert.deepEqual(fs.readFileSync(file), bytes);
+  await f.invoke(CHANNELS.install);
+  assert.equal(f.calls.backup, 1, "backed up before quitting");
+  assert.ok(f.opened.includes(file), "the DMG is opened for the user");
+  assert.equal(f.calls.quit, 1);
+  assert.equal(f.calls.download, 0, "electron-updater is never used on a Mac");
+});
+
+test("a DMG that does not match the release is deleted, never opened", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cp-dmg-"));
+  const f = fixture({ platform: "darwin", arch: "arm64", downloadsDir: dir, fetchRelease: dmgRelease(Buffer.from("tampered"), { digest: `sha256:${"0".repeat(64)}` }) });
+  await f.invoke(CHANNELS.check);
+  const state = await f.invoke(CHANNELS.download);
+  assert.equal(state.errorStage, "download");
+  assert.deepEqual(fs.readdirSync(dir), []);
+  await f.invoke(CHANNELS.install);
+  assert.equal(f.calls.quit, undefined);
+});
+
+test("a DMG from anywhere but this project's releases is not offered for download", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cp-dmg-"));
+  const f = fixture({ platform: "darwin", arch: "arm64", downloadsDir: dir, fetchRelease: dmgRelease(Buffer.from("x"), { url: "https://evil.example.com/JobCompass.dmg" }) });
+  const checked = await f.invoke(CHANNELS.check);
+  assert.equal(checked.status, "available");
+  assert.match(checked.message, /发布页面/);
+  assert.equal((await f.invoke(CHANNELS.download)).status, "available", "nothing downloaded");
+  assert.deepEqual(fs.readdirSync(dir), []);
 });

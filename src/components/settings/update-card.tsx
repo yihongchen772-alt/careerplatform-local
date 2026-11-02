@@ -56,7 +56,7 @@ export function UpdateCard({ currentVersion }: { currentVersion: string }) {
           {state?.availableVersion && <span className="text-muted-foreground">→ {state.availableVersion}</span>}
         </div>
         <p className="text-sm text-muted-foreground" role="status" aria-live="polite">
-          {state?.message ?? "桌面安装包提供 Windows x64 和 Apple 芯片 Mac DMG。Windows 桌面版可在应用内检查和安装更新，Mac 可以检查是否有新版本，但需要手动下载 DMG 替换应用。"}
+          {state?.message ?? "桌面安装包提供 Windows x64 和 Apple 芯片 Mac DMG。Windows 可在应用内下载并安装更新；Apple 芯片 Mac 可在应用内下载安装包，打开后拖进「应用程序」替换。"}
         </p>
         {state?.status === "downloading" && (
           <div className="space-y-1">
@@ -68,10 +68,10 @@ export function UpdateCard({ currentVersion }: { currentVersion: string }) {
         )}
         {connectionError && <p className="text-sm text-destructive" role="alert">{connectionError}</p>}
         <div className="flex flex-wrap items-center gap-2">
-          {state?.mode === "in-app" && (
+          {(state?.mode === "in-app" || state?.mode === "dmg") && (
             canInstall ? (
               <Button type="button" disabled={busy} onClick={() => run("install")}>
-                <RefreshCw className="size-4" />{state.errorStage === "install" ? "重试安装" : "重启并安装"}
+                <RefreshCw className="size-4" />{state.errorStage === "install" ? "重试安装" : state.mode === "dmg" ? "打开安装包" : "重启并安装"}
               </Button>
             ) : canDownload ? (
               <Button type="button" disabled={busy} onClick={() => run("download")}>
@@ -101,8 +101,7 @@ export function UpdateCard({ currentVersion }: { currentVersion: string }) {
           )}
         </div>
         <p className="text-xs text-muted-foreground">
-          更新包来自原项目的 GitHub Releases。更新保留本机数据；Windows 点击安装前会自动备份。
-          Mac 替换应用前可先在「备份与恢复」导出备份。
+          更新包来自原项目的 GitHub Releases，下载后会按发布页公布的大小和校验值核对。更新保留本机数据，安装前会自动备份。
         </p>
       </CardContent>
     </Card>

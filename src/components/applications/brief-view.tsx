@@ -7,7 +7,7 @@ import { BookOpen, CalendarClock, ListChecks, MessageCircleQuestion, NotebookPen
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { generateInterviewBrief } from "@/lib/actions/interview-brief";
-import { relativeText, whenText, type ScheduleItem } from "@/lib/interview-schedule";
+import { meetingSummary, relativeText, whenText, type ScheduleItem } from "@/lib/interview-schedule";
 import type { InterviewBrief } from "@/lib/interview-brief";
 import { MeetingActions } from "@/components/schedule/meeting-actions";
 import { useNow } from "@/components/schedule/use-now";
@@ -86,7 +86,7 @@ export function BriefView({
           <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl bg-muted/50 px-3 py-2.5 text-sm print:bg-transparent print:px-0">
             <span className="inline-flex items-center gap-1.5 font-medium"><CalendarClock className="size-4 text-primary print:text-black" />{whenText(next, now)}</span>
             <span className="text-muted-foreground">{relativeText(next, now)}</span>
-            {next.meetingInfo && <span className="min-w-0 basis-full break-all text-xs text-muted-foreground sm:basis-auto">{next.meetingInfo}</span>}
+            {next.meetingInfo && <span className="min-w-0 basis-full truncate text-xs text-muted-foreground sm:basis-auto" title={next.meetingInfo}>{meetingSummary(next.meetingInfo)}</span>}
             <span className="print:hidden"><MeetingActions info={next.meetingInfo} exam={next.kind === "exam"} /></span>
           </div>
         ) : (

@@ -20,6 +20,7 @@ import {
   SCHEDULE_KIND_LABELS,
   defaultScheduleStage,
   isUpcoming,
+  meetingSummary,
   relativeText,
   scheduleKindOf,
   scheduleStageChoices,
@@ -245,7 +246,7 @@ export function InterviewHub({
               <p className={cn("mt-1 text-sm", urgency === "now" ? "font-semibold text-emerald-700 dark:text-emerald-300" : urgency === "today" ? "font-medium text-amber-700 dark:text-amber-300" : urgency === "past" && !next.hasTime ? "text-amber-700 dark:text-amber-400" : "text-muted-foreground")}>
                 {relativeText(next, now)}{step?.phase === "due" ? " · 做完了吗？" : ""}
               </p>
-              {next.meetingInfo && <p className="mt-3 break-all text-sm text-foreground/85">{next.meetingInfo}</p>}
+              {next.meetingInfo && <p className="mt-3 truncate text-sm text-foreground/85" title={next.meetingInfo}>{meetingSummary(next.meetingInfo, next.kind === "exam")}</p>}
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <MeetingActions info={next.meetingInfo} exam={next.kind === "exam"} />
                 {next.source === "mail" ? (

@@ -1,4 +1,6 @@
 const RELEASES_URL = "https://github.com/yihongchen772-alt/careerplatform-local/releases/latest";
+// The only place a Mac update is downloaded from: this project's own release files.
+const DMG_DOWNLOAD_PREFIX = "https://github.com/yihongchen772-alt/careerplatform-local/releases/download/";
 const LATEST_RELEASE_API = "https://api.github.com/repos/yihongchen772-alt/careerplatform-local/releases/latest";
 const VERSION_RE = /^\d+\.\d+\.\d+$/;
 const CHANNELS = {
@@ -16,15 +18,26 @@ function setupUpdater({ app, ipcMain, getMainWindow, beforeInstall, getProxyUrl 
   const arch = runtime.arch ?? process.arch;
   // Windows (x64) gets full in-app download+install. Mac is ad-hoc signed
   // only (no paid Apple Developer certificate/notarization), so Squirrel.Mac
-  // cannot apply the update. Mac checks the published DMG release instead.
+  // cannot apply the update: an Apple-chip Mac downloads the release's DMG
+  // into 下载, checks it against the release's size and SHA-256, and opens it
+  // for the user to drag over the old app ("dmg"). Intel Macs only check.
   const mode = !app.isPackaged
     ? "development"
     : platform === "win32" && arch === "x64"
       ? "in-app"
       : platform === "darwin"
-        ? "check-only"
+        ? arch === "arm64" ? "dmg" : "check-only"
         : "manual";
-  const checkCapable = mode === "in-app" || mode === "check-only";
+  const checkCapable = mode === "in-app" || mode === "check-only" || mode === "dmg";
+  const fs = runtime.fs ?? require("fs");
+  const pathModule = require("path");
+  const crypto = require("crypto");
+  const openPath = runtime.openPath ?? ((file) => require("electron").shell.openPath(file));
+  const downloadsDir = () => runtime.downloadsDir ?? app.getPath("downloads");
+  const quitApp = runtime.quit ?? (() => app.quit());
+  // The DMG this check found: its address, size and SHA-256 from the release.
+  let dmgAsset = null;
+  let dmgFile = null;
   const updater = checkCapable ? runtime.autoUpdater ?? require("electron-updater").autoUpdater : null;
   const networkSession = checkCapable ? runtime.networkSession ?? updater.netSession : null;
   const openExternal = runtime.openExternal ?? require("electron").shell.openExternal;
@@ -43,6 +56,8 @@ function setupUpdater({ app, ipcMain, getMainWindow, beforeInstall, getProxyUrl 
     errorStage: null,
     message: mode === "in-app"
       ? "点击检查更新，发现新版本后由你选择下载和安装。"
+      : mode === "dmg"
+        ? "点击检查更新：有新版本时可以直接下载安装包，下载好打开它，把求职罗盘拖进「应用程序」替换。"
       : mode === "check-only"
         ? "点击检查更新——发现新版本后请前往发布页面下载 DMG，退出应用后拖到「应用程序」替换（暂不支持应用内自动安装）。"
         : mode === "development"
@@ -132,11 +147,16 @@ function setupUpdater({ app, ipcMain, getMainWindow, beforeInstall, getProxyUrl 
       if (!response.ok) throw new Error("Release lookup failed");
       const release = await response.json();
       const version = typeof release?.tag_name === "string" ? release.tag_name.replace(/^v/, "") : "";
-      if (!VERSION_RE.test(version) || release.draft || release.prerelease ||
-          !Array.isArray(release.assets) ||
-          !release.assets.some((asset) => asset.name === `JobCompass-${version}-mac-arm64.dmg`)) {
+      const asset = Array.isArray(release?.assets) ? release.assets.find((item) => item?.name === `JobCompass-${version}-mac-arm64.dmg`) : null;
+      if (!VERSION_RE.test(version) || release.draft || release.prerelease || !asset) {
         throw new Error("Invalid or incomplete release");
       }
+      const sha256 = typeof asset.digest === "string" && /^sha256:[0-9a-f]{64}$/i.test(asset.digest) ? asset.digest.slice(7).toLowerCase() : null;
+      const url = typeof asset.browser_download_url === "string" ? asset.browser_download_url : "";
+      // Downloadable only with a size and checksum to hold it to, from this project's own releases.
+      dmgAsset = url.startsWith(DMG_DOWNLOAD_PREFIX) && Number.isSafeInteger(asset.size) && asset.size > 0 && sha256
+        ? { url, size: asset.size, sha256, name: asset.name }
+        : null;
       const current = app.getVersion();
       if (!VERSION_RE.test(current)) throw new Error("Invalid installed version");
       const newer = version.split(".").some((part, index) => {
@@ -145,7 +165,9 @@ function setupUpdater({ app, ipcMain, getMainWindow, beforeInstall, getProxyUrl 
         return nextPart > currentPart && version.split(".").slice(0, index).every((prior, i) => Number(prior) === Number(current.split(".")[i]));
       });
       if (newer) {
-        publish({ status: "available", availableVersion: version, message: `发现新版本 ${version}，请前往发布页面下载 DMG 并替换应用。` });
+        publish({ status: "available", availableVersion: version, message: mode === "dmg" && dmgAsset
+          ? `发现新版本 ${version}（${Math.round(dmgAsset.size / 1048576)} MB），点「下载更新」。`
+          : `发现新版本 ${version}，请前往发布页面下载 DMG 并替换应用。` });
       } else {
         publish({ status: "not-available", availableVersion: null, message: "当前已是可获取的最新正式版本。" });
       }
@@ -214,7 +236,7 @@ function setupUpdater({ app, ipcMain, getMainWindow, beforeInstall, getProxyUrl 
     publish({ status: "checking", availableVersion: null, progress: null, errorStage: null, message: "正在检查 GitHub 发布的新版本…" });
     try {
       await configureNetwork();
-      if (mode === "check-only") await checkMacRelease();
+      if (mode === "check-only" || mode === "dmg") await checkMacRelease();
       else await updater.checkForUpdates();
       if (state.status === "checking") fail("check");
     } catch {
@@ -225,7 +247,66 @@ function setupUpdater({ app, ipcMain, getMainWindow, beforeInstall, getProxyUrl 
     return snapshot();
   }
 
+  /**
+   * Mac: the release's DMG into 下载, streamed with progress, then held to the
+   * release's size and SHA-256 before it is kept — a partial or altered file
+   * is deleted, never opened.
+   */
+  async function downloadDmg() {
+    const asset = dmgAsset;
+    if (!asset) throw new Error("No verified DMG");
+    const target = pathModule.join(downloadsDir(), asset.name);
+    const partial = `${target}.download`;
+    const response = await networkSession.fetch(asset.url, { signal: AbortSignal.timeout(30 * 60 * 1000) });
+    if (!response.ok || !response.body) throw new Error("DMG download failed");
+    const hash = crypto.createHash("sha256");
+    const out = fs.createWriteStream(partial);
+    let transferred = 0;
+    let lastPublish = 0;
+    const started = Date.now();
+    try {
+      const reader = response.body.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        hash.update(value);
+        transferred += value.length;
+        if (transferred > asset.size) throw new Error("DMG larger than the release says");
+        if (!out.write(value)) await new Promise((resolve) => out.once("drain", resolve));
+        if (Date.now() - lastPublish > 250) {
+          lastPublish = Date.now();
+          publish({ progress: { percent: Math.min(100, (transferred / asset.size) * 100), transferred, total: asset.size, bytesPerSecond: transferred / Math.max(0.001, (Date.now() - started) / 1000) } });
+        }
+      }
+      await new Promise((resolve, reject) => out.end((error) => (error ? reject(error) : resolve())));
+      if (transferred !== asset.size || hash.digest("hex") !== asset.sha256) throw new Error("DMG did not match the release");
+      fs.renameSync(partial, target);
+      dmgFile = target;
+    } catch (error) {
+      out.destroy();
+      try { fs.unlinkSync(partial); } catch { /* Nothing written yet. */ }
+      throw error;
+    }
+  }
+
   async function download() {
+    if (mode === "dmg") {
+      if (busy || downloaded || !state.availableVersion || !dmgAsset || !(state.status === "available" || state.status === "error" && state.errorStage === "download")) return snapshot();
+      busy = "download";
+      publish({ status: "downloading", errorStage: null, progress: null, message: "正在下载安装包到「下载」文件夹…" });
+      try {
+        await configureNetwork();
+        await downloadDmg();
+        downloaded = true;
+        publish({ status: "downloaded", progress: null, message: "安装包已下载并核对无误。点「打开安装包」：求职罗盘会先备份数据并退出，你把它拖进「应用程序」替换，再打开就是新版。" });
+      } catch {
+        downloaded = false;
+        fail("download");
+      } finally {
+        busy = null;
+      }
+      return snapshot();
+    }
     if (mode !== "in-app" || busy || downloaded || !state.availableVersion || !(state.status === "available" || state.status === "error" && state.errorStage === "download")) return snapshot();
     busy = "download";
     publish({ status: "downloading", errorStage: null, progress: null, message: "正在下载更新，下载完成后由你选择安装时间。" });
@@ -243,6 +324,23 @@ function setupUpdater({ app, ipcMain, getMainWindow, beforeInstall, getProxyUrl 
   }
 
   async function install() {
+    if (mode === "dmg") {
+      if (busy || !downloaded || !dmgFile || !(state.status === "downloaded" || state.status === "error" && state.errorStage === "install")) return snapshot();
+      busy = "install";
+      publish({ status: "installing", errorStage: null, message: "正在备份本地数据，然后打开安装包并退出…" });
+      try {
+        if (typeof beforeInstall !== "function") throw new Error("Missing data backup hook");
+        const error = await openPath(dmgFile);
+        if (error) throw new Error(error);
+        await beforeInstall();
+        if (!disposed) quitApp();
+      } catch {
+        fail("install");
+      } finally {
+        busy = null;
+      }
+      return snapshot();
+    }
     if (mode !== "in-app" || busy || !downloaded || !(state.status === "downloaded" || state.status === "error" && state.errorStage === "install")) return snapshot();
     busy = "install";
     publish({ status: "installing", errorStage: null, message: "正在准备更新并备份本地数据，即将重启安装…" });

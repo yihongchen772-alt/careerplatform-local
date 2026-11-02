@@ -622,8 +622,8 @@ html[data-style="soft"] body {
   height: 100%;
 }
 
-/* The page's opening card: the brand gradient with white text in 柔光, a
-   plain heading elsewhere. */
+/* 总览's opening card: in 柔光 the same light, brand-tinted card as every
+   other page's (page-hero), so the app reads as one; a plain heading elsewhere. */
 .hero-card {
   position: relative;
   overflow: hidden;
@@ -632,11 +632,26 @@ html[data-style="soft"] body {
   display: none;
 }
 [data-style="soft"] .hero-card {
-  border-radius: 1.75rem;
-  padding: 1.75rem 2rem;
-  color: var(--primary-foreground);
-  background: var(--hero-bg);
-  box-shadow: 0 22px 48px -24px color-mix(in oklch, var(--primary), transparent 25%);
+  border-radius: 1.5rem;
+  padding: 1.5rem 1.75rem;
+  background:
+    radial-gradient(70% 160% at 0% 0%, color-mix(in oklch, var(--primary) 14%, transparent) 0%, transparent 62%),
+    radial-gradient(50% 140% at 100% 100%, color-mix(in oklch, var(--glow-2) 10%, transparent) 0%, transparent 70%),
+    var(--card);
+  box-shadow: inset 0 0 0 1px var(--card-edge), var(--card-shadow);
+}
+.dark[data-style="soft"] .hero-card {
+  background:
+    radial-gradient(70% 160% at 0% 0%, color-mix(in oklch, var(--primary) 18%, transparent) 0%, transparent 62%),
+    var(--card);
+}
+[data-style="soft"] .hero-card .hero-pill {
+  background: color-mix(in oklch, var(--primary) 9%, var(--card));
+  color: var(--foreground);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--primary) 16%, transparent);
+}
+[data-style="soft"] .hero-card .hero-action {
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 /* Inner pages open with a light card: brand-tinted at the left, white at the
    right, a gradient icon tile — the same family as 总览's card, quieter, so
@@ -671,13 +686,6 @@ html[data-style="soft"] body {
     radial-gradient(70% 160% at 0% 0%, color-mix(in oklch, var(--primary) 16%, transparent) 0%, transparent 62%),
     var(--card);
 }
-[data-style="soft"] .hero-card .hero-sub,
-[data-style="soft"] .hero-card .text-muted-foreground {
-  color: color-mix(in oklch, var(--primary-foreground), transparent 25%);
-}
-[data-style="soft"] .hero-card .hero-decor {
-  display: block;
-}
 /* Calendars in 柔光: round days, the chosen one a gradient dot, days with something on them tinted. */
 [data-style="soft"] [data-slot="calendar"] {
   --cell-radius: 9999px;
@@ -693,33 +701,6 @@ html[data-style="soft"] body {
   box-shadow: 0 6px 14px -6px color-mix(in oklch, var(--primary), transparent 30%);
 }
 
-/* Controls on the gradient: frosted white instead of white-on-white. */
-[data-style="soft"] .hero-card .bg-background {
-  background: color-mix(in oklch, white 20%, transparent);
-  border-color: color-mix(in oklch, white 32%, transparent);
-  color: inherit;
-}
-[data-style="soft"] .hero-card .bg-background:hover {
-  background: color-mix(in oklch, white 30%, transparent);
-}
-/* Dark mode's brand color is a light tint; the opening card stays deep. */
-.dark[data-style="soft"] .hero-card {
-  color: #fff;
-  background: radial-gradient(120% 140% at 100% 0%, color-mix(in oklch, var(--primary), transparent 55%) 0%, transparent 60%), linear-gradient(135deg, color-mix(in oklch, var(--primary), black 45%), color-mix(in oklch, var(--glow-2), black 50%));
-}
-.dark[data-style="soft"] .hero-card .hero-sub,
-.dark[data-style="soft"] .hero-card .text-muted-foreground {
-  color: rgba(255, 255, 255, 0.72);
-}
-.dark[data-style="soft"] .hero-card .hero-chip,
-.dark[data-style="soft"] .hero-card .hero-action {
-  color: #fff;
-}
-[data-style="soft"] .hero-card .hero-chip {
-  background: color-mix(in oklch, white 24%, transparent);
-  color: var(--primary-foreground);
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, white 35%, transparent);
-}
 /* A section's icon tile: the brand gradient in 柔光, a tint elsewhere. */
 [data-style="soft"] .section-chip {
   background: var(--gradient-accent);
@@ -731,23 +712,6 @@ html[data-style="soft"] body {
   background: var(--muted);
   color: var(--foreground);
 }
-[data-style="soft"] .hero-card .hero-pill {
-  background: color-mix(in oklch, white 18%, transparent);
-  color: var(--primary-foreground);
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, white 26%, transparent);
-}
-.dark[data-style="soft"] .hero-card .hero-pill {
-  color: #fff;
-}
-[data-style="soft"] .hero-card .hero-divider {
-  border-color: color-mix(in oklch, white 25%, transparent);
-}
-[data-style="soft"] .hero-card .hero-action {
-  background: color-mix(in oklch, white 22%, transparent);
-  color: var(--primary-foreground);
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, white 30%, transparent);
-  backdrop-filter: blur(8px);
-}
 
 /* The system font: SF Pro + 苹方 on a Mac, Segoe UI + 微软雅黑 on Windows. */
 html[data-style="soft"] {
@@ -758,17 +722,13 @@ html[data-style="soft"] {
   font-weight: 600;
 }
 
-/* Dashboard number tiles: soft pastel gradients, like the reference cards. */
-[data-style="soft"] .stat-tile[data-tone="brand"] { background: linear-gradient(140deg, #eef0ff 0%, #d9ddff 55%, #c9cffc 100%); }
-[data-style="soft"] .stat-tile[data-tone="amber"] { background: linear-gradient(140deg, #fff3e6 0%, #ffd9c4 55%, #ffc2c7 100%); }
-[data-style="soft"] .stat-tile[data-tone="emerald"] { background: linear-gradient(140deg, #e9fbf4 0%, #c8f1e4 55%, #b9e4f7 100%); }
-[data-style="soft"] .stat-tile[data-tone="slate"] { background: linear-gradient(140deg, #f5f6f9 0%, #e7e9f0 100%); }
-.dark[data-style="soft"] .stat-tile[data-tone="brand"] { background: linear-gradient(140deg, #23264a 0%, #2d3170 100%); }
-.dark[data-style="soft"] .stat-tile[data-tone="amber"] { background: linear-gradient(140deg, #3a2a22 0%, #4a2a33 100%); }
-.dark[data-style="soft"] .stat-tile[data-tone="emerald"] { background: linear-gradient(140deg, #183329 0%, #18324a 100%); }
-.dark[data-style="soft"] .stat-tile[data-tone="slate"] { background: linear-gradient(140deg, #1f2127 0%, #26292f 100%); }
-[data-style="soft"] .stat-tile .stat-icon { background: color-mix(in oklch, white 70%, transparent); color: var(--foreground); box-shadow: 0 2px 8px -4px rgba(15, 23, 42, 0.2); }
-.dark[data-style="soft"] .stat-tile .stat-icon { background: color-mix(in oklch, white 10%, transparent); }
+/* Dashboard number tiles: a white card faintly tinted with its own color — one
+   family with the rest of the app rather than four gradients. */
+[data-style="soft"] .stat-tile[data-tone="brand"] { background: color-mix(in oklch, var(--primary) 7%, var(--card)); }
+[data-style="soft"] .stat-tile[data-tone="amber"] { background: color-mix(in oklch, #f59e0b 8%, var(--card)); }
+[data-style="soft"] .stat-tile[data-tone="emerald"] { background: color-mix(in oklch, #10b981 8%, var(--card)); }
+[data-style="soft"] .stat-tile[data-tone="slate"] { background: var(--card); }
+[data-style="soft"] .stat-tile .stat-icon { background: var(--card); color: var(--foreground); box-shadow: inset 0 0 0 1px var(--border); }
 
 /* Dark surfaces carry depth by lightness, not shadow. */
 .dark[data-style="glass"] {

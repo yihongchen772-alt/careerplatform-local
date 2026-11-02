@@ -1,32 +1,28 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  BookOpen,
-  Brain,
-  Building2,
   CalendarDays,
   Database,
   FileText,
-  FolderOpen,
   Globe,
   LayoutDashboard,
-  Library,
   ListChecks,
   Menu,
   MessageSquare,
-  NotebookPen,
-  Crosshair,
-  Scale,
   Search,
   Send,
   Settings,
   TrendingUp,
-  Users,
+  Wrench,
+  Moon,
+  Sun,
   type LucideIcon,
 } from "lucide-react";
+import { useThemeSettings } from "@/components/theme-provider";
+import { TOOL_LINKS } from "@/lib/nav-tools";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
@@ -63,8 +59,9 @@ function useTodaySchedule(): Today {
   return today;
 }
 
-// Grouped by what the applicant is doing: the daily loop first, then
-// preparing, finding new openings, looking back. 设置 sits at the bottom.
+// Grouped by what the applicant is doing: the daily loop first, then finding
+// openings, preparing, looking back. Tools used now and then sit behind 工具箱
+// (/tools), so the list stays short. 设置 sits at the bottom.
 const groups: { label: string | null; links: NavLink[] }[] = [
   {
     label: null,
@@ -76,44 +73,27 @@ const groups: { label: string | null; links: NavLink[] }[] = [
     ],
   },
   {
-    label: "准备",
-    links: [
-      { href: "/mock-interview", label: "AI 模拟面试", icon: MessageSquare },
-      { href: "/resume-drill", label: "简历深挖", icon: Crosshair },
-      { href: "/interviews", label: "面经库", icon: BookOpen },
-      { href: "/question-banks", label: "题库", icon: Library },
-      { href: "/resumes", label: "简历版本", icon: FileText },
-    ],
-  },
-  {
-    label: "发现",
+    label: "找岗位",
     links: [
       { href: "/leads", label: "秋招信息库", icon: Database },
       { href: "/browser", label: "网申浏览器", icon: Globe },
-      { href: "/companies", label: "企业名录", icon: Building2 },
     ],
   },
   {
-    label: "复盘",
+    label: "准备与复盘",
     links: [
+      { href: "/mock-interview", label: "AI 模拟面试", icon: MessageSquare },
+      { href: "/resumes", label: "简历版本", icon: FileText },
       { href: "/insights", label: "转化率", icon: TrendingUp },
-      { href: "/compare", label: "Offer 对比", icon: Scale },
-    ],
-  },
-  {
-    label: "更多",
-    links: [
-      { href: "/contacts", label: "联系人", icon: Users },
-      { href: "/library", label: "资料库", icon: FolderOpen },
-      { href: "/journey", label: "心路历程", icon: NotebookPen },
-      { href: "/personality", label: "性格测试", icon: Brain },
     ],
   },
 ];
 
+const toolsLink: NavLink = { href: "/tools", label: "工具箱", icon: Wrench };
+
 const settingsLink: NavLink = { href: "/settings", label: "设置", icon: Settings };
 
-const allLinks = [...groups.flatMap((g) => g.links), settingsLink];
+const allLinks = [...groups.flatMap((g) => g.links), toolsLink, ...TOOL_LINKS, settingsLink];
 
 export function currentPageLabel(pathname: string): string {
   const match = allLinks
@@ -200,13 +180,42 @@ function NavContent({
             ))}
           </div>
         ))}
+        <div className="space-y-0.5">
+          <NavItem link={toolsLink} active={isActive(toolsLink.href) || TOOL_LINKS.some((link) => isActive(link.href))} onNavigate={onNavigate} />
+        </div>
       </nav>
 
       <div className="mt-2 space-y-0.5 border-t border-(--sidebar-edge) pt-2">
-        <NavItem link={settingsLink} active={isActive(settingsLink.href)} onNavigate={onNavigate} />
+        <div className="flex items-center gap-1">
+          <div className="min-w-0 flex-1"><NavItem link={settingsLink} active={isActive(settingsLink.href)} onNavigate={onNavigate} /></div>
+          <ThemeToggle />
+        </div>
         <p className="truncate px-2.5 pt-1 text-[11px] text-muted-foreground/70">{userLabel}</p>
       </div>
     </div>
+  );
+}
+
+/** Light / dark in one click; 跟随系统 and the rest are in 设置 → 外观. */
+function ThemeToggle() {
+  const { mode, setMode } = useThemeSettings();
+  // The system setting, read in the browser; the server renders it as light.
+  const systemDark = useSyncExternalStore(
+    (change) => { const query = window.matchMedia("(prefers-color-scheme: dark)"); query.addEventListener("change", change); return () => query.removeEventListener("change", change); },
+    () => window.matchMedia("(prefers-color-scheme: dark)").matches,
+    () => false,
+  );
+  const dark = mode === "dark" || (mode === "system" && systemDark);
+  return (
+    <button
+      type="button"
+      onClick={() => setMode(dark ? "light" : "dark")}
+      aria-label={dark ? "切换到浅色模式" : "切换到深色模式"}
+      title={dark ? "切换到浅色模式" : "切换到深色模式"}
+      className="grid size-8 shrink-0 place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
+    >
+      {dark ? <Sun className="size-4" /> : <Moon className="size-4" />}
+    </button>
   );
 }
 

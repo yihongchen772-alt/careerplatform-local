@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { STAGE_LABELS } from "@/lib/stage-labels";
 import { dismissAutoStageUpdates, undoAutoStageUpdate } from "@/lib/actions/auto-progress";
 import { dismissMailSchedules, undoMailSchedule } from "@/lib/actions/schedule";
-import { absoluteWhen, clock } from "@/lib/interview-schedule";
+import { absoluteWhen, clock, meetingSummary } from "@/lib/interview-schedule";
 
 export type AutoProgressItem = {
   id: string;
@@ -140,7 +140,7 @@ export function AutoProgressBanner({ items, schedules = [], showApplication = tr
                       {item.previousStartsAt && <span className="text-muted-foreground">（原 {absoluteWhen(item.previousStartsAt)}）</span>}
                     </p>
                     <p className="mt-0.5 truncate text-xs text-muted-foreground" title={[item.evidence, item.meetingInfo].filter(Boolean).join("\n") || undefined}>
-                      来自{item.evidence ?? "邮件"}{item.meetingInfo ? ` · ${item.meetingInfo}` : ""}
+                      来自{item.evidence ?? "邮件"}{item.meetingInfo ? ` · ${meetingSummary(item.meetingInfo)}` : ""}
                     </p>
                   </div>
                 </div>

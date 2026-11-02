@@ -97,6 +97,48 @@ export function extractMeetingNumber(text: string | null | undefined): string | 
   return match ? match[1].replace(/[\s-]+/g, " ").trim() : null;
 }
 
+// Where a meeting link goes, by its address (or the name written beside it).
+const MEETING_PLATFORMS: [RegExp, string][] = [
+  [/webex\.com|webex/i, "Webex 会议"],
+  [/meeting\.tencent\.com|voovmeeting\.com|腾讯会议|tencent meeting/i, "腾讯会议"],
+  [/feishu\.cn|larksuite\.com|飞书/i, "飞书"],
+  [/zoom\.(?:us|com\.cn)|\bzoom\b/i, "Zoom"],
+  [/dingtalk\.com|aliding|钉钉/i, "钉钉"],
+  [/teams\.microsoft\.com|teams\.live\.com/i, "Teams"],
+  [/meet\.google\.com/i, "Google Meet"],
+  [/welink|huaweicloud/i, "WeLink"],
+  [/nowcoder\.com|牛客/i, "牛客"],
+  [/mokahr\.com/i, "Moka"],
+  [/italent\.cn|beisen\.com|zhiye\.com|北森/i, "北森"],
+  [/hirevue/i, "HireVue"],
+  [/51job\.com|前程无忧/i, "前程无忧"],
+];
+
+/**
+ * 会议信息 said briefly, for a list line: which platform, the meeting number,
+ * and whatever else was written beside the link (「无会议室」) — never the raw
+ * address, which stays behind the 进入会议 / 复制 buttons.
+ */
+export function meetingSummary(info: string | null | undefined, exam = false): string {
+  const text = (info ?? "").trim();
+  if (!text) return "";
+  const url = extractMeetingUrl(text);
+  const digits = extractMeetingNumber(text);
+  // 「834753287」 reads as 834 753 287, the way meeting apps show it.
+  const number = digits && /^\d{9}$/.test(digits) ? digits.replace(/(\d{3})(?=\d)/g, "$1 ") : digits;
+  const platform = MEETING_PLATFORMS.find(([pattern]) => pattern.test(url ?? "") || pattern.test(text))?.[1];
+  const rest = text
+    .replace(/https?:\/\/[^\s<>"'，。；、！？）】」『』（【「]+/gi, " ")
+    .replace(/(?:会议号|会议 ID|会议ID|Meeting ID|入会码)[：:\s]*[0-9][0-9 \-]{5,16}[0-9]/gi, " ")
+    .replace(/(?:Webex|腾讯会议|飞书|钉钉|Zoom|牛客|北森)(?:会议|视频面试)?/gi, " ")
+    .replace(/[\s·,，;；:：|]+/g, " ")
+    .replace(/^[\s()（）【】]+|[\s()（）【】]+$/g, "")
+    .trim();
+  const head = [platform ?? (url ? (exam ? "测评链接" : "会议链接") : ""), number].filter(Boolean).join(" ");
+  const tail = rest.length > 24 ? `${rest.slice(0, 24)}…` : rest;
+  return [head, tail].filter(Boolean).join(" · ");
+}
+
 function pad(value: number): string {
   return String(value).padStart(2, "0");
 }

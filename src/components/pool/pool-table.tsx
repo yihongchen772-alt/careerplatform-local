@@ -509,7 +509,7 @@ export function PoolTable({
             <ListChecks className="size-8 text-muted-foreground/50" />
             <span className="text-sm">
               {positions.length === 0
-                ? "候选池为空，先添加一个感兴趣的岗位吧"
+                ? <>候选池是空的。<Link href="/leads" className="text-primary underline">去秋招信息库挑几个</Link>，或者点右上角「添加候选岗位」。</>
                 : scope === "todo" && todoCount === 0
                   ? <>还没投的岗位都在这里。现在 {appliedCount} 个都投过了——<Link href="/leads" className="text-primary underline">去秋招信息库挑</Link>，或者<button type="button" className="text-primary underline" onClick={() => askXiaoOu("按我的方向和意向城市，去官网找几个新岗位")}>让小欧找几个新岗位</button>。</>
                   : "当前筛选条件下没有岗位"}
@@ -663,8 +663,10 @@ export function PoolTable({
                   <ListChecks className="size-8 text-muted-foreground/50" />
                   <span>
                     {positions.length === 0
-                      ? "候选池为空，先添加一个感兴趣的岗位吧"
-                      : "当前筛选条件下没有岗位"}
+                      ? <>候选池是空的。<Link href="/leads" className="text-primary underline">去秋招信息库挑几个</Link>，或者点右上角「添加候选岗位」。</>
+                      : scope === "todo" && todoCount === 0
+                        ? <>还没投的岗位都在这里。现在 {appliedCount} 个都投过了——<Link href="/leads" className="text-primary underline">去秋招信息库挑</Link>，或者<button type="button" className="text-primary underline" onClick={() => askXiaoOu("按我的方向和意向城市，去官网找几个新岗位")}>让小欧找几个新岗位</button>。</>
+                        : "当前筛选条件下没有岗位"}
                   </span>
                 </div>
               </TableCell>

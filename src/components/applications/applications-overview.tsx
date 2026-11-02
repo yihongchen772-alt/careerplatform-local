@@ -31,7 +31,8 @@ const OUTCOME_TONE: Record<string, string> = { failed: "text-rose-600 dark:text-
  * number opens the 投递 it counts. `funnel` is the shared 阶段覆盖 card.
  */
 export function ApplicationsOverview({ applications, now, filter, selectedRound = null, onFilter, funnel }: { applications: OverviewApplication[]; now: number; filter: ApplicationFilter; selectedRound?: ApplicationStage | null; onFilter: (filter: ApplicationFilter, round?: ApplicationStage | null) => void; funnel?: ReactNode }) {
-  const [open, setOpen] = useStoredChoice("careerplatform.applications.overview", ["open", "closed"] as const, "open");
+  // The tables fold away by default so the list itself is on the first screen; the numbers stay.
+  const [open, setOpen] = useStoredChoice("careerplatform.applications.overview.v2", ["open", "closed"] as const, "closed");
   const total = applications.length;
   if (!total) return null;
   const weekAgo = now - 7 * DAY;
@@ -67,18 +68,18 @@ export function ApplicationsOverview({ applications, now, filter, selectedRound 
           </p>
         </div>
         <button type="button" onClick={() => setOpen(open === "open" ? "closed" : "open")} aria-expanded={open === "open"} className="inline-flex h-8 items-center gap-1 rounded-full px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-          {open === "open" ? "收起" : "展开"}
+          {open === "open" ? "收起明细" : "展开明细"}
           <ChevronDown className={cn("size-3.5 transition-transform", open === "open" && "rotate-180")} />
         </button>
       </div>
-      {open === "open" && <>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+      <div className="flex flex-wrap gap-2">
           <Tile label="总投递" value={total} icon={Send} tone="brand" selected={filter === "all"} onClick={() => onFilter("all")} />
           <Tile label="进行中" value={active.length} icon={Clock} tone="amber" selected={filter === "active"} onClick={() => onFilter("active")} />
           <Tile label="进过面试" value={interviews.total} note={interviewing ? `现在在面 ${interviewing}` : undefined} icon={Video} tone="brand" selected={filter === "interviewed"} onClick={() => onFilter("interviewed")} />
           <Tile label="Offer" value={offers} icon={Trophy} tone="emerald" selected={filter === "offer"} onClick={() => onFilter("offer")} />
           <Tile label="已结束" value={closed} icon={XCircle} tone="slate" selected={filter === "closed"} onClick={() => onFilter("closed")} />
-        </div>
+      </div>
+      {open === "open" && <>
         <div className={cn("grid gap-4", funnel && "xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]")}>
           <div className="surface-card overflow-hidden rounded-xl">
             <table className="w-full text-sm">
@@ -168,11 +169,14 @@ function InterviewTable({ breakdown, total, selected, selectedRound, onOpen }: {
 }
 
 function Tile({ label, value, note, icon: Icon, tone, selected, onClick }: { label: string; value: number; note?: string; icon: LucideIcon; tone: "brand" | "amber" | "emerald" | "slate"; selected: boolean; onClick: () => void }) {
+  const color = { brand: "text-primary", amber: "text-amber-600 dark:text-amber-400", emerald: "text-emerald-600 dark:text-emerald-400", slate: "text-muted-foreground" }[tone];
   return (
-    // stat-tile + data-tone: the same pastel tiles as 总览 (globals.css).
-    <button type="button" onClick={onClick} aria-pressed={selected} data-tone={tone} className={cn("stat-tile surface-card flex min-h-24 flex-col justify-between rounded-xl px-4 py-3 text-left transition-all hover:-translate-y-0.5", selected && "ring-2 ring-primary/40")}>
-      <span className="flex items-center justify-between text-sm font-medium text-muted-foreground">{label}<Icon className="size-4" /></span>
-      <span className="flex items-baseline gap-2"><span className="text-3xl font-semibold tracking-tight tabular-nums">{value}</span>{note && <span className="text-xs text-muted-foreground">{note}</span>}</span>
+    // One compact row of numbers, each a filter: the list stays on the first screen.
+    <button type="button" onClick={onClick} aria-pressed={selected} className={cn("inline-flex h-10 items-center gap-2 rounded-xl border bg-card px-3 text-left text-sm transition-colors hover:border-primary/40", selected && "border-primary/60 bg-primary/5")}>
+      <Icon className={cn("size-4", color)} />
+      <span className="text-muted-foreground">{label}</span>
+      <span className="text-base font-semibold tabular-nums">{value}</span>
+      {note && <span className="text-xs text-muted-foreground">{note}</span>}
     </button>
   );
 }

@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowUpRight, CalendarClock, CalendarPlus, CheckCircle2, Link2, Mail, Pencil, Sparkles, TriangleAlert } from "lucide-react";
+import { ArrowUpRight, CalendarClock, CalendarPlus, CheckCircle2, Copy, Link2, Mail, MoreHorizontal, Pencil, Sparkles, TriangleAlert } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { ApplicationStage } from "@prisma/client";
 import { AddScheduleDialog } from "@/components/calendar/add-schedule-dialog";
 import { EditScheduleDialog } from "@/components/schedule/edit-schedule-dialog";
@@ -18,6 +19,7 @@ import {
   clock,
   dayLabel,
   itemDayKey,
+  meetingSummary,
   relativeText,
   urgencyOf,
   type ScheduleItem,
@@ -25,7 +27,7 @@ import {
 } from "@/lib/interview-schedule";
 import { matchApplication } from "@/lib/application-search";
 import { attachEventToApplication, dismissMailDraft, writeMailSchedule } from "@/lib/actions/schedule";
-import { MeetingActions } from "@/components/schedule/meeting-actions";
+import { MeetingActions, copyMeeting } from "@/components/schedule/meeting-actions";
 import { useNow } from "@/components/schedule/use-now";
 import { completeEvent, completeStep } from "@/components/schedule/step-actions";
 import { KIND_STYLE } from "@/components/schedule/kind-style";
@@ -198,7 +200,7 @@ function ScheduleRow({ item, now, busy, clash, onComplete, onWrite, onDismiss, o
           </p>
           {(detail || item.meetingInfo) && (
             <p className="mt-0.5 truncate text-xs text-muted-foreground" title={[detail, item.meetingInfo].filter(Boolean).join(" · ")}>
-              {[detail, item.meetingInfo].filter(Boolean).join(" · ")}
+              {[detail, meetingSummary(item.meetingInfo, item.kind === "exam")].filter(Boolean).join(" · ")}
             </p>
           )}
           {item.source === "mail" && (
@@ -223,7 +225,7 @@ function ScheduleRow({ item, now, busy, clash, onComplete, onWrite, onDismiss, o
         </div>
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-1.5 pl-[6.25rem] sm:pl-0">
-        <MeetingActions info={item.meetingInfo} compact exam={item.kind === "exam"} />
+        <MeetingActions info={item.meetingInfo} compact exam={item.kind === "exam"} copy={false} />
         {item.source === "mail" ? (
           <>
             <Button type="button" size="sm" className="h-7 rounded-full px-2.5 text-xs" disabled={busy} onClick={onWrite}>{busy ? "写入中…" : "写入日程"}</Button>
@@ -237,13 +239,18 @@ function ScheduleRow({ item, now, busy, clash, onComplete, onWrite, onDismiss, o
         ) : item.source === "stage" ? (
           <Button type="button" size="sm" variant="outline" className="h-7 gap-1 rounded-full px-2.5 text-xs" disabled={busy} onClick={onComplete} title={item.kind === "interview" ? "面完了：开始等结果，趁记得写两句" : "做完了：不再提醒截止，开始等结果"}><CheckCircle2 className="size-3.5" />{item.kind === "interview" && start.getTime() <= now ? "已面完" : "已完成"}</Button>
         ) : null}
-        {item.source !== "mail" && (
-          <Button type="button" size="sm" variant="ghost" className="size-7 rounded-full p-0 text-muted-foreground" disabled={busy} onClick={onEdit} aria-label={`修改 ${heading}`} title="修改时间、链接和提醒"><Pencil className="size-3.5" /></Button>
-        )}
-        {item.applicationId && (
-          <Link href={`/applications/${item.applicationId}#interview`} className="inline-flex h-7 items-center gap-0.5 rounded-full px-2 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={`打开 ${heading}`}>
-            打开<ArrowUpRight className="size-3.5" />
-          </Link>
+        {/* Copy, edit and open sit behind 「⋯」: the row keeps one main action. */}
+        {(item.meetingInfo || item.source !== "mail" || item.applicationId) && (
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button type="button" size="sm" variant="ghost" className="size-7 rounded-full p-0 text-muted-foreground" disabled={busy} aria-label={`${heading} 的更多操作`} title="复制、修改、打开投递" />}>
+              <MoreHorizontal className="size-4" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              {item.meetingInfo && <DropdownMenuItem onClick={() => copyMeeting(item.meetingInfo!)}><Copy />复制{/(?:会议号|会议 ?ID|Meeting ID|入会码)/i.test(item.meetingInfo) ? "会议号" : "链接"}</DropdownMenuItem>}
+              {item.source !== "mail" && <DropdownMenuItem onClick={onEdit}><Pencil />修改时间、链接和提醒</DropdownMenuItem>}
+              {item.applicationId && <DropdownMenuItem render={<Link href={`/applications/${item.applicationId}#interview`} />}><ArrowUpRight />打开这条投递</DropdownMenuItem>}
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
       </div>
     </li>

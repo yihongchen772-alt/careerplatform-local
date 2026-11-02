@@ -12,7 +12,16 @@ import { copyText as writeClipboard } from "@/lib/copy-text";
  * window there), and 复制 copies the meeting number or the whole text for
  * an address — whichever the invitation gave.
  */
-export function MeetingActions({ info, size = "sm", className, compact = false, exam = false }: { info: string | null | undefined; size?: "sm" | "xs"; className?: string; compact?: boolean; /** A 笔试 / 测评 link: 「打开测评」 rather than 「进入会议」. */ exam?: boolean }) {
+/** Copies a meeting's number, or the whole text when it gave none. */
+export function copyMeeting(info: string) {
+  const number = extractMeetingNumber(info);
+  void writeClipboard(number ?? info.trim()).then(
+    () => toast.success(number ? `已复制会议号 ${number}` : "已复制会议信息"),
+    () => toast.error("复制失败，请手动选中复制")
+  );
+}
+
+export function MeetingActions({ info, size = "sm", className, compact = false, exam = false, copy = true }: { info: string | null | undefined; size?: "sm" | "xs"; className?: string; compact?: boolean; /** A 笔试 / 测评 link: 「打开测评」 rather than 「进入会议」. */ exam?: boolean; /** false: the copy button lives in a menu beside it. */ copy?: boolean }) {
   if (!info?.trim()) return null;
   const url = extractMeetingUrl(info);
   const number = extractMeetingNumber(info);
@@ -26,7 +35,7 @@ export function MeetingActions({ info, size = "sm", className, compact = false, 
           {exam ? "打开测评" : "进入会议"}
         </a>
       )}
-      <Button
+      {(copy || !url) && <Button
         type="button"
         size="sm"
         variant="outline"
@@ -41,7 +50,7 @@ export function MeetingActions({ info, size = "sm", className, compact = false, 
       >
         <Copy className="size-3.5" />
         {compact ? (number ? "会议号" : "复制") : number ? `复制会议号` : url ? "复制链接" : "复制地点"}
-      </Button>
+      </Button>}
     </span>
   );
 }

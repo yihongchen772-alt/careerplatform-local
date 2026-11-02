@@ -23,7 +23,7 @@ import { cn } from "@/lib/utils";
 import { updateStageHistory, deleteStageHistory } from "@/lib/actions/applications";
 import { ScheduleFields, scheduleDraftFrom, scheduleFromDraft, type ScheduleDraft } from "@/components/schedule/schedule-fields";
 import { MeetingActions } from "@/components/schedule/meeting-actions";
-import { absoluteWhen, clock } from "@/lib/interview-schedule";
+import { absoluteWhen, clock, meetingSummary } from "@/lib/interview-schedule";
 import {
   generateStagePostmortem,
   type StagePostmortem,
@@ -252,7 +252,7 @@ function TimelineRow({
         {entry.stageLabel && <span className="text-xs font-medium">{entry.stageLabel}</span>}
         {["REJECTED", "WITHDRAWN", "CANCELLED"].includes(entry.stage) && <span className="text-xs text-muted-foreground">结束于：{entry.terminatedAtStageLabel || STAGE_LABELS[entry.terminatedAtStage as ApplicationStage] || "未记录"}</span>}
         <span className="text-xs text-muted-foreground">
-          {new Date(entry.enteredAt).toLocaleString("zh-CN")}
+          {new Date(entry.enteredAt).toLocaleString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
         </span>
         {entry.note?.startsWith("网申进度同步：") && (
           <Badge variant="outline" className="gap-1 text-xs font-normal text-muted-foreground" title="这一步是 App 从公司官网「我的投递」页自动读出来推进的，不是你手动填的">
@@ -334,7 +334,7 @@ function TimelineRow({
           )}
           {entry.scheduleSource === "email" && <span className="inline-flex items-center gap-0.5 text-[11px] text-muted-foreground" title="时间是从邮件里自动识别写入的"><Mail className="size-3" />邮件识别</span>}
           {entry.nextHasTime && entry.remindMinutes !== null && entry.remindMinutes !== undefined && <span className="text-[11px] text-muted-foreground">· 已进日历并提醒</span>}
-          {entry.meetingInfo && <span className="min-w-0 basis-full break-all text-muted-foreground">{entry.meetingInfo}</span>}
+          {entry.meetingInfo && <span className="min-w-0 basis-full truncate text-muted-foreground" title={entry.meetingInfo}>{meetingSummary(entry.meetingInfo, entry.stage === "ASSESSMENT" || entry.stage === "OA" || entry.stage === "AI_INTERVIEW")}</span>}
           {entry.meetingInfo && <MeetingActions info={entry.meetingInfo} size="xs" exam={entry.stage === "ASSESSMENT" || entry.stage === "OA" || entry.stage === "AI_INTERVIEW"} />}
         </div>
       )}

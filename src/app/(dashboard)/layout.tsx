@@ -58,8 +58,9 @@ export default async function DashboardLayout({
         the nav, above nothing) and would paint over page content on some
         browsers' stacking-context resolution.
       */}
-      <main className="relative z-10 min-w-0 flex-1 px-4 pb-16 pt-[calc(3.5rem+env(safe-area-inset-top)+1rem)] md:px-10 md:pb-16 md:pt-8">
-        {children}
+      <main className="relative z-10 min-w-0 flex-1 px-4 pb-28 pt-[calc(3.5rem+env(safe-area-inset-top)+1rem)] md:px-10 md:pb-28 md:pt-8">
+        {/* One width for every page (settings keeps its narrower form column). */}
+        <div className="mx-auto w-full max-w-[110rem]">{children}</div>
       </main>
       <div className="print:hidden"><AssistantWidget /></div>
     </div>
