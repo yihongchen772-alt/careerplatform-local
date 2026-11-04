@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>北森 v50：重建表单、残留弹层、月份日历、城市框</title>
+<style>
+body{font:14px sans-serif;max-width:860px;margin:20px auto}.form-item{margin:8px 0}
+.phoenix-select{display:inline-block;border:1px solid #bbb;min-width:160px;min-height:24px;padding:2px 6px}
+.common-unmodeled-layer{position:absolute;background:#fff;border:1px solid #888;z-index:9;padding:4px}
+.phoenix-selectList__listItem{padding:2px 8px}
+.area-footer-button .phoenix-button{display:inline-block;border:1px solid #888;margin:2px;padding:2px 8px}
+</style></head>
+<body>
+<!-- From a real 北森 form, 2026-11-05. Every change rebuilds the whole form (engine marks are gone); a closed list
+     or calendar stays in the page, visible, where it was opened; 开始时间 is a month calendar with no input;
+     the city box takes a choice only on its radio icon and writes on 确定. Dropdowns sit one level deeper than
+     text boxes and the form is many wrappers deep. Fictional company, no real data. -->
+<div id="deep"></div>
+<script>
+const state = {}; window.__state = state;
+const FORM = [
+  { title: "个人信息", rows: [["姓名", "text", "name"], ["期望工作城市", "area", "cities"]] },
+  { title: "教育经历", rows: [["学校名称", "text", "s0"], ["开始时间", "month", "s0.from"], ["结束时间", "month", "s0.to"], ["学历", "list", "d0"]] },
+  { title: "教育经历", rows: [["学校名称", "text", "s1"], ["开始时间", "month", "s1.from"], ["结束时间", "month", "s1.to"], ["学历", "list", "d1"]] },
+  { title: "工作经历", rows: [["公司名称", "text", "c0"], ["开始时间", "month", "c0.from"], ["结束时间", "month", "c0.to"]] },
+];
+const DEGREES = ["大专", "本科", "硕士研究生", "博士研究生"];
+let host = document.body;
+for (let i = 0; i < 26; i++) { const d = document.createElement("div"); d.className = "sc-wrap"; host.append(d); host = d; }
+const root = document.createElement("div"); host.append(root);
+function change(key, value) { state[key] = value; setTimeout(render, 30); }
+function layer(box) { const l = document.createElement("div"); l.className = "common-unmodeled-layer"; const r = box.getBoundingClientRect(); l.style.left = `${r.left + scrollX}px`; l.style.top = `${r.bottom + scrollY}px`; document.body.append(l); return l; }
+function openList(box, key) {
+  const l = layer(box);
+  l.innerHTML = '<div class="phoenix-selectList"><ul class="phoenix-selectList__list">' + DEGREES.map((d) => `<li class="phoenix-selectList__listItem">${d}</li>`).join("") + "</ul></div>";
+  l.querySelectorAll("li").forEach((li) => { li.onclick = () => change(key, li.textContent); }); // the layer stays behind
+}
+function openMonth(box, key) {
+  const l = layer(box); let year = 2026;
+  const draw = () => { l.innerHTML = `<div class="phoenix-date-picker"><div class="phoenix-calendar"><div class="phoenix-calendar-month-calendar-content"><span class="phoenix-calendar-prev-year-btn">«</span><span class="phoenix-calendar-year-select">${year}</span><span class="phoenix-calendar-next-year-btn">»</span><table><tr>${Array.from({ length: 12 }, (_, i) => `<td><a>${i + 1}月</a></td>`).join("")}</tr></table></div></div></div>`;
+    l.querySelector(".phoenix-calendar-prev-year-btn").onclick = () => { year--; draw(); };
+    l.querySelector(".phoenix-calendar-next-year-btn").onclick = () => { year++; draw(); };
+    l.querySelectorAll("a").forEach((a, i) => { a.onclick = () => change(key, `${year}-${String(i + 1).padStart(2, "0")}`); }); };
+  draw();
+}
+function openArea(box, key) {
+  const l = layer(box); const picked = [];
+  l.innerHTML = '<div class="area-selector-container"><div class="area-search-input"><input></div><div class="area-data-container"></div><div>已选地区<b>0</b>/99</div><div class="area-footer-button"><div class="phoenix-button"><div class="phoenix-button__wraper">取消</div></div><div class="phoenix-button"><div class="phoenix-button__wraper">确定</div></div></div></div>';
+  const list = l.querySelector(".area-data-container");
+  l.querySelector("input").addEventListener("input", (event) => { list.innerHTML = ["上海市", "南京市"].filter((c) => event.target.value && c.includes(event.target.value)).map((c) => `<div class="area-item-container"><div class="area-item-name"><svg width="10" height="10"></svg><span class="area-text-label">${c}</span></div></div>`).join("");
+    list.querySelectorAll("svg").forEach((svg) => svg.addEventListener("click", () => { picked.push(svg.parentNode.textContent); l.querySelector("b").textContent = picked.length; })); });
+  const [cancel, ok] = l.querySelectorAll(".phoenix-button__wraper");
+  cancel.addEventListener("click", () => l.remove());
+  ok.addEventListener("click", () => { l.remove(); change(key, picked.join(" ")); });
+}
+function render() {
+  root.innerHTML = '<div class="ux-standard-form"><div class="form">' + FORM.map((part) => `<div class="form-part"><div class="form-part-title">${part.title}</div><div class="form-part-body">` + part.rows.map(([label, kind, key]) => {
+    const value = state[key] || "";
+    const control = kind === "text" ? `<input data-key="${key}" placeholder="请输入">` : `<div><div class="phoenix-select" data-kind="${kind}" data-key="${key}"><input type="text" readonly placeholder="请选择"><span class="phoenix-select__tipEle">${value}</span></div></div>`;
+    return `<div class="fields-row"><div class="fields-col"><div class="form-item form-item--phoenix"><div class="form-item__title"><label class="form-item__text">${label}</label></div><div class="form-item__control">${control}</div></div></div></div>`;
+  }).join("") + "</div></div>").join("") + "</div></div>";
+  root.querySelectorAll("input[data-key]").forEach((input) => { input.value = state[input.dataset.key] || ""; input.addEventListener("change", () => change(input.dataset.key, input.value)); });
+  root.querySelectorAll(".phoenix-select").forEach((box) => box.addEventListener("click", () => ({ list: openList, month: openMonth, area: openArea })[box.dataset.kind](box, box.dataset.key)));
+}
+render();
+</script>
+</body></html>

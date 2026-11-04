@@ -23,6 +23,9 @@ td,th{border:1px solid #ccc;padding:3px}
 <div class="form-item"><label for="advisor">导师姓名</label><input id="advisor"></div>
 <div class="form-item"><label>最高学位</label><div class="mtd-select" id="s-degree"><div class="mtd-select-filter"><div role="button"><div class="mtd-input"><input type="text" id="deg-input" maxlength="50"></div><span class="mtd-select-filter-label"></span><i class="mtdicon-down"></i></div></div></div></div>
 <div class="form-item"><label for="wipes">学校所在省份</label><input id="wipes"></div>
+<div data-form-field-i18n-name="所在地点"><label>所在地点</label><div class="ud__select"><div class="ud__select__selector" id="tree-one"><div class="ud__select__selector__content"><div class="ud__select__selector__search"><input role="combobox" type="search"></div></div></div></div></div>
+<div data-form-field-i18n-name="家乡"><label>家乡</label><div class="ud__select"><div class="ud__select__selector" id="tree-home"><div class="ud__select__selector__content"><div class="ud__select__selector__search"><input role="combobox" type="search"></div></div></div></div></div>
+<div data-form-field-i18n-name="期望工作地点"><label>期望工作地点</label><div class="ud__select"><div class="ud__select__selector ud__select__selector-multiple" id="tree-many"><div class="ud__select__selector__content"><div class="ud__select__selector__search"><input role="combobox" type="search"></div></div></div></div></div>
 <h3>紧急联系人</h3>
 <div class="form-item"><label for="em-name">姓名</label><input id="em-name"></div>
 <div class="form-item"><label for="em-rel">与本人关系</label><input id="em-rel"></div>
@@ -47,6 +50,22 @@ box.querySelector("[role=button]").addEventListener("click", () => {
   document.body.append(pop);
 });
 document.addEventListener("mousedown", (event) => { if (pop && !pop.contains(event.target) && !box.contains(event.target)) { pop.remove(); pop = null; } });
+// 飞书 location box: a searchable tree, every row carries an expand button, a city may have 区县 below it.
+const AREAS = [["中国大陆", 0], ["上海", 1], ["上海", 2], ["天津", 1], ["天津", 2], ["滨海新区", 3], ["江苏", 1], ["南京", 2], ["新加坡", 0]];
+function tree(id) {
+  const box = document.getElementById(id), input = box.querySelector("input"), many = box.classList.contains("ud__select__selector-multiple");
+  let drop = null; const chosen = []; window.__tree = window.__tree || {};
+  const shownAt = (word) => { if (!word) return AREAS.map((_, i) => i).filter((i) => AREAS[i][1] === 0);
+    const out = new Set(); AREAS.forEach(([name], i) => { if (!name.includes(word)) return; out.add(i); for (let j = i - 1, d = AREAS[i][1]; j >= 0 && d > 0; j--) if (AREAS[j][1] < d) { out.add(j); d = AREAS[j][1]; } for (let j = i + 1; j < AREAS.length && AREAS[j][1] > AREAS[i][1]; j++) out.add(j); }); return [...out].sort((a, b) => a - b); };
+  const draw = () => { drop?.remove(); drop = document.createElement("div"); drop.className = "ud__select__dropdown"; drop.style.cssText = "position:fixed;left:300px;top:40px;background:#fff;border:1px solid #888;z-index:9";
+    for (const i of shownAt(input.value)) { const row = document.createElement("div"); row.className = "ud__tree__node"; row.innerHTML = '<span class="ud__tree__node__indent"></span>'.repeat(AREAS[i][1]) + `<button type="button" class="ud__tree__node__expandIcon">▾</button><div class="ud__tree__node__label">${AREAS[i][0]}</div>`;
+      row.querySelector(".ud__tree__node__label").addEventListener("click", () => { chosen.push(AREAS[i][0]); window.__tree[id] = chosen.join(" "); const tag = box.querySelector(".ud__select__selector__selectItem") || box.appendChild(Object.assign(document.createElement("span"), { className: "ud__select__selector__selectItem" })); tag.textContent = chosen.join(" "); input.value = ""; if (!many) { drop.remove(); drop = null; } else draw(); });
+      drop.append(row); } document.body.append(drop); };
+  box.addEventListener("click", () => { if (!drop) draw(); });
+  input.addEventListener("input", () => { if (drop) draw(); });
+  document.addEventListener("mousedown", (event) => { if (drop && !drop.contains(event.target) && !box.contains(event.target)) { drop.remove(); drop = null; } });
+}
+tree("tree-one"); tree("tree-home"); tree("tree-many");
 const wipes = document.getElementById("wipes");
 wipes.addEventListener("change", () => setTimeout(() => { wipes.value = ""; }, 60));
 </script>

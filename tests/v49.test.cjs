@@ -85,3 +85,40 @@ test("保存资料时家庭成员没被丢掉", () => {
   assert.match(route, /PERSONAL_FIELDS\.map/);
   assert.match(route, /family: structured\.family/);
 });
+
+test("飞书的家乡按籍贯填", () => {
+  assert.equal(core.matchFlatField(field("家乡"), profile), "江苏南京");
+});
+
+test("现工作城市是现在在哪，不是期望城市", () => {
+  assert.equal(core.matchFlatField(field("现工作城市"), { ...profile, preferredCities: "北京" }), "上海");
+  assert.equal(core.matchFlatField(field("期望工作城市"), { ...profile, preferredCities: "北京" }), "北京");
+});
+
+test("语言等级一样近时往上取：六级不是入门", () => {
+  assert.equal(core.resolveRepeatField && core.skillLevelOption?.({ options: ["入门", "熟练", "精通", "母语"] }, "良好"), "熟练");
+});
+
+test("正常填完不会把字段算成写入失败", async () => {
+  const fields = [{ id: "x-f0", tag: "input", label: "姓名" }];
+  const frameById = new Map([["x-f0", "top"]]);
+  const adapter = { stillOnPage: () => true, run: async (_f, fn) => fn === core.fillFields ? { filled: ["x-f0"], failed: [], skipped: [] } : [] };
+  const result = await core.fillFrames(adapter, [{ id: "x-f0", value: "林晓舟", label: fields[0].label }], frameById, "u");
+  assert.deepEqual(result.filled, ["x-f0"]);
+  assert.deepEqual(result.failed, []);
+});
+
+test("表单重建后按字段身份认回来接着填", async () => {
+  const frameById = new Map([["x-f0", "top"]]);
+  frameById.mappingKeys = new Map([["x-f0", "基本|姓名|input||0"]]);
+  let calls = 0;
+  const adapter = { stillOnPage: () => true, run: async (_f, fn, args) => {
+    if (fn === core.scanPageFields) return [{ id: "r-f9", mappingKey: "基本|姓名|input||0", hasValue: false }];
+    if (fn === core.fillFields) { calls++; return calls === 1 ? { filled: [], failed: [], skipped: [], missing: [args[0][0].id] } : { filled: [args[0][0].id], failed: [], skipped: [] }; }
+    return [];
+  } };
+  const result = await core.fillFrames(adapter, [{ id: "x-f0", value: "林晓舟", label: "姓名" }], frameById, "u");
+  assert.deepEqual(result.filled, ["x-f0"], "报告里还是原来的字段");
+  assert.deepEqual(result.failed, []);
+});
+

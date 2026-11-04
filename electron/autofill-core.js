@@ -424,7 +424,8 @@ function scanPageFields(prefix, readOnly = false) {
   // anything using the ARIA combobox/listbox pattern). No options are read
   // here — the fill step opens each one and picks the closest match.
   // [class*='sd-Select-container']: Moka 自研组件（性别、学历、学校、以及年 / 月各一个的时间框），文字写进它的输入框只是在搜索，点选了才算数。
-  const customSelectors = ".ant-select, .el-select, .el-cascader, .phoenix-select, [class*='sd-Select-container'], [role='combobox']:not(input):not(select), input[role='combobox'][readonly], input[aria-haspopup='listbox'], button[aria-haspopup='listbox'], [role='button'][aria-haspopup='listbox']";
+  // .ud__select__selector：飞书可搜索的下拉（所在地点、家乡），输入框是 type=search，不写这条就整个扫不到。
+  const customSelectors = ".ant-select, .el-select, .el-cascader, .phoenix-select, .ud__select__selector, [class*='sd-Select-container'], [role='combobox']:not(input):not(select), input[role='combobox'][readonly], input[aria-haspopup='listbox'], button[aria-haspopup='listbox'], [role='button'][aria-haspopup='listbox']";
   queryAll(customSelectors).forEach((el) => {
     // Element Plus date inputs are read-only comboboxes too; they're typed into.
     // A language switcher or site search in the page header is not the form.
@@ -591,8 +592,11 @@ function scanPageFields(prefix, readOnly = false) {
     const group = groupFor(field), el = nodes.get(field.id);
     if (!group || !el) continue;
     let candidate = null;
-    // 18: 飞书招聘 puts a date range 13 wrappers below the block that holds its 学校.
-    for (let node = parentOf(el), depth = 0; node && node !== document.body && depth < 18; node = parentOf(node), depth++) {
+    // 飞书招聘 puts a date range 13 wrappers below the block that holds its 学校. No small limit here: on 北森
+    // a dropdown sits one level deeper than a text box, so with one limit they stopped on different wrappers
+    // and 学校 and 开始时间 of one block counted as two (dates of the second row beside the first school).
+    // Meeting another module's field ends the climb anyway.
+    for (let node = parentOf(el), depth = 0; node && node !== document.body && depth < 60; node = parentOf(node), depth++) {
       const children = results.filter((item) => inside(node, nodes.get(item.id)));
       if (children.some((item) => groupFor(item) !== group)) break;
       const members = children;
@@ -791,6 +795,8 @@ async function fillFields(pairs) {
   const filled = [];
   const failed = [];
   const skipped = [];
+  // 找不到元素：网站重建了表单（北森每填一格就重建），不是填不上，由外层重新扫描后接着填。
+  const missing = [];
   // Why a box was not written, when there is more to say than 「写入没成功」.
   const reasons = {};
   // Most 网申 forms are React/Vue-controlled: writing `el.value = x` directly
@@ -885,6 +891,7 @@ async function fillFields(pairs) {
       // radio group (ids are "<frame>-r<n>", fields are "<frame>-f<n>"):
       // click the option whose label matches
       const radios = findAll('[data-cp-fill-id^="' + p.id + ':"]');
+      if (!radios.length && p.mappingKey) { missing.push(p.id); continue; }
       if (radios.some((r) => r.checked || r.getAttribute("data-cp-user-edited") === "1")) {
         skipped.push(p.id);
         continue;
@@ -909,6 +916,7 @@ async function fillFields(pairs) {
     if (/-g\d+$/.test(p.id)) {
       // ARIA radio group: role=radio options, chosen state in aria-checked.
       const group = find('[data-cp-fill-id="' + p.id + '"]');
+      if (!group && p.mappingKey) { missing.push(p.id); continue; }
       if (!group) { failed.push(p.label || p.id); continue; }
       const choices = Array.from(group.querySelectorAll("[role='radio']"));
       const isOn = (choice) => choice.getAttribute("aria-checked") === "true";
@@ -925,6 +933,7 @@ async function fillFields(pairs) {
       continue;
     }
     const el = find('[data-cp-fill-id="' + p.id + '"]');
+    if (!el && p.mappingKey) { missing.push(p.id); continue; }
     const rich = !!el && el.isContentEditable && !/^(?:INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
     if (el && el.readOnly && el.closest("[class*='sd-Dropdown-container']")) {
       if (el.value && String(el.value).trim()) { skipped.push(p.id); continue; }
@@ -1057,7 +1066,7 @@ async function fillFields(pairs) {
     filled.push(p.id);
     if (tag === "input") pickOwnWordsChoice(el);
   }
-  return { filled, failed, skipped, reasons };
+  return { filled, failed, skipped, reasons, missing };
 
   // Moka 的籍贯 / 所在地：省 → 市 → 县三个标签页，点到哪算哪，最后按「确认」才写进框。
   async function pickSdLocation(el, value) {
@@ -1192,6 +1201,7 @@ async function fillCustomSelects(pairs, taskId) {
   const optionsRead = {};
   // 选项里没有要填的那句话：把真实选项带回去，按选项重新匹配一次。
   const failedOptions = {};
+  const missing = [];
   const roots = [document];
   for (let i = 0; i < roots.length; i++) Array.from(roots[i].querySelectorAll ? roots[i].querySelectorAll("*") : []).forEach((node) => { if (node.shadowRoot) roots.push(node.shadowRoot); });
   const find = (selector) => { for (const root of roots) { const hit = root.querySelector(selector); if (hit) return hit; } return null; };
@@ -1242,7 +1252,10 @@ async function fillCustomSelects(pairs, taskId) {
         // Moka：每一行是 sd-Menu-container，带副标题的（学校、专业）外面还包一层 common-item。
         "[class*='sd-Select-menu'] [class*='sd-Menu-container']:not([class*='sd-Menu-disabled'])"
     );
-    const found = Array.from(nodes).filter(visible);
+    let found = Array.from(nodes).filter(visible);
+    // 北森关掉的列表还留在页面上而且看得见：只认紧挨着这个框的那一层，不然点到的是上一个字段的列表。
+    const layer = container?.matches?.(".phoenix-select") ? nearestLayer(container) : null;
+    if (layer) found = found.filter((node) => layer.contains(node));
     if (found.length) return found;
     // 认识的组件库列表空着就是空着（可能是树、日历），只有陌生控件才去「猜」。
     return !container || container.matches(".ant-select, .el-select, .el-cascader, .phoenix-select, .ud__select__selector, [class*='sd-Select-container']") ? [] : discoveredOptions();
@@ -1272,6 +1285,16 @@ async function fillCustomSelects(pairs, taskId) {
   function customEntryButton() {
     return Array.from(document.querySelectorAll("[class*='sd-Select-menu'] button, [class*='sd-Dropdown-dropdown'] button")).find((button) => visible(button) && /添加|新增|自定义|使用/.test(clean(button.textContent))) || null;
   }
+  function nearestLayer(container) {
+    const layers = Array.from(document.querySelectorAll(".common-unmodeled-layer")).filter(visible);
+    if (layers.length < 2) return layers[0] || null;
+    // 点开之后才出现的那一层就是它；紧贴上下的旧层可能离得一样近。
+    const fresh = layers.filter((layer) => visibleBefore && !visibleBefore.has(layer));
+    if (fresh.length) return fresh[fresh.length - 1];
+    const box = container.getBoundingClientRect();
+    const away = (layer) => { const r = layer.getBoundingClientRect(); return Math.abs(r.left - box.left) + Math.min(Math.abs(r.top - box.bottom), Math.abs(r.bottom - box.top)); };
+    return layers.sort((a, b) => away(a) - away(b))[0];
+  }
   function optionText(n) {
     const inner = n.querySelector(".ant-select-item-option-content, [data-key='sugar.select.label'], [class*='sd-Menu-content-item'] > div:first-child");
     return clean((inner || n).textContent);
@@ -1298,6 +1321,7 @@ async function fillCustomSelects(pairs, taskId) {
     el.style.setProperty("outline-offset", "1px", "important");
   }
   function open(container) {
+    openedBox = container;
     rememberVisible();
     // Innermost first: a click on the inner input bubbles up through the
     // wrapper/selector, so every library's own handler sees it.
@@ -1375,15 +1399,15 @@ async function fillCustomSelects(pairs, taskId) {
   // nodes of one list, collapsed until opened. Type the value when the select
   // is searchable, else expand collapsed nodes a few at a time until a leaf
   // that reads like the wanted text shows up.
-  const TREE_NODES = ".ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-tree-treenode, .el-select-dropdown:not([style*='display: none']) .el-tree-node, [role='tree'] [role='treeitem']";
+  const TREE_NODES = ".ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-tree-treenode, .el-select-dropdown:not([style*='display: none']) .el-tree-node, [role='tree'] [role='treeitem'], .ud__select__dropdown .ud__tree__node";
   const treeNodes = () => Array.from(document.querySelectorAll(TREE_NODES)).filter((node) => visible(node) && !node.closest(".ant-select-dropdown-hidden"));
-  const treeRow = (node) => node.querySelector(":scope > .el-tree-node__content") || node.querySelector(".ant-select-tree-node-content-wrapper") || node;
-  const treeText = (node) => clean((node.querySelector(".ant-select-tree-title, .el-tree-node__label") || treeRow(node)).textContent);
+  const treeRow = (node) => node.querySelector(":scope > .el-tree-node__content") || node.querySelector(".ant-select-tree-node-content-wrapper, .ud__tree__node__label") || node;
+  const treeText = (node) => clean((node.querySelector(".ant-select-tree-title, .el-tree-node__label, .ud__tree__node__label") || treeRow(node)).textContent);
   const treeCollapsed = (node) => node.querySelector(".ant-select-tree-switcher_close") || node.querySelector(":scope > .el-tree-node__content > .el-tree-node__expand-icon:not(.is-leaf):not(.expanded)") || (node.getAttribute("aria-expanded") === "false" ? treeRow(node) : null);
-  const treeIsLeaf = (node) => !node.querySelector(".ant-select-tree-switcher_close, .ant-select-tree-switcher_open") && !node.querySelector(":scope > .el-tree-node__content > .el-tree-node__expand-icon:not(.is-leaf)") && !node.hasAttribute("aria-expanded");
+  const treeIsLeaf = (node) => !node.querySelector(".ant-select-tree-switcher_close, .ant-select-tree-switcher_open, .ud__tree__node__expandIcon") && !node.querySelector(":scope > .el-tree-node__content > .el-tree-node__expand-icon:not(.is-leaf)") && !node.hasAttribute("aria-expanded");
   const AREA_SUFFIX = /(?:特别行政区|维吾尔自治区|壮族自治区|回族自治区|自治区|自治州|地区|省|市|盟|区|县)$/;
   const areaBase = (text) => text.replace(AREA_SUFFIX, "") || text;
-  async function fillTree(container, p, searchInput) {
+  async function fillTree(container, p, searchInput, single = true) {
     const wanted = clean(p.value).replace(/[\s/,，、|>\-]+/g, "");
     const reads = (node) => { const t = treeText(node), b = areaBase(t); return t === wanted || (b.length >= 2 && wanted.includes(b)) || (wanted.length >= 2 && t.includes(wanted)); };
     if (!(await waitFor(treeNodes, 600)).length) return false;
@@ -1404,14 +1428,19 @@ async function fillCustomSelects(pairs, taskId) {
     const done = new Set();
     for (let round = 0; round < 8; round++) {
       const nodes = treeNodes();
-      const leaf = nodes.find((node) => treeIsLeaf(node) && reads(node));
+      // 飞书的树每行都带展开按钮，叶子要看下一行有没有缩进得更深。
+      const indent = (node) => node.querySelectorAll("[class*='node__indent']").length;
+      const udLeaf = (node, at) => node.matches(".ud__tree__node") && (at === nodes.length - 1 || indent(nodes[at + 1]) <= indent(node));
+      // 下面还有区县时，飞书也接受选到市这一级：取读得通的最深一行。
+      const leaf = nodes.find((node, at) => (treeIsLeaf(node) || udLeaf(node, at)) && reads(node)) || [...nodes].reverse().find((node) => node.matches(".ud__tree__node") && reads(node));
       if (leaf) {
         const row = treeRow(leaf);
         row.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
         row.click();
         await sleep(200);
         assertActive();
-        return !!selectedText(container);
+        if (!single && searchInput) { const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set; set.call(searchInput, ""); searchInput.dispatchEvent(new Event("input", { bubbles: true })); await sleep(200); }
+        return !single || !!selectedText(container);
       }
       // Expand the nodes that read like the wanted province first, then any other collapsed ones.
       const collapsed = nodes.filter((node) => treeCollapsed(node) && !done.has(treeText(node)));
@@ -1426,8 +1455,68 @@ async function fillCustomSelects(pairs, taskId) {
 
   // 北森 zhiye 日期框：点开是一个带输入框的日历（phoenix-calendar）。把日期打进它
   // 的输入框再回车；只有年月时再补成当月 1 日重试（有的框要完整日期）。
-  const calendarPanel = () => Array.from(document.querySelectorAll(".phoenix-calendar")).find((node) => visible(node) && !node.closest(".phoenix-popover-hidden"));
+  let openedBox = null;
+  const calendarPanel = () => {
+    const panels = Array.from(document.querySelectorAll(".phoenix-calendar")).filter((node) => visible(node) && !node.closest(".phoenix-popover-hidden"));
+    if (panels.length < 2 || !openedBox) return panels[0];
+    const layer = nearestLayer(openedBox);
+    return panels.find((node) => layer?.contains(node)) || panels[0];
+  };
+  // 只到月的那种日历没有输入框：翻到那一年，点那个月。
+  async function fillMonthCalendar(container, value) {
+    const match = /(\d{4})\D+(\d{1,2})/.exec(String(value));
+    if (!match) return false;
+    for (let step = 0; step < 60; step++) {
+      const shown = Number(/\d{4}/.exec(calendarPanel()?.querySelector(".phoenix-calendar-year-select")?.textContent || "")?.[0]);
+      if (!shown) return false;
+      if (shown === Number(match[1])) break;
+      calendarPanel().querySelector(shown > Number(match[1]) ? ".phoenix-calendar-prev-year-btn" : ".phoenix-calendar-next-year-btn")?.click();
+      await sleep(40);
+      assertActive();
+    }
+    const month = `${Number(match[2])}月`;
+    const cell = Array.from(calendarPanel()?.querySelectorAll(".phoenix-calendar-month-calendar-content td *, .phoenix-calendar-month-calendar-content [class*='month-panel'] *") || []).find((node) => !node.children.length && clean(node.textContent) === month);
+    if (!cell) return false;
+    cell.click();
+    await sleep(300);
+    assertActive();
+    // 看的是这个框自己：写到别的框里不算。
+    return (selectedText(container) || "").includes(match[1]);
+  }
+  // 北森的城市框：搜索 + 列表 + 底部确定。不点取消它不关，会挡住后面所有字段。
+  // 选中要点行里的单选图标；普通 click() 不触发它的处理，这里发完整的一串鼠标事件。
+  function press(el) {
+    const target = el?.querySelector?.(".phoenix-button__wraper") || el;
+    if (!target) return;
+    for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+  }
+  const areaPanel = () => document.querySelector(".area-selector-container");
+  const areaButton = (word) => Array.from(areaPanel()?.querySelectorAll(".area-footer-button .phoenix-button") || []).find((node) => clean(node.textContent) === word);
+  async function fillArea(container, value) {
+    const search = areaPanel()?.querySelector(".area-search-input input");
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+    const SUFFIX = /(?:特别行政区|维吾尔自治区|壮族自治区|回族自治区|自治区|自治州|地区|省|市)$/;
+    const base = (text) => text.replace(SUFFIX, "") || text;
+    let picked = 0;
+    for (const place of String(value).split(/[,，、;；/\s]+/).filter(Boolean)) {
+      const limit = Number(/已选地区\s*\d+\s*\/\s*(\d+)/.exec(areaPanel()?.textContent || "")?.[1]) || 1;
+      if (picked >= limit || !search) break;
+      setter.call(search, place);
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+      await sleep(600);
+      assertActive();
+      const items = Array.from(areaPanel()?.querySelectorAll(".area-data-container .area-item-name") || []).filter(visible);
+      // 只认名字对得上的：搜不到时列表里可能还是上一次的结果。
+      const hit = items.find((item) => base(clean(item.querySelector(".area-text-label")?.textContent || item.textContent)) === base(place));
+      if (hit) { press(hit.querySelector("svg") || hit); picked++; await sleep(200); assertActive(); }
+    }
+    press(areaButton(picked ? "确定" : "取消"));
+    await sleep(400);
+    assertActive();
+    return !!picked && (taken(container) || !!container.querySelector("[class*='tag' i]"));
+  }
   async function fillCalendar(container, value) {
+    if (!calendarPanel()?.querySelector(".phoenix-calendar-input")) return fillMonthCalendar(container, value);
     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
     const text = String(value).trim();
     for (const attempt of /^\d{4}-\d{2}$/.test(text) ? [text, text + "-01"] : [text]) {
@@ -1468,9 +1557,21 @@ async function fillCustomSelects(pairs, taskId) {
     return false;
   }
 
+  // 填到一半表单重建了（北森）：手里的元素已经不在页面上，这不算填失败，交给外层重新扫描后再来。
+  let current = null;
+  const settle = () => {
+    if (current && failed.length > current.failedAt && !current.container.isConnected && current.p.mappingKey) {
+      failed.length = current.failedAt;
+      delete failedOptions[current.p.id];
+      missing.push(current.p.id);
+    }
+    current = null;
+  };
   for (const p of pairs) {
+    settle();
     assertActive();
     const container = find('[data-cp-fill-id="' + p.id + '"]');
+    if (container) current = { p, container, failedAt: failed.length };
     if (p.readOptions) {
       // Which choices the dropdown really offers, so the AI picks one instead of guessing a word.
       if (!container || container.classList.contains("ant-cascader") || container.classList.contains("el-cascader") || hasExistingValue(container)) continue;
@@ -1488,6 +1589,7 @@ async function fillCustomSelects(pairs, taskId) {
       continue;
     }
     // 勾了「至今」，网站把结束的 年 / 月 收起来了：这一格已经答完。
+    if (!container && p.value && p.mappingKey) { missing.push(p.id); continue; }
     if (!container && p.value === "至今") { filled.push(p.id); continue; }
     if (!container || !p.value) continue;
     if (container.classList.contains("ant-select-disabled") || container.classList.contains("is-disabled") || container.classList.contains("phoenix-select--disabled") || container.getAttribute("aria-disabled") === "true" || container.disabled) {
@@ -1523,6 +1625,16 @@ async function fillCustomSelects(pairs, taskId) {
     assertActive();
     let options = await waitFor(() => visibleOptions(container), 600);
     if (hasExistingValue(container) && !siteDefault()) { close(); skipped.push(p.id); continue; }
+    if (!options.length && container.matches(".phoenix-select") && areaPanel()) {
+      let ok = false;
+      try { ok = await fillArea(container, p.value); } catch (error) { if (/填写已停止/.test(error.message)) throw error; }
+      if (ok) {
+        mark(container, p.source || "profile");
+        if ((p.source || "profile") === "profile") container.setAttribute("data-cp-profile-filled", "1");
+        filled.push(p.id);
+      } else { if (areaPanel()) press(areaButton("取消")); failed.push(p.label || p.id); }
+      continue;
+    }
     if (!options.length && container.matches(".phoenix-select") && calendarPanel()) {
       let ok = false;
       try { ok = await fillCalendar(container, p.value); } catch (error) { if (/填写已停止/.test(error.message)) throw error; }
@@ -1536,7 +1648,19 @@ async function fillCustomSelects(pairs, taskId) {
     }
     if (!options.length && treeNodes().length) {
       let ok = false;
-      try { ok = await fillTree(container, p, container.querySelector("input:not([readonly]):not([type='hidden'])")); } catch (error) { if (/填写已停止/.test(error.message)) throw error; }
+      const box = container.querySelector("input:not([readonly]):not([type='hidden'])");
+      const many = container.matches(".ud__select__selector-multiple");
+      // 「上海,北京」是用户自己存的期望城市，一个一个勾；「江苏南京」搜不到整句时搜「南京」。
+      const places = many ? String(p.value).split(/[,，、;；/\s]+/).filter(Boolean) : [p.value, String(p.value).replace(/^.{2,3}?(?:省|自治区)|^(?:江苏|浙江|安徽|福建|江西|山东|河南|河北|湖北|湖南|广东|广西|海南|四川|贵州|云南|陕西|甘肃|青海|山西|辽宁|吉林|黑龙江|内蒙古|宁夏|新疆|西藏)/, "")].filter((value, at, all) => value && all.indexOf(value) === at);
+      try {
+        for (const place of places) {
+          if (many && !treeNodes().length) { open(container); await sleep(300); assertActive(); }
+          const one = await fillTree(container, { ...p, value: place }, box, !many);
+          ok = one || ok;
+          if (!many && ok) break;
+        }
+        if (many) close();
+      } catch (error) { if (/填写已停止/.test(error.message)) throw error; }
       if (ok) {
         mark(container, p.source || "profile");
         if (p.answerId) container.setAttribute("data-cp-answer-id", p.answerId);
@@ -1626,7 +1750,8 @@ async function fillCustomSelects(pairs, taskId) {
       assertActive();
     }
   }
-  return { filled, failed, skipped, options: optionsRead, failedOptions };
+  settle();
+  return { filled, failed, skipped, options: optionsRead, failedOptions, missing };
 }
 
 // Side-effect-free count of what an autofill could touch right now — used
@@ -1992,7 +2117,7 @@ const BASIC_FIELD_RULES = [
   { keys: ["职业资格", "技能证书", "资格证书"], get: (p) => p.certificates, learn: "certificates" },
   { keys: ["所在校区", "校区"], not: /是否|意向/, get: (p) => p.campusZone, learn: "campusZone" },
   { keys: ["挂科门数", "挂科数", "不及格门数"], get: (p) => p.failedCourses, learn: "failedCourses" },
-  { keys: ["籍贯", "户籍", "户口所在地", "hometown"], not: /地址|详细|街道|门牌/, get: (p) => p.hometown, learn: "hometown" },
+  { keys: ["籍贯", "户籍", "户口所在地", "家乡", "老家", "hometown"], not: /地址|详细|街道|门牌/, get: (p) => p.hometown, learn: "hometown" },
   { keys: ["民族", "ethnic", "ethnicity"], get: (p) => p.ethnicity, learn: "ethnicity" },
   { keys: ["微信", "wechat", "weixin"], get: (p) => p.wechat, learn: "wechat" },
   // 「推荐方式：无 / 内推 / 大使推荐」: nobody referred the applicant unless they type a code themselves.
@@ -2004,10 +2129,10 @@ const BASIC_FIELD_RULES = [
   { keys: ["通讯地址", "联系地址", "家庭住址", "现住址", "居住地址", "详细地址", "邮寄地址", "mailing address", "home address", "street address", "address line"], not: /e-?mail|邮箱|户口|户籍|原籍/i, get: (p) => p.address, learn: "address" },
   // Preferred cities first: a bare English "City" (address blocks) is where
   // the applicant lives, not where they'd like to work.
-  { keys: ["意向城市", "期望城市", "工作城市", "意向工作地", "期望工作地", "工作地点", "意向地点", "期望地点", "工作地区", "preferred city", "preferred location", "desired location", "work location"], not: /是否|可否|能否|接受/, get: (p) => p.preferredCities, cities: true },
+  { keys: ["意向城市", "期望城市", "工作城市", "意向工作地", "期望工作地", "工作地点", "意向地点", "期望地点", "工作地区", "preferred city", "preferred location", "desired location", "work location"], not: /是否|可否|能否|接受|现工作|当前工作|目前工作/, get: (p) => p.preferredCities, cities: true },
   // English portals (Microsoft, Workday …): country of residence, before the bare "city" rule.
   { keys: ["country/region", "country / region", "country or region", "country of residence", "country", "所在国家", "居住国家", "国家/地区", "国家或地区"], not: /code|区号|代码|phone|dial|birth|出生|citizenship|nationality|国籍|issu|签发|city|城市|state of/i, get: (p) => p.country || countryFromCity(p.currentCity), learn: "country", english: false, englishName: true },
-  { keys: ["现居", "现住", "所在城市", "常住", "居住城市", "所在地", "居住地", "现所在地", "目前所在地", "current city", "current location", "city"], not: /工作所在地|公司所在地|单位所在地|学校所在地|户籍所在地|户口所在地|生源所在地|家庭所在地/, get: (p) => p.currentCity, learn: "currentCity", englishName: true },
+  { keys: ["现工作城市", "当前工作城市", "目前工作城市", "现居", "现住", "所在城市", "常住", "居住城市", "所在地", "居住地", "现所在地", "目前所在地", "current city", "current location", "city"], not: /工作所在地|公司所在地|单位所在地|学校所在地|户籍所在地|户口所在地|生源所在地|家庭所在地/, get: (p) => p.currentCity, learn: "currentCity", englishName: true },
   // 资料方案 fields: the direction-specific target role and self-assessment.
   // No `learn` here: which city and which job is usually picked per company.
   { keys: ["期望岗位", "期望职位", "意向岗位", "意向职位", "求职意向"], get: (p) => p.targetRole },
@@ -2819,7 +2944,7 @@ function skillLevelRank(text) {
 function skillLevelAlternatives(level) {
   const rank = skillLevelRank(level);
   if (rank < 0) return [];
-  return [...SKILL_LEVELS[rank], ...(SKILL_LEVELS[rank - 1] || []), ...(SKILL_LEVELS[rank + 1] || [])].filter((word) => word !== level);
+  return [...SKILL_LEVELS[rank], ...(SKILL_LEVELS[rank + 1] || []), ...(SKILL_LEVELS[rank - 1] || [])].filter((word) => word !== level);
 }
 
 function skillLevelOption(field, level) {
@@ -2829,7 +2954,8 @@ function skillLevelOption(field, level) {
   if (direct) return direct;
   const rank = skillLevelRank(level);
   if (rank < 0) return null;
-  const ranked = field.options.map((option) => ({ option, rank: skillLevelRank(option) })).filter((item) => item.rank >= 0).sort((a, b) => Math.abs(a.rank - rank) - Math.abs(b.rank - rank));
+  const ranked = field.options.map((option) => ({ option, rank: skillLevelRank(option) })).filter((item) => item.rank >= 0).sort((a, b) => Math.abs(a.rank - rank) - Math.abs(b.rank - rank) || b.rank - a.rank);
+  // 一样近时往上取：六级在「入门 / 熟练 / 精通」里是熟练，不是入门。
   return ranked[0]?.option || null;
 }
 
@@ -3661,6 +3787,8 @@ async function scanFrames(adapter) {
       await adapter.run(frames[i], watchApplicationFields, [adapter.archiveScope?.() || portalContext(adapter.url())]).catch(() => {});
       for (const f of found || []) {
         frameById.set(f.id, frames[i]);
+        if (!frameById.mappingKeys) frameById.mappingKeys = new Map();
+        frameById.mappingKeys.set(f.id, f.mappingKey);
         fields.push(f);
       }
       if (found && found.length) pageText += `\n${await adapter.run(frames[i], readPageText, []).catch(() => "")}`;
@@ -3737,32 +3865,62 @@ async function fillFrames(adapter, pairs, frameById, initialUrl) {
   const reasons = {};
   const failedOptions = {};
   for (const [frame, subset] of byFrame) {
-    if (!adapter.stillOnPage(initialUrl)) throw new Error("页面或标签已切换，已停止写入；请在当前页面重新填充");
-    const plain = subset.filter((p) => !/-s\d+$/.test(p.id));
-    const custom = subset.filter((p) => /-s\d+$/.test(p.id));
-    for (const [batch, writer] of [[plain, fillFields], [custom, fillCustomSelects]]) {
-      if (!batch.length) continue;
-      if (!adapter.stillOnPage(initialUrl)) throw new Error("页面或标签已切换，已停止写入");
-      try {
-        const result = await adapter.run(frame, writer, writer === fillCustomSelects ? [batch, adapter.taskId] : [batch]);
-        let lost = [];
-        const checkable = result.filled.filter((id) => !/-[rg]\d+$/.test(id));
-        if (checkable.length) { const back = await adapter.run(frame, readBackFilled, [checkable]).catch(() => null); if (Array.isArray(back)) lost = back; }
-        const lostSet = new Set(lost);
-        filled.push(...result.filled.filter((id) => !lostSet.has(id)));
-        failed.push(...result.failed);
-        for (const id of lost) {
-          const label = batch.find((p) => p.id === id)?.label || id;
-          failed.push(label);
-          reasons[label] = "网站没有留下这个值，请在页面上点选或重填";
+    const originalId = new Map();
+    const realId = (id) => originalId.get(id) || id;
+    let queue = subset.map((p) => ({ ...p, mappingKey: frameById.mappingKeys?.get(p.id) }));
+    for (let pass = 0, stuck = 0; queue.length && pass < 60 && stuck < 2; pass++) {
+      if (!adapter.stillOnPage(initialUrl)) throw new Error("页面或标签已切换，已停止写入；请在当前页面重新填充");
+      const plain = queue.filter((p) => !/-s\d+$/.test(p.id));
+      const custom = queue.filter((p) => /-s\d+$/.test(p.id));
+      const missing = [];
+      let progress = 0;
+      for (const [batch, writer] of [[plain, fillFields], [custom, fillCustomSelects]]) {
+        if (!batch.length) continue;
+        if (!adapter.stillOnPage(initialUrl)) throw new Error("页面或标签已切换，已停止写入");
+        try {
+          const result = await adapter.run(frame, writer, writer === fillCustomSelects ? [batch, adapter.taskId] : [batch]);
+          let lost = [];
+          const checkable = result.filled.filter((id) => !/-[rg]\d+$/.test(id));
+          if (checkable.length) { const back = await adapter.run(frame, readBackFilled, [checkable]).catch(() => null); if (Array.isArray(back)) lost = back; }
+          const lostSet = new Set(lost);
+          progress += result.filled.length;
+          filled.push(...result.filled.filter((id) => !lostSet.has(id)).map(realId));
+          failed.push(...result.failed);
+          skipped.push(...(result.skipped || []).map(realId));
+          Object.assign(reasons, result.reasons || {});
+          for (const [id, offered] of Object.entries(result.failedOptions || {})) failedOptions[realId(id)] = offered;
+          for (const id of lost) {
+            const label = batch.find((p) => p.id === id)?.label || id;
+            failed.push(label);
+            reasons[label] = "网站没有留下这个值，请在页面上点选或重填";
+          }
+          const missed = new Set(result.missing || []);
+          missing.push(...batch.filter((p) => missed.has(p.id)));
+        } catch (error) {
+          if (/填写已停止/.test(error?.message || "")) throw error;
+          failed.push(...batch.map((p) => p.label || p.id));
         }
-        skipped.push(...(result.skipped || []));
-        Object.assign(reasons, result.reasons || {});
-        Object.assign(failedOptions, result.failedOptions || {});
-      } catch {
-        failed.push(...batch.map((p) => p.label || p.id));
       }
+      if (!missing.length) { queue = []; break; }
+      // 表单重建了：重新扫描，按「栏目 + 题目 + 第几个」把没填的字段认回来。
+      let found = [];
+      try { found = (await adapter.run(frame, scanPageFields, [`r${pass}${Date.now().toString(36).slice(-3)}-`])) || []; } catch { found = []; }
+      const byKey = new Map(found.map((field) => [field.mappingKey, field]));
+      queue = [];
+      for (const pair of missing) {
+        const field = byKey.get(pair.mappingKey);
+        // 写进去之后才重建的：扫描时它是空的，现在有值，这一格已经答完。
+        if (field?.hasValue && !pair.datePart) { filled.push(realId(pair.id)); progress++; }
+        else if (field) {
+          originalId.set(field.id, realId(pair.id));
+          frameById.set(field.id, frame);
+          queue.push({ ...pair, id: field.id });
+        } else if (pair.value === "至今") filled.push(realId(pair.id)); // 勾了至今，结束的年月收起来了。
+        else failed.push(pair.label || pair.id);
+      }
+      stuck = progress ? 0 : stuck + 1;
     }
+    if (queue.length) failed.push(...queue.map((p) => p.label || p.id));
   }
   return { filled, failed, skipped, reasons, failedOptions };
 }
