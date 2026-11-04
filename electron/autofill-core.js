@@ -15,7 +15,7 @@ function scanPageFields(prefix, readOnly = false) {
   const nodes = new Map();
   const host = typeof location !== "undefined" ? location.hostname : "";
   // Portal families keep their own wrappers; common DOM rules remain the fallback.
-  const portal = /(^|\.)mokahr\.com$/.test(host) ? { name: "Moka", wrapper: /question|formItem|form-item/i, label: "[class*='questionTitle'], [class*='label'], label" }
+  const portal = /(^|\.)mokahr\.com$/.test(host) ? { name: "Moka", wrapper: /question|formItem|form-item|apply-field/i, label: "[class*='title-'], [class*='questionTitle'], [class*='label'], label" }
     : /(^|\.)(zhiye\.com|beisen\.com|italent\.cn)$/.test(host) ? { name: "北森", wrapper: /resume-item|form-item|field|question/i, label: "[class*='field-name'], [class*='label'], label" }
     : /(^|\.)(dayee\.com|hotjob\.cn)$/.test(host) ? { name: "大易", wrapper: /form-group|resume-item|field|item-row/i, label: "[class*='title'], [class*='label'], label" } : null;
   let counter = 0;
@@ -46,6 +46,9 @@ function scanPageFields(prefix, readOnly = false) {
   const clean = (text) => String(text || "").replace(/[​-‍﻿]/g, "").replace(/\s+/g, " ").replace(/([㐀-鿿]) (?=[㐀-鿿])/g, "$1").trim();
   // ud__picker: 飞书招聘's Universe Design date box (获奖时间 YYYY, 出生日期 YYYY-MM).
   const PICKER = ".ant-picker, .el-date-editor, .el-range-editor, .arco-picker, .ivu-date-picker, .t-date-picker, .ud__picker";
+  const DATE_PART_WORD = { 年: "year", 年份: "year", 月: "month", 月份: "month", 日: "day" };
+  const GENERIC_SELECT = /(?:^|[\s_-])(?:select|selector|combo-?box|drop-?down|drop-?list)(?:$|[\s_-])/i;
+  const GENERIC_SELECT_NOT = /date|time|calendar|picker|upload|checkbox|radio|selection-|cascader|autocomplete|auto-complete|option|menu/i;
   const SITE_CHROME = "header, nav, footer, [role='banner'], [role='navigation'], [role='contentinfo'], [role='menubar'], [role='toolbar']";
   const OPTION_HOLDER = "[role='radio'], [role='checkbox'], [role='option'], [role='listbox'], [role='radiogroup'], .el-radio-group, .ant-radio-group, .el-checkbox-group, .ant-checkbox-group, .el-select-dropdown, .ant-select-dropdown";
   // Wizard pages keep earlier steps in the DOM, hidden. Their ids from the
@@ -117,7 +120,7 @@ function scanPageFields(prefix, readOnly = false) {
     // is never the question. 北森 zhiye puts that dropdown inside a
     // `form-item__control` that is the first "form item" wrapper met on the
     // way up, with the real title one level higher.
-    const ownWidget = el.closest?.(".phoenix-select, .ant-select, .el-select, .el-cascader, .ud__select__selector");
+    const ownWidget = el.closest?.(".phoenix-select, .ant-select, .el-select, .el-cascader, .ud__select__selector, [class*='sd-Select-container'], [data-cp-generic-select]");
     // 10, not fewer: an AntD date picker with a "至今" checkbox beside it sits
     // seven wrappers below its .ant-form-item-label, 飞书招聘's date range nine.
     while (container && depth < 10) {
@@ -164,7 +167,7 @@ function scanPageFields(prefix, readOnly = false) {
 
   function labelText(node) {
     const copy = node.cloneNode(true);
-    copy.querySelectorAll("input, select, textarea, button, [role='combobox'], .ant-select, .el-select, .phoenix-select, .phoenix-button").forEach((control) => control.remove());
+    copy.querySelectorAll("input, select, textarea, button, [role='combobox'], .ant-select, .el-select, .phoenix-select, .phoenix-button, [class*='sd-Select-container']").forEach((control) => control.remove());
     return clean(copy.textContent);
   }
 
@@ -205,8 +208,9 @@ function scanPageFields(prefix, readOnly = false) {
       const byFor = rootOf(el).querySelector('label[for="' + CSS.escape(el.id) + '"]');
       if (byFor && labelText(byFor)) return labelText(byFor);
     }
+    // Moka 的输入框外面就是一个 <label>，里面写的是选中的值，不是题目。
     const wrapping = el.closest("label");
-    if (wrapping && labelText(wrapping)) return labelText(wrapping);
+    if (wrapping && !/sd-Input-container/.test(wrapping.className || "") && labelText(wrapping)) return labelText(wrapping);
     const ariaLabel = el.getAttribute("aria-label");
     if (ariaLabel) return clean(ariaLabel);
     const ariaLabelledby = el.getAttribute("aria-labelledby");
@@ -394,7 +398,7 @@ function scanPageFields(prefix, readOnly = false) {
     return clean(copy.textContent);
   }
   function selectedText(container) {
-    const shown = container.querySelector(".ant-select-selection-item, .ud__select__selector__selectItem, .phoenix-select__tipEle, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text, .el-cascader__tags");
+    const shown = container.querySelector(".ant-select-selection-item, .ud__select__selector__selectItem, .phoenix-select__tipEle, [class*='sd-Input-display-value'], .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text, .el-cascader__tags");
     // Some portals print their prompt ("输入工作单位名称") where the choice goes.
     if (shown && clean(shown.textContent) && !PLACEHOLDER_TEXT.test(clean(shown.textContent))) return clean(shown.textContent);
     // Element UI and cascaders show the choice in a read-only input; Arco,
@@ -406,20 +410,30 @@ function scanPageFields(prefix, readOnly = false) {
     return !/[\p{L}\p{N}]/u.test(text) || PLACEHOLDER_TEXT.test(text) || text === clean(container.getAttribute("placeholder")) || text === clean(input?.getAttribute("placeholder")) ? "" : text;
   }
 
+  // 选过之后占位字没了，年 / 月 看它在这一行里排第几个。
+  function sdDatePart(container) {
+    const row = container.closest?.("[class*='month-range-select'], [class*='date_info']");
+    if (!row) return undefined;
+    const boxes = Array.from(row.querySelectorAll("[class*='sd-Select-container']"));
+    if (boxes.length !== 2 && boxes.length !== 4) return undefined;
+    return boxes.indexOf(container) % 2 ? "month" : "year";
+  }
+
   // Component-library dropdowns: a div that only becomes a list when
   // clicked (Ant Design .ant-select, Element .el-select, cascaders, and
   // anything using the ARIA combobox/listbox pattern). No options are read
   // here — the fill step opens each one and picks the closest match.
-  const customSelectors = ".ant-select, .el-select, .el-cascader, .phoenix-select, [role='combobox']:not(input):not(select), input[role='combobox'][readonly], input[aria-haspopup='listbox'], button[aria-haspopup='listbox'], [role='button'][aria-haspopup='listbox']";
+  // [class*='sd-Select-container']: Moka 自研组件（性别、学历、学校、以及年 / 月各一个的时间框），文字写进它的输入框只是在搜索，点选了才算数。
+  const customSelectors = ".ant-select, .el-select, .el-cascader, .phoenix-select, [class*='sd-Select-container'], [role='combobox']:not(input):not(select), input[role='combobox'][readonly], input[aria-haspopup='listbox'], button[aria-haspopup='listbox'], [role='button'][aria-haspopup='listbox']";
   queryAll(customSelectors).forEach((el) => {
     // Element Plus date inputs are read-only comboboxes too; they're typed into.
     // A language switcher or site search in the page header is not the form.
     if (el.closest(PICKER) || el.closest(SITE_CHROME)) return;
-    const container = el.closest(".ant-select, .el-select, .el-cascader, .ud__select__selector, .phoenix-select") || el;
+    const container = el.closest(".ant-select, .el-select, .el-cascader, .ud__select__selector, .phoenix-select, [class*='sd-Select-container']") || el;
     // An AutoComplete accepts free text: its input is filled like any other.
     if (customContainers.has(container) || container.classList.contains("ant-select-auto-complete")) return;
     if (!isVisible(container)) return;
-    if (container.classList.contains("ant-select-disabled") || container.classList.contains("is-disabled") || container.classList.contains("phoenix-select--disabled") || container.getAttribute("aria-disabled") === "true" || container.disabled) return;
+    if (container.classList.contains("ant-select-disabled") || container.classList.contains("is-disabled") || container.classList.contains("phoenix-select--disabled") || /sd-Input-disabled/.test(container.className || "") || container.getAttribute("aria-disabled") === "true" || container.disabled) return;
     const multiple = container.classList.contains("ant-select-multiple") || container.getAttribute("aria-multiselectable") === "true" || !!container.querySelector(".el-select__tags, .el-cascader__tags, .phoenix-select__tag") || container.classList.contains("phoenix-select--exsitMultiValue") || container.classList.contains("phoenix-select--showCountTag");
     if (multiple) return; // never guess multi-selects
     const innerInput = container.matches("input") ? container : container.querySelector("input:not([type='hidden'])");
@@ -437,7 +451,35 @@ function scanPageFields(prefix, readOnly = false) {
       section: sectionFor(container),
       hasValue: !!selectedText(container),
       cascader: container.classList.contains("ant-cascader") || container.classList.contains("el-cascader"),
+      // Moka 的时间：年、月各是一个下拉，占位字就是「年」「月」。
+      datePart: DATE_PART_WORD[clean((innerInput && innerInput.getAttribute("placeholder")) || "")] || sdDatePart(container),
     });
+  });
+
+  // 没见过的组件库：外层 class 写着 select / dropdown，里面是一个输入框，右边一个小箭头。
+  // 把文字写进去网站并不收，所以当下拉处理：填的时候点开看页面新冒出来的列表，
+  // 什么都没冒出来才退回当普通输入框。
+  queryAll('input[type="text"], input:not([type])').forEach((el) => {
+    if (!isVisible(el) || el.disabled || el.closest(SITE_CHROME) || el.closest(PICKER) || (el.readOnly && el.closest("[class*='sd-Dropdown-container']"))) return;
+    if ([...customContainers].some((container) => container === el || inside(container, el))) return;
+    let box = null;
+    for (let node = parentOf(el), depth = 0; node && depth < 3 && !box; node = parentOf(node), depth++) {
+      const cls = (node.className || "").toString();
+      if (!GENERIC_SELECT.test(cls) || GENERIC_SELECT_NOT.test(cls)) continue;
+      if (node.querySelectorAll("input:not([type='hidden']), textarea").length !== 1) break;
+      box = node;
+    }
+    // 一个只读框加小箭头，没写 class 也是下拉。
+    if (!box && el.readOnly && !/日期|时间|年月|生日|date|birth|calendar/i.test(`${el.getAttribute("placeholder") || ""} ${labelFor(el)}`) && PLACEHOLDER_TEXT.test(clean(el.getAttribute("placeholder")))) {
+      const wrap = parentOf(el);
+      if (wrap && wrap.querySelectorAll("input:not([type='hidden']), textarea").length === 1 && wrap.querySelector("svg, i, [class*='arrow' i], [class*='caret' i], [class*='icon' i]")) box = wrap;
+    }
+    if (!box) return;
+    const id = prefix + "s" + counter++;
+    nodes.set(id, box);
+    customContainers.add(box);
+    if (!readOnly) { box.setAttribute("data-cp-fill-id", id); box.setAttribute("data-cp-generic-select", "1"); }
+    results.push({ id, tag: "custom-select", type: "", label: labelFor(el) || labelFor(box), placeholder: clean(el.getAttribute("placeholder")), name: el.getAttribute("name") || box.id || "", section: sectionFor(box), hasValue: !!selectedText(box), generic: true, datePart: DATE_PART_WORD[clean(el.getAttribute("placeholder"))] });
   });
 
   // ARIA radio groups drawn without native inputs (role=radio divs).
@@ -489,7 +531,10 @@ function scanPageFields(prefix, readOnly = false) {
       // autofill leaves those alone rather than overwriting.
       hasValue,
     };
-    if (el.readOnly && !hasValue && !pickerBox) {
+    // Moka 的出生日期：只读框，点开是它自己的日历，engine 能点。
+    const sdCalendar = el.readOnly && !!el.closest("[class*='sd-Dropdown-container']") && !el.closest("[class*='sd-Select-container']");
+    if (sdCalendar) entry.sdCalendar = true;
+    if (el.readOnly && !hasValue && !pickerBox && !sdCalendar) {
       // A read-only box that opens the site's own calendar can't be typed
       // into; it is still listed so the result says "pick it on the page".
       if (!/日期|时间|年月|生日|date|birth|calendar/i.test(`${entry.label} ${entry.placeholder} ${entry.name}`)) return;
@@ -593,6 +638,12 @@ function scanPageFields(prefix, readOnly = false) {
       field.mappingKey = `${key}|${count}`;
     }
   }
+  // 年 月 年 月 四个下拉是一段时间：前两个是开始，后两个是结束。
+  for (let i = 0; i + 3 < results.length; i++) {
+    const row = results.slice(i, i + 4);
+    if (row.map((field) => field.datePart || "").join() !== "year,month,year,month" || row.some((field) => field.label !== row[0].label || field.section !== row[0].section)) continue;
+    row.forEach((field, at) => { field.rangePart = at < 2 ? "start" : "end"; });
+  }
   const captions = new Set(results.flatMap((field) => [field.label, field.placeholder]).map((text) => clean(text).replace(/[*＊：:]/g, "")).filter(Boolean));
   for (const field of results) {
     const el = nodes.get(field.id);
@@ -641,7 +692,7 @@ function snapshotFormStructure(secrets) {
     if (el.tagName === "TEXTAREA") el.textContent = "";
   });
   // Component-library dropdowns show the chosen value as plain text.
-  clone.querySelectorAll(".ant-select-selection-item, .ud__select__selector__selectItem, .phoenix-select__tipEle, .el-select__selected-item, .ant-select-selection-item-content, .el-tag, .ant-upload-list").forEach((el) => { el.textContent = "[已选内容]"; });
+  clone.querySelectorAll(".ant-select-selection-item, .ud__select__selector__selectItem, .phoenix-select__tipEle, [class*='sd-Input-display-value'], .el-select__selected-item, .ant-select-selection-item-content, .el-tag, .ant-upload-list").forEach((el) => { el.textContent = "[已选内容]"; });
   clone.querySelectorAll("*").forEach((el) => {
     for (const attr of Array.from(el.attributes)) {
       if (/^on/i.test(attr.name) || (attr.name.startsWith("data-cp-") && attr.name !== "data-cp-fill-id")) el.removeAttribute(attr.name);
@@ -875,6 +926,12 @@ async function fillFields(pairs) {
     }
     const el = find('[data-cp-fill-id="' + p.id + '"]');
     const rich = !!el && el.isContentEditable && !/^(?:INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
+    if (el && el.readOnly && el.closest("[class*='sd-Dropdown-container']")) {
+      if (el.value && String(el.value).trim()) { skipped.push(p.id); continue; }
+      if (await (el.closest("[class*='location_info']") ? pickSdLocation(el, p.value) : pickSdCalendar(el, p.value))) { mark(el, p.source || "profile", p.answerId); confirmManual(el, p); filled.push(p.id); }
+      else failed.push(p.label || p.id);
+      continue;
+    }
     if (!el || (p.tag && (rich ? p.tag !== "richtext" : el.tagName.toLowerCase() !== p.tag)) || el.disabled || (el.readOnly && !(el.tagName === "INPUT" && el.closest(LIBRARY_PICKER)))) {
       failed.push(p.label || p.id);
       continue;
@@ -1002,6 +1059,79 @@ async function fillFields(pairs) {
   }
   return { filled, failed, skipped, reasons };
 
+  // Moka 的籍贯 / 所在地：省 → 市 → 县三个标签页，点到哪算哪，最后按「确认」才写进框。
+  async function pickSdLocation(el, value) {
+    const field = el.closest("[class*='location_info']");
+    const menu = () => field.querySelector("[class*='menu-wrapper']");
+    const tags = () => Array.from(menu()?.querySelectorAll("[class*='page-container'] [class*='sd-Tag-container']") || []).filter((tag) => tag.getClientRects().length);
+    const text = (tag) => clean(tag.textContent);
+    const base = (name) => name.replace(/(?:特别行政区|维吾尔自治区|壮族自治区|回族自治区|自治区|自治州|地区|省|市|盟|区|县)$/, "") || name;
+    const reads = (tag, rest) => rest.startsWith(text(tag)) || (base(text(tag)).length >= 2 && rest.includes(base(text(tag))));
+    let rest = clean(value).replace(/[\s/,，、|>\-]+/g, "");
+    el.focus();
+    el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    el.click();
+    for (let waited = 0; waited < 900 && !tags().length; waited += 100) await sleep(100);
+    if (!tags().length) return false;
+    const closeMenu = () => { document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })); document.body.click(); };
+    const advance = (tag) => { const name = text(tag); rest = rest.slice(rest.includes(base(name)) ? rest.indexOf(base(name)) + base(name).length : 0).replace(/^(?:省|市|区|县)/, ""); tag.click(); };
+    const first = tags().find((tag) => reads(tag, rest));
+    if (first) { advance(first); await sleep(250); } else {
+      // 只写了城市（「南京」）：一个省一个省点开看。
+      const provinces = tags().map(text);
+      let found = false;
+      for (const name of provinces) {
+        tags().find((tag) => text(tag) === name)?.click();
+        await sleep(120);
+        const city = tags().find((tag) => reads(tag, rest));
+        if (city) { advance(city); await sleep(250); found = true; break; }
+        menu()?.querySelector("[class*='sd-Tabs-item']")?.click();
+        await sleep(120);
+      }
+      if (!found) { closeMenu(); return false; }
+    }
+    for (let level = 0; level < 2 && rest; level++) {
+      const next = tags().find((tag) => reads(tag, rest));
+      if (!next) break;
+      advance(next);
+      await sleep(250);
+    }
+    if (!menu()) return !!clean(el.value);
+    (menu().querySelector("[class*='confirm'] button") || menu().querySelector("[class*='confirm']"))?.click();
+    await sleep(300);
+    return !!clean(el.value);
+  }
+
+  // Moka 日历：先到年（默认停在 1990），再点月，有日的再点日。
+  async function pickSdCalendar(el, value) {
+    const m = /(\d{4})\D+(\d{1,2})(?:\D+(\d{1,2}))?/.exec(String(value));
+    if (!m) return false;
+    const box = el.closest("[class*='sd-Dropdown-container']");
+    const panel = () => box.querySelector("[class*='sd-panal-menu-wrapper']");
+    el.focus();
+    el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    el.click();
+    for (let waited = 0; waited < 900 && !panel(); waited += 100) await sleep(100);
+    if (!panel()) return false;
+    for (let step = 0; step < 90; step++) {
+      const shown = Number(/(\d{4})\s*年/.exec(panel()?.querySelector("[class*='sd-basic-selector-year']")?.textContent || "")?.[1]);
+      if (!shown) return false;
+      if (shown === Number(m[1])) break;
+      panel().querySelector(shown < Number(m[1]) ? "[class*='icondoubleRight']" : "[class*='icondoubleLeft']")?.click();
+      await sleep(30);
+    }
+    const MONTHS = ["一月", "二月", "三月", "四月", "五月", "六月", "七月", "八月", "九月", "十月", "十一月", "十二月"];
+    const month = Array.from(panel().querySelectorAll("[class*='sd-basic-year-item']")).find((node) => clean(node.textContent) === MONTHS[Number(m[2]) - 1]);
+    if (!month) return false;
+    month.click();
+    await sleep(250);
+    if (panel() && m[3]) {
+      const day = Array.from(panel().querySelectorAll("[class*='sd-panal-table-container'] *")).find((node) => !node.children.length && clean(node.textContent) === String(Number(m[3])) && !/disabled|other|prev|next/i.test(node.className || ""));
+      if (day) { day.click(); await sleep(250); }
+    }
+    return clean(el.value).startsWith(`${m[1]}-${m[2].padStart(2, "0")}`);
+  }
+
   // Types the value, waits for the suggestions, and clicks the one that is
   // the value (or the value with an English name / campus after it).
   async function pickSuggestion(el, value) {
@@ -1060,6 +1190,8 @@ async function fillCustomSelects(pairs, taskId) {
   const skipped = [];
   // `readOptions` pairs only open the dropdown and report what it offers.
   const optionsRead = {};
+  // 选项里没有要填的那句话：把真实选项带回去，按选项重新匹配一次。
+  const failedOptions = {};
   const roots = [document];
   for (let i = 0; i < roots.length; i++) Array.from(roots[i].querySelectorAll ? roots[i].querySelectorAll("*") : []).forEach((node) => { if (node.shadowRoot) roots.push(node.shadowRoot); });
   const find = (selector) => { for (const root of roots) { const hit = root.querySelector(selector); if (hit) return hit; } return null; };
@@ -1073,7 +1205,7 @@ async function fillCustomSelects(pairs, taskId) {
     return clean(copy.textContent);
   }
   function selectedText(container) {
-    const shown = container.querySelector(".ant-select-selection-item, .ud__select__selector__selectItem, .phoenix-select__tipEle, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text, .el-cascader__tags");
+    const shown = container.querySelector(".ant-select-selection-item, .ud__select__selector__selectItem, .phoenix-select__tipEle, [class*='sd-Input-display-value'], .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text, .el-cascader__tags");
     // Some portals print their prompt ("输入工作单位名称") where the choice goes.
     if (shown && clean(shown.textContent) && !PLACEHOLDER_TEXT.test(clean(shown.textContent))) return clean(shown.textContent);
     // Element UI and cascaders show the choice in a read-only input; Arco,
@@ -1106,12 +1238,42 @@ async function fillCustomSelects(pairs, taskId) {
         "[role='listbox'] [role='option']:not([aria-disabled='true']), " +
         ".ud__select__dropdown:not([class*='dropdown-hidden']) .ud__select__list__item:not([class*='item-disabled']), " +
         // 北森 zhiye: a multi-select's rows carry a checkbox; those lists are never guessed.
-        ".phoenix-selectList__listItem:not(.phoenix-selectList__listItem--disabled):not(:has(input[type='checkbox']))"
+        ".phoenix-selectList__listItem:not(.phoenix-selectList__listItem--disabled):not(:has(input[type='checkbox'])), " +
+        // Moka：每一行是 sd-Menu-container，带副标题的（学校、专业）外面还包一层 common-item。
+        "[class*='sd-Select-menu'] [class*='sd-Menu-container']:not([class*='sd-Menu-disabled'])"
     );
-    return Array.from(nodes).filter(visible);
+    const found = Array.from(nodes).filter(visible);
+    if (found.length) return found;
+    // 认识的组件库列表空着就是空着（可能是树、日历），只有陌生控件才去「猜」。
+    return !container || container.matches(".ant-select, .el-select, .el-cascader, .phoenix-select, .ud__select__selector, [class*='sd-Select-container']") ? [] : discoveredOptions();
+  }
+  // 没见过的组件库：记下点开之前页面上看得见的东西，点开之后新冒出来、
+  // 又是一排同样形状的，就是选项。
+  let visibleBefore = null;
+  function rememberVisible() {
+    visibleBefore = new Set(Array.from(document.querySelectorAll("body *")).filter((node) => node.getClientRects?.().length));
+  }
+  function discoveredOptions() {
+    if (!visibleBefore) return [];
+    const fresh = Array.from(document.querySelectorAll("body *")).filter((node) => !visibleBefore.has(node) && visible(node));
+    const parents = new Map();
+    for (const node of fresh) {
+      if (!node.parentElement || !clean(node.textContent) || clean(node.textContent).length > 60 || node.closest("[data-cp-fill-id]")) continue;
+      const shape = `${node.tagName}.${(node.className || "").toString().replace(/\b\S*(?:active|hover|selected|focus|current|checked|pointer)\S*/gi, "").trim()}`;
+      const key = parents.get(node.parentElement) || new Map();
+      key.set(shape, [...(key.get(shape) || []), node]);
+      parents.set(node.parentElement, key);
+    }
+    let best = [];
+    for (const shapes of parents.values()) for (const list of shapes.values()) if (list.length >= 2 && list.length > best.length) best = list;
+    return best;
+  }
+  // 「没有找到专业？添加专业全称」：列表里没有时，网站自己留的那条路。
+  function customEntryButton() {
+    return Array.from(document.querySelectorAll("[class*='sd-Select-menu'] button, [class*='sd-Dropdown-dropdown'] button")).find((button) => visible(button) && /添加|新增|自定义|使用/.test(clean(button.textContent))) || null;
   }
   function optionText(n) {
-    const inner = n.querySelector(".ant-select-item-option-content");
+    const inner = n.querySelector(".ant-select-item-option-content, [data-key='sugar.select.label'], [class*='sd-Menu-content-item'] > div:first-child");
     return clean((inner || n).textContent);
   }
   function pickOne(options, value) {
@@ -1119,7 +1281,8 @@ async function fillCustomSelects(pairs, taskId) {
     const exact = options.find((o) => optionText(o) === v);
     if (exact) return exact;
     const fuzzy = options.filter((o) => optionText(o).includes(v) || (v.includes(optionText(o)) && optionText(o).length >= 2));
-    return fuzzy.length === 1 ? fuzzy[0] : null;
+    // 同一个选项列了两遍（远景的「上海市」「上海市」）还是一个选项。
+    return new Set(fuzzy.map(optionText)).size === 1 ? fuzzy[0] : null;
   }
   // `alternatives` carries synonyms such as 学士 → 本科 for degree dropdowns.
   function pick(options, p) {
@@ -1135,9 +1298,11 @@ async function fillCustomSelects(pairs, taskId) {
     el.style.setProperty("outline-offset", "1px", "important");
   }
   function open(container) {
+    rememberVisible();
     // Innermost first: a click on the inner input bubbles up through the
     // wrapper/selector, so every library's own handler sees it.
     const trigger = container.querySelector("input:not([type='hidden'])") || container.querySelector(".ant-select-selector, .el-select__wrapper, .el-input__wrapper") || container;
+    trigger.focus?.();
     trigger.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
     trigger.click();
   }
@@ -1291,6 +1456,17 @@ async function fillCustomSelects(pairs, taskId) {
     return false;
   }
   const taken = (container) => { const shown = selectedText(container); return !!shown && !/invalid|nan/i.test(shown); };
+  function tickUntilNow(el) {
+    let scope = el.parentElement;
+    for (let depth = 0; scope && depth < 7; depth++, scope = scope.parentElement) {
+      const toggle = Array.from(scope.querySelectorAll('input[type="checkbox"], [role="checkbox"], [role="switch"]')).find((node) => /至今|目前|在读|在职|present|current/i.test(((node.closest("label") || node.parentElement || node).textContent || "") + " " + (node.getAttribute("aria-label") || "")));
+      if (!toggle) continue;
+      if (toggle.checked === true || toggle.getAttribute("aria-checked") === "true") return true;
+      (toggle.closest("label") || toggle).click();
+      return true;
+    }
+    return false;
+  }
 
   for (const p of pairs) {
     assertActive();
@@ -1311,12 +1487,22 @@ async function fillCustomSelects(pairs, taskId) {
       if (texts.length >= 2 && texts.length <= 60) optionsRead[p.id] = texts;
       continue;
     }
+    // 勾了「至今」，网站把结束的 年 / 月 收起来了：这一格已经答完。
+    if (!container && p.value === "至今") { filled.push(p.id); continue; }
     if (!container || !p.value) continue;
     if (container.classList.contains("ant-select-disabled") || container.classList.contains("is-disabled") || container.classList.contains("phoenix-select--disabled") || container.getAttribute("aria-disabled") === "true" || container.disabled) {
       failed.push(p.label || p.id);
       continue;
     }
-    if (hasExistingValue(container)) { skipped.push(p.id); continue; }
+    // 选了年，Moka 自己把月设成 1：这不是谁填的，还要改成真正的月份。
+    // 第二次按真实选项重填时，框里还留着第一次搜索的字。
+    const siteDefault = () => (p.retry || (!!p.datePart && p.datePart !== "year")) && container.getAttribute("data-cp-user-edited") !== "1";
+    if (hasExistingValue(container) && !siteDefault()) { skipped.push(p.id); continue; }
+    // 结束时间是「至今」：年、月下拉里没有这一项，旁边的勾才是。
+    if (p.value === "至今") {
+      if (tickUntilNow(container)) { container.setAttribute("data-cp-until-now", "1"); await sleep(150); filled.push(p.id); } else failed.push(p.label || p.id);
+      continue;
+    }
     if (container.classList.contains("ant-cascader") || container.classList.contains("el-cascader")) {
       let ok = false;
       try { ok = await fillCascader(container, p.value); } catch (error) { if (/填写已停止/.test(error.message)) throw error; }
@@ -1336,7 +1522,7 @@ async function fillCustomSelects(pairs, taskId) {
     await sleep(300);
     assertActive();
     let options = await waitFor(() => visibleOptions(container), 600);
-    if (hasExistingValue(container)) { close(); skipped.push(p.id); continue; }
+    if (hasExistingValue(container) && !siteDefault()) { close(); skipped.push(p.id); continue; }
     if (!options.length && container.matches(".phoenix-select") && calendarPanel()) {
       let ok = false;
       try { ok = await fillCalendar(container, p.value); } catch (error) { if (/填写已停止/.test(error.message)) throw error; }
@@ -1360,6 +1546,7 @@ async function fillCustomSelects(pairs, taskId) {
       continue;
     }
     let target = pick(options, p);
+    const offeredAtFirst = options;
     // Searchable selects (and virtual lists that only render a screenful):
     // type the value to narrow the list, then look again.
     const searchInput = container.querySelector("input:not([readonly]):not([type='hidden'])");
@@ -1371,6 +1558,41 @@ async function fillCustomSelects(pairs, taskId) {
       assertActive();
       options = await waitFor(() => visibleOptions(container), 600);
       target = pick(options, p);
+      // 学校、专业的列表是联网搜的，第一眼常常还是上一次的结果。
+      if (!target && container.matches("[class*='sd-Select-container']")) {
+        await sleep(600);
+        assertActive();
+        options = visibleOptions(container);
+        target = pick(options, p);
+      }
+      const addEntry = !target ? customEntryButton() : null;
+      if (addEntry) {
+        addEntry.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+        addEntry.click();
+        await sleep(300);
+        assertActive();
+        const shown = selectedText(container);
+        if (shown && shown.includes(clean(p.value))) {
+          mark(container, p.source || "profile");
+          if ((p.source || "profile") === "profile") container.setAttribute("data-cp-profile-filled", "1");
+          filled.push(p.id);
+          continue;
+        }
+      }
+      // 陌生的「下拉」点开什么都没有：它其实是普通输入框，文字留着。
+      if (!target && container.hasAttribute("data-cp-generic-select") && !options.length) {
+        searchInput.dispatchEvent(new Event("change", { bubbles: true }));
+        searchInput.blur();
+        searchInput.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+        await sleep(200);
+        assertActive();
+        if (clean(searchInput.value) === clean(p.value)) {
+          mark(container, p.source || "profile");
+          if ((p.source || "profile") === "profile") container.setAttribute("data-cp-profile-filled", "1");
+          filled.push(p.id);
+          continue;
+        }
+      }
       if (!target) {
         setter.call(searchInput, "");
         searchInput.dispatchEvent(new Event("input", { bubbles: true }));
@@ -1396,13 +1618,15 @@ async function fillCustomSelects(pairs, taskId) {
         failed.push(p.label || p.id);
       }
     } else {
+      const texts = [...new Set((options.length ? options : offeredAtFirst).map(optionText).filter(Boolean))];
+      if (texts.length >= 2 && texts.length <= 80) failedOptions[p.id] = texts;
       failed.push(p.label || p.id);
       close();
       await sleep(100);
       assertActive();
     }
   }
-  return { filled, failed, skipped, options: optionsRead };
+  return { filled, failed, skipped, options: optionsRead, failedOptions };
 }
 
 // Side-effect-free count of what an autofill could touch right now — used
@@ -1464,10 +1688,10 @@ function trackUserEdits() {
     if (event.isTrusted) document.__cpLastPointer = { el: origin(event), at: Date.now() };
   }, true);
   let selected = null;
-  const shownValue = (el) => (el.querySelector(".ant-select-selection-item, .ud__select__selector__selectItem, .phoenix-select__tipEle, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent)")?.textContent || el.value || (el.matches("button, [role='combobox']") ? el.textContent : "") || "").trim();
+  const shownValue = (el) => (el.querySelector(".ant-select-selection-item, .ud__select__selector__selectItem, .phoenix-select__tipEle, [class*='sd-Input-display-value'], .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent)")?.textContent || el.value || (el.matches("button, [role='combobox']") ? el.textContent : "") || "").trim();
   document.addEventListener("pointerdown", (event) => {
     if (!event.isTrusted) return;
-    const el = origin(event)?.closest?.(".ant-select, .el-select, .el-cascader, .ud__select__selector, .phoenix-select, [role='combobox'], button[aria-haspopup='listbox']");
+    const el = origin(event)?.closest?.(".ant-select, .el-select, .el-cascader, .ud__select__selector, .phoenix-select, [class*='sd-Select-container'], [data-cp-generic-select], [role='combobox'], button[aria-haspopup='listbox']");
     if (el) selected = { el, at: Date.now(), value: shownValue(el) };
   }, true);
   document.addEventListener("click", (event) => {
@@ -1636,7 +1860,7 @@ function readFieldValues(ids) {
     if (el.getAttribute("role") === "radiogroup") return clean(el.querySelector("[role='radio'][aria-checked='true']")?.textContent);
     if (el.isContentEditable && tag !== "input" && tag !== "textarea") return String(el.innerText || "").trim();
     if (tag === "input" || tag === "textarea") return String(el.value || "").trim();
-    const shown = el.querySelector(".ant-select-selection-item, .ud__select__selector__selectItem, .phoenix-select__tipEle, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text");
+    const shown = el.querySelector(".ant-select-selection-item, .ud__select__selector__selectItem, .phoenix-select__tipEle, [class*='sd-Input-display-value'], .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text");
     if (shown && clean(shown.textContent) && !PLACEHOLDER_TEXT.test(clean(shown.textContent))) return clean(shown.textContent);
     const input = el.querySelector("input:not([type='hidden'])");
     if (input && clean(input.value) && !PLACEHOLDER_TEXT.test(clean(input.value))) return clean(input.value);
@@ -1688,7 +1912,7 @@ function clearSavedUserEdits(saved) {
     if (el.getAttribute("role") === "radiogroup") return clean(el.querySelector("[role='radio'][aria-checked='true']")?.textContent);
     if (el.isContentEditable && tag !== "input" && tag !== "textarea") return String(el.innerText || "").trim();
     if (tag === "input" || tag === "textarea") return String(el.value || "").trim();
-    const shown = el.querySelector(".ant-select-selection-item, .ud__select__selector__selectItem, .phoenix-select__tipEle, .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text");
+    const shown = el.querySelector(".ant-select-selection-item, .ud__select__selector__selectItem, .phoenix-select__tipEle, [class*='sd-Input-display-value'], .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text");
     if (shown && clean(shown.textContent) && !PLACEHOLDER_TEXT.test(clean(shown.textContent))) return clean(shown.textContent);
     const input = el.querySelector("input:not([type='hidden'])");
     if (input && clean(input.value) && !PLACEHOLDER_TEXT.test(clean(input.value))) return clean(input.value);
@@ -1741,7 +1965,7 @@ const BASIC_FIELD_RULES = [
   { keys: ["性别", "gender", "sex"], get: (p) => p.gender },
   // exactDay: a birthday is never padded to the 1st the way 入学时间 is.
   // 年龄 is the birth date, counted to today (飞书招聘 asks for it as a required number).
-  { keys: ["年龄", "周岁"], not: /是否|要求|范围|以上|以下|不超过|不低于|家庭|配偶|子女|父|母|紧急|推荐人|age range/i, get: (p) => ageFromBirthDate(p.birthDate) },
+  { keys: ["年龄", "周岁"], not: /出生|生日|是否|要求|范围|以上|以下|不超过|不低于|家庭|配偶|子女|父|母|紧急|推荐人|age range/i, get: (p) => ageFromBirthDate(p.birthDate) },
   { keys: ["出生日期", "出生年月", "生日", "birth", "birthday", "birthdate"], not: /地点|出生地|place|city|country|province|省份|籍贯/i, get: (p) => p.birthDate, date: true, exactDay: true },
   // School/major/degree/GPA/dates are per education row — see
   // resolveRepeatField below. Only the page-wide "最高学历" stays flat.
@@ -1749,6 +1973,25 @@ const BASIC_FIELD_RULES = [
   // `learn`: the 网申资料 field a hand-typed answer here fills while it is blank.
   { keys: ["英语", "外语", "cet", "english", "语言能力"], not: /姓名|名字|name/i, get: (p) => p.english, english: true, learn: "english" },
   { keys: ["政治面貌", "politic", "political", "politics"], get: (p) => p.politics, learn: "politics" },
+  // 央国企 / 银行常问的个人信息。
+  { keys: ["入党时间", "入团时间", "入党日期", "入团日期", "入党（团）时间", "入党(团)时间"], get: (p) => p.partyDate, date: true, learn: "partyDate" },
+  { keys: ["出生地", "出生地点", "place of birth"], get: (p) => p.birthplace, learn: "birthplace" },
+  { keys: ["户籍所在地", "户口所在地", "户籍地"], not: /地址|详细|街道|门牌/, get: (p) => p.householdPlace, learn: "householdPlace" },
+  { keys: ["户口性质", "户口类型", "户籍类型"], get: (p) => p.householdType, learn: "householdType" },
+  { keys: ["生源地", "生源所在地"], get: (p) => p.sourcePlace, learn: "sourcePlace" },
+  { keys: ["档案所在地", "档案存放"], get: (p) => p.archivePlace, learn: "archivePlace" },
+  { keys: ["婚姻状况", "婚姻情况", "婚否"], get: (p) => p.marital, learn: "marital" },
+  { keys: ["健康状况", "身体状况"], get: (p) => p.health, learn: "health" },
+  { keys: ["身高"], get: (p) => p.height, learn: "height" },
+  { keys: ["体重"], get: (p) => p.weight, learn: "weight" },
+  { keys: ["色盲", "色弱", "辨色"], get: (p) => p.colorVision, learn: "colorVision" },
+  { keys: ["独生子女"], get: (p) => p.onlyChild, learn: "onlyChild", yesNo: true },
+  { keys: ["宗教信仰"], get: (p) => p.religion, learn: "religion" },
+  { keys: ["参加工作时间", "首次参加工作"], get: (p) => p.firstWorkDate, date: true, learn: "firstWorkDate" },
+  { keys: ["计算机水平", "计算机等级", "计算机能力"], get: (p) => p.computerLevel, learn: "computerLevel" },
+  { keys: ["职业资格", "技能证书", "资格证书"], get: (p) => p.certificates, learn: "certificates" },
+  { keys: ["所在校区", "校区"], not: /是否|意向/, get: (p) => p.campusZone, learn: "campusZone" },
+  { keys: ["挂科门数", "挂科数", "不及格门数"], get: (p) => p.failedCourses, learn: "failedCourses" },
   { keys: ["籍贯", "户籍", "户口所在地", "hometown"], not: /地址|详细|街道|门牌/, get: (p) => p.hometown, learn: "hometown" },
   { keys: ["民族", "ethnic", "ethnicity"], get: (p) => p.ethnicity, learn: "ethnicity" },
   { keys: ["微信", "wechat", "weixin"], get: (p) => p.wechat, learn: "wechat" },
@@ -1764,7 +2007,7 @@ const BASIC_FIELD_RULES = [
   { keys: ["意向城市", "期望城市", "工作城市", "意向工作地", "期望工作地", "工作地点", "意向地点", "期望地点", "工作地区", "preferred city", "preferred location", "desired location", "work location"], not: /是否|可否|能否|接受/, get: (p) => p.preferredCities, cities: true },
   // English portals (Microsoft, Workday …): country of residence, before the bare "city" rule.
   { keys: ["country/region", "country / region", "country or region", "country of residence", "country", "所在国家", "居住国家", "国家/地区", "国家或地区"], not: /code|区号|代码|phone|dial|birth|出生|citizenship|nationality|国籍|issu|签发|city|城市|state of/i, get: (p) => p.country || countryFromCity(p.currentCity), learn: "country", english: false, englishName: true },
-  { keys: ["现居", "现住", "所在城市", "常住", "居住城市", "current city", "current location", "city"], get: (p) => p.currentCity, learn: "currentCity", englishName: true },
+  { keys: ["现居", "现住", "所在城市", "常住", "居住城市", "所在地", "居住地", "现所在地", "目前所在地", "current city", "current location", "city"], not: /工作所在地|公司所在地|单位所在地|学校所在地|户籍所在地|户口所在地|生源所在地|家庭所在地/, get: (p) => p.currentCity, learn: "currentCity", englishName: true },
   // 资料方案 fields: the direction-specific target role and self-assessment.
   // No `learn` here: which city and which job is usually picked per company.
   { keys: ["期望岗位", "期望职位", "意向岗位", "意向职位", "求职意向"], get: (p) => p.targetRole },
@@ -1785,6 +2028,9 @@ const BASIC_FIELD_RULES = [
   { keys: ["投递岗位", "应聘岗位", "申请岗位", "应聘职位", "申请职位", "报考岗位", "投递职位"], not: /是否|期望|意向|第二|其他/, get: (p) => p.appliedJob },
   // 工作年限 for someone still studying: 应届生 (or the option that means none).
   { keys: ["工作年限", "工作经验年限", "工作经验（年）", "工作年数"], get: (p) => studyingNow(p) ? "应届生" : null, workYears: true },
+  // Moka's 工作经验 is a dropdown (在校生 / 应届毕业生 / 1 年…), not a place for the experience itself.
+  { keys: ["工作经验"], when: (field) => isWorkYearsChoice(field), get: (p) => studyingNow(p) ? "应届生" : null, workYears: true },
+  { keys: ["最近公司", "目前公司", "当前公司", "现公司", "最近工作单位", "目前单位", "当前单位"], not: /是否|名称.*(?:学校|院校)/, get: (p) => p.latestCompany },
   // 是否有交换生经历 (是 / 否) or a box for the exchange itself.
   { keys: ["交换生经历", "交换经历", "海外交换", "交换学习", "海外经历", "海外学习经历"], not: /是否接受|愿意|意向/, get: (p) => p.exchange, learn: "exchange", yesNo: true },
   { keys: ["是否学生干部", "是否担任学生干部", "是否担任过学生干部", "是否为学生干部"], get: (p) => (p.campus || []).some((row) => row.role) ? "是" : null },
@@ -1792,7 +2038,7 @@ const BASIC_FIELD_RULES = [
   { keys: ["全日制在校", "是否全日制", "是否为全日制", "全日制学生", "是否为在校学生", "是否在校学生"], get: (p) => studyingNow(p) && studyMode(p) === "全日制" ? "是" : null },
   // Only as a question: 「应届生求职登录」 is a page heading, not this.
   { keys: ["是否应届", "是否为应届"], not: /往届|非应届/, get: (p) => studyingNow(p) ? "是" : null },
-  { keys: ["学习形式", "教育形式", "就读方式"], get: (p) => studyMode(p) },
+  { keys: ["学习形式", "教育形式", "就读方式", "学历类型", "学历性质", "培养方式"], get: (p) => studyMode(p) },
   // 国籍 is not the country of residence (studying in 新加坡 is still 中国): 民族 / 政治面貌 / 籍贯 say 中国.
   { keys: ["国籍"], not: /父|母|配偶|家庭|亲属|紧急/, get: (p) => p.nationality || (p.ethnicity || p.politics || p.hometown ? "中国" : null), nationality: true },
   { keys: ["招聘信息来源", "信息来源", "获知渠道", "了解渠道", "得知渠道", "从何处得知", "how did you hear", "where did you hear"], get: (p) => p.jobSource, learn: "jobSource" },
@@ -1882,11 +2128,54 @@ function fieldHaystack(field) {
 const THIRD_PARTY = /紧急联系人|联系人|家庭成员|家庭情况|家庭信息|家庭关系|家庭主要成员|主要家庭成员|家属|亲属|亲友|父母|父亲|母亲|配偶|爱人|子女|兄弟|姐妹|监护人|推荐人|内推人|介绍人|证明人|担保人|导师|社会关系|与本人关系|emergency|guardian|spouse|parent|father|mother|sibling|relative|next of kin|referee|references?\b|referr/i;
 
 function isThirdPartyField(field) {
-  if (THIRD_PARTY.test(fieldHaystack(field))) return true;
+  // 「是否独生子女」问的是本人。
+  if (THIRD_PARTY.test(fieldHaystack(field).replace(/独生子女/g, ""))) return true;
   // "个人及家庭信息" heads the applicant's own fields too; only a heading that
   // is purely about others marks every field under it.
   const section = String(field.section || "");
   return THIRD_PARTY.test(section) && !/个人|本人|基本|申请人|applicant|personal/i.test(section);
+}
+
+// 紧急联系人、家庭成员、导师：别人的信息不猜，但用户自己在「个人信息」里存过的照着填。
+const FAMILY_SECTION = /家庭成员|家庭情况|家庭信息|家庭关系|家庭主要成员|主要家庭成员|主要社会关系|社会关系/;
+function familyFieldKind(text) {
+  if (/关系|称谓/.test(text)) return "relation";
+  if (/政治面貌/.test(text)) return "politics";
+  if (/出生|生日/.test(text)) return "birthDate";
+  if (/单位|公司|工作地|就职/.test(text)) return "employer";
+  if (/职务|职位|岗位/.test(text)) return "position";
+  if (/电话|手机|联系方式|phone|tel/i.test(text)) return "phone";
+  if (/姓名|名字|^name$/i.test(text)) return "name";
+  return null;
+}
+
+function savedThirdPartyValue(field, profile, rows) {
+  const label = bareLabel(field);
+  const section = String(field.section || "");
+  const text = `${section} ${field.label || ""}`;
+  if (/紧急联系人|紧急联络人|emergency/i.test(text)) {
+    if (/关系|relation/i.test(label)) return profile.emergencyRelation || null;
+    if (/电话|手机|联系方式|phone|tel/i.test(label)) return profile.emergencyPhone || null;
+    if (/姓名|联系人|name/i.test(label)) return profile.emergencyName || null;
+    return null;
+  }
+  if (/导师/.test(label) && /姓名|^导师$/.test(label)) return profile.advisor || null;
+  if (/是否.*亲属|亲属.*(?:本公司|本单位|集团|我司|贵司|公司)/.test(label)) return profile.relativeInCompany || null;
+  const family = profile.family || [];
+  if (!family.length) return null;
+  // 「父亲姓名」「母亲工作单位」说了是谁；家庭成员表按行走。
+  const own = /^(父亲|母亲|配偶|爱人)/.exec(label)?.[1];
+  const kind = familyFieldKind(own ? label.slice(own.length) : label);
+  if (!kind) return null;
+  let row = null;
+  if (own) row = family.find((item) => item.relation.includes(own === "爱人" ? "配偶" : own));
+  else if (FAMILY_SECTION.test(section) || FAMILY_SECTION.test(field.label || "")) {
+    const at = rows.get(kind) || 0;
+    rows.set(kind, at + 1);
+    row = family[at];
+  }
+  const value = row?.[kind];
+  return value ? (kind === "birthDate" ? formatDateForField(field, value) || value : value) : null;
 }
 
 function isSplitNameField(field) {
@@ -2198,12 +2487,18 @@ function skillFieldKind(field, haystack, bare = "", inSection = false) {
 // Classifies a field and consumes its row. `rowIndexes` counts rows per
 // "group:kind" across the whole scan (prefilled fields included), so it must
 // be called once for every scanned field, in page order.
+function isWorkYearsChoice(field) {
+  return (field.tag === "custom-select" || field.tag === "select" || field.tag === "radio") && /^工作(?:经验|年限)$/.test(bareLabel(field));
+}
+
 function resolveRepeatField(field, rowIndexes) {
+  if (isWorkYearsChoice(field)) return null;
   // A family member's 工作单位 is not one of the applicant's internships.
   if (isSplitNameField(field) || isThirdPartyField(field)) return null;
   if (/[?？]|为什么|为何|谈谈|你(?:的|在|如何)|如何|遇到|挑战|收获|\bwhy\b|\bhow\b|tell us/i.test(field.label || "")) return null;
   const bare = bareLabel(field);
   // "是否 211 院校" / "有无海外经历" ask about a row; they are never its school or name.
+  if (/^学历(?:类型|性质)$|^培养方式$/.test(bare)) return null;
   if (/^(?:是否|有无|是不是)/.test(bare) || (field.options?.length && field.options.every((option) => /^(?:是|否|有|无|yes|no)$/i.test(String(option).trim())))) return null;
   const haystack = fieldHaystack(field);
   const section = String(field.section || "");
@@ -2253,7 +2548,9 @@ function resolveRepeatField(field, rowIndexes) {
   if (info.kind === anchor) rowIndexes?.set(anchorKey, counted);
   const ordinal = sectionOrdinal(section);
   // The degree field's own label ("学历（本科及以上）") is a requirement, not a row.
-  const hint = info.group === "education" ? degreeLevel(`${info.kind === "degree" ? "" : field.label || ""} ${group === "education" ? section : ""}`) : 0;
+  // 「硕士、博士学历需填写本科教育经历」是一句说明，不是「这一栏是硕士」。
+  const degreeHeading = group === "education" && section.length <= 14 && !/需|须|请|填写|、/.test(section) ? section : "";
+  const hint = info.group === "education" ? degreeLevel(`${info.kind === "degree" ? "" : field.label || ""} ${degreeHeading}`) : 0;
   let row = ordinal ?? (info.kind === "summary" ? counted : Math.max(counted, rowIndexes?.get(anchorKey) || 0));
   if (field.blockKey && rowIndexes) {
     const block = `block:${info.group}:${field.blockKey}`;
@@ -2767,7 +3064,7 @@ function fillDetail(field, pair, filledSet, failedSet, reasons = {}) {
   const own = displayLabel(field);
   const label = field.section && !own.includes(field.section) && (sectionGroup(field.section) || THIRD_PARTY.test(field.section)) ? `${field.section} · ${own}` : own;
   if (field.hasValue || field.userEdited) return { label, state: field.userEdited ? "手动修改过，保持不动" : "页面已有内容，未改动", source: "prefilled" };
-  if (isThirdPartyField(field)) return { label, state: "家庭成员 / 联系人等他人信息，请手填", source: "manual", deliberate: true };
+  if (isThirdPartyField(field) && !pair) return { label, state: "家庭成员 / 联系人等他人信息，请手填", source: "manual", deliberate: true };
   if (field.readonlyPicker) return { label, state: field.suggestion ? `日期需在网页上点选：${field.suggestion}` : "日期需在网页上点选", source: "manual" };
   if (pair && filledSet.has(field.id)) {
     if (pair.shortened) return { label, state: `来自网申资料，按网页 ${pair.shortened} 字上限截短了，请核对`, source: "profile" };
@@ -2870,6 +3167,8 @@ async function clickAddBlock(group, dryRun = false) {
       if (!text || text.length > 16 || !ADD.test(text) || !visible(el)) return false;
       // Innermost element carrying the text; its clickable ancestor is used below.
       if (Array.from(el.children).some((child) => ADD.test((child.textContent || "").trim()))) return false;
+      // 「技能证书」下面的添加是加证书，表单里长不出技能的框。
+      if (group === "skill" && /证书/.test(`${text} ${context(el)}`)) return false;
       return words.test(text) || words.test(context(el));
     })
     .map((el) => el.closest("button, a, [role='button'], .ant-btn, .el-button") || el);
@@ -2944,6 +3243,16 @@ function repeatFieldGoesToAi(info, profile) {
   if (["description", "responsibilities", "summary", "link", "teamSize"].includes(info.kind)) return false;
   const saved = info.group === "education" ? educationRows(profile) : info.group === "experience" ? profile.experiences || [] : profile.projects || [];
   return saved.length === 0 && info.row === 0 && !info.degreeHint;
+}
+
+// 年 / 月 / 日 一个下拉一段：Moka 的月份写 1、2 …，别家写 01、1月。
+function customDatePart(field, value) {
+  const parts = dateParts(value);
+  if (!parts) return null;
+  const raw = field.datePart === "year" ? parts.y : field.datePart === "month" ? parts.m : parts.d;
+  if (!raw) return null;
+  const number = String(Number(raw));
+  return field.datePart === "year" ? { value: number, alternatives: [`${number}年`] } : { value: number, alternatives: [number.padStart(2, "0"), `${number}月`, `${number.padStart(2, "0")}月`, `${number}日`, `${number}号`] };
 }
 
 function matchFieldOption(field, value) {
@@ -3156,7 +3465,7 @@ function matchFlatField(field, profile) {
     }
     if (rule.noReferral) return field.options.find((option) => NO_REFERRAL.test(String(option).trim()));
     if (rule.workYears && field.options) {
-      const none = field.options.find((option) => /应届|无工作|无经验|^无$|^0\s*年?$|在校/.test(String(option).trim())) || field.options.find((option) => /1\s*年以下|一年以下|1年以内/.test(String(option)));
+      const none = field.options.find((option) => /应届/.test(String(option).trim())) || field.options.find((option) => /无工作|无经验|^无$|^0\s*年?$|在校/.test(String(option).trim())) || field.options.find((option) => /1\s*年以下|一年以下|1年以内/.test(String(option)));
       if (none) return none;
       continue;
     }
@@ -3399,6 +3708,21 @@ async function readSelectOptions(adapter, questions, frameById, initialUrl) {
   return found;
 }
 
+// 写完回头读一遍：网站把值吞掉（清空、弹回）的框不算填上，不然用户到提交时才发现。
+function readBackFilled(ids) {
+  const lost = [];
+  for (const id of ids) {
+    const el = document.querySelector('[data-cp-fill-id="' + id + '"]');
+    if (!el || el.getClientRects().length === 0 || el.hasAttribute("data-cp-until-now")) continue;
+    if (el.matches("input, textarea")) { if (!String(el.value || "").trim()) lost.push(id); continue; }
+    if (el.matches("select")) continue;
+    if (el.isContentEditable) { if (!String(el.innerText || "").trim()) lost.push(id); continue; }
+    const input = el.querySelector("input:not([type='hidden']):not([type='checkbox']):not([type='radio'])");
+    if (!String(el.innerText || "").trim() && !String(input?.value || "").trim()) lost.push(id);
+  }
+  return lost;
+}
+
 async function fillFrames(adapter, pairs, frameById, initialUrl) {
   const byFrame = new Map();
   for (const p of pairs) {
@@ -3411,6 +3735,7 @@ async function fillFrames(adapter, pairs, frameById, initialUrl) {
   const failed = [];
   const skipped = [];
   const reasons = {};
+  const failedOptions = {};
   for (const [frame, subset] of byFrame) {
     if (!adapter.stillOnPage(initialUrl)) throw new Error("页面或标签已切换，已停止写入；请在当前页面重新填充");
     const plain = subset.filter((p) => !/-s\d+$/.test(p.id));
@@ -3420,16 +3745,26 @@ async function fillFrames(adapter, pairs, frameById, initialUrl) {
       if (!adapter.stillOnPage(initialUrl)) throw new Error("页面或标签已切换，已停止写入");
       try {
         const result = await adapter.run(frame, writer, writer === fillCustomSelects ? [batch, adapter.taskId] : [batch]);
-        filled.push(...result.filled);
+        let lost = [];
+        const checkable = result.filled.filter((id) => !/-[rg]\d+$/.test(id));
+        if (checkable.length) { const back = await adapter.run(frame, readBackFilled, [checkable]).catch(() => null); if (Array.isArray(back)) lost = back; }
+        const lostSet = new Set(lost);
+        filled.push(...result.filled.filter((id) => !lostSet.has(id)));
         failed.push(...result.failed);
+        for (const id of lost) {
+          const label = batch.find((p) => p.id === id)?.label || id;
+          failed.push(label);
+          reasons[label] = "网站没有留下这个值，请在页面上点选或重填";
+        }
         skipped.push(...(result.skipped || []));
         Object.assign(reasons, result.reasons || {});
+        Object.assign(failedOptions, result.failedOptions || {});
       } catch {
         failed.push(...batch.map((p) => p.label || p.id));
       }
     }
   }
-  return { filled, failed, skipped, reasons };
+  return { filled, failed, skipped, reasons, failedOptions };
 }
 
 // `options`: { variantId, expandBlocks } from the UI, plus round/modal/added
@@ -3484,6 +3819,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     let neverGuessCount = 0;
     let alreadyFilled = 0;
     let thirdPartyCount = 0;
+    const thirdPartyRows = new Map();
     let pickOnPageCount = 0;
     const excluded = new Set();
     const outside = new Set();
@@ -3507,7 +3843,12 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       field.module = fieldModule(field, repeat);
       if (isNeverGuessField(field)) { neverGuessCount++; continue; }
       // Someone else's details (家庭成员, 紧急联系人): never the applicant's, never AI.
-      if (isThirdPartyField(field)) { thirdPartyCount++; continue; }
+      if (isThirdPartyField(field)) {
+        const saved = savedThirdPartyValue(field, profile, thirdPartyRows);
+        if (saved) pairs.push({ id: field.id, value: saved, source: "profile", label: field.label, tag: field.tag, alternatives: field.tag === "custom-select" ? yesNoAlternatives(saved) : [] });
+        else thirdPartyCount++;
+        continue;
+      }
       if (social.has(field.id)) { pairs.push({ id: field.id, value: social.get(field.id), source: "profile", label: field.label, tag: field.tag }); continue; }
       // A read-only calendar box can't be typed into; say what to pick.
       if (field.readonlyPicker) {
@@ -3539,7 +3880,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       if (repeat && !repeatFieldGoesToAi(repeat, profile)) continue;
       const value = repeat ? null : matchFlatField(field, profile);
       if (value) {
-        pairs.push({ id: field.id, value, source: "profile", label: field.label, tag: field.tag, alternatives: [...(degreeAlternatives(field, value) || []), ...(field.tag === "custom-select" ? yesNoAlternatives(value) : [])] });
+        pairs.push({ id: field.id, value, source: "profile", label: field.label, tag: field.tag, alternatives: [...(degreeAlternatives(field, value) || []), ...(field.tag === "custom-select" ? yesNoAlternatives(value) : []), ...(field.tag === "custom-select" && value === "应届生" ? ["应届毕业生", "应届", "在校生", "无工作经验", "无"] : [])] });
         continue;
       }
       const label = field.label || field.placeholder || field.name;
@@ -3602,8 +3943,40 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     const basicCount = pairs.length;
     if (!adapter.stillOnPage(initialUrl)) throw new Error("页面或标签已切换，已停止写入；请在当前页面重新填充");
     adapter.status({ phase: "scanning", message: `正在填写 ${basicCount} 个资料字段…` });
+    // 年 / 月 / 日 各一个下拉：每个只收自己那一段（不管值是资料、记忆还是映射来的）。
+    for (let at = pairs.length - 1; at >= 0; at--) {
+      const field = fields.find((item) => item.id === pairs[at].id);
+      if (field?.tag !== "custom-select" || !field.datePart || pairs[at].value === "至今") continue;
+      const part = customDatePart(field, pairs[at].value);
+      if (part) pairs[at] = { ...pairs[at], value: part.value, datePart: field.datePart, alternatives: part.alternatives };
+      else pairs.splice(at, 1);
+    }
     const basicResult = options.mode === "preview" ? { filled: [], failed: [], skipped: [] } : await fillFrames(adapter, pairs, frameById, initialUrl);
     assertActive();
+    // 资料里写「前 10%」「硕士」，下拉里是「前10%」「全日制硕士」：看到真实选项后再配一次。
+    const retries = [];
+    for (const [id, offered] of Object.entries(basicResult.failedOptions || {})) {
+      const field = fields.find((item) => item.id === id);
+      const pair = pairs.find((item) => item.id === id);
+      if (!field || !pair || pair.datePart) continue;
+      const known = { ...field, options: offered };
+      const repeat = repeats.get(id);
+      const again = pair.source === "profile" ? (repeat ? repeatFieldValue(known, repeat, profile) || matchFlatField(known, profile) : matchFlatField(known, profile)) : null;
+      const value = again ? matchFieldOption(known, again) : null;
+      if (value && value !== pair.value) { pair.value = value; retries.push(pair); }
+      // 还是对不上：让 AI 从真实选项里挑，而不是留给用户。
+      else if (!candidates.some((q) => q.id === id)) candidates.push({ id, label: field.label || field.placeholder || field.name || "", kind: "choice", options: offered, section: field.section || undefined });
+    }
+    if (retries.length) {
+      const again = await fillFrames(adapter, retries.map(({ alternatives, ...pair }) => ({ ...pair, retry: true })), frameById, initialUrl);
+      assertActive();
+      basicResult.filled.push(...again.filled);
+      for (const pair of retries) {
+        if (!again.filled.includes(pair.id)) continue;
+        const at = basicResult.failed.indexOf(pair.label || pair.id);
+        if (at >= 0) basicResult.failed.splice(at, 1);
+      }
+    }
     const basicPairCount = pairs.length;
     const questionKeys = new Set((options.questionIds || []).map((id) => priorPlan?.fields.find((f) => f.id === id)?.mappingKey).filter(Boolean));
     if (questionKeys.size) {
@@ -3666,7 +4039,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       const plan = { id: adapter.taskId || String(Date.now()), url: initialUrl, at: Date.now(), fields, pairs, frameById, profile, options, resumeVersionId };
       const proposals = fields.filter((field) => !outside.has(field.id)).map((field) => {
         const pair = pairs.find((p) => p.id === field.id);
-        const eligible = !excluded.has(field.id) && !field.hasValue && !field.userEdited && !isNeverGuessField(field) && !isThirdPartyField(field) && !field.readonlyPicker;
+        const eligible = !excluded.has(field.id) && !field.hasValue && !field.userEdited && !isNeverGuessField(field) && (!isThirdPartyField(field) || pairs.some((p) => p.id === field.id)) && !field.readonlyPicker;
         const oldField = priorPlan?.fields.find((f) => f.mappingKey === field.mappingKey);
         // A blank box the page auto-save captured is not an answer to restore;
         // only typed content or an edit made in this preview comes back.
@@ -3783,7 +4156,11 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     if (options.expandBlocks && !options.region && (missing.length || empty.length) && round < 4 && !options.modal && adapter.stillOnPage(initialUrl)) {
       const clicked = [];
       let modal = false;
-      for (const { group, label } of [...missing, ...empty]) {
+      // 按了「添加」却没长出这一类栏目（吉利的证书不是技能）：同一个按钮不再按，不留一排空白组。
+      const pressed = { ...(options.pressed || {}) };
+      for (const { group, label, shown } of [...missing, ...empty]) {
+        if (group in pressed && pressed[group] >= shown) continue;
+        pressed[group] = shown;
         for (const frame of await adapter.frames()) {
           assertActive();
           const result = await adapter.run(frame, clickAddBlock, [group]).catch(() => null);
@@ -3797,7 +4174,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       }
       if (clicked.length) {
         adapter.status({ phase: "scanning", message: `已点页面上的「添加」补出 ${clicked.join("、")}，继续填写…` });
-        return runAutofillCore(adapter, resumeVersionId, { ...options, round: round + 1, modal, added: [...added, ...clicked], accumulated: { filled: previous.filled + filled.length, uploaded: previous.uploaded + uploadedResumeCount, details: allDetails, shortened: [...(previous.shortened || []), ...shortened] } });
+        return runAutofillCore(adapter, resumeVersionId, { ...options, round: round + 1, modal, pressed, added: [...added, ...clicked], accumulated: { filled: previous.filled + filled.length, uploaded: previous.uploaded + uploadedResumeCount, details: allDetails, shortened: [...(previous.shortened || []), ...shortened] } });
       }
     }
     if (added.length) {
@@ -4079,7 +4456,7 @@ function readCurrentApplicationFields() {
     if (!(radios ? radios.some((r) => (r.closest("label") || r).getBoundingClientRect().width) : el.getBoundingClientRect().width)) continue;
     const label = el.getAttribute("data-cp-fill-label") || el.getAttribute("aria-label") || (el.id && el.getRootNode().querySelector('label[for="' + CSS.escape(el.id) + '"]')?.textContent) || el.closest(".ant-form-item, .el-form-item, .form-group")?.querySelector("label, [class*='label']")?.textContent || el.name || el.placeholder || "字段";
     if (/密码|验证码|证件|身份证|银行卡|护照|家庭住址|password|captcha|passport|social security|bank account/i.test(label)) continue;
-    let value = el.value || el.querySelector?.(".ant-select-selection-item, .ud__select__selector__selectItem, .phoenix-select__tipEle, .el-select__selected-item:not(.el-select__input-wrapper)")?.textContent || "";
+    let value = el.value || el.querySelector?.(".ant-select-selection-item, .ud__select__selector__selectItem, .phoenix-select__tipEle, [class*='sd-Input-display-value'], .el-select__selected-item:not(.el-select__input-wrapper)")?.textContent || "";
     if (radios) {
       const checked = radios.find((r) => r.checked);
       value = checked?.closest("label")?.textContent || checked?.value || "";
@@ -4127,7 +4504,7 @@ async function applyAutofillPlan(adapter, input) {
     const selected = new Set();
     for (const row of (input.approved || []).slice(0, 500)) {
       const field = plan.fields.find((f) => f.id === row.id);
-      if (!field || field.hasValue || isNeverGuessField(field) || isThirdPartyField(field) || field.readonlyPicker || selected.has(row.id)) continue;
+      if (!field || field.hasValue || isNeverGuessField(field) || (isThirdPartyField(field) && !plan.pairs.some((p) => p.id === row.id)) || field.readonlyPicker || selected.has(row.id)) continue;
       const current = liveByOldId.get(row.id);
       if (!current) throw new Error("网页表单已变化，请重新扫描预览");
       if (current.hasValue || current.userEdited) { selected.add(row.id); continue; }
@@ -4209,6 +4586,8 @@ module.exports = {
   dateFormatFor,
   citiesForField,
   dateParts,
+  customDatePart,
+  savedThirdPartyValue,
   ageFromBirthDate,
   dateRangeValue,
   degreeAlternatives,

@@ -74,6 +74,47 @@ export const languageSchema = z.object({
   date: z.string().trim().max(20).default(""),
 });
 
+/** 家庭成员: 央国企 / 银行的表几乎都要，一位一条。 */
+export const familyMemberSchema = z.object({
+  relation: z.string().trim().max(20).default(""),
+  name: z.string().trim().max(40).default(""),
+  birthDate: z.string().trim().max(20).default(""),
+  politics: z.string().trim().max(20).default(""),
+  employer: z.string().trim().max(120).default(""),
+  position: z.string().trim().max(60).default(""),
+  phone: z.string().trim().max(30).default(""),
+});
+
+/**
+ * 个人信息: what 央国企 / 银行 forms ask beyond the basics. `private` ones are
+ * filled into forms only, and never reach the AI's description of the applicant.
+ */
+export const PERSONAL_FIELDS = [
+  { key: "partyDate", label: "入党 / 入团时间", hint: "2021-06" },
+  { key: "birthplace", label: "出生地", hint: "江苏南京" },
+  { key: "householdPlace", label: "户籍所在地", hint: "省 市 区" },
+  { key: "householdType", label: "户口性质", hint: "城镇 / 农村" },
+  { key: "sourcePlace", label: "生源地", hint: "高考所在省市" },
+  { key: "archivePlace", label: "档案所在地", hint: "学校 / 人才中心" },
+  { key: "marital", label: "婚姻状况", hint: "未婚", private: true },
+  { key: "health", label: "健康状况", hint: "良好 / 健康", private: true },
+  { key: "height", label: "身高（cm）", hint: "175", private: true },
+  { key: "weight", label: "体重（kg）", hint: "65", private: true },
+  { key: "colorVision", label: "色盲 / 色弱", hint: "无", private: true },
+  { key: "onlyChild", label: "是否独生子女", hint: "是 / 否", private: true },
+  { key: "religion", label: "宗教信仰", hint: "无", private: true },
+  { key: "relativeInCompany", label: "有无亲属在应聘单位", hint: "无", private: true },
+  { key: "firstWorkDate", label: "参加工作时间", hint: "应届生可不填" },
+  { key: "computerLevel", label: "计算机水平", hint: "国家二级 / 熟练使用 Office" },
+  { key: "certificates", label: "职业资格 / 技能证书", hint: "无 / 软考中级" },
+  { key: "campusZone", label: "所在校区", hint: "九龙湖校区" },
+  { key: "failedCourses", label: "挂科门数", hint: "0" },
+  { key: "advisor", label: "导师姓名", hint: "", private: true },
+  { key: "emergencyName", label: "紧急联系人姓名", hint: "", private: true },
+  { key: "emergencyRelation", label: "与紧急联系人关系", hint: "父亲 / 母亲", private: true },
+  { key: "emergencyPhone", label: "紧急联系人电话", hint: "", private: true },
+] as const;
+
 export const EXTRA_FIELDS = [
   { key: "politics", label: "政治面貌", hint: "群众 / 共青团员 / 中共党员" },
   { key: "hometown", label: "籍贯", hint: "省 市" },
@@ -157,6 +198,7 @@ export const applicationProfileSchema = z.object({
   campus: z.array(campusSchema).max(20).default([]),
   skills: z.array(skillSchema).max(30).default([]),
   languages: z.array(languageSchema).max(10).default([]),
+  family: z.array(familyMemberSchema).max(10).default([]),
   extras: z.record(z.string(), z.string().trim().max(1000)).default({}),
   variants: z.array(profileVariantSchema).max(8).default([]),
   /** What the 网申浏览器 wrote in by itself from hand-filled pages (for 撤销). */
@@ -194,7 +236,7 @@ export type CampusRow = z.infer<typeof campusSchema>;
 export type SkillRow = z.infer<typeof skillSchema>;
 export type LanguageRow = z.infer<typeof languageSchema>;
 
-export const EMPTY_APPLICATION_PROFILE: ApplicationProfile = { education: [], experiences: [], projects: [], awards: [], campus: [], skills: [], languages: [], extras: {}, variants: [], learned: [] };
+export const EMPTY_APPLICATION_PROFILE: ApplicationProfile = { education: [], experiences: [], projects: [], awards: [], campus: [], skills: [], languages: [], family: [], extras: {}, variants: [], learned: [] };
 
 export function parseApplicationProfile(raw: unknown): ApplicationProfile {
   const parsed = applicationProfileSchema.safeParse(raw);
@@ -262,7 +304,7 @@ export function describeApplicationProfile(p: ApplicationProfile): string {
   if (skills.length) lines.push(`专业技能：${skills.join("、")}`);
   const languages = (p.languages || []).filter((row) => row.name).map(languageLine);
   if (languages.length) lines.push(`语言成绩：${languages.join("、")}`);
-  for (const f of EXTRA_FIELDS) {
+  for (const f of [...EXTRA_FIELDS, ...PERSONAL_FIELDS.filter((field) => !("private" in field))]) {
     const v = p.extras[f.key];
     if (v) lines.push(`${f.label}：${v}`);
   }

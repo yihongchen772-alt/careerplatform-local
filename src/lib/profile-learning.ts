@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { EXTRA_FIELDS, type ApplicationProfile, type LearnedEntry } from "@/lib/application-profile";
+import { EXTRA_FIELDS, PERSONAL_FIELDS, type ApplicationProfile, type LearnedEntry } from "@/lib/application-profile";
 import { MEMORY_CATEGORIES, MEMORY_LISTS, memoryAnchor, memoryContent, sameMemoryEntity, type MemoryCapture, type MemoryCategory, type MemoryContent } from "@/lib/application-memory";
 
 // What the applicant types into a 网申 by hand is usually something 网申资料
@@ -10,7 +10,7 @@ import { MEMORY_CATEGORIES, MEMORY_LISTS, memoryAnchor, memoryContent, sameMemor
 
 /** 网申资料 fields a hand-typed answer may fill while they are blank. */
 export const LEARNABLE_FACTS: Record<string, string> = {
-  ...Object.fromEntries(EXTRA_FIELDS.map((field) => [field.key, field.label])),
+  ...Object.fromEntries([...EXTRA_FIELDS, ...PERSONAL_FIELDS].map((field) => [field.key, field.label])),
   preferredCities: "期望城市",
 };
 
@@ -44,7 +44,25 @@ const LABEL_KEYS: Array<[RegExp, string, RegExp?]> = [
   [/兴趣爱好|个人爱好|爱好特长|^爱好|hobb/i, "hobbies"],
   [/毕业论文|学位论文|论文题目|thesis|dissertation/i, "thesis"],
   [/政治面貌/, "politics"],
-  [/籍贯|户口所在地/, "hometown", /地址|详细/],
+  [/户籍所在地|户口所在地|^户籍(?:地)?$/, "householdPlace", /地址|详细/],
+  [/籍贯/, "hometown", /地址|详细/],
+  [/入党时间|入团时间|入党日期|入团日期/, "partyDate"],
+  [/出生地/, "birthplace"],
+  [/户口性质|户口类型|户籍类型/, "householdType"],
+  [/生源地/, "sourcePlace"],
+  [/档案所在地|档案存放/, "archivePlace"],
+  [/婚姻状况|^婚否$/, "marital"],
+  [/健康状况|身体状况/, "health"],
+  [/^身高/, "height"],
+  [/^体重/, "weight"],
+  [/色盲|色弱/, "colorVision"],
+  [/独生子女/, "onlyChild"],
+  [/宗教信仰/, "religion"],
+  [/参加工作时间/, "firstWorkDate"],
+  [/计算机(?:水平|等级|能力)/, "computerLevel"],
+  [/职业资格|技能证书/, "certificates"],
+  [/所在校区|^校区$/, "campusZone"],
+  [/挂科门数|挂科数/, "failedCourses"],
   [/民族/, "ethnicity"],
   [/微信/, "wechat"],
   [/英文名|英文姓名|englishname/i, "englishName", /拼音|姓氏/],

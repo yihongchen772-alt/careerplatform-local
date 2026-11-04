@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>央国企 v49：个人信息、家庭成员、陌生下拉、吞值的框</title>
+<style>
+body{font:14px sans-serif;max-width:860px;margin:20px auto}.form-item{margin:8px 0}
+.pop{position:fixed;left:20px;top:20px;background:#fff;border:1px solid #888;z-index:9}.pop div{padding:3px 10px}
+td,th{border:1px solid #ccc;padding:3px}
+</style></head>
+<body>
+<!-- Fictional state-owned-enterprise form. mtd-select follows 美团's markup (a searchable box whose list is
+     appended to body with no role and no library class the engine knows); #wipes is a box whose script
+     empties anything but a value from its own list, so reading it back is what catches it. -->
+<h3>个人信息</h3>
+<div class="form-item"><label for="party">入党时间</label><input id="party"></div>
+<div class="form-item"><label for="household">户籍所在地</label><input id="household"></div>
+<div class="form-item"><label for="source">生源地</label><input id="source"></div>
+<div class="form-item"><label for="height">身高（cm）</label><input id="height"></div>
+<div class="form-item"><label for="marital">婚姻状况</label><select id="marital"><option value="">请选择</option><option>未婚</option><option>已婚</option></select></div>
+<div class="form-item"><label for="health">健康状况</label><input id="health"></div>
+<div class="form-item"><label>是否独生子女</label><label><input type="radio" name="only" value="y">是</label><label><input type="radio" name="only" value="n">否</label></div>
+<div class="form-item"><label for="relative">是否有亲属在本公司任职</label><input id="relative"></div>
+<div class="form-item"><label for="father">父亲姓名</label><input id="father"></div>
+<div class="form-item"><label for="mother-job">母亲工作单位</label><input id="mother-job"></div>
+<div class="form-item"><label for="advisor">导师姓名</label><input id="advisor"></div>
+<div class="form-item"><label>最高学位</label><div class="mtd-select" id="s-degree"><div class="mtd-select-filter"><div role="button"><div class="mtd-input"><input type="text" id="deg-input" maxlength="50"></div><span class="mtd-select-filter-label"></span><i class="mtdicon-down"></i></div></div></div></div>
+<div class="form-item"><label for="wipes">学校所在省份</label><input id="wipes"></div>
+<h3>紧急联系人</h3>
+<div class="form-item"><label for="em-name">姓名</label><input id="em-name"></div>
+<div class="form-item"><label for="em-rel">与本人关系</label><input id="em-rel"></div>
+<div class="form-item"><label for="em-phone">联系电话</label><input id="em-phone"></div>
+<h3>家庭主要成员</h3>
+<table><tr><th>称谓</th><th>姓名</th><th>政治面貌</th><th>工作单位</th><th>职务</th></tr>
+<tr><td><input id="f0-rel" aria-label="称谓"></td><td><input id="f0-name" aria-label="姓名"></td><td><input id="f0-pol" aria-label="政治面貌"></td><td><input id="f0-emp" aria-label="工作单位"></td><td><input id="f0-pos" aria-label="职务"></td></tr>
+<tr><td><input id="f1-rel" aria-label="称谓"></td><td><input id="f1-name" aria-label="姓名"></td><td><input id="f1-pol" aria-label="政治面貌"></td><td><input id="f1-emp" aria-label="工作单位"></td><td><input id="f1-pos" aria-label="职务"></td></tr>
+</table>
+<script>
+const box = document.getElementById("s-degree"), input = document.getElementById("deg-input"), shown = box.querySelector(".mtd-select-filter-label");
+let pop = null;
+window.__degree = "";
+box.querySelector("[role=button]").addEventListener("click", () => {
+  if (pop) return;
+  pop = document.createElement("div"); pop.className = "pop";
+  for (const text of ["学士", "硕士", "博士"]) {
+    const row = document.createElement("div"); row.className = "line"; row.textContent = text;
+    row.addEventListener("click", () => { shown.textContent = text; window.__degree = text; pop.remove(); pop = null; });
+    pop.append(row);
+  }
+  document.body.append(pop);
+});
+document.addEventListener("mousedown", (event) => { if (pop && !pop.contains(event.target) && !box.contains(event.target)) { pop.remove(); pop = null; } });
+const wipes = document.getElementById("wipes");
+wipes.addEventListener("change", () => setTimeout(() => { wipes.value = ""; }, 60));
+</script>
+</body></html>

@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>Moka v49：sd-Select、年月拆分、省市面板、月份日历</title>
+<style>
+body{font:14px sans-serif;max-width:860px;margin:20px auto}
+.apply-field-x{margin:10px 0}.title-x{font-size:12px;color:#555}
+.sd-Input-container-x{display:inline-flex;border:1px solid #bbb;min-width:110px;min-height:26px;padding:2px 4px;position:relative}
+.sd-Input-container-x input{border:0;outline:0;width:90px}
+.sd-Dropdown-dropdown-x{position:absolute;background:#fff;border:1px solid #aaa;z-index:5;max-height:200px;overflow:auto;min-width:130px}
+.sd-Menu-container-x{padding:2px 8px;cursor:pointer}
+</style></head>
+<body>
+<!-- Real class names and behaviour from BrainCo / 吉利 / 远景 forms, 2026-11-04. Moka's own component library:
+     text written into the input only filters the list; a choice exists once an option is clicked, then the input
+     is emptied and the choice shows in sd-Input-display-value. Picking a year makes the site set its month to 1.
+     The label element wraps the input and holds the chosen text. Fictional company, no real data. -->
+<div id="form"></div>
+<script>
+const YEARS = Array.from({ length: 80 }, (_, i) => String(2030 - i));
+const MONTHS = Array.from({ length: 12 }, (_, i) => String(i + 1));
+const form = document.getElementById("form");
+const state = {};
+window.__state = state;
+function select(host, key, options, { placeholder = "请选择", search, addEntry, onPick, sub } = {}) {
+  const wrap = document.createElement("div"); wrap.className = "sd-Dropdown-container-x"; wrap.style.display = "inline-block";
+  const label = document.createElement("label"); label.className = "sd-Input-container-x sd-Select-container-x";
+  const display = document.createElement("span"); display.className = "sd-Input-display-value-x";
+  const input = document.createElement("input"); input.type = "text"; input.placeholder = placeholder; input.autocomplete = "nope";
+  label.append(display, input); wrap.append(label); host.append(wrap);
+  let menu = null;
+  const set = (value) => {
+    state[key] = value; display.textContent = value; input.value = ""; input.placeholder = value ? "" : placeholder;
+    if (menu) { menu.remove(); menu = null; }
+    onPick?.(value);
+  };
+  const draw = () => {
+    if (menu) menu.remove();
+    menu = document.createElement("div"); menu.className = "sd-Dropdown-dropdown-x";
+    const box = document.createElement("div"); box.className = "sd-Select-menu-x"; menu.append(box);
+    const scroll = document.createElement("div"); scroll.className = "sd-Select-scrollable-x"; box.append(scroll);
+    const shown = search ? (input.value ? options.filter((o) => o.includes(input.value)) : []) : options.filter((o) => o.includes(input.value));
+    for (const option of shown) {
+      const row = document.createElement("div"); row.className = "sd-Menu-container-x";
+      row.innerHTML = sub ? `<div class="sd-Menu-content-x"><div class="sd-Menu-content-item-x"><div>${option}</div><div class="sd-Menu-sub-title-x"><span></span></div></div></div>` : `<div class="sd-Menu-content-x"><div class="sd-Menu-content-item-x"><span data-key="sugar.select.label">${option}</span></div></div>`;
+      row.addEventListener("click", (event) => { event.preventDefault(); event.stopPropagation(); set(option); });
+      scroll.append(row);
+    }
+    if (addEntry && input.value) {
+      const button = document.createElement("button"); button.type = "button"; button.textContent = "添加专业全称";
+      button.addEventListener("click", (event) => { event.preventDefault(); event.stopPropagation(); set(input.value); });
+      box.append(button);
+    }
+    wrap.append(menu);
+  };
+  label.addEventListener("click", (event) => { event.preventDefault(); input.focus(); if (!menu) draw(); });
+  input.addEventListener("input", () => { if (menu) draw(); });
+  document.addEventListener("mousedown", (event) => { if (!wrap.contains(event.target) && menu) { menu.remove(); menu = null; input.value = ""; } });
+  return { set };
+}
+function field(title, cls = "") {
+  const row = document.createElement("div"); row.className = `apply-field-x ${cls}`;
+  row.innerHTML = `<div class="title-x"><span><span>${title}</span></span></div><div class="ctrl-x"></div>`;
+  form.append(row); return row.querySelector(".ctrl-x");
+}
+function heading(text) { const h = document.createElement("h3"); h.textContent = text; form.append(h); }
+function range(title, key, untilNow) {
+  const ctrl = field(title, "date_info-x");
+  const box = document.createElement("div"); box.className = "month-range-select date_info wrapper-x"; ctrl.append(box);
+  const pair = (side) => {
+    const month = { current: null };
+    select(box, `${key}.${side}.y`, YEARS, { placeholder: "年", onPick: () => { if (!state[`${key}.${side}.m`]) month.current.set("1"); } });
+    month.current = select(box, `${key}.${side}.m`, MONTHS, { placeholder: "月" });
+  };
+  pair("start"); pair("end");
+  if (untilNow) {
+    const label = document.createElement("label"); label.innerHTML = `<input type="checkbox" id="${key}-now">至今`; ctrl.append(label);
+    label.querySelector("input").addEventListener("change", (event) => { state[`${key}.now`] = event.target.checked; });
+  }
+}
+function single(title, key) {
+  const ctrl = field(title, "date_info-x");
+  const box = document.createElement("div"); box.className = "month-range-select date_info wrapper-x"; ctrl.append(box);
+  const month = { current: null };
+  select(box, `${key}.y`, YEARS, { placeholder: "年", onPick: () => { if (!state[`${key}.m`]) month.current.set("1"); } });
+  month.current = select(box, `${key}.m`, MONTHS, { placeholder: "月" });
+}
+heading("个人信息");
+field("姓名").innerHTML = '<input id="name" placeholder="姓名">';
+select(field("性别", "Select-x"), "gender", ["男", "女"]);
+select(field("工作经验", "Select-x"), "work", ["在校生", "应届毕业生", "1 年以下", "1 年", "2 年"]);
+select(field("最高学历", "Select-x"), "top", ["本科", "硕士", "博士", "高中", "大专"]);
+field("所在地").innerHTML = '<input id="city" placeholder="所在地">';
+// 出生日期: month panel on top of a read-only box; clicking a month writes it.
+{
+  const ctrl = field("出生日期 (年龄)", "day_info-x");
+  ctrl.innerHTML = '<div class="sd-Dropdown-container-x"><label class="sd-Input-container-x"><input id="birth" readonly placeholder="出生日期 (年龄)"></label></div>';
+  const wrap = ctrl.firstChild, input = wrap.querySelector("input");
+  let year = 1990, panel = null;
+  const draw = () => {
+    panel?.remove();
+    panel = document.createElement("div"); panel.className = "sd-Dropdown-dropdown-x";
+    panel.innerHTML = `<div class="sd-panal-menu-wrapper-x"><span class="sd-Icon-icondoubleLeft-x">«</span><span class="sd-basic-selector-year-x">${year}年</span><span class="sd-Icon-icondoubleRight-x">»</span>` + ["一月","二月","三月","四月","五月","六月","七月","八月","九月","十月","十一月","十二月"].map((m) => `<div class="sd-basic-year-item-x">${m}</div>`).join("") + "</div>";
+    panel.querySelector(".sd-Icon-icondoubleLeft-x").onclick = () => { year--; draw(); };
+    panel.querySelector(".sd-Icon-icondoubleRight-x").onclick = () => { year++; draw(); };
+    panel.querySelectorAll(".sd-basic-year-item-x").forEach((node, i) => { node.onclick = () => { input.value = `${year}-${String(i + 1).padStart(2, "0")} (24岁)`; panel.remove(); panel = null; }; });
+    wrap.append(panel);
+  };
+  input.addEventListener("click", () => { if (!panel) draw(); });
+}
+// 籍贯: 省份 / 城市 / 县区 tabs of tags, only 确认 writes the box.
+{
+  const ctrl = field("籍贯", "location_info-x");
+  ctrl.innerHTML = '<div class="sd-Dropdown-container-x"><label class="sd-Input-container-x"><input id="home" readonly placeholder="请输入籍贯"></label></div>';
+  const wrap = ctrl.firstChild, input = wrap.querySelector("input");
+  const TREE = { 江苏: { 南京市: ["玄武区", "鼓楼区"], 苏州市: ["姑苏区"] }, 浙江: { 杭州市: ["西湖区"] } };
+  let path = [], panel = null;
+  const draw = () => {
+    panel?.remove();
+    const items = path.length === 0 ? Object.keys(TREE) : path.length === 1 ? Object.keys(TREE[path[0]]) : TREE[path[0]][path[1]];
+    panel = document.createElement("div"); panel.className = "sd-Dropdown-dropdown-x";
+    panel.innerHTML = '<div class="menu-wrapper-x"><div class="sd-Tabs-item-x">省份</div><div class="page-container-x">' + items.map((name) => `<div class="sd-Tag-container-x"><div class="sd-Tag-text-x">${name}</div></div>`).join("") + '</div><div class="confirm-x"><button type="button">确认</button></div></div>';
+    panel.querySelectorAll(".sd-Tag-container-x").forEach((tag) => { tag.onclick = () => { path = [...path, tag.textContent]; if (path.length < 3) draw(); }; });
+    panel.querySelector(".sd-Tabs-item-x").onclick = () => { path = []; draw(); };
+    panel.querySelector("button").onclick = (event) => { event.preventDefault(); input.value = path.join(" "); panel.remove(); panel = null; };
+    wrap.append(panel);
+  };
+  input.addEventListener("click", () => { if (!panel) { path = []; draw(); } });
+}
+heading("教育背景");
+range("就读时间", "edu0");
+select(field("学校名称"), "school0", ["复旦大学", "复旦大学医学院"], { placeholder: "请输入就读学校", search: true, sub: true });
+select(field("专业名称"), "major0", ["统计学", "统计与大数据分析"], { placeholder: "请输入专业名称", search: true, addEntry: true, sub: true });
+select(field("学历", "Select-x"), "degree0", ["本科", "硕士", "博士"]);
+select(field("学历类型", "Select-x"), "type0", ["全日制", "非全日制", "全日制硕士", "非全日制硕士"]);
+select(field("成绩排名", "Select-x"), "rank0", ["前5%", "前10%", "前20%", "其他"]);
+heading("实习经历");
+range("起止时间", "exp0", true);
+field("公司名称").innerHTML = '<input id="company" placeholder="公司名称">';
+heading("获奖经历");
+single("获奖时间", "award0");
+field("奖项名称").innerHTML = '<input id="award-name" placeholder="奖项名称">';
+</script>
+</body></html>

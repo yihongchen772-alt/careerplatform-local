@@ -19,6 +19,7 @@ import { AiProgress } from "@/components/ui/ai-progress";
 import { extractApplicationProfile, updateApplicationProfile } from "@/lib/actions/account";
 import {
   EXTRA_FIELDS,
+  PERSONAL_FIELDS,
   type ApplicationProfile,
   type EducationRow,
   type ExperienceRow,
@@ -307,6 +308,26 @@ export function ApplicationProfileCard({
           {!(profile.languages ?? []).length && <p className="text-xs text-muted-foreground">四六级、雅思、托福等，一门考试一条。网申里的「语言分数 / 雅思成绩 / 考试类型」会按这里填；下面「英语水平」空着时也用它。</p>}
           {(profile.languages ?? []).map((row, i) => <RecordShell key={i} className="sm:grid-cols-4" startOpen={!row.name} summary={[row.language, row.name, row.score, row.date].filter(Boolean).join(" · ")} onDelete={() => setProfile((p) => ({ ...p, languages: (p.languages ?? []).filter((_, j) => j !== i) }))}>
             {([["name", "考试 / 证书", "CET-6 / 雅思"], ["score", "分数", "580 / 7.0"], ["language", "语种", "英语（可不填）"], ["date", "考试时间", "2023-06"]] as const).map(([key, label, hint]) => <Field key={key} label={label}><Input value={row[key]} placeholder={hint} onChange={(event) => setProfile((p) => ({ ...p, languages: (p.languages ?? []).map((item, j) => j === i ? { ...item, [key]: event.target.value } : item) }))} /></Field>)}
+          </RecordShell>)}
+        </section>
+
+        <section className="space-y-3">
+          <p className="text-sm font-medium">个人信息（央国企 / 银行常问）</p>
+          <p className="text-xs text-muted-foreground">只存在本机。手填过的会自动记到这里；身高、婚姻、联系人和家庭成员只用来填表，不会发给 AI。</p>
+          <div className="grid gap-2 sm:grid-cols-3">
+            {PERSONAL_FIELDS.map((f) => (
+              <Field key={f.key} label={f.label}>
+                <Input value={view.extras[f.key] ?? ""} onChange={(ev) => setView((v) => ({ ...v, extras: { ...v.extras, [f.key]: ev.target.value } }))} placeholder={f.hint} />
+              </Field>
+            ))}
+          </div>
+        </section>
+
+        <section className="space-y-3">
+          <div className="flex items-center justify-between"><p className="text-sm font-medium">家庭成员（所有方案共用）</p><Button size="sm" variant="outline" disabled={(profile.family ?? []).length >= 10} onClick={() => setProfile((p) => ({ ...p, family: [...(p.family ?? []), { relation: "", name: "", birthDate: "", politics: "", employer: "", position: "", phone: "" }] }))}><Plus className="size-4" />添加一位</Button></div>
+          {!(profile.family ?? []).length && <p className="text-xs text-muted-foreground">央国企的「家庭主要成员」表按这里一行行填，「父亲姓名」「母亲工作单位」这类单独的框也能对上。</p>}
+          {(profile.family ?? []).map((row, i) => <RecordShell key={i} className="sm:grid-cols-3" startOpen={!row.name} summary={[row.relation, row.name, row.employer].filter(Boolean).join(" · ")} onDelete={() => setProfile((p) => ({ ...p, family: (p.family ?? []).filter((_, j) => j !== i) }))}>
+            {([["relation", "关系", "父亲 / 母亲"], ["name", "姓名", ""], ["birthDate", "出生年月", "1970-05"], ["politics", "政治面貌", "群众"], ["employer", "工作单位", ""], ["position", "职务", ""], ["phone", "联系电话", ""]] as const).map(([key, label, hint]) => <Field key={key} label={label}><Input value={row[key]} placeholder={hint} onChange={(event) => setProfile((p) => ({ ...p, family: (p.family ?? []).map((item, j) => j === i ? { ...item, [key]: event.target.value } : item) }))} /></Field>)}
           </RecordShell>)}
         </section>
 

@@ -11,8 +11,10 @@ test("labels typed by hand after v1.20 map to the 网申资料 field they would 
     研究方向: "researchTopic", "QQ号*": "qq", "作品链接*": "homepage", 个人主页链接: "homepage", "期望工作地点 *": null, 期望岗位: null,
     "是否接受岗位调剂*": "acceptAdjust", "接受调剂*": "acceptAdjust", "本科学习成绩排名 *": "rank", 实验室: "lab", "个人爱好*": "hobbies",
     "毕业论文简介*": "thesis", 政治面貌: "politics",
+    // v1.49: 校区 was typed by hand 5 times and is a fact about the applicant, so it has a slot now.
+    "所在校区*": "campusZone",
     // Not 网申资料 facts, or not the applicant's: nothing is learned.
-    "工作地是否可接受潍坊*": null, 户口原籍具体地址: null, "所在校区*": null, 姓名: null, 英语成绩: null, 紧急联系人电话: null, 公司名称: null,
+    "工作地是否可接受潍坊*": null, 户口原籍具体地址: null, 姓名: null, 英语成绩: null, 紧急联系人电话: null, 公司名称: null,
   };
   for (const [label, key] of Object.entries(expected)) assert.equal(core.learnableProfileKey(field(label)), key, label);
 });

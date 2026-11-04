@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/session";
-import { describeApplicationProfile, englishFromLanguages, parseApplicationProfile, resolveProfileVariant } from "@/lib/application-profile";
+import { PERSONAL_FIELDS, describeApplicationProfile, englishFromLanguages, parseApplicationProfile, resolveProfileVariant } from "@/lib/application-profile";
 import { db } from "@/lib/db";
 import { MEMORY_CATEGORIES, profileWithMemories, toMemoryView, type MemoryCategory, type MemoryView } from "@/lib/application-memory";
 
@@ -103,6 +103,8 @@ export async function GET(request: Request) {
     lab: structured.extras.lab || null,
     hobbies: structured.extras.hobbies || null,
     thesis: structured.extras.thesis || null,
+    ...Object.fromEntries(PERSONAL_FIELDS.map((field) => [field.key, structured.extras[field.key] || null])),
+    family: structured.family ?? [],
     department: edu?.department || null,
     extra: [describeApplicationProfile(structured), ...Object.entries(summaries).map(([category, text]) => `${MEMORY_CATEGORIES[category as MemoryCategory] ?? "经历"}整段原文：${text}`)].filter(Boolean).join("\n") || null,
   });

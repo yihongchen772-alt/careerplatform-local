@@ -53,6 +53,7 @@ export async function updateApplicationProfile(input: unknown): Promise<ActionRe
       campus: data.campus.filter((row) => Object.values(row).some(Boolean)),
       skills: data.skills.filter((row) => Object.values(row).some(Boolean)),
       languages: data.languages.filter((row) => row.name),
+      family: data.family.filter((row) => Object.values(row).some(Boolean)),
       extras: Object.fromEntries(Object.entries(data.extras).filter(([, v]) => v)),
       learned: parseApplicationProfile(stored?.applicationProfile).learned,
       variants: data.variants.map((variant) => ({

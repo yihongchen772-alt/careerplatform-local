@@ -176,6 +176,7 @@ async function runPage(browser, name, checks, { wait = 600, options = {}, page: 
 const fv = (p) => `(() => { const v = window.__form.getFieldValue(${JSON.stringify(p)}); if (v == null) return ""; if (Array.isArray(v)) return v.map((x) => x && x.format ? x.format("YYYY-MM") : x).join(" ~ "); return v.format ? v.format("YYYY-MM-DD") : String(v); })()`;
 const vm = (expr) => `(() => { const v = window.__vm.f${expr}; return Array.isArray(v) ? v.join("/") : String(v ?? ""); })()`;
 const val = (sel) => `(document.querySelector(${JSON.stringify(sel)}) || {}).value || ""`;
+const mk = (key) => `String((window.__state || {})[${JSON.stringify(key)}] ?? "")`;
 const sel = (sel) => `(() => { const s = document.querySelector(${JSON.stringify(sel)}); return s && s.selectedIndex > 0 ? s.options[s.selectedIndex].text : ""; })()`;
 const tip = (sel) => `(document.querySelector(${JSON.stringify(sel + " .phoenix-select__tipEle")}) || {}).textContent || ""`;
 const radio = (name) => `(() => { const r = document.querySelector('input[name=${JSON.stringify(name)}]:checked'); return r ? (r.closest("label") ? r.closest("label").textContent : r.nextSibling.textContent).trim() : ""; })()`;
@@ -593,6 +594,49 @@ Object.assign(suites, {
     { label: "出生日期(ud 年月)", read: val("#birth"), expect: "2002-03" },
     { label: "姓名(后面的框改动不冲掉日期)", read: val("#name"), expect: "林晓舟" },
   ], { profile: (p) => { p.awards = [...p.awards, { name: "校级优秀学生干部", issuer: "", level: "校级", date: "2023.5.20", description: "" }]; } }],
+  "moka-v49": [[
+    { label: "姓名", read: val("#name"), expect: "林晓舟" },
+    { label: "性别(sd-Select 要点选)", read: mk("gender"), expect: "女" },
+    { label: "工作经验(不是经历，是选项)", read: mk("work"), expect: "应届毕业生" },
+    { label: "最高学历", read: mk("top"), expect: "硕士" },
+    { label: "所在地", read: val("#city"), expect: "上海" },
+    { label: "出生日期(月份日历)", read: val("#birth"), expect: /^2002-03/ },
+    { label: "籍贯(省市面板+确认)", read: val("#home"), expect: "江苏 南京市" },
+    { label: "就读 开始年", read: mk("edu0.start.y"), expect: "2024" },
+    { label: "就读 开始月(网站先设成 1)", read: mk("edu0.start.m"), expect: "9" },
+    { label: "就读 结束年", read: mk("edu0.end.y"), expect: "2027" },
+    { label: "就读 结束月", read: mk("edu0.end.m"), expect: "6" },
+    { label: "学校(联网搜索后点选)", read: mk("school0"), expect: "复旦大学" },
+    { label: "专业(列表没有时点添加)", read: mk("major0"), expect: "统计学·因果方向" },
+    { label: "学历", read: mk("degree0"), expect: "硕士" },
+    { label: "学历类型(不是学历本身)", read: mk("type0"), expect: "全日制" },
+    { label: "成绩排名(看到选项后重配)", read: mk("rank0"), expect: "前10%" },
+    { label: "实习 开始", read: mk("exp0.start.y"), expect: "2024" },
+    { label: "实习 开始月", read: mk("exp0.start.m"), expect: "11" },
+    { label: "实习 至今(勾选)", read: mk("exp0.now"), expect: "true" },
+    { label: "获奖 年", read: mk("award0.y"), expect: "2023" },
+    { label: "获奖 月", read: mk("award0.m"), expect: "11" },
+  ], { profile: (p) => { p.educationEnd = "2027-06"; p.education[0].end = "2027-06"; p.education[0].major = "统计学·因果方向"; p.major = "统计学·因果方向"; p.experiences = [{ company: "美团", department: "", role: "实习生", start: "2024-11", end: "至今", description: "" }]; } }],
+  "soe-v49": [[
+    { label: "入党时间", read: val("#party"), expect: "2021-06" },
+    { label: "户籍所在地(不是籍贯)", read: val("#household"), expect: "江苏省南京市鼓楼区" },
+    { label: "生源地", read: val("#source"), expect: "江苏南京" },
+    { label: "身高", read: val("#height"), expect: "168" },
+    { label: "婚姻状况", read: sel("#marital"), expect: "未婚" },
+    { label: "健康状况", read: val("#health"), expect: "良好" },
+    { label: "亲属在本公司", read: val("#relative"), expect: "无" },
+    { label: "父亲姓名", read: val("#father"), expect: "林建国" },
+    { label: "母亲工作单位", read: val("#mother-job"), expect: "南京市第一中学" },
+    { label: "导师姓名", read: val("#advisor"), expect: "王教授" },
+    { label: "陌生下拉(点开看新冒出的列表)", read: `window.__degree || ""`, expect: "硕士" },
+    { label: "紧急联系人 姓名", read: val("#em-name"), expect: "林建国" },
+    { label: "紧急联系人 关系", read: val("#em-rel"), expect: "父亲" },
+    { label: "紧急联系人 电话", read: val("#em-phone"), expect: "13900000000" },
+    { label: "家庭 第1行 称谓", read: val("#f0-rel"), expect: "父亲" },
+    { label: "家庭 第1行 单位", read: val("#f0-emp"), expect: "南京电力公司" },
+    { label: "家庭 第2行 姓名", read: val("#f1-name"), expect: "陈芳" },
+    { label: "家庭 第2行 职务", read: val("#f1-pos"), expect: "教师" },
+  ], { profile: (p) => { Object.assign(p, { partyDate: "2021-06", householdPlace: "江苏省南京市鼓楼区", sourcePlace: "江苏南京", height: "168", marital: "未婚", health: "良好", relativeInCompany: "无", advisor: "王教授", emergencyName: "林建国", emergencyRelation: "父亲", emergencyPhone: "13900000000", family: [{ relation: "父亲", name: "林建国", birthDate: "1970-05", politics: "群众", employer: "南京电力公司", position: "工程师", phone: "" }, { relation: "母亲", name: "陈芳", birthDate: "1972-01", politics: "群众", employer: "南京市第一中学", position: "教师", phone: "" }] }); p.degree = "硕士"; } }],
   "wizard": [[
     { label: "第1步 姓名", read: val("#a1"), expect: "林晓舟" },
     { label: "第1步 性别", read: sel("#a4"), expect: "女" },
