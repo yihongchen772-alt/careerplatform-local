@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { localPathForStoredUrl } from "@/lib/local-storage";
+import { resumeUploadName } from "@/lib/resume-used";
 
 /** Trusted localhost hand-off to Electron's main process. The returned path
  * is never injected into the visited page; CDP receives it directly. */
@@ -25,5 +26,7 @@ export async function GET(request: Request) {
   } catch {
     return NextResponse.json({ error: "简历文件在本机上找不到了" }, { status: 404 });
   }
-  return NextResponse.json({ path: filePath, filename: path.basename(filePath), name: resume.name });
+  // What HR sees as the attachment: 「姓名-简历.pdf」, not the stored hex name.
+  const uploadName = resumeUploadName(user.name, path.extname(filePath));
+  return NextResponse.json({ path: filePath, filename: path.basename(filePath), name: resume.name, uploadName });
 }

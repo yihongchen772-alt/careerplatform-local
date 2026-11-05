@@ -28,6 +28,8 @@ import { citiesInTitle, cityFromJobText, cityFromSubmission, pageShowsTitle } fr
 import { cityForSubmittedJob } from "@/lib/actions/city-lookup";
 import { sourceFromUrl } from "@/lib/source-from-url";
 import { recognizeApplication, type Recognition } from "@/components/browser/recognize-application";
+import { guessResumeUsed } from "@/lib/actions/resume-used";
+import { deleteApplication } from "@/lib/actions/applications";
 
 export type PoolPosition = { id: string; label: string; companyName: string; source: string | null; title: string; jdUrl: string | null };
 type ResumeOption = { id: string; name: string; isDefault: boolean };
@@ -72,7 +74,7 @@ export function MarkAppliedFromBrowserDialog({
   const [title, setTitle] = useState(initialRecognition?.title || "");
   const [recognition, setRecognition] = useState<Recognition | null>(initialPositionId ? null : initialRecognition ?? null);
   const [recognizing, setRecognizing] = useState(!initialPositionId && !initialRecognition);
-  const touched = useRef({ position: false, company: false, title: false, city: false });
+  const touched = useRef({ position: false, company: false, title: false, city: false, resume: false });
   // Where the job is, read from the form (应聘城市) or the page (工作地点); editable.
   const [city, setCity] = useState("");
   const [appliedDate, setAppliedDate] = useState(todayKey);
@@ -80,6 +82,9 @@ export function MarkAppliedFromBrowserDialog({
   const [resumeVersionId, setResumeVersionId] = useState(
     initialResumeId || resumeVersions.find((r) => r.isDefault)?.id || resumeVersions[0]?.id || ""
   );
+  // Why that 简历 is picked: what was uploaded on these pages, or what 一键填写 used.
+  const [resumeReason, setResumeReason] = useState("");
+  const [resumePicked, setResumePicked] = useState(false);
   const [archive, setArchive] = useState(true);
   const [loading, setLoading] = useState(false);
 
@@ -105,7 +110,22 @@ export function MarkAppliedFromBrowserDialog({
         await new Promise((resolve) => setTimeout(resolve, 600));
         if (cancelled) return;
         const snapshot = await window.desktopBridge?.applicationSnapshot();
-        if (!snapshot || cancelled || touched.current.city) return;
+        if (!snapshot || cancelled) return;
+        // The 简历 that went out: the file put on these pages, else 一键填写's, else one made for this job.
+        if (!touched.current.resume) {
+          const guess = await guessResumeUsed({
+            uploads: snapshot.uploads,
+            fillResumeId: snapshot.resumeVersionId ?? null,
+            positionId: selectedPosition?.id ?? null,
+            companyName: jobCompany,
+            title: jobTitle,
+            urls: [...(snapshot.history ?? []).map((entry) => entry.url), snapshot.url],
+          });
+          if (cancelled || touched.current.resume) return;
+          if (guess.resumeVersionId && resumeVersions.some((r) => r.id === guess.resumeVersionId)) setResumeVersionId(guess.resumeVersionId);
+          setResumeReason(guess.reason);
+        }
+        if (touched.current.city) return;
         const onJobPage = !!jobTitle && !!snapshot.text && pageShowsTitle(snapshot.text, jobTitle);
         if (show(cityFromSubmission(snapshot.fields || [], snapshot.text))) return;
         if (onJobPage && show(cityFromJobText(snapshot.text))) return;
@@ -123,6 +143,8 @@ export function MarkAppliedFromBrowserDialog({
       }
     })();
     return () => { cancelled = true; setFindingCity(false); };
+    // selectedPosition and resumeVersions follow jobCompany/jobTitle and the page's props.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, recognizing, jobCompany, jobTitle]);
 
   useEffect(() => {
@@ -154,12 +176,17 @@ export function MarkAppliedFromBrowserDialog({
     try {
       const selected = positions.find((p) => p.id === positionId);
       if (!selected && (!companyName.trim() || !title.trim())) { toast.error("公司和岗位必填"); return; }
-      const captured: ApplicationSnapshot | null = archive ? await window.desktopBridge?.applicationSnapshot() || null : null;
+      const captured: ApplicationSnapshot | null = await window.desktopBridge?.applicationSnapshot() || null;
       // The material package keeps only the form; page text and history were for recognition.
-      const snapshot = captured ? { url: captured.url, fields: captured.fields, positionId: captured.positionId, resumeVersionId: captured.resumeVersionId, variantId: captured.variantId } : null;
-      const res = await fetch("/api/desktop-browser/record-application", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ companyName: selected?.companyName || companyName.trim(), title: selected ? selected.title : title.trim(), appliedDate: new Date(appliedDate).toISOString(), source, positionId: selected?.id, resumeVersionId: resumeVersionId || undefined, applyUrl: pageUrl, city: city.trim() || undefined, snapshot: snapshot || undefined }) });
+      const snapshot = archive && captured ? { url: captured.url, fields: captured.fields, positionId: captured.positionId, resumeVersionId: captured.resumeVersionId, variantId: captured.variantId } : null;
+      const jd = captured?.jdPage?.text ? { url: captured.jdPage.url, text: captured.jdPage.text } : undefined;
+      const res = await fetch("/api/desktop-browser/record-application", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ companyName: selected?.companyName || companyName.trim(), title: selected ? selected.title : title.trim(), appliedDate: new Date(appliedDate).toISOString(), source, positionId: selected?.id, resumeVersionId: resumeVersionId || undefined, applyUrl: pageUrl, city: city.trim() || undefined, snapshot: snapshot || undefined, jd }) });
       const body = await res.json(); if (!res.ok) throw new Error(body.error);
-      toast.success(`已记为投递：${selected?.companyName || companyName.trim()} · ${selected ? selected.title : title.trim()}。之后打开这家公司的「我的投递」页，可以一键设为进度页自动同步阶段`);
+      const resumeName = resumeVersions.find((r) => r.id === resumeVersionId)?.name;
+      toast.success(`已记为投递：${selected?.companyName || companyName.trim()} · ${selected ? selected.title : title.trim()}`, {
+        description: [resumeName ? `简历「${resumeName}」` : "", jd ? "JD 已一起保存" : ""].filter(Boolean).join(" · ") || undefined,
+        action: { label: "撤销", onClick: () => void deleteApplication(body.id).then(() => { toast.success("已撤销这条投递"); router.refresh(); }) },
+      });
       onOpenChange(false);
       router.refresh();
     } catch (err) {
@@ -237,7 +264,7 @@ export function MarkAppliedFromBrowserDialog({
           {resumeVersions.length > 0 && (
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">用的简历</Label>
-              <Select value={resumeVersionId} onValueChange={(v) => setResumeVersionId(v ?? "")}>
+              <Select value={resumeVersionId} onValueChange={(v) => { touched.current.resume = true; setResumePicked(true); setResumeVersionId(v ?? ""); setResumeReason(""); }}>
                 <SelectTrigger className="w-full">
                   <SelectValue>{(value: string) => resumeVersions.find((r) => r.id === value)?.name ?? "选简历"}</SelectValue>
                 </SelectTrigger>
@@ -249,6 +276,9 @@ export function MarkAppliedFromBrowserDialog({
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">
+                {resumeReason || (resumePicked ? "" : "没看到这次上传了哪份简历，先按默认填的，不对就换一个")}
+              </p>
             </div>
           )}
           <label className="flex gap-2 text-xs"><input type="checkbox" checked={archive} onChange={(e) => setArchive(e.target.checked)} />确认已经提交，保存本次简历、资料和当前可读取的填写内容</label>

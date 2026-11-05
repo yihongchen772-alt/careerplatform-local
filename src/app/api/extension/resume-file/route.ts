@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { rejectUnpairedExtension } from "@/lib/extension-auth";
 import { localPathForStoredUrl, mimeTypeForExtension } from "@/lib/local-storage";
+import { resumeUploadName } from "@/lib/resume-used";
 
 // The extension can't hand Chrome a local path the way Electron's CDP does, so
 // it gets the bytes and attaches them with a DataTransfer in the page.
@@ -20,8 +21,8 @@ export async function GET(request: Request) {
   const bytes = await readFile(filePath).catch(() => null);
   if (!bytes) return NextResponse.json({ error: "简历文件在本机上找不到了" }, { status: 404 });
   const ext = path.extname(filePath).toLowerCase();
-  // Upload under the resume's own display name, not the storage file name.
-  const filename = `${resume.name.replace(/[\\/:*?"<>|]+/g, " ").trim() || "简历"}${ext}`;
+  // What HR sees: 「姓名-简历.pdf」 — not the storage file name, nor the version's label.
+  const filename = resumeUploadName(user.name, ext);
   return new NextResponse(new Uint8Array(bytes), {
     headers: {
       "Content-Type": mimeTypeForExtension(ext) || "application/octet-stream",

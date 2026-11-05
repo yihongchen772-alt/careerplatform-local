@@ -398,6 +398,57 @@ function detach() {
   attachedView = null;
 }
 
+// The last job description this tab showed, for 记为已投递: the success page
+// after a 网申 rarely repeats the JD. A JD page names both duties and
+// requirements and is not itself a form; read a moment after it settles,
+// since SPA job pages draw late.
+const JD_DUTIES = /岗位职责|工作职责|职位描述|岗位描述|职位详情|工作内容|job description|responsibilit/i;
+const JD_NEEDS = /任职要求|岗位要求|职位要求|任职资格|任职条件|申请条件|requirements|qualifications/i;
+function readJobPageInPage() {
+  const fields = document.querySelectorAll("input:not([type=hidden]), textarea, select").length;
+  return { fields, text: ((document.body && document.body.innerText) || "").slice(0, 30000) };
+}
+function scheduleJobPageCapture(tab) {
+  clearTimeout(tab.jdTimer);
+  tab.jdTimer = setTimeout(async () => {
+    const wc = tab.view.webContents;
+    if (wc.isDestroyed()) return;
+    const page = await wc.executeJavaScript(`(${readJobPageInPage.toString()})()`).catch(() => null);
+    const text = page && typeof page.text === "string" ? page.text.replace(/\n{3,}/g, "\n\n") : "";
+    if (!page || page.fields >= 12 || text.length < 150 || !JD_DUTIES.test(text) || !JD_NEEDS.test(text)) return;
+    // Start a little above the duties heading, where the job title usually is.
+    const start = Math.max(0, text.search(JD_DUTIES) - 300);
+    tab.jdPage = { url: wc.getURL().slice(0, 2000), title: String(wc.getTitle() || "").slice(0, 300), text: text.slice(start, start + 8000).trim(), at: Date.now() };
+  }, 2500);
+}
+
+// Sites show HR the uploaded file's own name: 「张三-简历.pdf」, not the App's
+// stored hex name. Each upload gets its own folder: a page may only read the
+// file when the form is finally sent, so an earlier copy must stay put.
+async function friendlyUploadCopy(filePath, uploadName) {
+  const safe = String(uploadName || "").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
+  if (!safe || !/\.[a-z0-9]{2,5}$/i.test(safe)) return filePath;
+  try {
+    const dir = path.join(app.getPath("temp"), "cp-resume-upload", crypto.randomBytes(6).toString("hex"));
+    await fs.promises.mkdir(dir, { recursive: true });
+    const target = path.join(dir, safe);
+    await fs.promises.copyFile(filePath, target);
+    return target;
+  } catch {
+    return filePath;
+  }
+}
+
+// Copies from earlier days: the forms that needed them are long sent.
+function cleanOldUploadCopies() {
+  const root = path.join(app.getPath("temp"), "cp-resume-upload");
+  fs.promises.readdir(root).then((names) => Promise.all(names.map(async (name) => {
+    const dir = path.join(root, name);
+    const info = await fs.promises.stat(dir).catch(() => null);
+    if (info && Date.now() - info.mtimeMs > 24 * 3600_000) await fs.promises.rm(dir, { recursive: true, force: true });
+  }))).catch(() => {});
+}
+
 function createTab(url, { activate = true } = {}) {
   const view = new WebContentsView({
     webPreferences: {
@@ -412,7 +463,8 @@ function createTab(url, { activate = true } = {}) {
     },
   });
   view.setBackgroundColor("#ffffff");
-  const tab = { id: nextTabId++, view, revision: 0 };
+  // resumeUploads / jdPage: what 记为已投递 needs to know about this application (see below).
+  const tab = { id: nextTabId++, view, revision: 0, resumeUploads: [], jdPage: null };
   tabs.push(tab);
   const wc = view.webContents;
 
@@ -437,6 +489,7 @@ function createTab(url, { activate = true } = {}) {
     pendingPlans.delete(tab.id);
     stopFillTask(tab.id, "页面已变化，已停止填写；请在当前页面重新填写");
     sendTabsState();
+    scheduleJobPageCapture(tab);
   });
   wc.on("page-title-updated", () => {
     recordHistory(wc.getURL(), wc.getTitle());
@@ -463,6 +516,7 @@ function createTab(url, { activate = true } = {}) {
     recordHistory(wc.getURL(), wc.getTitle());
     sendTabsState();
     void installUserEditTrackers(wc);
+    scheduleJobPageCapture(tab);
   });
   // Cmd/Ctrl shortcuts land in the guest page when it has focus, which is
   // most of the time — forward the browser-chrome ones to our own UI.
@@ -768,6 +822,7 @@ function syncChromeExtension({ force = false } = {}) {
 }
 
 function setupBrowserViewIpc(mainWindow, serverPort) {
+  cleanOldUploadCopies();
   currentWindow = mainWindow;
   port = serverPort;
   // A fresh window never has a view attached yet, even if a previous
@@ -875,6 +930,21 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     } catch (error) {
       console.error("[saved-logins] could not check a login", error.message);
     }
+  });
+  // A file the applicant picked or dropped on a 网申 page: name and size only,
+  // for telling which 简历版本 went out. 一键填写's own upload fires the same
+  // change event a moment later — it is already noted, with its version.
+  ipcMain.on("browser-guest:files", (event, files) => {
+    const tab = tabForSender(event.sender);
+    if (!tab || !Array.isArray(files)) return;
+    const now = Date.now();
+    const last = (tab.resumeUploads || [])[0];
+    if (last && last.by === "autofill" && now - last.at < 8000) return;
+    const resume = files.slice(0, 5)
+      .map((file) => ({ name: typeof file?.name === "string" ? file.name.slice(0, 200) : "", size: Number(file?.size) || 0 }))
+      .find((file) => file.name && file.size > 0 && /\.(?:pdf|docx?)$/i.test(file.name));
+    if (!resume) return;
+    tab.resumeUploads = [{ by: "page", at: now, name: resume.name, size: resume.size, url: tab.view.webContents.getURL().slice(0, 2000) }, ...(tab.resumeUploads || [])].slice(0, 8);
   });
   ipcMain.on("browser-guest:login-form", async (event) => {
     const tab = tabForSender(event.sender);
@@ -1213,7 +1283,10 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
         if (!fileRes.ok) throw new Error((await fileRes.json().catch(() => ({}))).error || "简历附件上传失败");
         const file = await fileRes.json();
         if (!stillOnPage()) throw new Error("页面已切换，已停止上传简历");
-        return uploadResumeFiles(wc, file.path, stillOnPage);
+        const uploaded = await uploadResumeFiles(wc, await friendlyUploadCopy(file.path, file.uploadName), stillOnPage);
+        // The page's change event for this very file arrives first: drop that echo.
+        if (uploaded) tab.resumeUploads = [{ by: "autofill", at: Date.now(), resumeVersionId, url: wc.getURL().slice(0, 2000) }, ...(tab.resumeUploads || []).filter((u) => !(u.by === "page" && Date.now() - u.at < 8000))].slice(0, 8);
+        return uploaded;
       },
       jobId: () => tab.positionId,
       // Where a child frame sits in the top frame's viewport: its <iframe>, found by address, up each level.
@@ -1312,7 +1385,11 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     const history = wc.navigationHistory.getAllEntries().slice(0, wc.navigationHistory.getActiveIndex() + 1)
       .filter((entry) => /^https?:/i.test(entry.url)).slice(-15).map((entry) => ({ url: entry.url.slice(0, 2000), title: String(entry.title || "").slice(0, 300) }));
     const page = await wc.executeJavaScript(`(() => ({ text: (${capturePageText.toString()})().slice(0, 4000), siteName: (document.querySelector('meta[property="og:site_name"], meta[name="application-name"]') || {}).content || "" }))()`).catch(() => ({ text: "", siteName: "" }));
-    return { fields, url: wc.getURL(), title: wc.getTitle(), text: page.text, siteName: String(page.siteName || "").slice(0, 100), history, positionId: tab.positionId, resumeVersionId: tab.resumeVersionId, variantId: tab.variantId };
+    // The JD only if this tab went through it on the way here, lately: one tab may
+    // have sent another company's 网申 before, and that JD is not this one's.
+    const visited = new Set(wc.navigationHistory.getAllEntries().map((entry) => entry.url));
+    const jdPage = tab.jdPage && Date.now() - tab.jdPage.at < 2 * 3600_000 && visited.has(tab.jdPage.url) ? tab.jdPage : null;
+    return { fields, url: wc.getURL(), title: wc.getTitle(), text: page.text, siteName: String(page.siteName || "").slice(0, 100), history, positionId: tab.positionId, resumeVersionId: tab.resumeVersionId, variantId: tab.variantId, uploads: tab.resumeUploads || [], jdPage };
   });
   handle("browser:cancel-autofill", (_e, tabId) => stopFillTask(tabId ?? activeId));
 

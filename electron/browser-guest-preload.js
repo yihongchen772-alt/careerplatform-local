@@ -1,6 +1,6 @@
 // Runs in every frame of a 网申浏览器 tab, in Electron's isolated world: the
 // page's own scripts cannot see or replace anything here, and nothing is
-// exposed to them. Two jobs, both about passwords:
+// exposed to them. Two jobs about passwords, and one about files (bottom):
 //  - when a login / sign-up form is submitted, tell the main process the
 //    account and password typed, so the browser can offer to keep them;
 //  - when a password box appears (pages often draw the login form late, or
@@ -98,3 +98,18 @@ const watch = () => {
 };
 if (document.documentElement) watch();
 else document.addEventListener("DOMContentLoaded", watch, { once: true });
+
+// Which file the applicant put on the page — picked in the file dialog or
+// dropped on an upload box — so 记为已投递 can tell which 简历版本 went out.
+// Only the name and size leave the page; the file itself is never read.
+function reportFiles(list) {
+  const files = Array.from(list || []).slice(0, 5).map((file) => ({ name: String(file.name || "").slice(0, 200), size: Number(file.size) || 0 }));
+  if (files.some((file) => file.name && file.size > 0)) ipcRenderer.send("browser-guest:files", files);
+}
+document.addEventListener("change", (event) => {
+  const input = event.target;
+  if (input && input.tagName === "INPUT" && input.type === "file") reportFiles(input.files);
+}, true);
+document.addEventListener("drop", (event) => {
+  if (event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files.length) reportFiles(event.dataTransfer.files);
+}, true);

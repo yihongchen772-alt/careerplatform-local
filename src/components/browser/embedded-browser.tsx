@@ -26,6 +26,8 @@ import { setToasterPosition } from "@/components/ui/sonner";
 import { cn } from "@/lib/utils";
 import { parseJd } from "@/lib/actions/jd-parse";
 import { startTailoringFromPage } from "@/lib/actions/resume-tailor";
+import { guessResumeUsed } from "@/lib/actions/resume-used";
+import { deleteApplication } from "@/lib/actions/applications";
 import { PositionFormDialog, type PositionFormInitial } from "@/components/pool/position-form-dialog";
 import { PortalSyncDialog, type PortalCompany } from "@/components/browser/portal-sync-dialog";
 import { MarkAppliedFromBrowserDialog, type PoolPosition } from "@/components/browser/mark-applied-from-browser";
@@ -141,6 +143,7 @@ export function EmbeddedBrowser({
   knownSites,
   profileVariants,
   resumeVersions,
+  tailoredResumes = [],
   portalCompanies,
   quickLinks,
   poolPositions,
@@ -150,6 +153,8 @@ export function EmbeddedBrowser({
   knownSites: KnownSite[];
   profileVariants: { id: string; name: string; resumeVersionId: string | null }[];
   resumeVersions: ResumeOption[];
+  /** 定制 versions saved lately, by the site of the job they were made for. */
+  tailoredResumes?: { resumeVersionId: string; name: string; label: string; site: string }[];
   portalCompanies: PortalCompany[];
   quickLinks: QuickLinks;
   poolPositions: PoolPosition[];
@@ -242,7 +247,9 @@ export function EmbeddedBrowser({
   } | null>(null);
   // Company and job of the just-submitted 网申, worked out from this tab's
   // pages as soon as 投递成功 shows; handed to the 记为已投递 dialog.
-  const [submittedRecognition, setSubmittedRecognition] = useState<{ tabId: number; url: string; result: Recognition | null } | null>(null);
+  // `resume`: which 简历版本 went out (the file put on these pages, else 一键填写's, else one made for this job).
+  const [submittedRecognition, setSubmittedRecognition] = useState<{ tabId: number; url: string; result: Recognition | null; resume?: { resumeVersionId: string | null; reason: string } | null } | null>(null);
+  const [recordingSubmitted, setRecordingSubmitted] = useState(false);
   const [markRecognition, setMarkRecognition] = useState<Recognition | null>(null);
   // The last fill's options, for 继续填写 after a 暂停.
   const lastFill = useRef<DesktopBridgeAutofillOptions>({});
@@ -326,6 +333,11 @@ export function EmbeddedBrowser({
   const activeLogin = tabsState.activeId === null ? null : savedLogins.states[tabsState.activeId] ?? null;
   const activeTab = tabsState.tabs.find((t) => t.id === tabsState.activeId) ?? null;
   const currentUrl = activeTab?.url && activeTab.url !== "about:blank" ? activeTab.url : null;
+  // Back on the site of a job a 简历 was tailored for: offer that version for 一键填写,
+  // so the tailored file is what gets uploaded (and then recorded with the 投递).
+  const [skippedTailored, setSkippedTailored] = useState<string[]>([]);
+  const currentSite = currentUrl ? siteKey(currentUrl) : null;
+  const tailoredHere = currentSite ? tailoredResumes.find((t) => t.site === currentSite && resumeVersions.some((r) => r.id === t.resumeVersionId)) : undefined;
   // 「只填所选模块」 used to stay on for every site afterwards: picking 获奖 once
   // on one portal left the next ones filling nothing (范围外 126 项). A narrowed
   // scope now lasts on its own site only; another site starts from 全部模块.
@@ -510,13 +522,25 @@ export function EmbeddedBrowser({
     const controller = new AbortController();
     const { tabId, url } = submittedRecognition;
     void bridge.applicationSnapshot()
-      .then((snapshot) => (snapshot ? recognizeApplication({ ...snapshot, positionId: snapshot.positionId || jobBindings[tabId] || undefined }, poolPositions, identitySites, controller.signal) : null))
+      .then(async (snapshot) => {
+        if (!snapshot) return null;
+        const result = await recognizeApplication({ ...snapshot, positionId: snapshot.positionId || jobBindings[tabId] || undefined }, poolPositions, identitySites, controller.signal);
+        const resume = await guessResumeUsed({
+          uploads: snapshot.uploads,
+          fillResumeId: snapshot.resumeVersionId ?? null,
+          positionId: result.positionId ?? null,
+          companyName: result.companyName,
+          title: result.title,
+          urls: [...(snapshot.history ?? []).map((entry) => entry.url), snapshot.url],
+        }).catch(() => null);
+        return { result, resume };
+      })
       .catch(() => null)
-      .then((result) => {
+      .then((found) => {
         if (controller.signal.aborted) return;
         // Settled either way, so the bar stops saying "正在识别" when nothing came of it.
-        const settled: Recognition = result ?? { companyName: "", title: "", evidence: [], usedAi: false };
-        setSubmittedRecognition((current) => (current && current.tabId === tabId && current.url === url ? { ...current, result: settled } : current));
+        const settled: Recognition = found?.result ?? { companyName: "", title: "", evidence: [], usedAi: false };
+        setSubmittedRecognition((current) => (current && current.tabId === tabId && current.url === url ? { ...current, result: settled, resume: found?.resume ?? null } : current));
       });
     return () => controller.abort();
   }, [bridge, submittedRecognition, tabsState.activeId, poolPositions, identitySites, jobBindings]);
@@ -800,6 +824,64 @@ export function EmbeddedBrowser({
       toast.error(err instanceof Error ? err.message : "读取页面失败");
     } finally {
       setStartingTailor(false);
+    }
+  }
+
+  // The 简历 a just-submitted 网申 is recorded with: what went onto the page, else the one picked for 一键填写, else the default.
+  function submittedResumeId(): string | undefined {
+    return submittedRecognition?.resume?.resumeVersionId || resumeVersionId || resumeVersions.find((r) => r.isDefault)?.id || resumeVersions[0]?.id || undefined;
+  }
+
+  function reviewSubmitted() {
+    setMarkRecognition(submitted && submittedRecognition?.tabId === submitted.tabId ? submittedRecognition.result : null);
+    setMarkOpen(true);
+    setSubmitted(null);
+    setSubmittedRecognition(null);
+  }
+
+  // 投递成功 → 记为已投递 in one click: the recognised company and job, the
+  // 简历 that went out, the form's answers and the JD page; 撤销 takes it back.
+  async function recordSubmittedNow() {
+    const result = submittedRecognition?.result;
+    if (!bridge || !submitted || !result?.companyName || !result.title || recordingSubmitted) return;
+    setRecordingSubmitted(true);
+    try {
+      const snapshot = await bridge.applicationSnapshot();
+      const pool = result.positionId ? poolPositions.find((p) => p.id === result.positionId) : undefined;
+      const companyName = pool?.companyName ?? result.companyName;
+      const title = pool?.title ?? result.title;
+      const applyUrl = currentUrl || snapshot?.url || submitted.url;
+      const resumeId = submittedResumeId();
+      const jd = snapshot?.jdPage?.text ? { url: snapshot.jdPage.url, text: snapshot.jdPage.text } : undefined;
+      const res = await fetch("/api/desktop-browser/record-application", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyName,
+          title,
+          appliedDate: new Date().toISOString(),
+          source: sourceFromUrl(applyUrl),
+          positionId: pool?.id,
+          resumeVersionId: resumeId,
+          applyUrl,
+          snapshot: snapshot && /^https?:/i.test(snapshot.url) ? { url: snapshot.url, fields: snapshot.fields, positionId: snapshot.positionId, resumeVersionId: snapshot.resumeVersionId, variantId: snapshot.variantId } : undefined,
+          jd,
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "记录失败");
+      setSubmitted(null);
+      setSubmittedRecognition(null);
+      const resumeName = resumeVersions.find((r) => r.id === resumeId)?.name;
+      toast.success(`已记为投递：${companyName} · ${title}`, {
+        description: [resumeName ? `简历「${resumeName}」` : "", jd ? "JD 已一起保存" : ""].filter(Boolean).join(" · ") || undefined,
+        action: { label: "撤销", onClick: () => void deleteApplication(body.id).then(() => { toast.success("已撤销这条投递"); router.refresh(); }) },
+      });
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "记录失败", { action: { label: "核对后再记", onClick: reviewSubmitted } });
+    } finally {
+      setRecordingSubmitted(false);
     }
   }
 
@@ -1230,20 +1312,47 @@ export function EmbeddedBrowser({
             {detected.typing ? <>你在手动填写，这页还有 {detected.count} 个空着的字段，可以一键填好（你已经填的不会动）。</> : <>这页有 {detected.count} 个可以自动填写的字段。</>}
           </Infobar>
         )}
+        {tailoredHere && resumeVersionId !== tailoredHere.resumeVersionId && !skippedTailored.includes(tailoredHere.site) && !submitted && (
+          <Infobar
+            icon={<Wand2 />}
+            onClose={() => setSkippedTailored((list) => [...list, tailoredHere.site])}
+            closeLabel="这次不用"
+            actions={<Button size="xs" onClick={() => { setResumeVersionId(tailoredHere.resumeVersionId); toast.success(`一键填写改用「${tailoredHere.name}」`); }}>用定制的简历</Button>}
+          >
+            你为「{tailoredHere.label}」定制了简历「{tailoredHere.name}」。这个网站一键填写要用它吗？
+          </Infobar>
+        )}
         {submitted && submitted.tabId === tabsState.activeId && (
           <Infobar
             tone="success"
             icon={<Check />}
             onClose={() => { setSubmitted(null); setSubmittedRecognition(null); }}
             closeLabel="不是投递成功"
-            actions={<Button size="xs" onClick={() => { setMarkRecognition(submittedRecognition?.tabId === submitted.tabId ? submittedRecognition.result : null); setMarkOpen(true); setSubmitted(null); setSubmittedRecognition(null); }}><Send />确认并建档</Button>}
+            actions={(() => {
+              const result = submittedRecognition?.tabId === submitted.tabId ? submittedRecognition.result : null;
+              // A file was put on the page that matches no 简历版本: check it rather than record the default.
+              const resumeUnsure = !!submittedRecognition?.resume && !submittedRecognition.resume.resumeVersionId && !!submittedRecognition.resume.reason;
+              return result?.companyName && result.title && !resumeUnsure ? (
+                <>
+                  <Button size="xs" variant="outline" disabled={recordingSubmitted} onClick={reviewSubmitted}>核对后再记…</Button>
+                  <Button size="xs" disabled={recordingSubmitted} onClick={() => void recordSubmittedNow()}>{recordingSubmitted ? <Loader2 className="animate-spin" /> : <Send />}记为已投递</Button>
+                </>
+              ) : (
+                <Button size="xs" disabled={!result} onClick={reviewSubmitted}><Send />核对并建档…</Button>
+              );
+            })()}
           >
             {(() => {
               const result = submittedRecognition?.tabId === submitted.tabId ? submittedRecognition.result : null;
               const named = result && (result.companyName || result.title) ? [result.companyName, result.title].filter(Boolean).join(" · ") : "";
+              const guess = submittedRecognition?.resume;
+              const resumeUnsure = !!guess && !guess.resumeVersionId && !!guess.reason;
+              const resumeName = result && !resumeUnsure ? resumeVersions.find((r) => r.id === submittedResumeId())?.name : undefined;
               return named
-                ? <>官网显示“{submitted.evidence}”，识别为 <strong className="font-medium">{named}</strong>。确实提交完成的话，把它记进投递看板。</>
-                : <>官网显示“{submitted.evidence}”{result ? "" : "，正在识别公司和岗位…"}。确实提交完成的话，把它记进投递看板。</>;
+                ? resumeUnsure
+                  ? <>官网显示“{submitted.evidence}”，识别为 <strong className="font-medium">{named}</strong>。{guess!.reason.replace(/，请选一下$/, "")}，核对一下再记。</>
+                  : <>官网显示“{submitted.evidence}”，识别为 <strong className="font-medium">{named}</strong>{resumeName ? <>，简历「{resumeName}」</> : null}。确实提交完成的话，一键记进投递记录。</>
+                : <>官网显示“{submitted.evidence}”{result ? "" : "，正在识别公司和岗位…"}。确实提交完成的话，把它记进投递记录。</>;
             })()}
           </Infobar>
         )}

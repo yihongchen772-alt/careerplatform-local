@@ -24,6 +24,10 @@ export type ApplicationSnapshot = {
   fields: { label: string; value: string }[]; url: string; positionId?: string; resumeVersionId?: string; variantId?: string; contextKey?: string;
   /** The current page's title, visible text (capped) and og:site_name, and this tab's earlier pages. */
   title?: string; text?: string; siteName?: string; history?: { url: string; title: string }[];
+  /** Resume files that went onto this tab's pages, newest first: by 一键填写 (with its version) or picked/dropped by hand (name, size). */
+  uploads?: { by: "autofill" | "page"; at: number; resumeVersionId?: string; name?: string; size?: number; url?: string }[];
+  /** The last job description page this tab showed. */
+  jdPage?: { url: string; title: string; text: string; at: number } | null;
 };
 export type DesktopBridgeRegion = { x: number; y: number; width: number; height: number };
 export type DesktopBridgeAutofillOptions = {

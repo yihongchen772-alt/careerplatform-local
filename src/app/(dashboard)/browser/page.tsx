@@ -3,6 +3,9 @@ import { requireUser } from "@/lib/session";
 import { EmbeddedBrowser } from "@/components/browser/embedded-browser";
 import { parseApplicationProfile } from "@/lib/application-profile";
 import { loadKnownSites } from "@/lib/known-sites";
+import { currentTimeMs } from "@/lib/dates";
+import { parseDraft } from "@/lib/resume-doc";
+import { siteKey } from "@/lib/site-key";
 
 const TERMINAL = ["REJECTED", "ACCEPTED", "DECLINED", "WITHDRAWN", "CANCELLED"] as const;
 
@@ -14,7 +17,7 @@ export default async function BrowserPage({
   const user = await requireUser();
   const { url, positionId } = await searchParams;
 
-  const [resumeVersions, companies, careerCompanies, positions, applications, knownSites] = await Promise.all([
+  const [resumeVersions, companies, careerCompanies, positions, applications, knownSites, tailorings] = await Promise.all([
     db.resumeVersion.findMany({
       where: { userId: user.id, fileUrl: { not: null } },
       select: { id: true, name: true, isDefault: true },
@@ -55,7 +58,20 @@ export default async function BrowserPage({
       orderBy: { currentStageDate: "desc" },
     }),
     loadKnownSites(user.id),
+    // 定制 versions saved in the last few days: offered for 一键填写 when the browser is back on that job's site.
+    db.resumeTailoring.findMany({
+      where: { userId: user.id, savedVersionId: { not: null }, updatedAt: { gte: new Date(currentTimeMs() - 3 * 86_400_000) } },
+      orderBy: { updatedAt: "desc" },
+      take: 20,
+      select: { savedVersionId: true, draft: true, savedVersion: { select: { name: true, fileUrl: true } } },
+    }),
   ]);
+  const tailoredResumes = tailorings.flatMap((row) => {
+    const target = parseDraft(row.draft)?.target;
+    const site = target?.url ? siteKey(target.url) : null;
+    if (!site || !row.savedVersionId || !row.savedVersion?.fileUrl) return [];
+    return [{ resumeVersionId: row.savedVersionId, name: row.savedVersion.name, label: [target!.company, target!.title].filter(Boolean).join(" · ") || "这个岗位", site }];
+  });
 
 
   // The browser frame is the whole page, like a browser window: no page
@@ -68,6 +84,7 @@ export default async function BrowserPage({
         knownSites={knownSites}
         profileVariants={parseApplicationProfile(user.applicationProfile).variants.map((v) => ({ id: v.id, name: v.name, resumeVersionId: v.resumeVersionId ?? null }))}
         resumeVersions={resumeVersions}
+        tailoredResumes={tailoredResumes}
         portalCompanies={companies.map((c) => ({
           id: c.id,
           name: c.name,
