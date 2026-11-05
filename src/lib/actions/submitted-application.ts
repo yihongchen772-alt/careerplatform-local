@@ -12,7 +12,9 @@ import { submissionSnapshotSchema, safeSubmissionFields } from "@/lib/submission
 import { revalidatePath } from "next/cache";
 const schema = z.object({ companyName: z.string().trim().min(1).max(120), title: z.string().trim().min(1).max(200), appliedDate: z.coerce.date(), applyUrl: z.string().url().max(16384).refine((v) => /^https?:\/\//i.test(v)), source: z.string().max(200).optional(), positionId: z.string().max(100).optional(), resumeVersionId: z.string().max(100).optional(), snapshot: submissionSnapshotSchema.optional(), city: z.string().trim().max(40).optional(),
   /** The job description page the tab showed before the form (browser-view.js jdPage). */
-  jd: z.object({ url: z.string().max(2000).optional(), text: z.string().max(8000) }).optional() });
+  jd: z.object({ url: z.string().max(2000).optional(), text: z.string().max(8000) }).optional(),
+  /** Recorded on its own, not by the applicant: a job already on record is left for them to decide. */
+  auto: z.boolean().optional() });
 export async function recordSubmittedApplication(input: z.input<typeof schema>) {
   const user = await requireUser(); const data = schema.parse(input);
   const position = data.positionId ? await db.position.findFirst({ where: { id: data.positionId, userId: user.id }, include: { company: true } }) : null;
@@ -24,6 +26,7 @@ export async function recordSubmittedApplication(input: z.input<typeof schema>) 
   // Then the JD page the tab showed (a 「工作地点：上海」 line) — the one-click path has no city box.
   const city = data.city || (position && parseCities(position.location).length ? "" : cityFromSubmission(data.snapshot?.fields ?? []).join("、") || (data.jd?.text ? cityFromJobText(data.jd.text).join("、") : "")) || null;
   const companyId = position?.companyId || await resolveCompanyId(data.companyName, { aiUserId: user.id });
+  if (data.auto && await db.application.findFirst({ where: { userId: user.id, companyId, title: data.title }, select: { id: true } })) return { duplicate: true as const };
   const resume = data.resumeVersionId ? await db.resumeVersion.findFirst({ where: { id: data.resumeVersionId, userId: user.id } }) : null;
   if (data.resumeVersionId && !resume) throw new Error("简历不存在");
   const { profile, variant } = resolveProfileVariant(parseApplicationProfile(user.applicationProfile), data.snapshot?.variantId, data.resumeVersionId);

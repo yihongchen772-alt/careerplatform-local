@@ -28,6 +28,8 @@ export type ApplicationSnapshot = {
   uploads?: { by: "autofill" | "page"; at: number; resumeVersionId?: string; name?: string; size?: number; url?: string }[];
   /** The last job description page this tab showed. */
   jdPage?: { url: string; title: string; text: string; at: number } | null;
+  /** When the applicant last pressed a real send button (提交 / 投递…) in this tab. */
+  lastSendAt?: number | null;
 };
 export type DesktopBridgeRegion = { x: number; y: number; width: number; height: number };
 export type DesktopBridgeAutofillOptions = {
@@ -137,6 +139,8 @@ export type DesktopBridge = {
   dismissForm(payload: { tabId: number; signature: string }): Promise<void>;
   onFormDetected(callback: (payload: { tabId: number; count: number; signature: string; typing?: boolean }) => void): () => void;
   onApplicationSubmitted(callback: (payload: { tabId: number; url: string; title: string; evidence: string }) => void): () => void;
+  /** After 记为已投递: the active tab's remembered form and JD belong to that record now; `undone` (撤销) brings them back. */
+  applicationRecorded?(undone?: boolean): Promise<void>;
   find(options: { text: string; forward?: boolean; findNext?: boolean }): Promise<void>;
   findStop(): Promise<void>;
   onTabs(callback: (state: DesktopBridgeTabsState) => void): () => void;

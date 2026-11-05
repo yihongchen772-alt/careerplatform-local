@@ -16,6 +16,8 @@ export type IdentityInput = {
   history: IdentityPage[];
   /** Fields read from the submitted form: label + value. */
   fields: { label: string; value: string }[];
+  /** The job description page this tab showed before the form, as text. */
+  jdText?: string;
 };
 export type IdentityPoolPosition = { id: string; companyName: string; title: string; jdUrl?: string | null };
 /** A company and the siteKey()s of every page known for it. */
@@ -234,6 +236,41 @@ function classifyFields(fields: Field[]) {
   return { job, wish, employer, weak: weak.length === 1 && !experience ? weak : [] };
 }
 
+const JD_DUTIES_LINE = /岗位职责|工作职责|职位描述|岗位描述|工作内容|职位详情|job description|responsibilit/i;
+
+/** The lines at the top of a job description page, nearest to 岗位职责 first: where its title and employer are. */
+function jdHead(text: string): string[] {
+  const lines = text.split("\n").map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
+  const duties = lines.findIndex((line) => JD_DUTIES_LINE.test(line));
+  return (duties > 0 ? lines.slice(Math.max(0, duties - 10), duties) : lines.slice(0, 10)).reverse();
+}
+
+/** The job's own name on its description page: a short line with a job word, right above 岗位职责. */
+function jobFromJdText(text: string, companyName: string) {
+  for (const line of jdHead(text)) {
+    if (line.length > 30 || !JOB_WORDS.test(line)) continue;
+    const job = tidyJob(line, companyName);
+    if (plausibleJob(job) && !NOT_A_JOB.test(job)) return job;
+  }
+  return "";
+}
+
+/**
+ * 「示例科技 · 上海 · 校招」: the employer as one part of a line near the top of
+ * the page. Page text is looser than a title, so only a name that reads as an
+ * organisation (科技, 公司, 集团…) counts, and never a 「标签：值」 line.
+ */
+function companyFromJdText(text: string) {
+  for (const line of jdHead(text)) {
+    if (/[:：]/.test(line)) continue;
+    for (const part of line.split(/\s*[·|｜/,，]\s*/)) {
+      const name = part.length <= 30 ? plausibleCompany(part) : "";
+      if (name && (COMPANY_SUFFIX.test(name) || BRANCH.test(name))) return name;
+    }
+  }
+  return "";
+}
+
 export function identifyApplication(input: IdentityInput, pool: IdentityPoolPosition[], sites: IdentitySite[]): Identity {
   // The last few pages only: job page → form steps → success. Older pages in
   // the tab are likely another job, and would name it when these don't.
@@ -273,6 +310,7 @@ export function identifyApplication(input: IdentityInput, pool: IdentityPoolPosi
     for (const title of titles) { const name = companyFromTitle(title, true); if (name) { companyName = name; evidence.push("页面标题"); break; } }
   }
   if (!companyName) { const name = companyFromText(textHead); if (name) { companyName = name; evidence.push("投递成功页的文字"); } }
+  if (!companyName && input.jdText) { const name = companyFromJdText(input.jdText); if (name) { companyName = name; evidence.push("岗位页面的文字"); } }
 
   let title = "";
   const fromFields = (list: Field[]) => {
@@ -284,6 +322,7 @@ export function identifyApplication(input: IdentityInput, pool: IdentityPoolPosi
   if (!title) {
     for (const pageTitle of titles) { const job = jobFromTitle(pageTitle, companyName); if (job) { title = job; evidence.push("岗位页面的标题"); break; } }
   }
+  if (!title && input.jdText) { const job = jobFromJdText(input.jdText, companyName); if (job) { title = job; evidence.push("岗位页面的文字"); } }
   if (!title) fromFields(fields.weak);
   if (!title) fromFields(fields.wish);
 

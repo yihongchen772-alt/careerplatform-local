@@ -25,6 +25,7 @@ export function SiteBanner({
   loading,
   sites,
   onPickPortalCompany,
+  hideApplied = false,
 }: {
   bridge: DesktopBridge;
   url: string | null;
@@ -32,6 +33,8 @@ export function SiteBanner({
   loading: boolean;
   sites: KnownSite[];
   onPickPortalCompany: () => void;
+  /** After submitting: 「你已投过」 warns before a repeat, it has nothing to say about the 投递 just made. */
+  hideApplied?: boolean;
 }) {
   const router = useRouter();
   const [dismissed, setDismissed] = useState<Set<string>>(() => new Set());
@@ -103,7 +106,7 @@ export function SiteBanner({
           这像是{match ? `「${match.companyName}」的` : ""}「我的投递」页面。设为进度页后，App 会定期读取它、自动推进投递阶段。
         </Infobar>
       )}
-      {showApplied && match && (
+      {showApplied && !hideApplied && match && (
         <Infobar tone="warning" icon={<History />} onClose={() => dismiss("applied")}>
           你已投过「{match.companyName}」：
           {match.applications.slice(0, 3).map((application, index) => (

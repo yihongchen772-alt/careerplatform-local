@@ -55,7 +55,7 @@ export function MarkAppliedFromBrowserDialog({
   positions,
   sites,
   resumeVersions,
-  initialPositionId, initialResumeId, initialRecognition,
+  initialPositionId, initialResumeId, initialRecognition, onRecorded,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -66,6 +66,7 @@ export function MarkAppliedFromBrowserDialog({
   initialPositionId?: string; initialResumeId?: string;
   /** Already worked out when 投递成功 was detected. */
   initialRecognition?: Recognition | null;
+  onRecorded?: () => void;
 }) {
   const router = useRouter();
   const [positionId, setPositionId] = useState(initialPositionId || initialRecognition?.positionId || NEW);
@@ -85,6 +86,7 @@ export function MarkAppliedFromBrowserDialog({
   // Why that 简历 is picked: what was uploaded on these pages, or what 一键填写 used.
   const [resumeReason, setResumeReason] = useState("");
   const [resumePicked, setResumePicked] = useState(false);
+  const [changingResume, setChangingResume] = useState(false);
   const [archive, setArchive] = useState(true);
   const [loading, setLoading] = useState(false);
 
@@ -182,10 +184,12 @@ export function MarkAppliedFromBrowserDialog({
       const jd = captured?.jdPage?.text ? { url: captured.jdPage.url, text: captured.jdPage.text } : undefined;
       const res = await fetch("/api/desktop-browser/record-application", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ companyName: selected?.companyName || companyName.trim(), title: selected ? selected.title : title.trim(), appliedDate: new Date(appliedDate).toISOString(), source, positionId: selected?.id, resumeVersionId: resumeVersionId || undefined, applyUrl: pageUrl, city: city.trim() || undefined, snapshot: snapshot || undefined, jd }) });
       const body = await res.json(); if (!res.ok) throw new Error(body.error);
+      void window.desktopBridge?.applicationRecorded?.();
+      onRecorded?.();
       const resumeName = resumeVersions.find((r) => r.id === resumeVersionId)?.name;
       toast.success(`已记为投递：${selected?.companyName || companyName.trim()} · ${selected ? selected.title : title.trim()}`, {
         description: [resumeName ? `简历「${resumeName}」` : "", jd ? "JD 已一起保存" : ""].filter(Boolean).join(" · ") || undefined,
-        action: { label: "撤销", onClick: () => void deleteApplication(body.id).then(() => { toast.success("已撤销这条投递"); router.refresh(); }) },
+        action: { label: "撤销", onClick: () => void deleteApplication(body.id).then(() => { void window.desktopBridge?.applicationRecorded?.(true); toast.success("已撤销这条投递"); router.refresh(); }) },
       });
       onOpenChange(false);
       router.refresh();
@@ -264,21 +268,32 @@ export function MarkAppliedFromBrowserDialog({
           {resumeVersions.length > 0 && (
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">用的简历</Label>
-              <Select value={resumeVersionId} onValueChange={(v) => { touched.current.resume = true; setResumePicked(true); setResumeVersionId(v ?? ""); setResumeReason(""); }}>
-                <SelectTrigger className="w-full">
-                  <SelectValue>{(value: string) => resumeVersions.find((r) => r.id === value)?.name ?? "选简历"}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {resumeVersions.map((r) => (
-                    <SelectItem key={r.id} value={r.id}>
-                      {r.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                {resumeReason || (resumePicked ? "" : "没看到这次上传了哪份简历，先按默认填的，不对就换一个")}
-              </p>
+              {/* Known from the upload: said in a line, changed only on request — not a choice to make every time. */}
+              {resumeReason && !resumePicked && !changingResume ? (
+                <p className="flex flex-wrap items-center gap-x-2 text-sm">
+                  <span className="font-medium">{resumeVersions.find((r) => r.id === resumeVersionId)?.name ?? "未选"}</span>
+                  <span className="text-xs text-muted-foreground">{resumeReason}</span>
+                  <button type="button" className="text-xs text-primary underline underline-offset-4" onClick={() => setChangingResume(true)}>换一个</button>
+                </p>
+              ) : (
+                <>
+                  <Select value={resumeVersionId} onValueChange={(v) => { touched.current.resume = true; setResumePicked(true); setResumeVersionId(v ?? ""); setResumeReason(""); }}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue>{(value: string) => resumeVersions.find((r) => r.id === value)?.name ?? "选简历"}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {resumeVersions.map((r) => (
+                        <SelectItem key={r.id} value={r.id}>
+                          {r.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    {resumeReason || (resumePicked ? "" : "没看到这次上传了哪份简历，先按默认填的，不对就换一个")}
+                  </p>
+                </>
+              )}
             </div>
           )}
           <label className="flex gap-2 text-xs"><input type="checkbox" checked={archive} onChange={(e) => setArchive(e.target.checked)} />确认已经提交，保存本次简历、资料和当前可读取的填写内容</label>

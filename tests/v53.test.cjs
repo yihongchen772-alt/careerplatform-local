@@ -78,7 +78,7 @@ test("recording trusts the applicant's choices and keeps the JD", () => {
   assert.match(action, /if \(position && !position\.jdText && data\.jd\?\.text\?\.trim\(\)\)/);
   const view = read("electron/browser-view.js");
   assert.match(view, /page\.fields >= 12 \|\| text\.length < 150 \|\| !JD_DUTIES\.test\(text\) \|\| !JD_NEEDS\.test\(text\)/, "a JD names duties and requirements and is not itself a form");
-  assert.match(view, /uploads: tab\.resumeUploads \|\| \[\], jdPage \}/);
+  assert.match(view, /uploads: tab\.resumeUploads \|\| \[\], jdPage,/);
   assert.match(view, /last\.by === "autofill" && now - last\.at < 8000/, "一键填写's own change event is not counted twice");
   assert.match(view, /filter\(\(u\) => !\(u\.by === "page" && Date\.now\(\) - u\.at < 8000\)\)/, "nor when it arrives just before 一键填写 finishes");
   assert.match(view, /\/\\\.\(\?:pdf\|docx\?\)\$\/i\.test\(file\.name\)/, "a photo upload is not a resume");
@@ -91,12 +91,13 @@ test("recording trusts the applicant's choices and keeps the JD", () => {
 
 test("投递成功: one click with the resume shown, 撤销 after; the dialog says why it picked a resume", () => {
   const browser = read("src/components/browser/embedded-browser.tsx");
-  assert.match(browser, /async function recordSubmittedNow\(\)/);
+  assert.match(browser, /async function recordSubmitted\(result: Recognition/);
   assert.match(browser, /核对后再记…/);
   assert.match(browser, /，简历「\{resumeName\}」/);
-  assert.match(browser, /label: "撤销", onClick: \(\) => void deleteApplication\(body\.id\)/);
+  assert.match(browser, /await deleteApplication\(bar\.id\)/);
   assert.match(browser, /用定制的简历/);
   const dialog = read("src/components/browser/mark-applied-from-browser.tsx");
+  assert.match(dialog, /label: "撤销", onClick: \(\) => void deleteApplication\(body\.id\)/);
   assert.match(dialog, /guessResumeUsed\(\{/);
   assert.match(dialog, /没看到这次上传了哪份简历/);
   assert.match(dialog, /jd \? "JD 已一起保存" : ""/);

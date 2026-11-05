@@ -374,7 +374,11 @@ function hasPage(t) {
 }
 
 function sendTabsState() {
-  send("browser:tabs", { tabs: tabs.map(tabState), activeId });
+  // While quitting, tabs go one by one and each departure lands here with the
+  // others' views already gone; reading those threw, and Electron turned that
+  // into a blocking error dialog on quit.
+  const live = tabs.filter((t) => { const wc = t.view.webContents; return wc && !wc.isDestroyed(); });
+  send("browser:tabs", { tabs: live.map(tabState), activeId });
 }
 
 function attach(t) {
@@ -412,7 +416,7 @@ function scheduleJobPageCapture(tab) {
   clearTimeout(tab.jdTimer);
   tab.jdTimer = setTimeout(async () => {
     const wc = tab.view.webContents;
-    if (wc.isDestroyed()) return;
+    if (!wc || wc.isDestroyed()) return;
     const page = await wc.executeJavaScript(`(${readJobPageInPage.toString()})()`).catch(() => null);
     const text = page && typeof page.text === "string" ? page.text.replace(/\n{3,}/g, "\n\n") : "";
     if (!page || page.fields >= 12 || text.length < 150 || !JD_DUTIES.test(text) || !JD_NEEDS.test(text)) return;
@@ -464,7 +468,7 @@ function createTab(url, { activate = true } = {}) {
   });
   view.setBackgroundColor("#ffffff");
   // resumeUploads / jdPage: what 记为已投递 needs to know about this application (see below).
-  const tab = { id: nextTabId++, view, revision: 0, resumeUploads: [], jdPage: null };
+  const tab = { id: nextTabId++, view, revision: 0, resumeUploads: [], jdPage: null, sentForms: [] };
   tabs.push(tab);
   const wc = view.webContents;
 
@@ -756,9 +760,15 @@ async function checkForms() {
   }
 }
 
+// One 网申 can say so twice (a toast, then a success page). Once it's recorded the
+// rest is noise — until the next send button, which is the next 网申.
+function justRecorded(tab) {
+  return !!tab.recordedAt && Date.now() - tab.recordedAt < 3 * 60000 && !(tab.lastSendAt > tab.recordedAt);
+}
+
 async function checkApplicationSubmitted() {
   const tab = activeTab();
-  if (!tab || tab.view.webContents.isLoading()) return;
+  if (!tab || tab.view.webContents.isLoading() || justRecorded(tab)) return;
   const wc = tab.view.webContents;
   let result = null;
   for (const frame of allFrames(wc)) {
@@ -945,6 +955,54 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       .find((file) => file.name && file.size > 0 && /\.(?:pdf|docx?)$/i.test(file.name));
     if (!resume) return;
     tab.resumeUploads = [{ by: "page", at: now, name: resume.name, size: resume.size, url: tab.view.webContents.getURL().slice(0, 2000) }, ...(tab.resumeUploads || [])].slice(0, 8);
+  });
+  // The form as it was sent (browser-guest-preload.js), each step of it: on the
+  // 投递成功 page the form is gone, and 记为已投递 needs its job and answers.
+  // The same page sent again (a failed submit, 下一步 twice) replaces its reading.
+  ipcMain.on("browser-guest:form-sent", (event, payload) => {
+    const tab = tabForSender(event.sender);
+    if (!tab || !payload || !Array.isArray(payload.fields)) return;
+    const now = Date.now();
+    // A real send (not 下一步 / 保存), form or not: one-click 投递 buttons have none.
+    // It's a new 网申, so a success message like the last one counts again.
+    if (payload.final === true) {
+      tab.lastSendAt = now;
+      submittedSignatures.delete(tab.id);
+    }
+    const fields = payload.fields.slice(0, 250)
+      .map((field) => ({ label: typeof field?.label === "string" ? field.label.slice(0, 200) : "", value: typeof field?.value === "string" ? field.value.slice(0, 5000) : "" }))
+      .filter((field) => field.label && field.value);
+    if (fields.length < 3) return;
+    const url = tab.view.webContents.getURL().slice(0, 2000);
+    tab.sentForms = [{ url, fields, at: now }, ...(tab.sentForms || []).filter((step) => step.url !== url && now - step.at < 3 * 3600_000)].slice(0, 8);
+  });
+  // A brief 投递成功 toast seen right after a send, over a page still showing its form.
+  ipcMain.on("browser-guest:success-seen", (event, payload) => {
+    const tab = tabForSender(event.sender);
+    const evidence = typeof payload?.evidence === "string" ? payload.evidence.slice(0, 40) : "";
+    if (!tab || !evidence || tab.id !== activeId || justRecorded(tab)) return;
+    const wc = tab.view.webContents;
+    const signature = `${wc.getURL()}|${evidence}`;
+    if (submittedSignatures.get(tab.id) === signature) return;
+    submittedSignatures.set(tab.id, signature);
+    send("browser:application-submitted", { tabId: tab.id, url: wc.getURL(), title: wc.getTitle(), evidence });
+  });
+  // Recorded: this application's form, JD and send are spoken for, and the next
+  // one in this tab starts clean. 撤销 brings them back, to record it again.
+  handle("browser:application-recorded", (_e, undone) => {
+    const tab = activeTab();
+    if (!tab) return;
+    if (undone) {
+      if (tab.recordedState) Object.assign(tab, tab.recordedState, { lastSendAt: null });
+      tab.recordedState = null;
+      tab.recordedAt = null;
+      return;
+    }
+    tab.recordedAt = Date.now();
+    tab.recordedState = { sentForms: tab.sentForms, jdPage: tab.jdPage };
+    tab.sentForms = [];
+    tab.jdPage = null;
+    tab.lastSendAt = null;
   });
   ipcMain.on("browser-guest:login-form", async (event) => {
     const tab = tabForSender(event.sender);
@@ -1389,7 +1447,30 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     // have sent another company's 网申 before, and that JD is not this one's.
     const visited = new Set(wc.navigationHistory.getAllEntries().map((entry) => entry.url));
     const jdPage = tab.jdPage && Date.now() - tab.jdPage.at < 2 * 3600_000 && visited.has(tab.jdPage.url) ? tab.jdPage : null;
-    return { fields, url: wc.getURL(), title: wc.getTitle(), text: page.text, siteName: String(page.siteName || "").slice(0, 100), history, positionId: tab.positionId, resumeVersionId: tab.resumeVersionId, variantId: tab.variantId, uploads: tab.resumeUploads || [], jdPage };
+    // Nothing readable here (the 投递成功 page): the form as it was sent, all its
+    // steps — the newest, then the earlier ones on the same site within the hour
+    // before each — merged, later answers winning.
+    if (!fields.length) {
+      const steps = [];
+      const hostOf = (url) => { try { return new URL(url).hostname; } catch { return ""; } };
+      for (const step of [...(tab.sentForms || [])].sort((a, b) => b.at - a.at)) {
+        const newer = steps[steps.length - 1];
+        if (!newer) {
+          if (Date.now() - step.at > 3 * 3600_000 || !(visited.has(step.url) || hostOf(step.url) === hostOf(wc.getURL()))) break;
+          steps.push(step);
+        } else if (hostOf(step.url) === hostOf(newer.url) && newer.at - step.at < 3600_000) steps.push(step);
+        else break;
+      }
+      // A later step's answer replaces the same question from an earlier step; within
+      // one step a repeated label is kept (two 教育经历 both ask for 学校).
+      let merged = [];
+      for (const step of steps.reverse()) {
+        const asked = new Set(step.fields.map((field) => field.label));
+        merged = [...merged.filter((field) => !asked.has(field.label)), ...step.fields];
+      }
+      fields.push(...merged.slice(0, 250));
+    }
+    return { fields, url: wc.getURL(), title: wc.getTitle(), text: page.text, siteName: String(page.siteName || "").slice(0, 100), history, positionId: tab.positionId, resumeVersionId: tab.resumeVersionId, variantId: tab.variantId, uploads: tab.resumeUploads || [], jdPage, lastSendAt: tab.lastSendAt || null };
   });
   handle("browser:cancel-autofill", (_e, tabId) => stopFillTask(tabId ?? activeId));
 

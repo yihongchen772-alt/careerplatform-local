@@ -741,14 +741,14 @@ function capturePageText() {
 function detectApplicationSuccess() {
   const text = ((document.body && document.body.innerText) || "").replace(/\s+/g, " ").trim();
   const phrases = [
-    "投递成功", "申请成功", "提交成功", "简历已投递", "申请已提交",
-    "投递已完成", "感谢您的申请", "thank you for applying", "application submitted",
+    "投递成功", "成功投递", "申请成功", "报名成功", "提交成功", "简历已投递", "申请已提交",
+    "投递已完成", "投递完成", "感谢您的申请", "thank you for applying", "application submitted",
     "application has been submitted", "successfully applied",
   ];
   const lower = text.toLowerCase();
   const evidence = phrases.find((p) => lower.includes(p.toLowerCase()));
   if (!evidence) return null;
-  if ((evidence === "提交成功" || evidence === "申请成功") && !/岗位|职位|招聘|简历|投递|求职|job|career|application/i.test(text)) {
+  if ((evidence === "提交成功" || evidence === "申请成功" || evidence === "报名成功") && !/岗位|职位|招聘|简历|投递|求职|job|career|application/i.test(text)) {
     return null;
   }
   const visibleEditable = Array.from(document.querySelectorAll("input, textarea, select")).filter((el) => {

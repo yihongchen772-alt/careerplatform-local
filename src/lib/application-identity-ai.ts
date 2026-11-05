@@ -15,6 +15,7 @@ export const identifyInputSchema = z.object({
   siteName: z.string().max(100).nullish(),
   history: z.array(z.object({ url: z.string().max(16384), title: z.string().max(300) })).max(15).default([]),
   fields: z.array(z.object({ label: z.string().max(200), value: z.string().max(20000) })).max(250).default([]),
+  jdText: z.string().max(4000).default(""),
   known: z.object({ companyName: z.string().max(120).default(""), title: z.string().max(200).default("") }).default({ companyName: "", title: "" }),
 });
 export type IdentifyInput = z.infer<typeof identifyInputSchema>;
@@ -66,6 +67,7 @@ export async function askAiForIdentity(user: { id: string; name: string | null }
     input.siteName ? `\n网站名称：${input.siteName}` : "",
     fields ? `\n表单里和岗位有关的字段：\n${fields}` : "",
     input.text ? `\n当前页面的文字（节选）：\n${masked(input.text.slice(0, 2000), user.name)}` : "",
+    input.jdText ? `\n投递前看的岗位页面（节选）：\n${masked(input.jdText.slice(0, 1500), user.name)}` : "",
   ].filter(Boolean).join("\n");
   try {
     const raw = await callTextAi({ config, prompt, schema: answerSchema, thinkingBudget: 512, timeoutMs: 30000 });

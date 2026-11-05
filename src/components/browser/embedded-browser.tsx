@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Pause, Play, SquareDashedMousePointer, ArrowRight, Bookmark, Camera, Check, ChevronDown, ChevronUp, Copy, Eraser, ExternalLink, FileCode, ListChecks, Loader2, KeyRound, LogOut, Maximize2, Minus, MoreVertical, NotebookPen, PanelRight, PanelRightClose, Plus, Radar, RotateCw, ScanSearch, Search, Send, Settings2, Sparkles, Trash2, TriangleAlert, X, Bug, Wand2 } from "lucide-react";
+import { ArrowLeft, Pause, Play, SquareDashedMousePointer, ArrowRight, Bookmark, Camera, Check, ChevronDown, ChevronUp, Copy, Eraser, ExternalLink, FileCode, ListChecks, Loader2, KeyRound, LogOut, Maximize2, Minus, MoreVertical, NotebookPen, PanelRight, PanelRightClose, Plus, Radar, RotateCw, ScanSearch, Search, Send, Settings2, Sparkles, Trash2, TriangleAlert, Undo2, X, Bug, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { AiProgress } from "@/components/ui/ai-progress";
@@ -250,12 +250,22 @@ export function EmbeddedBrowser({
   // `resume`: which 简历版本 went out (the file put on these pages, else 一键填写's, else one made for this job).
   const [submittedRecognition, setSubmittedRecognition] = useState<{ tabId: number; url: string; result: Recognition | null; resume?: { resumeVersionId: string | null; reason: string } | null } | null>(null);
   const [recordingSubmitted, setRecordingSubmitted] = useState(false);
+  // What was just recorded, with 打开 / 撤销. `restore` puts the 投递成功 bar back after 撤销.
+  const [recordedBar, setRecordedBar] = useState<{ tabId: number; id: string; label: string; auto: boolean; note: string; restore: { submitted: NonNullable<typeof submitted>; result: Recognition; resume: { resumeVersionId: string | null; reason: string } | null } } | null>(null);
+  // Tabs being recorded right now: a second announcement of the same 网申 waits it out (after that, main's justRecorded).
+  const recordingTabs = useRef(new Set<number>());
+  const [submittedDuplicate, setSubmittedDuplicate] = useState(false);
+  // Pages a 投递 was recorded on: the 「你已投过」 reminder has nothing to add there.
+  const [recordedPages, setRecordedPages] = useState<string[]>([]);
   const [markRecognition, setMarkRecognition] = useState<Recognition | null>(null);
   // The last fill's options, for 继续填写 after a 暂停.
   const lastFill = useRef<DesktopBridgeAutofillOptions>({});
   const autoFillPreference = usePreference("careerplatform.browser.autofillEveryPage", "1") !== "0";
   const [autoFillOverride, setAutoFillOverride] = useState<boolean | null>(null);
   const autoFill = autoFillOverride ?? autoFillPreference;
+  const autoRecordPreference = usePreference("careerplatform.browser.autoRecordSubmitted", "1") !== "0";
+  const [autoRecordOverride, setAutoRecordOverride] = useState<boolean | null>(null);
+  const autoRecord = autoRecordOverride ?? autoRecordPreference;
   const rememberPreference = usePreference("careerplatform.browser.autoRememberAnswers", "1") !== "0";
   const [rememberOverride, setRememberOverride] = useState<boolean | null>(null);
   const autoRemember = rememberOverride ?? rememberPreference;
@@ -399,6 +409,10 @@ export function EmbeddedBrowser({
     setAutoFillOverride(next);
     writePreference("careerplatform.browser.autofillEveryPage", next ? "1" : "0");
   }
+  function setAutoRecordSubmitted(next: boolean) {
+    setAutoRecordOverride(next);
+    writePreference("careerplatform.browser.autoRecordSubmitted", next ? "1" : "0");
+  }
   function setExpandBlocks(next: boolean) {
     setExpandOverride(next);
     writePreference("careerplatform.browser.expandBlocks", next ? "1" : "0");
@@ -473,9 +487,10 @@ export function EmbeddedBrowser({
       }
     });
     const offSubmitted = bridge.onApplicationSubmitted((payload) => {
+      if (recordingTabs.current.has(payload.tabId)) return;
       setSubmitted(payload);
+      setSubmittedDuplicate(false);
       setSubmittedRecognition({ tabId: payload.tabId, url: payload.url, result: null });
-      toast.success(`检测到“${payload.evidence}”，确认后可以记入投递看板`);
     });
     bridge.getTabs().then((state) => { activeIdRef.current = state.activeId; setTabsState(state); if (state.activeId !== null && initialPositionId) setJobBindings((bindings) => ({ ...bindings, [state.activeId!]: initialPositionId })); }).catch(() => {});
     bridge.history().then(setHistory).catch(() => {});
@@ -533,7 +548,7 @@ export function EmbeddedBrowser({
           title: result.title,
           urls: [...(snapshot.history ?? []).map((entry) => entry.url), snapshot.url],
         }).catch(() => null);
-        return { result, resume };
+        return { result, resume, sentAt: snapshot.lastSendAt ?? null };
       })
       .catch(() => null)
       .then((found) => {
@@ -541,9 +556,15 @@ export function EmbeddedBrowser({
         // Settled either way, so the bar stops saying "正在识别" when nothing came of it.
         const settled: Recognition = found?.result ?? { companyName: "", title: "", evidence: [], usedAi: false };
         setSubmittedRecognition((current) => (current && current.tabId === tabId && current.url === url ? { ...current, result: settled, resume: found?.resume ?? null } : current));
+        // Recorded on its own only when all is clear: a real send a moment ago, the
+        // job known, the resume not in doubt. Otherwise the bar asks. 撤销 is one click.
+        const resumeUnsure = !!found?.resume && !found.resume.resumeVersionId && !!found.resume.reason;
+        if (autoRecord && found?.sentAt && Date.now() - found.sentAt < 5 * 60000 && settled.companyName && settled.title && !resumeUnsure) {
+          void recordSubmittedRef.current?.(settled, found.resume, true);
+        }
       });
     return () => controller.abort();
-  }, [bridge, submittedRecognition, tabsState.activeId, poolPositions, identitySites, jobBindings]);
+  }, [bridge, submittedRecognition, tabsState.activeId, poolPositions, identitySites, jobBindings, autoRecord]);
 
   // A still of the page, taken whenever the pointer comes up to the browser
   // controls, so a menu opened next has a current picture to stand on.
@@ -839,20 +860,21 @@ export function EmbeddedBrowser({
     setSubmittedRecognition(null);
   }
 
-  // 投递成功 → 记为已投递 in one click: the recognised company and job, the
-  // 简历 that went out, the form's answers and the JD page; 撤销 takes it back.
-  async function recordSubmittedNow() {
-    const result = submittedRecognition?.result;
-    if (!bridge || !submitted || !result?.companyName || !result.title || recordingSubmitted) return;
+  // 投递成功 → recorded: the recognised company and job, the 简历 that went out,
+  // the form as it was sent and the JD page. By itself (`auto`) or in one click.
+  async function recordSubmitted(result: Recognition, resume: { resumeVersionId: string | null; reason: string } | null, auto: boolean) {
+    const announced = submitted;
+    if (!bridge || !announced || !result.companyName || !result.title) return;
     setRecordingSubmitted(true);
+    recordingTabs.current.add(announced.tabId);
     try {
       const snapshot = await bridge.applicationSnapshot();
+      if (!snapshot) throw new Error("读不到当前页面");
       const pool = result.positionId ? poolPositions.find((p) => p.id === result.positionId) : undefined;
       const companyName = pool?.companyName ?? result.companyName;
       const title = pool?.title ?? result.title;
-      const applyUrl = currentUrl || snapshot?.url || submitted.url;
-      const resumeId = submittedResumeId();
-      const jd = snapshot?.jdPage?.text ? { url: snapshot.jdPage.url, text: snapshot.jdPage.text } : undefined;
+      const resumeId = resume?.resumeVersionId || resumeVersionId || resumeVersions.find((r) => r.isDefault)?.id || resumeVersions[0]?.id || undefined;
+      const jd = snapshot.jdPage?.text ? { url: snapshot.jdPage.url, text: snapshot.jdPage.text } : undefined;
       const res = await fetch("/api/desktop-browser/record-application", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -860,29 +882,61 @@ export function EmbeddedBrowser({
           companyName,
           title,
           appliedDate: new Date().toISOString(),
-          source: sourceFromUrl(applyUrl),
+          source: sourceFromUrl(snapshot.url),
           positionId: pool?.id,
           resumeVersionId: resumeId,
-          applyUrl,
-          snapshot: snapshot && /^https?:/i.test(snapshot.url) ? { url: snapshot.url, fields: snapshot.fields, positionId: snapshot.positionId, resumeVersionId: snapshot.resumeVersionId, variantId: snapshot.variantId } : undefined,
+          applyUrl: snapshot.url,
+          snapshot: /^https?:/i.test(snapshot.url) ? { url: snapshot.url, fields: snapshot.fields, positionId: snapshot.positionId, resumeVersionId: snapshot.resumeVersionId, variantId: snapshot.variantId } : undefined,
           jd,
+          auto,
         }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || "记录失败");
+      if (body.duplicate) {
+        // Already on record: not for the App to add a second one on its own.
+        setSubmittedDuplicate(true);
+        return;
+      }
+      void bridge.applicationRecorded?.();
+      setRecordedPages((list) => [...list, snapshot.url]);
+      const resumeName = resumeVersions.find((r) => r.id === resumeId)?.name;
+      const kept = [jd ? "JD" : "", snapshot.fields.length ? `${snapshot.fields.length} 项填写内容` : ""].filter(Boolean).join(" 和 ");
+      setRecordedBar({
+        tabId: announced.tabId,
+        id: body.id,
+        label: `${companyName} · ${title}`,
+        auto,
+        note: [resumeName ? `简历「${resumeName}」` : "", kept ? `${kept}一起存好了` : ""].filter(Boolean).join("，"),
+        restore: { submitted: announced, result, resume },
+      });
       setSubmitted(null);
       setSubmittedRecognition(null);
-      const resumeName = resumeVersions.find((r) => r.id === resumeId)?.name;
-      toast.success(`已记为投递：${companyName} · ${title}`, {
-        description: [resumeName ? `简历「${resumeName}」` : "", jd ? "JD 已一起保存" : ""].filter(Boolean).join(" · ") || undefined,
-        action: { label: "撤销", onClick: () => void deleteApplication(body.id).then(() => { toast.success("已撤销这条投递"); router.refresh(); }) },
-      });
       router.refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "记录失败", { action: { label: "核对后再记", onClick: reviewSubmitted } });
+      // On its own it just stays a question in the bar; asked for, it says what went wrong.
+      if (!auto) toast.error(err instanceof Error ? err.message : "记录失败", { action: { label: "核对后再记", onClick: reviewSubmitted } });
     } finally {
+      recordingTabs.current.delete(announced.tabId);
       setRecordingSubmitted(false);
     }
+  }
+  const recordSubmittedRef = useRef(recordSubmitted);
+  useEffect(() => { recordSubmittedRef.current = recordSubmitted; });
+
+  // 撤销: the record goes, and the 投递成功 bar comes back to record it properly or dismiss.
+  async function undoRecorded() {
+    const bar = recordedBar;
+    if (!bar) return;
+    setRecordedBar(null);
+    await deleteApplication(bar.id);
+    void bridge?.applicationRecorded?.(true);
+    setRecordedPages((list) => list.filter((page) => page !== bar.restore.submitted.url));
+    setSubmitted(bar.restore.submitted);
+    setSubmittedDuplicate(false);
+    setSubmittedRecognition({ tabId: bar.restore.submitted.tabId, url: bar.restore.submitted.url, result: bar.restore.result, resume: bar.restore.resume });
+    toast.success("已撤销这条投递");
+    router.refresh();
   }
 
   async function handleScreenshot() {
@@ -958,6 +1012,7 @@ export function EmbeddedBrowser({
         <h3 className="font-medium text-foreground">自动化</h3>
         {[
           { checked: autoFill, set: setAutoFillEveryPage, title: "每页自动填", hint: "网申分好几页时，每翻到一页有空表单就自动填，不用每页点一次。" },
+          { checked: autoRecord, set: setAutoRecordSubmitted, title: "投递成功后自动记录", hint: "刚点了提交、页面显示投递成功，并且认得出公司和岗位，就直接记进投递记录（带上用的简历、填写内容和 JD），可以撤销。关掉后改为提示你点一下。" },
           { checked: expandBlocks, set: setExpandBlocks, title: "自动补齐栏目", hint: "资料里的教育 / 实习 / 项目比页面栏目多时，自动点页面上的「添加」再接着填；只点文字明确的添加按钮，不会点提交。" },
           { checked: autoRemember, set: setAutoRememberAnswers, title: "记住我手填的内容", hint: "网申资料里还空着的（研究方向、校园经历、技能…）直接记进去，可撤销；其他手填或修改的经历与回答先放进待核对。" },
         ].map((item) => (
@@ -1107,6 +1162,7 @@ export function EmbeddedBrowser({
                   <DropdownMenuSeparator />
                   <DropdownMenuCheckboxItem closeOnClick={false} checked={autoFill} onCheckedChange={(checked) => setAutoFillEveryPage(!!checked)}>每页自动填</DropdownMenuCheckboxItem>
                   <DropdownMenuCheckboxItem closeOnClick={false} checked={expandBlocks} onCheckedChange={(checked) => setExpandBlocks(!!checked)}>自动补齐栏目</DropdownMenuCheckboxItem>
+                  <DropdownMenuCheckboxItem closeOnClick={false} checked={autoRecord} onCheckedChange={(checked) => setAutoRecordSubmitted(!!checked)}>投递成功后自动记录</DropdownMenuCheckboxItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem disabled={!currentUrl} onClick={() => void handleRegionFill()}><SquareDashedMousePointer />框选一块区域填写…</DropdownMenuItem>
                   <DropdownMenuItem disabled={!currentUrl} onClick={() => { openPanel("preview"); handleAutofill({ mode: "preview", answerLength: 200 }); }}><ScanSearch />逐字段预览后再填…</DropdownMenuItem>
@@ -1312,7 +1368,21 @@ export function EmbeddedBrowser({
             {detected.typing ? <>你在手动填写，这页还有 {detected.count} 个空着的字段，可以一键填好（你已经填的不会动）。</> : <>这页有 {detected.count} 个可以自动填写的字段。</>}
           </Infobar>
         )}
-        {tailoredHere && resumeVersionId !== tailoredHere.resumeVersionId && !skippedTailored.includes(tailoredHere.site) && !submitted && (
+        {recordedBar && recordedBar.tabId === tabsState.activeId && (
+          <Infobar
+            tone="success"
+            icon={<Check />}
+            onClose={() => setRecordedBar(null)}
+            closeLabel="知道了"
+            actions={<>
+              <Button size="xs" variant="outline" onClick={() => router.push(`/applications/${encodeURIComponent(recordedBar.id)}`)}>打开这条投递</Button>
+              <Button size="xs" variant="outline" onClick={() => void undoRecorded()}><Undo2 />撤销</Button>
+            </>}
+          >
+            {recordedBar.auto ? "已自动记为投递" : "已记为投递"}：<strong className="font-medium">{recordedBar.label}</strong>{recordedBar.note ? <>。{recordedBar.note}。</> : "。"}
+          </Infobar>
+        )}
+        {tailoredHere && resumeVersionId !== tailoredHere.resumeVersionId && !skippedTailored.includes(tailoredHere.site) && !submitted && !recordedBar && (
           <Infobar
             icon={<Wand2 />}
             onClose={() => setSkippedTailored((list) => [...list, tailoredHere.site])}
@@ -1335,7 +1405,7 @@ export function EmbeddedBrowser({
               return result?.companyName && result.title && !resumeUnsure ? (
                 <>
                   <Button size="xs" variant="outline" disabled={recordingSubmitted} onClick={reviewSubmitted}>核对后再记…</Button>
-                  <Button size="xs" disabled={recordingSubmitted} onClick={() => void recordSubmittedNow()}>{recordingSubmitted ? <Loader2 className="animate-spin" /> : <Send />}记为已投递</Button>
+                  <Button size="xs" disabled={recordingSubmitted} onClick={() => void recordSubmitted(result, submittedRecognition?.resume ?? null, false)}>{recordingSubmitted ? <Loader2 className="animate-spin" /> : <Send />}{submittedDuplicate ? "再记一条" : "记为已投递"}</Button>
                 </>
               ) : (
                 <Button size="xs" disabled={!result} onClick={reviewSubmitted}><Send />核对并建档…</Button>
@@ -1351,7 +1421,9 @@ export function EmbeddedBrowser({
               return named
                 ? resumeUnsure
                   ? <>官网显示“{submitted.evidence}”，识别为 <strong className="font-medium">{named}</strong>。{guess!.reason.replace(/，请选一下$/, "")}，核对一下再记。</>
-                  : <>官网显示“{submitted.evidence}”，识别为 <strong className="font-medium">{named}</strong>{resumeName ? <>，简历「{resumeName}」</> : null}。确实提交完成的话，一键记进投递记录。</>
+                  : submittedDuplicate
+                    ? <>官网显示“{submitted.evidence}”，识别为 <strong className="font-medium">{named}</strong>。这个岗位之前已经记录过，确实又投了一次的话再记一条。</>
+                    : <>官网显示“{submitted.evidence}”，识别为 <strong className="font-medium">{named}</strong>{resumeName ? <>，简历「{resumeName}」</> : null}。确实提交完成的话，一键记进投递记录。</>
                 : <>官网显示“{submitted.evidence}”{result ? "" : "，正在识别公司和岗位…"}。确实提交完成的话，把它记进投递记录。</>;
             })()}
           </Infobar>
@@ -1366,6 +1438,7 @@ export function EmbeddedBrowser({
           loading={!!activeTab?.loading}
           sites={knownSites}
           onPickPortalCompany={() => setPortalOpen(true)}
+          hideApplied={!!submitted || (!!currentUrl && recordedPages.includes(currentUrl))}
         />
       </div>
 
@@ -1465,6 +1538,7 @@ export function EmbeddedBrowser({
           initialRecognition={markRecognition}
           initialResumeId={resumeVersionId || undefined}
           resumeVersions={resumeVersions}
+          onRecorded={() => { if (currentUrl) setRecordedPages((list) => [...list, currentUrl]); }}
         />
       )}
 
