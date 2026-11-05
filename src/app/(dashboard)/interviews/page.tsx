@@ -1,6 +1,10 @@
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { AUTO_NOTE_PREFIXES } from "@/lib/stage-labels";
+import type { ApplicationStage } from "@prisma/client";
+
+// Rounds whose notes are 面经; 未通过 and Offer often carry the round's feedback too.
+const INTERVIEW_LIBRARY_STAGES: ApplicationStage[] = ["ASSESSMENT", "OA", "AI_INTERVIEW", "INTERVIEW_1", "INTERVIEW_2", "INTERVIEW_3", "HR_INTERVIEW", "OFFER", "REJECTED"];
 import {
   InterviewNotes,
   type InterviewNote,
@@ -23,8 +27,10 @@ export default async function InterviewsPage({ searchParams }: { searchParams: P
         // re-reading — a bare "moved to 一面" entry would just be noise, and
         // so is the App's own note on a step it recorded from a mail or the
         // portal (until the user writes their own over it).
+        // 面经: a 测评 / 笔试 / 面试 round with a note, or any row that names
+        // who interviewed or how. A note on 已投递 or 本人拒绝 is not one.
         OR: [
-          { note: { not: null } },
+          { note: { not: null }, stage: { in: INTERVIEW_LIBRARY_STAGES } },
           { interviewer: { not: null } },
           { interviewFormat: { not: null } },
         ],

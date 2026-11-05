@@ -69,4 +69,4 @@ export const POSITION_STATUS_LABELS: Record<PositionStatus, string> = {
  * them — they are not anyone's interview notes — unless the user has written
  * their own note over one.
  */
-export const AUTO_NOTE_PREFIXES = ["网申进度同步", "邮件自动识别："] as const;
+export const AUTO_NOTE_PREFIXES = ["网申进度同步", "邮件自动识别：", "从邮件自动记录：", "导入时表格里写的是"] as const;

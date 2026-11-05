@@ -21,6 +21,9 @@ export type ResumeVersionRow = {
   checkResult: ResumeCheck | null;
   checkedAt: string | null;
   createdAt: string;
+  /** 投递 sent with this version, and how many of them reached a 面试 round. */
+  applied?: number;
+  interviewed?: number;
 };
 
 export function ResumeList({ resumes }: { resumes: ResumeVersionRow[] }) {
@@ -70,6 +73,9 @@ export function ResumeList({ resumes }: { resumes: ResumeVersionRow[] }) {
                   目标方向：{r.targetTrack}
                 </p>
               )}
+              <p className="text-xs text-muted-foreground">
+                {r.applied ? `投了 ${r.applied} 次 · 进面 ${r.interviewed ?? 0} 次（${Math.round(((r.interviewed ?? 0) / r.applied) * 100)}%）` : "还没用这版投过"}
+              </p>
               {r.fileUrl && (
                 <a
                   href={r.fileUrl}

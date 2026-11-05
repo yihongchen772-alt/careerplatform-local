@@ -80,8 +80,10 @@ export default async function BrowserPage({
         }))}
         quickLinks={{
           companies: careerCompanies.map((c) => ({ id: c.id, name: c.name, url: c.careerUrl! })),
+          // Only jobs still to apply to, one tile per company: the applied ones are reached through 进度页.
           positions: positions
-            .filter((p) => p.jdUrl)
+            .filter((p) => p.jdUrl && (p.status === "EVALUATING" || p.status === "PLANNED"))
+            .filter((p, index, list) => list.findIndex((other) => other.companyId === p.companyId) === index)
             .map((p) => ({ id: p.id, label: `${p.company.name} · ${p.title}`, url: p.jdUrl! })),
           portals: companies.flatMap((c) =>
             c.applicationPortals.map((p) => ({ id: p.id, name: p.label ? `${c.name} · ${p.label}` : c.name, url: p.url }))

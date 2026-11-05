@@ -26,7 +26,7 @@ export function FunnelCard({
       <CardHeader>
         <CardTitle>阶段覆盖</CardTitle>
         <p className="text-sm text-muted-foreground">
-          只统计实际记录过的阶段。企业顺序不同、跳过的环节不会被虚算进去。
+          每一行是有多少条投递走到过这一关（只算实际记录过的，跳过的环节不虚算）。
         </p>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -57,10 +57,12 @@ export function FunnelCard({
             ))}
             {outcomes && (
               <div className="flex flex-wrap gap-x-4 gap-y-1 border-t pt-3 text-xs text-muted-foreground">
-                <span>已获 Offer {outcomes.offers}</span>
+                {/* Where 投递 stand now — the bars above count what they ever reached. */}
+                <span className="text-foreground/80">现在停在：</span>
+                <span>Offer 待决定 {outcomes.offers}</span>
                 <span>已接受 {outcomes.accepted}</span>
-                <span>被拒 {outcomes.rejected}</span>
-                <span>本人拒绝 {outcomes.declined}</span>
+                <span>企业未通过 {outcomes.rejected}</span>
+                <span>本人放弃 {outcomes.declined}</span>
               </div>
             )}
             {levels.some((l) => l.smallSample) && (
