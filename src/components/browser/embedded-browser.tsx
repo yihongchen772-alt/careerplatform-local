@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Pause, Play, SquareDashedMousePointer, ArrowRight, Bookmark, Camera, Check, ChevronDown, ChevronUp, Copy, Eraser, ExternalLink, FileCode, ListChecks, Loader2, KeyRound, LogOut, Maximize2, Minus, MoreVertical, NotebookPen, PanelRight, PanelRightClose, Plus, Radar, RotateCw, ScanSearch, Search, Send, Settings2, Sparkles, Trash2, TriangleAlert, X, Bug } from "lucide-react";
+import { ArrowLeft, Pause, Play, SquareDashedMousePointer, ArrowRight, Bookmark, Camera, Check, ChevronDown, ChevronUp, Copy, Eraser, ExternalLink, FileCode, ListChecks, Loader2, KeyRound, LogOut, Maximize2, Minus, MoreVertical, NotebookPen, PanelRight, PanelRightClose, Plus, Radar, RotateCw, ScanSearch, Search, Send, Settings2, Sparkles, Trash2, TriangleAlert, X, Bug, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { AiProgress } from "@/components/ui/ai-progress";
@@ -25,6 +25,7 @@ import {
 import { setToasterPosition } from "@/components/ui/sonner";
 import { cn } from "@/lib/utils";
 import { parseJd } from "@/lib/actions/jd-parse";
+import { startTailoringFromPage } from "@/lib/actions/resume-tailor";
 import { PositionFormDialog, type PositionFormInitial } from "@/components/pool/position-form-dialog";
 import { PortalSyncDialog, type PortalCompany } from "@/components/browser/portal-sync-dialog";
 import { MarkAppliedFromBrowserDialog, type PoolPosition } from "@/components/browser/mark-applied-from-browser";
@@ -175,6 +176,7 @@ export function EmbeddedBrowser({
   // What this page wrote into 网申资料 so far: one notice, one 撤销 for all of it.
   const learnedRef = useRef<{ url: string; items: { id: string; label: string }[] }>({ url: "", items: [] });
   const [capturing, setCapturing] = useState(false);
+  const [startingTailor, setStartingTailor] = useState(false);
   const [captureInitial, setCaptureInitial] = useState<PositionFormInitial | null>(null);
   const [captureOpen, setCaptureOpen] = useState(false);
   // Bumped per capture so the dialog remounts with the new `initial` instead
@@ -781,6 +783,26 @@ export function EmbeddedBrowser({
     }
   }
 
+  // 按这个岗位定制简历: the open page's text is the JD; the 定制 page takes it from there.
+  async function handleTailor() {
+    if (!bridge || startingTailor) return;
+    setStartingTailor(true);
+    try {
+      const page = await bridge.capturePage();
+      if (!page.text || page.text.trim().length < 30) {
+        toast.error("这个页面上读不到岗位内容：等它加载完再试，或到「简历版本 → 按 JD 定制」里粘贴 JD");
+        return;
+      }
+      const res = await startTailoringFromPage({ url: page.url, title: page.title ?? "", text: page.text });
+      if (!res.ok) return void toast.error(res.message);
+      router.push(`/resumes/tailor?id=${encodeURIComponent(res.data.id)}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "读取页面失败");
+    } finally {
+      setStartingTailor(false);
+    }
+  }
+
   async function handleScreenshot() {
     if (!bridge) return;
     try {
@@ -972,6 +994,7 @@ export function EmbeddedBrowser({
                     ) : (
                       <DropdownMenuItem onClick={() => router.push("/resumes")}><Plus />添加简历…</DropdownMenuItem>
                     )}
+                    {resumeVersions.length > 0 && <DropdownMenuItem disabled={startingTailor || !currentUrl} onClick={() => void handleTailor()}><Wand2 />按本页 JD 定制一份…</DropdownMenuItem>}
                   </DropdownMenuGroup>
                   <DropdownMenuSeparator />
                   {profileVariants.length > 0 && (
@@ -1044,6 +1067,7 @@ export function EmbeddedBrowser({
               <DropdownMenuSeparator />
               <DropdownMenuItem disabled={!currentUrl} onClick={() => { setFindOpen(true); setTimeout(() => findRef.current?.select(), 50); }}><Search />在页面中查找…<DropdownMenuShortcut>{mod}F</DropdownMenuShortcut></DropdownMenuItem>
               <DropdownMenuItem disabled={capturing || !currentUrl} onClick={handleCapture}><Bookmark />收藏为候选岗位</DropdownMenuItem>
+              <DropdownMenuItem disabled={startingTailor || !currentUrl} onClick={() => void handleTailor()}><Wand2 />按这个岗位定制简历…</DropdownMenuItem>
               <DropdownMenuItem disabled={!currentUrl} onClick={() => { setMarkRecognition(null); setMarkOpen(true); }}><Send />记为已投递…</DropdownMenuItem>
               <DropdownMenuItem onClick={() => setPortalOpen(true)}><Radar />设置进度同步…</DropdownMenuItem>
               <DropdownMenuItem disabled={!currentUrl} onClick={handleScreenshot}><Camera />截图存到投递附件…</DropdownMenuItem>

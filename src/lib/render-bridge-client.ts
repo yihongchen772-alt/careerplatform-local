@@ -86,3 +86,33 @@ export async function feishuBaseRevision(url: string): Promise<number | null> {
     return null;
   }
 }
+
+/**
+ * Prints a complete resume page (src/lib/resume-doc.ts renderResumeHtml) to
+ * an A4 PDF in the Electron main process. Desktop app only, like the rest.
+ */
+export async function printResumePdf(html: string): Promise<Buffer> {
+  const bridgeUrl = process.env.CAREERPLATFORM_RENDER_BRIDGE_URL;
+  const token = process.env.CAREERPLATFORM_RENDER_BRIDGE_TOKEN;
+  if (!bridgeUrl || !token) throw new Error("生成 PDF 需要在桌面 App 里进行");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 45000);
+  try {
+    const res = await fetch(`${bridgeUrl}/print-pdf`, {
+      method: "POST",
+      signal: controller.signal,
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ html }),
+    });
+    if (!res.ok) {
+      const data: unknown = await res.json().catch(() => null);
+      const message = data && typeof data === "object" && "error" in data ? String((data as { error: unknown }).error) : `HTTP ${res.status}`;
+      throw new Error(`生成 PDF 失败：${message}`);
+    }
+    const pdf = Buffer.from(await res.arrayBuffer());
+    if (pdf.subarray(0, 5).toString("latin1") !== "%PDF-") throw new Error("生成 PDF 失败：输出不是 PDF");
+    return pdf;
+  } finally {
+    clearTimeout(timer);
+  }
+}

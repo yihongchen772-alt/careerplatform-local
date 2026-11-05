@@ -74,7 +74,7 @@ const FOREIGN_KEYS: Partial<Record<TableName, [field: string, parent: TableName]
     ["stageHistoryId", "stageHistory"],
   ],
   positionMatch: [["userId", "user"], ["positionId", "position"], ["resumeVersionId", "resumeVersion"]],
-  resumeTailoring: [["userId", "user"], ["positionId", "position"], ["resumeVersionId", "resumeVersion"]],
+  resumeTailoring: [["userId", "user"], ["positionId", "position"], ["resumeVersionId", "resumeVersion"], ["savedVersionId", "resumeVersion"]],
   resumeDrill: [["userId", "user"], ["resumeVersionId", "resumeVersion"], ["positionId", "position"]],
   skillGapAnalysis: [["userId", "user"], ["resumeVersionId", "resumeVersion"]],
   autofillAnswer: [["userId", "user"], ["resumeVersionId", "resumeVersion"]],

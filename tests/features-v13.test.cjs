@@ -15,7 +15,6 @@ function loadTs(relative, extraRequire = {}) {
 }
 
 const { siteKey, looksLikeCandidateCenter } = loadTs("src/lib/site-key.ts");
-const { sanitizeResumeBody, renderTailoredResumeBody, tailoredResumeSchema } = loadTs("src/lib/tailored-resume.ts");
 const { resolveProfileVariant, parseApplicationProfile } = loadTs("src/lib/application-profile.ts");
 
 test("site keys group one employer's domains and split tenants on shared ATS hosts", () => {
@@ -57,20 +56,6 @@ test("profile variants swap experiences/projects/extras but share education", ()
   // An explicit "default" choice ignores the resume link.
   assert.equal(resolveProfileVariant(profile, "default", "r-data").variant, null);
   assert.equal(parseApplicationProfile({ education: [], experiences: [], projects: [], extras: {} }).variants.length, 0);
-});
-
-test("tailored resume escapes AI text and edits cannot smuggle active content", () => {
-  const doc = tailoredResumeSchema.parse({ headline: "数据<script>", summary: "a & b", experiences: [{ title: "字节", subtitle: "实习", bullets: ["<img src=x onerror=alert(1)>"] }] });
-  const body = renderTailoredResumeBody(doc, { name: "测试", phone: "1", email: "e", city: "" }, [{ school: "东南大学", major: "测控", degree: "本科", gpa: "", start: "2020-09", end: "2024年6月" }]);
-  assert.doesNotMatch(body, /<script|<img/);
-  assert.match(body, /数据&lt;script&gt;/);
-  assert.match(body, /东南大学/);
-  assert.match(body, /2020\.09 – 2024\.06/);
-  const dirty = '<h1 onclick="x()">名</h1><script>alert(1)</script><img src=x onerror=y><a href="javascript:z">链接</a><p style="background:url(x)">正文</p><iframe src="https://e"></iframe>';
-  const clean = sanitizeResumeBody(dirty);
-  assert.doesNotMatch(clean, /onclick|<script|<img|javascript:|<iframe|style=/);
-  assert.match(clean, /<h1>名<\/h1>/);
-  assert.match(clean, /正文/);
 });
 
 test("auto backup keeps the newest N and reads WebDAV listings", async () => {

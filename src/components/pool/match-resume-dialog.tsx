@@ -144,7 +144,7 @@ export function MatchResumeDialog({
 
                 <p className="text-sm">{m.suggestion}</p>
                 <Link
-                  href={`/resumes/tailored?positionId=${encodeURIComponent(positionId)}&resumeVersionId=${encodeURIComponent(m.resumeVersionId)}`}
+                  href={`/resumes/tailor?positionId=${encodeURIComponent(positionId)}&resumeVersionId=${encodeURIComponent(m.resumeVersionId)}`}
                   className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
                 >
                   <FileText className="size-3.5" />

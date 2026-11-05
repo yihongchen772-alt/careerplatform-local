@@ -926,6 +926,12 @@ model ResumeVersion {
   // reading the raw file in that case, so this is a pure optimization.
   extractedText String?
   extractedAt   DateTime?
+  /// 简历底稿: the resume as structured, editable data (lib/resume-doc.ts) —
+  /// read from the file once, verbatim, so 按 JD 定制 can change a few
+  /// sentences and print it again in the same layout. A version made by
+  /// 定制 stores the document it was printed from.
+  structured    Json?
+  structuredAt  DateTime?
   createdAt     DateTime  @default(now())
 
   user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -934,7 +940,8 @@ model ResumeVersion {
   resumeDrill       ResumeDrill?
   autofillAnswers   AutofillAnswer[]
   positionMatches   PositionMatch[]
-  resumeTailorings  ResumeTailoring[]
+  resumeTailorings  ResumeTailoring[] @relation("TailoringBase")
+  savedTailoring    ResumeTailoring?  @relation("TailoringSaved")
   skillGapAnalysis  SkillGapAnalysis?
 
   @@index([userId])
@@ -967,19 +974,27 @@ model PositionMatch {
 model ResumeTailoring {
   id              String   @id @default(cuid())
   userId          String
-  positionId      String
+  /// Null when the JD was pasted or read off a page rather than picked from 候选岗位.
+  positionId      String?
+  /// The 底稿 the tailoring starts from.
   resumeVersionId String
-  /// { summary, rewrites: [{original, suggested, reason}] }
+  /// Match-dialog suggestions: { summary, rewrites: [{original, suggested, reason}] }
   result          Json
+  /// 按 JD 定制 (lib/resume-doc.ts TailorDraft): target JD, the base snapshot,
+  /// the working document and the AI's change list.
+  draft           Json?
+  /// The 简历版本 this was saved as; saving again reprints that file.
+  savedVersionId  String?  @unique
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  position      Position      @relation(fields: [positionId], references: [id], onDelete: Cascade)
-  resumeVersion ResumeVersion @relation(fields: [resumeVersionId], references: [id], onDelete: Cascade)
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  position      Position?      @relation(fields: [positionId], references: [id], onDelete: Cascade)
+  resumeVersion ResumeVersion  @relation("TailoringBase", fields: [resumeVersionId], references: [id], onDelete: Cascade)
+  savedVersion  ResumeVersion? @relation("TailoringSaved", fields: [savedVersionId], references: [id], onDelete: SetNull)
 
-  @@unique([positionId, resumeVersionId])
   @@index([userId])
+  @@index([positionId, resumeVersionId])
 }
 
 /// 简历深挖模拟: an interviewer's follow-up tree over the candidate's own

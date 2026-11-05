@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { toast } from "sonner";
-import { FileText } from "lucide-react";
+import { FileText, Wand2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +25,8 @@ export type ResumeVersionRow = {
   /** 投递 sent with this version, and how many of them reached a 面试 round. */
   applied?: number;
   interviewed?: number;
+  /** Made by 按 JD 定制: the working copy to keep editing it in. */
+  tailoringId?: string | null;
 };
 
 export function ResumeList({ resumes }: { resumes: ResumeVersionRow[] }) {
@@ -64,6 +67,7 @@ export function ResumeList({ resumes }: { resumes: ResumeVersionRow[] }) {
               <div className="flex flex-wrap items-center gap-2">
                 <p className="font-medium">{r.name}</p>
                 {r.isDefault && <Badge>默认</Badge>}
+                {r.tailoringId && <Badge variant="outline"><Wand2 />定制</Badge>}
                 {r.checkScore !== null && (
                   <Badge variant="secondary">体检 {r.checkScore}</Badge>
                 )}
@@ -76,16 +80,23 @@ export function ResumeList({ resumes }: { resumes: ResumeVersionRow[] }) {
               <p className="text-xs text-muted-foreground">
                 {r.applied ? `投了 ${r.applied} 次 · 进面 ${r.interviewed ?? 0} 次（${Math.round(((r.interviewed ?? 0) / r.applied) * 100)}%）` : "还没用这版投过"}
               </p>
-              {r.fileUrl && (
-                <a
-                  href={r.fileUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-sm text-primary underline underline-offset-4"
-                >
-                  查看文件
-                </a>
-              )}
+              <div className="flex flex-wrap items-center gap-x-3">
+                {r.fileUrl && (
+                  <a
+                    href={r.fileUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-sm text-primary underline underline-offset-4"
+                  >
+                    查看文件
+                  </a>
+                )}
+                {r.tailoringId ? (
+                  <Link href={`/resumes/tailor?id=${encodeURIComponent(r.tailoringId)}`} className="text-sm text-primary underline underline-offset-4">改一改</Link>
+                ) : (
+                  <Link href={`/resumes/tailor?resumeVersionId=${encodeURIComponent(r.id)}`} className="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground" title="以这份为底稿，按某个岗位的 JD 微调出一份新简历">按 JD 定制</Link>
+                )}
+              </div>
             </div>
             <div className="flex shrink-0 items-center gap-1">
               {!r.isDefault && (

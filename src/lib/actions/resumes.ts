@@ -60,9 +60,14 @@ export async function updateResumeVersion(
         checkedAt: null,
         extractedText: null,
         extractedAt: null,
+        // The 定制 底稿 was read from the old file.
+        structured: Prisma.JsonNull,
+        structuredAt: null,
       }),
     },
   });
+  // A file of the user's own now: 更新简历版本 from a 定制 must no longer print over it.
+  if (replacingFile) await db.resumeTailoring.updateMany({ where: { userId: user.id, savedVersionId: id }, data: { savedVersionId: null } });
 
   // Fire-and-forget, same reasoning as createResumeVersion: re-warm the
   // content cache for the new file right away rather than waiting for the

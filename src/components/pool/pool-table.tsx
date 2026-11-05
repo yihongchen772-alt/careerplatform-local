@@ -472,9 +472,9 @@ export function PoolTable({
                     简历深挖
                   </Link>
                   <Link
-                    href={`/resumes/tailored?positionId=${p.id}`}
+                    href={`/resumes/tailor?positionId=${p.id}`}
                     className={buttonVariants({ size: "sm", variant: "outline" })}
-                    title="用 AI 为这个岗位整理一份定制简历，可编辑后导出 PDF / Word"
+                    title="在你的简历上按这个岗位的 JD 微调，版式不变，改完存成新的简历版本"
                   >
                     <FileText className="size-3.5" />
                     定制简历
@@ -635,7 +635,7 @@ export function PoolTable({
                         <DropdownMenuItem onClick={() => setInsightId(p.id)}>岗位口碑</DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem onClick={() => router.push(`/resume-drill?position=${p.id}`)}><Crosshair className="size-3.5" />简历深挖</DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => router.push(`/resumes/tailored?positionId=${p.id}`)}><FileText className="size-3.5" />定制简历</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => router.push(`/resumes/tailor?positionId=${p.id}`)}><FileText className="size-3.5" />定制简历</DropdownMenuItem>
                         {p.jdUrl && p.status !== "APPLIED" && <><DropdownMenuSeparator /><DropdownMenuItem onClick={() => setMarkingId(p.id)}>标记已投</DropdownMenuItem></>}
                       </DropdownMenuContent>
                     </DropdownMenu>

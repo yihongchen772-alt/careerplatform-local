@@ -1,5 +1,8 @@
 const http = require("http");
 const crypto = require("crypto");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
 const { readFeishuBase, feishuBaseRevision } = require("./feishu-base");
 
 // Job radar's static-HTML fetch runs in the Next.js server child process,
@@ -90,6 +93,30 @@ async function renderOne(url, partition) {
   }
 }
 
+let printQueue = Promise.resolve();
+
+/**
+ * 定制简历 → 简历版本: prints our own resume page (built by
+ * src/lib/resume-doc.ts, every value escaped, photo embedded as a data URL)
+ * to an A4 PDF. Loaded from a temp file rather than a data: URL so a large
+ * photo can't run into the URL length limit; JavaScript stays off.
+ */
+async function printPdf(html) {
+  const { BrowserWindow } = require("electron");
+  const file = path.join(os.tmpdir(), `cp-resume-${crypto.randomBytes(8).toString("hex")}.html`);
+  fs.writeFileSync(file, html, "utf8");
+  const win = new BrowserWindow({ show: false, width: 900, height: 1200, webPreferences: { javascript: false, sandbox: true, partition: "cp-document-export" } });
+  try {
+    await win.loadFile(file);
+    return await win.webContents.printToPDF({ pageSize: "A4", printBackground: true, preferCSSPageSize: true });
+  } finally {
+    if (!win.isDestroyed()) win.destroy();
+    fs.rm(file, { force: true }, () => {});
+  }
+}
+
+const ROUTES = new Set(["/render", "/feishu-base", "/feishu-base-rev", "/print-pdf"]);
+
 /**
  * Starts the loopback-only bridge server and returns its address plus a
  * per-launch bearer token. Never bind beyond 127.0.0.1 — this hands out a
@@ -101,7 +128,7 @@ function startRenderBridge() {
   const token = crypto.randomBytes(24).toString("hex");
 
   const server = http.createServer((req, res) => {
-    if (req.method !== "POST" || (req.url !== "/render" && req.url !== "/feishu-base" && req.url !== "/feishu-base-rev")) {
+    if (req.method !== "POST" || !ROUTES.has(req.url)) {
       res.writeHead(404).end();
       return;
     }
@@ -111,15 +138,29 @@ function startRenderBridge() {
     }
     let body = "";
     let tooLarge = false;
+    // A resume page carries its photo inline; everything else is a short JSON.
+    const limit = req.url === "/print-pdf" ? 8_000_000 : 10_000;
     req.on("data", (chunk) => {
       body += chunk;
-      if (body.length > 10_000) {
+      if (body.length > limit) {
         tooLarge = true;
         req.destroy();
       }
     });
     req.on("end", async () => {
       if (tooLarge) return;
+      if (req.url === "/print-pdf") {
+        try {
+          const { html } = JSON.parse(body);
+          if (typeof html !== "string" || !html.startsWith("<!doctype html>")) throw new Error("无效的页面");
+          printQueue = printQueue.catch(() => {}).then(() => printPdf(html));
+          const pdf = await printQueue;
+          res.writeHead(200, { "Content-Type": "application/pdf", "Content-Length": pdf.length }).end(pdf);
+        } catch (err) {
+          res.writeHead(502, { "Content-Type": "application/json" }).end(JSON.stringify({ error: String(err && err.message ? err.message : err) }));
+        }
+        return;
+      }
       let url;
       let partition;
       try {
