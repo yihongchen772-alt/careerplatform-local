@@ -178,7 +178,8 @@ test("the photo comes straight out of the PDF: the portrait JPEG, not logos, PNG
 test("wiring: migration, PDF printing, entry points, old address", () => {
   const sql = read("prisma/migrations/20261105120000_resume_tailor_v2/migration.sql");
   assert.match(sql, /ALTER TABLE "ResumeVersion" ADD COLUMN "structured" JSONB/);
-  assert.match(sql, /"positionId" TEXT,\n/);
+  // Windows checks files out with CRLF.
+  assert.match(sql, /"positionId" TEXT,\r?\n/);
   assert.match(sql, /"savedVersionId" TEXT/);
   assert.match(sql, /ON DELETE SET NULL/);
   const bridge = read("electron/render-bridge.js");
@@ -193,6 +194,6 @@ test("wiring: migration, PDF printing, entry points, old address", () => {
   assert.match(read("src/lib/actions/resume-tailor.ts"), /extractedText: docPlainText\(draft\.doc\)/);
   // A re-uploaded file drops the 底稿 read from the old one, and its link to a 定制.
   const resumes = read("src/lib/actions/resumes.ts");
-  assert.match(resumes, /structured: Prisma\.JsonNull,\n\s+structuredAt: null/);
+  assert.match(resumes, /structured: Prisma\.JsonNull,\r?\n\s+structuredAt: null/);
   assert.match(resumes, /savedVersionId: id \}, data: \{ savedVersionId: null \}/);
 });
