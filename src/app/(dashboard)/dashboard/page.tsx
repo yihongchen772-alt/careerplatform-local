@@ -108,7 +108,9 @@ export default async function DashboardPage() {
   const todos = buildTodos(applications, positions, stageHistories, personalTasks, contacts, calendarEvents);
   // 待办 is what the app watches for you; the tasks you wrote are in 我的待办,
   // and mail times waiting for the calendar are in 日历 — each in one place.
-  const watchTodos = todos.filter((todo) => !todo.id.startsWith("task-"));
+  // What 接下来 already lists right above isn't listed again.
+  const listedAbove = new Set(upcoming.flatMap((item) => (item.source === "event" ? [`event-${item.sourceId}`] : item.source === "stage" ? [`next-${item.sourceId}`] : [])));
+  const watchTodos = todos.filter((todo) => !todo.id.startsWith("task-") && !listedAbove.has(todo.id));
   // Mail with a time shows in 接下来 with its own 写入 button; only those with no
   // time need the calendar, so only those are pointed at.
   const mailNeedingTime = (await loadPendingMail(user.id, now)).filter((row) => !row.time);

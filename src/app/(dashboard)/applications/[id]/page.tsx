@@ -18,6 +18,7 @@ import { applicationStageStyle } from "@/lib/application-stage-style";
 import { PortalReviewBanner } from "@/components/applications/portal-review-banner";
 import { AutoProgressBanner } from "@/components/applications/auto-progress-banner";
 import { QuickStageMenu } from "@/components/applications/quick-stage-menu";
+import { DeleteApplicationButton } from "@/components/applications/delete-application-button";
 import { loadAutoProgressItems, loadAutoScheduleItems } from "@/lib/auto-progress";
 import { PortalAssignmentCard } from "@/components/applications/portal-assignment-card";
 import { ApplicationPager } from "@/components/applications/application-pager";
@@ -306,6 +307,9 @@ export default async function ApplicationDetailPage({
         />
         </div>
       </details>
+      <div className="flex justify-end">
+        <DeleteApplicationButton id={application.id} label={`${application.company.name} · ${application.title}`} />
+      </div>
     </div>
   );
 }

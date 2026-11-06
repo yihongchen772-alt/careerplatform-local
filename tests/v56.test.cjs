@@ -120,6 +120,21 @@ test("the numbers agree between pages; a date-only stage shows no clock; calenda
   assert.match(read("src/app/(dashboard)/insights/page.tsx"), /其余 \{folded\.length\} 组/);
 });
 
+test("company names: leftovers come off on request, and the old name still finds the 投递", () => {
+  const { tidyCompanyName } = load("src/lib/application-identity.ts", { "@/lib/db": { db: {} } });
+  assert.equal(tidyCompanyName("星海智能！"), "星海智能");
+  assert.equal(tidyCompanyName("星海集团“星火计划”"), "星海集团");
+  assert.equal(tidyCompanyName("星海汽车 奔向远方"), "星海汽车");
+  for (const fine of ["星海科技", "Star Robotics", "EcoFlow 星海创新", "星海（北京）有限公司"]) assert.equal(tidyCompanyName(fine), null, fine);
+  const actions = read("src/lib/actions/companies.ts");
+  assert.match(actions, /companyAlias\.create\(\{ data: \{ companyId: company\.id, alias: pair\.from \} \}\)/);
+  assert.match(actions, /undoTidyCompanyNames/);
+  assert.match(read("src/components/applications/company-name-banner.tsx"), /label: "撤销"/);
+  const dash = read("src/app/(dashboard)/dashboard/page.tsx");
+  assert.match(dash, /!listedAbove\.has\(todo\.id\)/, "接下来 and 待办 don't list one thing twice");
+  assert.match(read("src/app/(dashboard)/applications/[id]/page.tsx"), /<DeleteApplicationButton/);
+});
+
 test("a deadline to book a slot is known as one, even when the AI read it", () => {
   const read1 = extract.completeMailDraft(mail({ ai: draft({ title: "示例科技 线上复试", deadline: "2027-03-05T13:30", evidence: "面试日期: 2027/03/06；请您在今天13:30前根据提供的时间段进行面试预约" }) }));
   assert.equal(read1.booking, true);

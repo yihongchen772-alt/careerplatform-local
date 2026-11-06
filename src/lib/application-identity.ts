@@ -89,6 +89,14 @@ function cleanCompany(raw: string) {
   return name.replace(/^20\d{2}(?:届|年度?|级)?\s*/, "").trim();
 }
 
+/** A recorded company's name without what older readings left on it (「星海！」, 「星海汽车 奔向远方」), or null when it is fine. */
+export function tidyCompanyName(raw: string): string | null {
+  const cleaned = raw.replace(/\s*[“"「『《][^”"」』》]*[”"」』》]\s*$/, "").replace(/[！!。~～]+$/, "").trim();
+  const slogan = /^([\u3400-\u9fff]{2,12}) [\u3400-\u9fff]{2,}$/.exec(cleaned);
+  const name = slogan && COMPANY_SUFFIX.test(slogan[1]) ? slogan[1] : cleaned;
+  return name.length >= 2 && name !== raw ? name : null;
+}
+
 /** The employer's name when `raw` can be one, else "". */
 function plausibleCompany(raw: string) {
   const name = cleanCompany(raw);

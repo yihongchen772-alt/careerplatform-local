@@ -38,3 +38,37 @@ export async function addCompanyDirectoryEntry(
 
   revalidatePath("/companies");
 }
+
+/** Rename companies whose names carry leftovers. The old name stays as an alias, so mail signed with it still matches. */
+export async function tidyCompanyNames(pairs: { from: string; to: string }[]) {
+  await requireUser();
+  const rows = z.array(z.object({ from: z.string().min(1).max(200), to: z.string().min(2).max(200) })).max(100).parse(pairs);
+  const done: { from: string; to: string }[] = [];
+  for (const pair of rows) {
+    const company = await db.company.findUnique({ where: { name: pair.from }, select: { id: true } });
+    if (!company || (await db.company.findUnique({ where: { name: pair.to }, select: { id: true } }))) continue;
+    await db.$transaction(async (tx) => {
+      await tx.company.update({ where: { id: company.id }, data: { name: pair.to } });
+      if (!(await tx.companyAlias.findUnique({ where: { alias: pair.from } }))) await tx.companyAlias.create({ data: { companyId: company.id, alias: pair.from } });
+    });
+    done.push(pair);
+  }
+  revalidatePath("/applications");
+  revalidatePath("/dashboard");
+  return done;
+}
+
+export async function undoTidyCompanyNames(pairs: { from: string; to: string }[]) {
+  await requireUser();
+  const rows = z.array(z.object({ from: z.string().min(1).max(200), to: z.string().min(2).max(200) })).max(100).parse(pairs);
+  for (const pair of rows) {
+    const company = await db.company.findUnique({ where: { name: pair.to }, select: { id: true } });
+    if (!company) continue;
+    await db.$transaction(async (tx) => {
+      await tx.companyAlias.deleteMany({ where: { companyId: company.id, alias: pair.from } });
+      await tx.company.update({ where: { id: company.id }, data: { name: pair.from } });
+    });
+  }
+  revalidatePath("/applications");
+  revalidatePath("/dashboard");
+}

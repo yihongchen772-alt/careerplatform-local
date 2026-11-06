@@ -7,6 +7,8 @@ import { ImportApplicationsDialog } from "@/components/applications/import-appli
 import { ApplicationsView } from "@/components/applications/applications-view";
 import { PortalSyncButton } from "@/components/applications/portal-sync-button";
 import { AutoProgressBanner } from "@/components/applications/auto-progress-banner";
+import { CompanyNameBanner } from "@/components/applications/company-name-banner";
+import { tidyCompanyName } from "@/lib/application-identity";
 import { ScanHealthBanner } from "@/components/applications/scan-health-banner";
 import { getScanHealth } from "@/lib/scan-health";
 import { loadAutoProgressItems, loadAutoScheduleItems } from "@/lib/auto-progress";
@@ -64,6 +66,10 @@ export default async function ApplicationsPage() {
     loadAutoScheduleItems(user.id),
     loadJustFinished(user.id, new Date(now)),
   ]);
+  const untidyNames = [...new Set(applications.map((app) => app.company.name))].flatMap((from) => {
+    const to = tidyCompanyName(from);
+    return to ? [{ from, to }] : [];
+  });
 
   const portalCompanies = new Set(portals.map((portal) => portal.companyId));
   const unassigned = applications.filter((app) => !app.portalId && !["REJECTED", "ACCEPTED", "DECLINED", "WITHDRAWN", "CANCELLED"].includes(app.currentStage) && portalCompanies.has(app.companyId));
@@ -92,6 +98,7 @@ export default async function ApplicationsPage() {
 
       {scanHealth.failing && <ScanHealthBanner error={scanHealth.error} since={scanHealth.since?.toISOString() ?? null} lastOkAt={scanHealth.lastOkAt?.toISOString() ?? null} />}
       <AutoProgressBanner items={autoUpdates} schedules={autoSchedules} />
+      <CompanyNameBanner pairs={untidyNames} />
 
       <JustFinishedStrip items={justFinished} now={now} />
 

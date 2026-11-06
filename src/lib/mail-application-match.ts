@@ -23,7 +23,7 @@ const bareJob = (value: string) => fold(value).replace(/[(（【\[][^)）】\]]*
 
 /**
  * The AI's pick among several 投递 at one company is checked against the mail:
- * a mail naming another of them (「确认您预约的软件测试工程师初试」, picked 运动控制算法工程师) is about
+ * a mail naming another of them (「确认您预约的软件测试工程师初试」, picked 算法工程师) is about
  * that one. A mail naming none keeps the pick; one naming two equally is left unmatched.
  */
 export function correctMailApplication(mail: { subject: string; summary?: string; body?: string }, picked: string, apps: MatchableApplication[]): string | null {
