@@ -1,7 +1,9 @@
 import type { ApplicationStage, Prisma } from "@prisma/client";
 import { mailTime, mailTimeOver } from "@/lib/mail-time";
 import { isTerminalStage, kindFromText, targetStageFor } from "@/lib/interview-schedule";
-import { EXAM_OR_INTERVIEW, RECRUIT_EVENT } from "@/lib/mail-time-extract";
+import { EXAM_OR_INTERVIEW, RECRUIT_EVENT, mailIsAfterthought } from "@/lib/mail-time-extract";
+import { fold, mentions } from "@/lib/mail-application-match";
+import { companyOf, sameMailCompany } from "@/lib/mail-company";
 import { rowForSchedule } from "@/lib/schedule-target";
 import {
   DEFAULT_REMIND_MINUTES,
@@ -85,16 +87,21 @@ async function settleSiblings(tx: Prisma.TransactionClient, input: { userId: str
   }
 }
 
-/** The company a mail 待办 is about, from its title 「面试邀请：宝洁」. */
-function companyOf(title: string): string | undefined {
-  return /^[^：]+：(.+)$/.exec(title)?.[1]?.trim() || undefined;
-}
-
-const companyKey = (title: string) => (companyOf(title) ?? "").normalize("NFKC").toLowerCase().replace(/\([^)]*\)/g, "").replace(/(?:股份)?有限公司|集团|公司$|\s+/g, "");
-/** 「星海」 and 「星海（北京分部）」, 「星海科技」 and 「星海科技（上海）有限公司」: one sender. */
-export function sameMailCompany(a: string, b: string): boolean {
-  const [x, y] = [companyKey(a), companyKey(b)];
-  return x.length >= 2 && y.length >= 2 && (x.includes(y) || y.includes(x));
+/**
+ * The applicant said a mail's sender is this company (linked or moved it): the
+ * name it signs with is remembered, so the next mail from it finds the 投递.
+ */
+export async function learnMailCompany(tx: Prisma.TransactionClient, userId: string, mailEventId: string, companyId: string) {
+  const company = await tx.company.findUnique({ where: { id: companyId }, select: { name: true, aliases: { select: { alias: true } } } });
+  if (!company) return;
+  const mails = await tx.personalTask.findMany({ where: { userId, mailEventId, sourceMailKey: { not: null } }, select: { title: true } });
+  for (const mail of mails) {
+    const name = companyOf(mail.title)?.replace(/[（(][^）)]*[）)]/g, "").trim();
+    if (!name || name.length < 2 || name.length > 40) continue;
+    if ([company.name, ...company.aliases.map((entry) => entry.alias)].some((known) => mentions(fold(name), known) || fold(known) === fold(name))) continue;
+    if ((await tx.companyAlias.findUnique({ where: { alias: name } })) || (await tx.company.findFirst({ where: { name } }))) continue;
+    await tx.companyAlias.create({ data: { companyId, alias: name } });
+  }
 }
 
 /**
@@ -109,8 +116,12 @@ async function decidedBefore(tx: Prisma.TransactionClient, task: { id: string; u
   });
   const lastDay = (value: NonNullable<ReturnType<typeof mailTime>>) => (value.endsAt ?? value.startsAt).toISOString().slice(0, 10);
   for (const other of earlier) {
-    const sameSender = task.applicationId && other.applicationId ? task.applicationId === other.applicationId : sameMailCompany(task.title, other.title);
-    if (!sameSender) continue;
+    if (mailIsAfterthought("", other.title)) continue;
+    // A clock time is one appointment even if the mail was matched to another 投递 of that company
+    // (the applicant moved it). A deadline may be shared by two 投递, each its own 测评.
+    const sameApp = !!task.applicationId && task.applicationId === other.applicationId;
+    const bothLinked = !!task.applicationId && !!other.applicationId;
+    if (!sameApp && (!sameMailCompany(task.title, other.title) || (bothLinked && !time.hasTime))) continue;
     const said = mailTime(other.mailEventDraft);
     if (!said || said.hasTime !== time.hasTime || (time.hasTime ? said.startsAt.getTime() !== time.startsAt.getTime() : lastDay(said) !== lastDay(time))) continue;
     if (other.mailUndoneAt) return { eventId: null };
@@ -122,6 +133,8 @@ async function decidedBefore(tx: Prisma.TransactionClient, task: { id: string; u
     if (!event) return { eventId: null };
     const moved = time.hasTime ? event.startsAt.getTime() !== time.startsAt.getTime() : !event.stageHistoryId && event.dateKey !== lastDay(time);
     if (moved) return { eventId: other.mailEventId };
+    // Already on someone else's step: this reminder belongs with it, wherever the AI placed it.
+    if (!sameApp && bothLinked) return { eventId: other.mailEventId };
   }
   return null;
 }

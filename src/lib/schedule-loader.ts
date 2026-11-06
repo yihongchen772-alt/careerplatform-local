@@ -13,6 +13,8 @@ import {
 } from "@/lib/interview-schedule";
 import { STAGE_LABELS } from "@/lib/stage-labels";
 import { mailTime } from "@/lib/mail-time";
+import { RECRUIT_EVENT } from "@/lib/mail-time-extract";
+import { cancelNoticeFor } from "@/lib/pending-mail";
 import { recognizeSchedule } from "@/lib/schedule-recognize";
 import type { ApplicationStage } from "@prisma/client";
 
@@ -80,7 +82,8 @@ export function draftItem(task: DraftTask): ScheduleItem | null {
   if (!time) return null;
   const app = task.application;
   let conflictsWith: string | null = null;
-  if (app && !TERMINAL.includes(app.currentStage) && !time.booking) {
+  // A 宣讲会 is not a change to the 投递's time.
+  if (app && !TERMINAL.includes(app.currentStage) && !time.booking && !RECRUIT_EVENT.test(`${task.title} ${time.title}`)) {
     const row = currentStageRow(app, app.stageHistory);
     if (row?.nextDeadline && (row.nextHasTime || !time.hasTime) && row.nextDeadline.getTime() !== time.startsAt.getTime()) conflictsWith = row.nextDeadline.toISOString();
   }
@@ -163,7 +166,16 @@ export async function loadUpcomingSchedule(userId: string, now = new Date(), day
     if (item) items.push(item);
   }
   const recognizable = active.map((app) => ({ id: app.id, title: app.title, companyName: app.company.name, aliases: app.company.aliases.map((entry) => entry.alias) }));
-  return recognizeSchedule(dedupe(items.filter((item) => isUpcoming(item, nowMs, days))), recognizable);
+  const upcoming = recognizeSchedule(dedupe(items.filter((item) => isUpcoming(item, nowMs, days))), recognizable);
+  // A company's cancellation that the row hasn't caught up with: said on the row, nothing removed.
+  const recent = (await db.personalTask.findMany({
+    where: { userId, sourceMailKey: { not: null }, createdAt: { gte: new Date(nowMs - 30 * DAY) } },
+    select: { id: true, title: true, note: true, applicationId: true, createdAt: true, mailEventDraft: true, done: true },
+  })).map((mail) => ({ id: mail.id, title: mail.title, note: mail.note, applicationId: mail.applicationId, createdAt: mail.createdAt, done: mail.done, hasTime: !!mailTime(mail.mailEventDraft) }));
+  return upcoming.map((item) => {
+    const cancelNotice = item.source === "mail" ? null : cancelNoticeFor(item, recent);
+    return cancelNotice ? { ...item, cancelNotice } : item;
+  });
 }
 
 /** One 投递: its steps' times (past current one included) and its unwritten mail times. */

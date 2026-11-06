@@ -240,7 +240,7 @@ async function runScan(
           : matchMailApplication({ subject: email.subject, company: c.company, body: email.snippet }, activeApplications);
         // A time the AI left out but the mail states plainly (考试时间：… / October 30, 2026 14:00).
         // A questionnaire after the interview asks for nothing on the calendar and moves nothing.
-        const afterthought = mailIsAfterthought(email.subject, c.type);
+        const afterthought = mailIsAfterthought(email.subject, c.type, c.summary);
         const draft = afterthought ? null : email.calendarInvite
           ? { ...email.calendarInvite, title: email.calendarInvite.title || `${c.type}${c.company ? `：${c.company}` : ""}` }
           : completeMailDraft({ ai: c.event, subject: email.subject, body: email.snippet, mailDate: email.date, type: c.type, company: c.company });

@@ -19,6 +19,8 @@ export function mentions(haystack: string, rawName: string): boolean {
   return haystack.includes(name);
 }
 
+const GENERIC_ENDING = /^(?:\(.*|[!。.·]+|股份.*|集团.*|有限.*|公司|科技.*|技术.*|中国|电子.*|微电子.*|控股.*|[a-z][a-z&.\-]*)$/;
+
 export function matchMailApplication(
   mail: { subject: string; company?: string | null; body?: string },
   apps: MatchableApplication[]
@@ -29,6 +31,15 @@ export function matchMailApplication(
     let length = 0;
     for (const name of [app.companyName, ...(app.aliases ?? [])]) if (mentions(haystack, name)) length = Math.max(length, fold(name).length);
     if (length) hits.push({ app, length });
+  }
+  // The mail signs with less than the record says: 「星海」 for 星海股份, 「天工」 for 天工！. Only when
+  // what's left is a generic ending: 「京北」 is not 京北方.
+  const signed = fold(mail.company ?? "").replace(/\([^)]*\)/g, "");
+  if (!hits.length && signed.length >= 2) {
+    for (const app of apps) {
+      const name = fold(app.companyName);
+      if (name.startsWith(signed) && GENERIC_ENDING.test(name.slice(signed.length))) hits.push({ app, length: signed.length });
+    }
   }
   if (!hits.length) return null;
   // 「华为云」 beats 「华为」 when both are named: the more specific company.

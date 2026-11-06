@@ -1,5 +1,6 @@
 import { mailTime, mailTimeOver } from "@/lib/mail-time";
 import { EXAM_OR_INTERVIEW, mailIsAfterthought } from "@/lib/mail-time-extract";
+import { sameMailCompany } from "@/lib/mail-company";
 
 /**
  * The mail-made 待办 that still wait to get onto the calendar: a time the
@@ -40,6 +41,7 @@ const MAIL_TITLE = /^([^：]+)：(.+)$/;
 export function pendingMailRows(tasks: PendingTask[], now: number, scheduledApps: Set<string>): PendingRow[] {
   const rows: PendingRow[] = [];
   const seenNoTime = new Set<string>();
+  const seenSlots = new Set<string>();
   for (const task of [...tasks].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())) {
     const time = mailTime(task.mailEventDraft);
     if (mailIsAfterthought("", task.title)) continue;
@@ -53,6 +55,11 @@ export function pendingMailRows(tasks: PendingTask[], now: number, scheduledApps
       const key = company ?? task.title;
       if (seenNoTime.has(key)) continue;
       seenNoTime.add(key);
+    } else {
+      // One 宣讲会, three mails about it: one row. Writing it settles the others.
+      const slot = `${company || time.title || task.title}|${time.startsAt.getTime()}`;
+      if (seenSlots.has(slot)) continue;
+      seenSlots.add(slot);
     }
     const lines = (task.note ?? "").split("\n").map((line) => line.trim());
     rows.push({
@@ -76,6 +83,34 @@ export function pendingMailRows(tasks: PendingTask[], now: number, scheduledApps
 function evidenceOf(draft: unknown): string {
   const value = (draft as { evidence?: unknown } | null)?.evidence;
   return typeof value === "string" ? value : "";
+}
+
+const CANCEL = /取消[^。，]{0,8}(?:面试|笔试|测评|安排)|(?:面试|笔试|测评)[^。，]{0,8}取消|cancel(?:led|ed|lation)?\b[^.]{0,24}interview|interview[^.]{0,24}cancel/i;
+const CANCEL_OFFER = /(?:如需|若需|如要|若要|需要|可以|可|申请|无法参加请?)取消/;
+const NEWS = /面试|笔试|测评|interview/i;
+
+export type RecentMail = { id: string; title: string; note: string | null; applicationId: string | null; createdAt: Date; hasTime: boolean; done: boolean };
+
+/**
+ * A company's newest word on this appointment was to call it off: that mail,
+ * for a warning on the row. Nothing is removed by itself; a later invitation
+ * (a new time) or 「知道了」 (the mail marked done) clears it.
+ */
+export function cancelNoticeFor(item: { applicationId?: string | null; companyName?: string | null; title: string; kind?: string }, mails: RecentMail[]): { taskId: string; subject: string } | null {
+  const matches = (mail: RecentMail) => (item.applicationId && mail.applicationId ? item.applicationId === mail.applicationId : !!item.companyName && sameMailCompany(mail.title, `x：${item.companyName}`));
+  for (const mail of [...mails].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())) {
+    if (!matches(mail)) continue;
+    const lines = (mail.note ?? "").split("\n");
+    const subject = lines.find((line) => line.startsWith("邮件主题："))?.slice(5).trim() ?? "";
+    const text = `${mail.title} ${subject} ${lines[0] ?? ""}`;
+    if (CANCEL.test(text) && !CANCEL_OFFER.test(text)) {
+      // 「面试取消」 says nothing about that company's 笔试.
+      if (mail.done || (item.kind === "exam" && !/笔试|测评/.test(text))) continue;
+      return { taskId: mail.id, subject: subject || mail.title };
+    }
+    if (mail.hasTime && NEWS.test(text)) return null;
+  }
+  return null;
 }
 
 const PENDING_WINDOW_MS = 45 * 86_400_000;

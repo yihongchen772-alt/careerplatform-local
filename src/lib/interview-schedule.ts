@@ -34,6 +34,8 @@ export type ScheduleItem = {
   conflictsWith?: string | null;
   /** Calendar items only: made from a mail (not typed in by the user). */
   fromMail?: boolean;
+  /** A mail calling this off, when that is the company's newest word on it. */
+  cancelNotice?: { taskId: string; subject: string };
   /**
    * Not linked yet, but the title names a company you applied to: the 投递 it
    * most likely belongs to (one at that company, or the one whose job it

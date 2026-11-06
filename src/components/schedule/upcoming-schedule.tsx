@@ -84,14 +84,14 @@ export function UpcomingSchedule({ items, now: serverNow, applications, days = 7
     else groups.push({ key, items: [item] });
   }
 
-  async function run(item: ScheduleItem, action: () => Promise<{ ok: true } | { ok: false; message: string }>, done: string) {
+  async function run<T>(item: ScheduleItem, action: () => Promise<{ ok: true; data: T } | { ok: false; message: string }>, done: string | ((data: T) => string)) {
     if (busy) return;
     setBusy(item.key);
     try {
       const result = await action();
       if (!result.ok) return void toast.error(result.message);
       setHidden((previous) => [...previous, item.key]);
-      toast.success(done);
+      toast.success(typeof done === "function" ? done(result.data) : done);
       router.refresh();
     } finally {
       setBusy(null);
@@ -136,11 +136,12 @@ export function UpcomingSchedule({ items, now: serverNow, applications, days = 7
                         : completeStep(item.sourceId, () => router.refresh(), `${label}${item.kind === "interview" && new Date(item.startsAt).getTime() <= now ? "已面完" : "已完成"}，开始等结果`, unhide);
                       void finished.then((ok) => { if (!ok) setHidden((previous) => previous.filter((key) => key !== item.key)); });
                     }}
-                    onWrite={() => run(item, () => writeMailSchedule(item.sourceId), item.applicationId ? `已写进 ${item.companyName ?? "投递"} 的进度和日历` : "已加入日历")}
+                    onWrite={() => run(item, () => writeMailSchedule(item.sourceId), (written) => (written.placed === "stage" ? `已写进 ${item.companyName ?? "投递"} 的进度和日历` : "已加入日历"))}
                     onDismiss={() => run(item, () => dismissMailDraft(item.sourceId), "已忽略这封邮件里的时间")}
                     onLink={() => setLinking(item)}
                     onAccept={() => item.suggestion && run(item, () => attachEventToApplication(item.sourceId, item.suggestion!.applicationId), `已关联到 ${item.suggestion.label}`)}
                     onEdit={() => setEditing(item)}
+                    onCancelNoticeSeen={() => { if (item.cancelNotice) void dismissMailDraft(item.cancelNotice.taskId).then(() => router.refresh()); }}
                   />
                 ))}
               </ul>
@@ -169,7 +170,7 @@ export function UpcomingSchedule({ items, now: serverNow, applications, days = 7
   );
 }
 
-function ScheduleRow({ item, now, busy, clash, onComplete, onWrite, onDismiss, onLink, onAccept, onEdit }: { item: ScheduleItem; now: number; busy: boolean; clash: boolean; onComplete: () => void; onWrite: () => void; onDismiss: () => void; onLink: () => void; onAccept: () => void; onEdit: () => void }) {
+function ScheduleRow({ item, now, busy, clash, onComplete, onWrite, onDismiss, onLink, onAccept, onEdit, onCancelNoticeSeen }: { item: ScheduleItem; now: number; busy: boolean; clash: boolean; onComplete: () => void; onWrite: () => void; onDismiss: () => void; onLink: () => void; onAccept: () => void; onEdit: () => void; onCancelNoticeSeen: () => void }) {
   const urgency = urgencyOf(item, now);
   const start = new Date(item.startsAt);
   const end = item.endsAt ? new Date(item.endsAt) : null;
@@ -201,6 +202,13 @@ function ScheduleRow({ item, now, busy, clash, onComplete, onWrite, onDismiss, o
           {(detail || item.meetingInfo) && (
             <p className="mt-0.5 truncate text-xs text-muted-foreground" title={[detail, item.meetingInfo].filter(Boolean).join(" · ")}>
               {[detail, meetingSummary(item.meetingInfo, item.kind === "exam")].filter(Boolean).join(" · ")}
+            </p>
+          )}
+          {item.cancelNotice && (
+            <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-rose-700 dark:text-rose-300" title={item.cancelNotice.subject}>
+              <TriangleAlert className="size-3 shrink-0" />
+              <span className="truncate">公司发过取消通知「{item.cancelNotice.subject}」，确认后在「⋯」里清掉或删除</span>
+              <button type="button" disabled={busy} onClick={onCancelNoticeSeen} className="shrink-0 font-medium underline-offset-2 hover:underline">知道了</button>
             </p>
           )}
           {item.source === "mail" && (

@@ -8,7 +8,7 @@ import { requireUser } from "@/lib/session";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
 import { resyncCurrentStage } from "@/lib/application-stage-history";
 import { cleanSchedule, sameSchedule, scheduleOf, syncApplicationEvents } from "@/lib/stage-schedule";
-import { applyMailSchedule, undoMailScheduleWrite } from "@/lib/mail-schedule";
+import { applyMailSchedule, learnMailCompany, undoMailScheduleWrite } from "@/lib/mail-schedule";
 import { localDayKey, currentStageRow, isTerminalStage, overlapping, scheduleStageChoices, targetStageFor } from "@/lib/interview-schedule";
 import { STAGE_LABELS } from "@/lib/stage-labels";
 import { rowForSchedule } from "@/lib/schedule-target";
@@ -180,20 +180,22 @@ export async function moveStageSchedule(stageHistoryId: string, applicationId: s
     const user = await requireUser();
     const row = await db.stageHistory.findFirst({
       where: { id: stageHistoryId, application: { userId: user.id } },
-      select: { id: true, applicationId: true, stage: true, stageLabel: true, autoSource: true, autoEvidence: true, completedAt: true, nextDeadline: true, nextDeadlineEnd: true, nextHasTime: true, meetingInfo: true, remindMinutes: true, scheduleSource: true, calendarEvent: { select: { id: true } }, application: { select: { company: { select: { name: true } } } } },
+      select: { id: true, applicationId: true, stage: true, stageLabel: true, note: true, autoSource: true, autoEvidence: true, completedAt: true, postmortem: { select: { id: true } }, nextDeadline: true, nextDeadlineEnd: true, nextHasTime: true, meetingInfo: true, remindMinutes: true, scheduleSource: true, calendarEvent: { select: { id: true } }, application: { select: { company: { select: { name: true } } } } },
     });
     if (!row?.nextDeadline) throw new UserFacingError("这一步已经没有时间了，请刷新");
     if (applicationId === row.applicationId) throw new UserFacingError("已经在这条投递上了");
-    const target = applicationId ? await db.application.findFirst({ where: { id: applicationId, userId: user.id }, select: { id: true, currentStage: true } }) : null;
+    const target = applicationId ? await db.application.findFirst({ where: { id: applicationId, userId: user.id }, select: { id: true, currentStage: true, companyId: true } }) : null;
     if (applicationId && !target) throw new UserFacingError("这条投递已经不在了，请刷新");
     if (target && isTerminalStage(target.currentStage)) throw new UserFacingError("这条投递已经结束，不能再放时间");
     await db.$transaction(async (tx) => {
       let eventId: string | null = null;
       if (target) {
-        const placed = (await rowForSchedule(tx, target.id, row.stage, { kind: "forward" })) ?? (await rowForSchedule(tx, target.id, target.currentStage, { kind: "manual" }));
+        let placed = (await rowForSchedule(tx, target.id, row.stage, { kind: "forward" })) ?? (await rowForSchedule(tx, target.id, target.currentStage, { kind: "manual" }));
         if (!placed) throw new UserFacingError("这条投递没有进度记录");
-        const existing = await tx.stageHistory.findUnique({ where: { id: placed.rowId }, select: { nextDeadline: true } });
-        if (existing?.nextDeadline && existing.nextDeadline.getTime() !== row.nextDeadline!.getTime()) throw new UserFacingError("这条投递的这一步已经有别的时间了，请先在投递里改掉，或选另一条");
+        const existing = await tx.stageHistory.findUnique({ where: { id: placed.rowId }, select: { nextDeadline: true, stage: true } });
+        // That step has its own time: it stays, and this one goes on a step beside it.
+        if (existing?.nextDeadline && existing.nextDeadline.getTime() !== row.nextDeadline!.getTime()) placed = await rowForSchedule(tx, target.id, existing.stage, { kind: "manual", separate: true });
+        if (!placed) throw new UserFacingError("这条投递没有进度记录");
         await tx.stageHistory.update({ where: { id: placed.rowId }, data: { nextDeadline: row.nextDeadline, nextDeadlineEnd: row.nextDeadlineEnd, nextHasTime: row.nextHasTime, meetingInfo: row.meetingInfo, remindMinutes: row.remindMinutes, scheduleSource: null, ...(placed.created && row.autoSource === "email" ? { autoSource: "email", autoEvidence: row.autoEvidence, autoSeenAt: new Date() } : {}) } });
         await syncApplicationEvents(tx, target.id);
         eventId = (await tx.calendarEvent.findUnique({ where: { stageHistoryId: placed.rowId }, select: { id: true } }))?.id ?? null;
@@ -219,8 +221,10 @@ export async function moveStageSchedule(stageHistoryId: string, applicationId: s
         });
         eventId = event.id;
       }
+      if (row.calendarEvent && target) await learnMailCompany(tx, user.id, row.calendarEvent.id, target.companyId);
       if (row.calendarEvent) await tx.personalTask.updateMany({ where: { userId: user.id, mailEventId: row.calendarEvent.id }, data: { mailEventId: eventId, applicationId: target?.id ?? null, mailUndo: Prisma.DbNull, mailAppliedSeenAt: new Date() } });
-      if (row.autoSource === "email" && !row.completedAt) {
+      // Not one the applicant has written in: their notes outlive the time.
+      if (row.autoSource === "email" && !row.completedAt && !row.postmortem && (!row.note || row.note.startsWith("邮件自动识别"))) {
         await tx.stageHistory.delete({ where: { id: row.id } });
         await resyncCurrentStage(tx, row.applicationId);
       } else {
@@ -379,7 +383,7 @@ export async function attachEventToApplication(eventId: string, applicationId: s
       db.calendarEvent.findFirst({ where: { id: eventId, userId: user.id, stageHistoryId: null }, include: { reminders: true } }),
       db.application.findFirst({
         where: { id: applicationId, userId: user.id },
-        select: { id: true, currentStage: true, currentStageDate: true, stageHistory: { select: { id: true, stage: true, enteredAt: true } } },
+        select: { id: true, companyId: true, currentStage: true, currentStageDate: true, stageHistory: { select: { id: true, stage: true, enteredAt: true } } },
       }),
     ]);
     if (!event) throw new UserFacingError("这个日程已经不在了，请刷新");
@@ -423,6 +427,7 @@ export async function attachEventToApplication(eventId: string, applicationId: s
               scheduleSource: event.source === "email" ? "email" : null,
             },
       });
+      await learnMailCompany(tx, user.id, event.id, app.companyId);
       await tx.calendarEvent.delete({ where: { id: event.id } });
       await syncApplicationEvents(tx, app.id);
       const copy = await tx.calendarEvent.findUnique({ where: { stageHistoryId: row.id }, select: { id: true } });

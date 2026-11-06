@@ -376,8 +376,14 @@ export const EXAM_OR_INTERVIEW = /面试|笔试|测评|考试|机试|OA\b|在线
 /** Recruiting events with a time of their own: they go on the calendar too. */
 export const RECRUIT_EVENT = /宣讲|双选会|说明会|见面会|开放日|招聘会|交流会|分享会|恳谈会/;
 /** A questionnaire after the interview: its 面试时间 is history, not an appointment. */
-export function mailIsAfterthought(subject: string, type: string): boolean {
-  return /满意度|体验(?:评价|调研|调查|反馈)|问卷|survey/i.test(`${type} ${subject}`);
+export function mailIsAfterthought(subject: string, type: string, summary = ""): boolean {
+  const text = `${type} ${subject}`;
+  // 「经面试评价，未通过」 is a result.
+  if (NEGATIVE.test(`${text} ${summary}`)) return false;
+  if (/满意度|体验(?:评价|调研|调查|反馈)|experience\s+survey|satisfaction/i.test(`${text} ${summary}`)) return true;
+  if (/(?:面试|本次)[^，。]{0,8}(?:评价|评分)|评价[^，。]{0,6}面试/.test(text) || /邀请[^。]{0,12}(?:评价|评分)/.test(summary)) return true;
+  // A 性格问卷 is a 测评 to do, not a questionnaire about one.
+  return /问卷|survey/i.test(text) && !/测评|测试|性格|职业|人才|登记|笔试|assessment/i.test(text);
 }
 // 「请在今天13:30前根据时间段预约」: the deadline is for picking a slot, not for the interview.
 const BOOK_BY = /前[^。；;\n]{0,24}(?:预约|选择[^。；;\n]{0,8}时间)|预约[^。；;\n]{0,8}截止/;
