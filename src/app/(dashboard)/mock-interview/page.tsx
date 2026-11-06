@@ -26,7 +26,7 @@ export default async function MockInterviewPage({
     db.resumeVersion.findMany({
       where: { userId: user.id },
       select: { id: true, name: true },
-      orderBy: { createdAt: "desc" },
+      orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }],
     }),
     db.position.findMany({
       where: { userId: user.id },
@@ -79,7 +79,9 @@ export default async function MockInterviewPage({
         </Card>
       )}
 
+      {/* key: the shortcuts above change only the query, and the form reads its choices once when it mounts. */}
       <MockInterviewStartForm
+        key={fromApplication ?? focusMix ?? "new"}
         resumeVersions={resumeVersions}
         positions={positions.map((p) => ({
           id: p.id,

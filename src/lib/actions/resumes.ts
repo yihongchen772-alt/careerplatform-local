@@ -95,6 +95,11 @@ export async function deleteResumeVersion(id: string) {
     db.autofillAnswer.deleteMany({ where: { resumeVersionId: id, confirmed: false } }),
     db.resumeVersion.delete({ where: { id } }),
   ]);
+  // Deleting the default leaves forms with none: the newest one takes over.
+  if (resume.isDefault) {
+    const next = await db.resumeVersion.findFirst({ where: { userId: user.id }, orderBy: { createdAt: "desc" }, select: { id: true } });
+    if (next) await db.resumeVersion.update({ where: { id: next.id }, data: { isDefault: true } });
+  }
   if (resume.fileUrl) {
     await deleteLocalFileByUrl(resume.fileUrl);
   }

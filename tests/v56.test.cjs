@@ -168,6 +168,22 @@ test("restoring a backup keeps 小欧's memory and the sheet subscription", () =
   assert.match(restore, /tx\.postingSource\.create\(\{ data: sheet \}\)/);
 });
 
+test("deadlines read and show as the mail meant them; shortcuts and default resume land where they should", () => {
+  const { mailTime } = load("src/lib/mail-time.ts");
+  const dead = (deadline) => mailTime(draft({ title: "测评", deadline }), "Asia/Shanghai");
+  assert.equal(dead("2027-05-08T00:00").startsAt.toISOString().slice(0, 10), "2027-05-07", "00:00 is the end of the day before");
+  assert.match(dead("2027-05-08T00:00").meetingInfo, /截止 24:00/);
+  assert.equal(dead("2027-05-07T24:00").startsAt.toISOString().slice(0, 10), "2027-05-07");
+  assert.equal(dead("2027-05-07T15:00").startsAt.toISOString().slice(0, 10), "2027-05-07");
+  const { meetingSummary } = load("src/lib/interview-schedule.ts");
+  assert.match(meetingSummary("https://a.example.com/x 截止 24:00", true), /24:00/);
+  assert.match(meetingSummary("地点：三楼", false), /地点 三楼/);
+  const page = read("src/app/(dashboard)/mock-interview/page.tsx");
+  assert.match(page, /key=\{fromApplication \?\? focusMix \?\? "new"\}/);
+  assert.match(page, /orderBy: \[\{ isDefault: "desc" \}/);
+  assert.match(read("src/lib/actions/resumes.ts"), /if \(resume\.isDefault\)/);
+});
+
 test("a deadline to book a slot is known as one, even when the AI read it", () => {
   const read1 = extract.completeMailDraft(mail({ ai: draft({ title: "示例科技 线上复试", deadline: "2027-03-05T13:30", evidence: "面试日期: 2027/03/06；请您在今天13:30前根据提供的时间段进行面试预约" }) }));
   assert.equal(read1.booking, true);

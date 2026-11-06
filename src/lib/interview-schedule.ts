@@ -133,7 +133,9 @@ export function meetingSummary(info: string | null | undefined, exam = false): s
     .replace(/https?:\/\/[^\s<>"'，。；、！？）】」『』（【「]+/gi, " ")
     .replace(/(?:会议号|会议 ID|会议ID|Meeting ID|入会码)[：:\s]*[0-9][0-9 \-]{5,16}[0-9]/gi, " ")
     .replace(/(?:Webex|腾讯会议|飞书|钉钉|Zoom|牛客|北森)(?:会议|视频面试)?/gi, " ")
-    .replace(/[\s·,，;；:：|]+/g, " ")
+    // 「截止 24:00」 keeps the colon a clock needs.
+    .replace(/(?<!\d)[:：]|[:：](?!\d)/g, " ")
+    .replace(/[\s·,，;；|]+/g, " ")
     .replace(/^[\s()（）【】]+|[\s()（）【】]+$/g, "")
     .trim();
   const head = [platform ?? (url ? (exam ? "测评链接" : "会议链接") : ""), number].filter(Boolean).join(" ");

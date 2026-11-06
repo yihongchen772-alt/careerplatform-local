@@ -55,7 +55,7 @@ export default async function ApplicationsPage() {
     db.resumeVersion.findMany({
       where: { userId: user.id },
       select: { id: true, name: true, isDefault: true },
-      orderBy: { createdAt: "desc" },
+      orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }],
     }),
     db.applicationPortal.findMany({
       select: { id: true, companyId: true, label: true, lastCheckedAt: true, lastSuccessfulAt: true, lastError: true, company: { select: { name: true } } },

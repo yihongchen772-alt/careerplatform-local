@@ -38,8 +38,11 @@ export function mailTime(draft: unknown, fallbackZone = systemTimeZone()): MailT
     // a date-only step, its window from windowStart to the deadline.
     const deadline = DAY.exec(value.deadline.trim());
     if (!deadline) return null;
-    const last = utcDay(deadline[1]);
+    let last = utcDay(deadline[1]);
     if (!last) return null;
+    // 「24 点截止」 read as 00:00 the next day is the end of this one.
+    const atMidnight = deadline[2] === "00:00";
+    if (atMidnight) last = new Date(last.getTime() - 86_400_000);
     const opening = DAY.exec(value.windowStart.trim());
     const first = opening ? utcDay(opening[1]) : null;
     const windowed = !!first && first.getTime() < last.getTime();
@@ -48,7 +51,7 @@ export function mailTime(draft: unknown, fallbackZone = systemTimeZone()): MailT
       endsAt: windowed ? last : null,
       hasTime: false,
       timeZone: isValidTimeZone(value.timeZone.trim()) ? value.timeZone.trim() : fallbackZone,
-      meetingInfo: meetingInfoOf(deadline[2] ? `截止 ${deadline[2]}` : ""),
+      meetingInfo: meetingInfoOf(atMidnight ? "截止 24:00" : deadline[2] ? `截止 ${deadline[2]}` : ""),
       title: value.title.trim(),
       evidence: value.evidence.trim(),
       booking: value.booking,

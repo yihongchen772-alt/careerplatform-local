@@ -21,7 +21,7 @@ export default async function BrowserPage({
     db.resumeVersion.findMany({
       where: { userId: user.id, fileUrl: { not: null } },
       select: { id: true, name: true, isDefault: true },
-      orderBy: { createdAt: "desc" },
+      orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }],
     }),
     // Companies the user has actually applied to, for the 进度同步 dialog —
     // the full directory would bury the handful that matter.
