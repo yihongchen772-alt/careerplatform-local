@@ -1,6 +1,7 @@
 import type { ApplicationStage, Prisma } from "@prisma/client";
 import { mailTime, mailTimeOver } from "@/lib/mail-time";
-import { isTerminalStage, targetStageFor } from "@/lib/interview-schedule";
+import { isTerminalStage, kindFromText, targetStageFor } from "@/lib/interview-schedule";
+import { EXAM_OR_INTERVIEW, RECRUIT_EVENT } from "@/lib/mail-time-extract";
 import { rowForSchedule } from "@/lib/schedule-target";
 import {
   DEFAULT_REMIND_MINUTES,
@@ -32,7 +33,8 @@ export type MailApplyResult =
   | { status: "same" }
   /** The 投递 has a time the user typed; left for them to choose. */
   | { status: "conflict"; existing: Date }
-  | { status: "skipped"; reason: "handled" | "no-time" | "past" | "missing" };
+  /** optional: a 宣讲会, which waits to be picked; it is not an appointment the applicant has. */
+  | { status: "skipped"; reason: "handled" | "no-time" | "past" | "missing" | "optional" };
 
 const taskSelect = {
   id: true,
@@ -44,6 +46,7 @@ const taskSelect = {
   mailAppliedAt: true,
   mailUndoneAt: true,
   applicationId: true,
+  createdAt: true,
   application: {
     select: {
       id: true,
@@ -59,14 +62,22 @@ const taskSelect = {
  * Other mails about the same slot (a notice, a reminder, a change of room)
  * that were imported before and still wait: they are answered by this one.
  */
-async function settleSiblings(tx: Prisma.TransactionClient, input: { userId: string; taskId: string; startsAt: Date; eventId: string | null; applicationId: string | null; titles: string[] }) {
+async function settleSiblings(tx: Prisma.TransactionClient, input: { userId: string; taskId: string; taskTitle: string; before: Date; startsAt: Date; eventId: string | null; applicationId: string | null; titles: string[] }) {
   const waiting = await tx.personalTask.findMany({
     where: { userId: input.userId, id: { not: input.taskId }, done: false, mailEventId: null, mailAppliedAt: null, mailUndoneAt: null },
-    select: { id: true, title: true, applicationId: true, mailEventDraft: true },
+    select: { id: true, title: true, applicationId: true, mailEventDraft: true, sourceMailKey: true, createdAt: true },
   });
   for (const sibling of waiting) {
     const time = mailTime(sibling.mailEventDraft);
-    if (!time || time.startsAt.getTime() !== input.startsAt.getTime()) continue;
+    if (!time) {
+      // An earlier 「时间另行通知」 from the same company about the same kind of thing: this is that notice.
+      const sameSender = input.applicationId && sibling.applicationId ? sibling.applicationId === input.applicationId : sameMailCompany(sibling.title, input.taskTitle);
+      if (sibling.sourceMailKey && sameSender && sibling.createdAt <= input.before && EXAM_OR_INTERVIEW.test(sibling.title) && /面试|interview/i.test(sibling.title) === /面试|interview/i.test(input.taskTitle)) {
+        await tx.personalTask.update({ where: { id: sibling.id }, data: { mailEventId: input.eventId, done: true } });
+      }
+      continue;
+    }
+    if (time.startsAt.getTime() !== input.startsAt.getTime()) continue;
     const same = input.applicationId
       ? sibling.applicationId === input.applicationId
       : !sibling.applicationId && (input.titles.includes(sibling.title) || (!!time.title && input.titles.includes(time.title)));
@@ -77,6 +88,42 @@ async function settleSiblings(tx: Prisma.TransactionClient, input: { userId: str
 /** The company a mail 待办 is about, from its title 「面试邀请：宝洁」. */
 function companyOf(title: string): string | undefined {
   return /^[^：]+：(.+)$/.exec(title)?.[1]?.trim() || undefined;
+}
+
+const companyKey = (title: string) => (companyOf(title) ?? "").normalize("NFKC").toLowerCase().replace(/\([^)]*\)/g, "").replace(/(?:股份)?有限公司|集团|公司$|\s+/g, "");
+/** 「星海」 and 「星海（北京分部）」, 「星海科技」 and 「星海科技（上海）有限公司」: one sender. */
+export function sameMailCompany(a: string, b: string): boolean {
+  const [x, y] = [companyKey(a), companyKey(b)];
+  return x.length >= 2 && y.length >= 2 && (x.includes(y) || y.includes(x));
+}
+
+/**
+ * The applicant already settled this very slot, on an earlier mail about it:
+ * took it back, ignored it, deleted it, or moved it to another time. A
+ * reminder repeating the old time is not news, and must not bring it back.
+ */
+async function decidedBefore(tx: Prisma.TransactionClient, task: { id: string; userId: string; title: string; applicationId: string | null }, time: NonNullable<ReturnType<typeof mailTime>>): Promise<{ eventId: string | null } | null> {
+  const earlier = await tx.personalTask.findMany({
+    where: { userId: task.userId, id: { not: task.id }, sourceMailKey: { not: null } },
+    select: { title: true, applicationId: true, mailEventDraft: true, mailEventId: true, mailUndoneAt: true, done: true },
+  });
+  const lastDay = (value: NonNullable<ReturnType<typeof mailTime>>) => (value.endsAt ?? value.startsAt).toISOString().slice(0, 10);
+  for (const other of earlier) {
+    const sameSender = task.applicationId && other.applicationId ? task.applicationId === other.applicationId : sameMailCompany(task.title, other.title);
+    if (!sameSender) continue;
+    const said = mailTime(other.mailEventDraft);
+    if (!said || said.hasTime !== time.hasTime || (time.hasTime ? said.startsAt.getTime() !== time.startsAt.getTime() : lastDay(said) !== lastDay(time))) continue;
+    if (other.mailUndoneAt) return { eventId: null };
+    if (!other.mailEventId) {
+      if (other.done) return { eventId: null };
+      continue;
+    }
+    const event = await tx.calendarEvent.findUnique({ where: { id: other.mailEventId }, select: { startsAt: true, dateKey: true, stageHistoryId: true } });
+    if (!event) return { eventId: null };
+    const moved = time.hasTime ? event.startsAt.getTime() !== time.startsAt.getTime() : !event.stageHistoryId && event.dateKey !== lastDay(time);
+    if (moved) return { eventId: other.mailEventId };
+  }
+  return null;
 }
 
 /** A slot is booked: that company's 「预约面试时间」 reminders have done their job. */
@@ -110,6 +157,15 @@ export async function applyMailSchedule(
   const time = mailTime(task.mailEventDraft);
   if (!time) return { status: "skipped", reason: "no-time" };
   if (!input.force && mailTimeOver(time) <= now.getTime()) return { status: "skipped", reason: "past" };
+  const recruit = RECRUIT_EVENT.test(`${task.title} ${time.title}`);
+  if (recruit && !input.force) return { status: "skipped", reason: "optional" };
+  if (!input.force) {
+    const decided = await decidedBefore(tx, task, time);
+    if (decided) {
+      await tx.personalTask.update({ where: { id: task.id }, data: { mailEventId: decided.eventId, done: true } });
+      return { status: "same" };
+    }
+  }
 
   const app = task.application && task.application.userId === input.userId ? task.application : null;
   // 「预约截止」 only matters until a slot is booked: once the 投递 (or that
@@ -128,7 +184,8 @@ export async function applyMailSchedule(
   // above declined it (older mail, a move back): then it stays off the steps.
   let row: NonNullable<typeof app>["stageHistory"][number] | undefined;
   // The last day to pick a slot is a reminder of its own, not the interview's time.
-  if (app && !isTerminalStage(app.currentStage) && !time.booking) {
+  // A 宣讲会 is no step of a 投递, whatever the mail's company has been applied to.
+  if (app && !isTerminalStage(app.currentStage) && !time.booking && !recruit) {
     const subject = task.note?.match(/邮件主题：(.+)/)?.[1]?.trim().slice(0, 120) || task.title;
     const target = input.stage ?? targetStageFor(app.currentStage, `${time.title} ${task.title} ${time.evidence}`);
     if (target && (target === app.currentStage || !input.stage)) {
@@ -174,7 +231,7 @@ export async function applyMailSchedule(
     await syncApplicationEvents(tx, app.id, now);
     if (time.hasTime) await clearBookingReminders(tx, input.userId, task.title);
     const copy = await tx.calendarEvent.findUnique({ where: { stageHistoryId: row.id }, select: { id: true } });
-    await settleSiblings(tx, { userId: input.userId, taskId: task.id, startsAt: time.startsAt, eventId: copy?.id ?? null, applicationId: app.id, titles: [] });
+    await settleSiblings(tx, { userId: input.userId, taskId: task.id, taskTitle: task.title, before: task.createdAt, startsAt: time.startsAt, eventId: copy?.id ?? null, applicationId: app.id, titles: [] });
     const undo: MailUndo = { kind: "stage", stageHistoryId: row.id, written: storeSchedule(written), previous: storeSchedule(current) };
     await tx.personalTask.update({
       where: { id: task.id },
@@ -192,11 +249,15 @@ export async function applyMailSchedule(
   const eventStart = time.hasTime ? time.startsAt : new Date(`${dayKey}T00:00:00`);
   const sameSlot = await tx.calendarEvent.findMany({
     where: { userId: input.userId, stageHistoryId: null, startsAt: eventStart },
-    select: { id: true, title: true },
+    select: { id: true, title: true, meetingInfo: true },
   });
   for (const event of sameSlot) {
-    const sibling = await tx.personalTask.findFirst({ where: { userId: input.userId, mailEventId: event.id, title: task.title }, select: { id: true } });
+    const feeders = await tx.personalTask.findMany({ where: { userId: input.userId, mailEventId: event.id }, select: { title: true } });
+    // The AI names one 测评 differently in each mail: same company, same kind, same slot is one item.
+    const sibling = feeders.some((feeder) => feeder.title === task.title || (sameMailCompany(feeder.title, task.title) && kindFromText(feeder.title) === kindFromText(task.title)));
     if (event.title === title || event.title === `${title}（截止）` || sibling) {
+      // A link the first mail lacked comes along (「截止 24:00」 alone is not one).
+      if (time.meetingInfo && (!event.meetingInfo || (!/https?:/.test(event.meetingInfo) && /https?:/.test(time.meetingInfo)))) await tx.calendarEvent.update({ where: { id: event.id }, data: { meetingInfo: time.meetingInfo } });
       await tx.personalTask.update({ where: { id: task.id }, data: { mailEventId: event.id, done: true } });
       return { status: "same" };
     }
@@ -217,7 +278,7 @@ export async function applyMailSchedule(
       ...(time.hasTime && time.startsAt.getTime() > now.getTime() ? { reminders: { create: { offsetMinutes: DEFAULT_REMIND_MINUTES, scheduledAt: remindAt } } } : {}),
     },
   });
-  await settleSiblings(tx, { userId: input.userId, taskId: task.id, startsAt: time.startsAt, eventId: event.id, applicationId: null, titles: [task.title, title] });
+  await settleSiblings(tx, { userId: input.userId, taskId: task.id, taskTitle: task.title, before: task.createdAt, startsAt: time.startsAt, eventId: event.id, applicationId: null, titles: [task.title, title] });
   if (time.hasTime && !time.booking) await clearBookingReminders(tx, input.userId, task.title);
   const undo: MailUndo = { kind: "event", eventId: event.id };
   await tx.personalTask.update({

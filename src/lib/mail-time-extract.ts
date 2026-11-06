@@ -374,7 +374,13 @@ export function mailRulesOutTime(subject: string, type: string, body: string): b
 
 export const EXAM_OR_INTERVIEW = /面试|笔试|测评|考试|机试|OA\b|在线测试|interview|assessment|online\s+test|written\s+test|exam/i;
 /** Recruiting events with a time of their own: they go on the calendar too. */
-const RECRUIT_EVENT = /宣讲|双选会|说明会|见面会|开放日|招聘会|交流会|分享会/;
+export const RECRUIT_EVENT = /宣讲|双选会|说明会|见面会|开放日|招聘会|交流会|分享会|恳谈会/;
+/** A questionnaire after the interview: its 面试时间 is history, not an appointment. */
+export function mailIsAfterthought(subject: string, type: string): boolean {
+  return /满意度|体验(?:评价|调研|调查|反馈)|问卷|survey/i.test(`${type} ${subject}`);
+}
+// 「请在今天13:30前根据时间段预约」: the deadline is for picking a slot, not for the interview.
+const BOOK_BY = /前[^。；;\n]{0,24}(?:预约|选择[^。；;\n]{0,8}时间)|预约[^。；;\n]{0,8}截止/;
 
 const clean = (value: string | null | undefined) => (value ?? "").trim();
 
@@ -391,12 +397,16 @@ export function completeMailDraft(input: {
   company?: string | null;
 }): MailEventDraft | null {
   const { ai } = input;
+  if (mailIsAfterthought(input.subject, input.type)) return null;
   const base: MailEventDraft = {
     title: clean(ai?.title), localStart: clean(ai?.localStart), localEnd: clean(ai?.localEnd), timeZone: clean(ai?.timeZone), location: clean(ai?.location),
     meetingUrl: clean(ai?.meetingUrl), evidence: clean(ai?.evidence), deadline: clean(ai?.deadline), windowStart: clean(ai?.windowStart), booking: !!ai?.booking,
   };
   // The AI already got a time the app can use.
-  if (ai && mailTime(base)) return base;
+  if (ai && mailTime(base)) {
+    if (base.localStart || base.booking || !BOOK_BY.test(base.evidence)) return base;
+    return { ...base, booking: true, title: (/预约|选择/.test(base.title) ? base.title : `预约面试时间 · ${base.title}`).slice(0, 200) };
+  }
   if (!EXAM_OR_INTERVIEW.test(`${input.type} ${input.subject}`) && !RECRUIT_EVENT.test(`${input.type} ${input.subject}`)) return ai ? base : null;
   if (mailRulesOutTime(input.subject, input.type, input.body)) return ai ? base : null;
   const exam = /笔试|测评|考试|机试|OA\b|在线测试|assessment|online\s+test|written\s+test|exam/i.test(`${input.type} ${input.subject}`) && !/面试|interview/i.test(input.type);

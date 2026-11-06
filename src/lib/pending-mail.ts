@@ -1,5 +1,5 @@
 import { mailTime, mailTimeOver } from "@/lib/mail-time";
-import { EXAM_OR_INTERVIEW } from "@/lib/mail-time-extract";
+import { EXAM_OR_INTERVIEW, mailIsAfterthought } from "@/lib/mail-time-extract";
 
 /**
  * The mail-made 待办 that still wait to get onto the calendar: a time the
@@ -42,6 +42,7 @@ export function pendingMailRows(tasks: PendingTask[], now: number, scheduledApps
   const seenNoTime = new Set<string>();
   for (const task of [...tasks].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())) {
     const time = mailTime(task.mailEventDraft);
+    if (mailIsAfterthought("", task.title)) continue;
     if (!EXAM_OR_INTERVIEW.test(task.title) && !time) continue;
     if (time && mailTimeOver(time) <= now) continue;
     const parts = MAIL_TITLE.exec(task.title);

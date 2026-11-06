@@ -153,7 +153,7 @@ export function UpcomingSchedule({ items, now: serverNow, applications, days = 7
           {expanded ? "收起" : `展开全部 ${visible.length} 项`}
         </button>
       )}
-      <EditScheduleDialog item={editing} onClose={() => setEditing(null)} />
+      <EditScheduleDialog item={editing} applications={applications} onClose={() => setEditing(null)} />
       <LinkDialog
         item={linking}
         applications={applications}

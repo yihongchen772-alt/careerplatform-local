@@ -105,7 +105,10 @@ export function PendingMailPanel({ items }: { items: PendingMail[] }) {
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
                   {item.time ? (
-                    <Button size="sm" disabled={busy === item.id} onClick={() => act(item, () => writeMailSchedule(item.id), "已加入日历")}>加入日历</Button>
+                    <>
+                      <Button size="sm" disabled={busy === item.id} onClick={() => act(item, () => writeMailSchedule(item.id), "已加入日历")}>加入日历</Button>
+                      <MailEventDialog taskId={item.id} initial={item.draft} label="改一下" onSaved={() => { setHidden((previous) => [...previous, item.id]); router.refresh(); }} />
+                    </>
                   ) : (
                     <MailEventDialog taskId={item.id} initial={item.draft} label="填时间加入日历" variant="default" onSaved={() => { setHidden((previous) => [...previous, item.id]); router.refresh(); }} />
                   )}

@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/session";
 import { toActionResult, UserFacingError } from "@/lib/action-result";
 import { mailEventDraftSchema, confirmedWallTime, type MailEventDraft } from "@/lib/mail-calendar";
 import { isTerminalStage, targetStageFor } from "@/lib/interview-schedule";
+import { RECRUIT_EVENT } from "@/lib/mail-time-extract";
 import { rowForSchedule } from "@/lib/schedule-target";
 import { syncApplicationEvents } from "@/lib/stage-schedule";
 import { z } from "zod";
@@ -26,7 +27,7 @@ export async function confirmMailCalendar(taskId: string, draft: MailEventDraft,
       if (task.mailEventId) { const saved = await tx.calendarEvent.findFirst({ where: { id: task.mailEventId, userId: user.id } }); if (saved) return { id: saved.id, existing: true, applicationId: task.applicationId }; }
       // A mail about one of the 投递 puts the time on that 投递's current step,
       // so it shows there, in 接下来 and in 日历 — one place to change it.
-      const app = task.application && task.application.userId === user.id && !isTerminalStage(task.application.currentStage) ? task.application : null;
+      const app = task.application && task.application.userId === user.id && !isTerminalStage(task.application.currentStage) && !RECRUIT_EVENT.test(`${task.title} ${data.title}`) ? task.application : null;
       // On the round the invitation is for (moving the 投递 forward to it).
       const target = app ? targetStageFor(app.currentStage, `${data.title} ${task.title} ${data.evidence}`) : null;
       const placed = app && target ? await rowForSchedule(tx, app.id, target, { kind: "forward" }) : null;

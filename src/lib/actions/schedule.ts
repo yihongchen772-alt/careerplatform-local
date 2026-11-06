@@ -151,6 +151,88 @@ export async function deleteCalendarItem(eventId: string): Promise<ActionResult<
   });
 }
 
+const NO_SCHEDULE = { nextDeadline: null, nextDeadlineEnd: null, nextHasTime: false, meetingInfo: null, remindMinutes: null, scheduleSource: null };
+
+/** 「这个时间不对，清掉」 on a 投递's step. The mails behind it stay handled, so they don't bring it back. */
+export async function clearStageTime(stageHistoryId: string): Promise<ActionResult<null>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const row = await db.stageHistory.findFirst({ where: { id: stageHistoryId, application: { userId: user.id } }, select: { id: true, applicationId: true, calendarEvent: { select: { id: true } } } });
+    if (!row) throw new UserFacingError("这条进度记录已不存在，请刷新");
+    await db.$transaction(async (tx) => {
+      await tx.stageHistory.update({ where: { id: row.id }, data: NO_SCHEDULE });
+      if (row.calendarEvent) await tx.personalTask.updateMany({ where: { userId: user.id, mailEventId: row.calendarEvent.id }, data: { mailEventId: null, mailUndo: Prisma.DbNull, mailAppliedSeenAt: new Date(), done: true } });
+      await syncApplicationEvents(tx, row.applicationId);
+    });
+    revalidate([row.applicationId]);
+    return null;
+  });
+}
+
+/**
+ * 「不是这条投递」: a time written on the wrong 投递 goes to the right one, or
+ * becomes a calendar item of its own (applicationId null). A step that only
+ * exists because a mail moved the 投递 goes too, so the wrong 投递 is back
+ * where it was.
+ */
+export async function moveStageSchedule(stageHistoryId: string, applicationId: string | null): Promise<ActionResult<null>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const row = await db.stageHistory.findFirst({
+      where: { id: stageHistoryId, application: { userId: user.id } },
+      select: { id: true, applicationId: true, stage: true, stageLabel: true, autoSource: true, autoEvidence: true, completedAt: true, nextDeadline: true, nextDeadlineEnd: true, nextHasTime: true, meetingInfo: true, remindMinutes: true, scheduleSource: true, calendarEvent: { select: { id: true } }, application: { select: { company: { select: { name: true } } } } },
+    });
+    if (!row?.nextDeadline) throw new UserFacingError("这一步已经没有时间了，请刷新");
+    if (applicationId === row.applicationId) throw new UserFacingError("已经在这条投递上了");
+    const target = applicationId ? await db.application.findFirst({ where: { id: applicationId, userId: user.id }, select: { id: true, currentStage: true } }) : null;
+    if (applicationId && !target) throw new UserFacingError("这条投递已经不在了，请刷新");
+    if (target && isTerminalStage(target.currentStage)) throw new UserFacingError("这条投递已经结束，不能再放时间");
+    await db.$transaction(async (tx) => {
+      let eventId: string | null = null;
+      if (target) {
+        const placed = (await rowForSchedule(tx, target.id, row.stage, { kind: "forward" })) ?? (await rowForSchedule(tx, target.id, target.currentStage, { kind: "manual" }));
+        if (!placed) throw new UserFacingError("这条投递没有进度记录");
+        const existing = await tx.stageHistory.findUnique({ where: { id: placed.rowId }, select: { nextDeadline: true } });
+        if (existing?.nextDeadline && existing.nextDeadline.getTime() !== row.nextDeadline!.getTime()) throw new UserFacingError("这条投递的这一步已经有别的时间了，请先在投递里改掉，或选另一条");
+        await tx.stageHistory.update({ where: { id: placed.rowId }, data: { nextDeadline: row.nextDeadline, nextDeadlineEnd: row.nextDeadlineEnd, nextHasTime: row.nextHasTime, meetingInfo: row.meetingInfo, remindMinutes: row.remindMinutes, scheduleSource: null, ...(placed.created && row.autoSource === "email" ? { autoSource: "email", autoEvidence: row.autoEvidence, autoSeenAt: new Date() } : {}) } });
+        await syncApplicationEvents(tx, target.id);
+        eventId = (await tx.calendarEvent.findUnique({ where: { stageHistoryId: placed.rowId }, select: { id: true } }))?.id ?? null;
+      } else {
+        const timed = row.nextHasTime;
+        const dayKey = timed ? localDayKey(row.nextDeadline!) : (row.nextDeadlineEnd ?? row.nextDeadline!).toISOString().slice(0, 10);
+        const startsAt = timed ? row.nextDeadline! : new Date(`${dayKey}T00:00:00`);
+        const event = await tx.calendarEvent.create({
+          data: {
+            userId: user.id,
+            title: `${row.application.company.name} ${row.stageLabel || STAGE_LABELS[row.stage]}`.slice(0, 200),
+            description: "",
+            startsAt,
+            endsAt: timed ? row.nextDeadlineEnd : null,
+            allDay: !timed,
+            dateKey: dayKey,
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            meetingInfo: row.meetingInfo,
+            source: "schedule",
+            ...(timed && row.remindMinutes !== null ? { reminders: { create: { offsetMinutes: row.remindMinutes, scheduledAt: new Date(startsAt.getTime() - row.remindMinutes * 60_000) } } } : {}),
+          },
+          select: { id: true },
+        });
+        eventId = event.id;
+      }
+      if (row.calendarEvent) await tx.personalTask.updateMany({ where: { userId: user.id, mailEventId: row.calendarEvent.id }, data: { mailEventId: eventId, applicationId: target?.id ?? null, mailUndo: Prisma.DbNull, mailAppliedSeenAt: new Date() } });
+      if (row.autoSource === "email" && !row.completedAt) {
+        await tx.stageHistory.delete({ where: { id: row.id } });
+        await resyncCurrentStage(tx, row.applicationId);
+      } else {
+        await tx.stageHistory.update({ where: { id: row.id }, data: NO_SCHEDULE });
+      }
+      await syncApplicationEvents(tx, row.applicationId);
+    });
+    revalidate([row.applicationId, target?.id]);
+    return null;
+  });
+}
+
 /**
  * 「添加面试时间」: a time for a round the user picked. On the current step
  * when it is that round, otherwise on a new step for it (the 投递 moves
