@@ -135,6 +135,39 @@ test("company names: leftovers come off on request, and the old name still finds
   assert.match(read("src/app/(dashboard)/applications/[id]/page.tsx"), /<DeleteApplicationButton/);
 });
 
+test("the summary pills stay one line, name what closes first, and don't contradict themselves", () => {
+  const { dashboardBrief } = load("src/lib/dashboard-brief.ts");
+  const now = new Date(2027, 2, 1, 21).getTime();
+  const iso = (d, h = 0) => new Date(2027, 2, d, h).toISOString();
+  const day = (d) => `2027-03-${String(d).padStart(2, "0")}T00:00:00.000Z`;
+  const step = (id, company, title, startsAt, hasTime, endsAt = null, source = "stage") => ({ key: `${source}:${id}`, source, sourceId: id, kind: "exam", startsAt, endsAt, hasTime, title, companyName: company });
+  const long = step("a", "星海微电子装备集团股份有限公司", "预约面试时间 · 星海微电子装备 机电控制工程师 技术面试", iso(2, 15), true);
+  const brief = dashboardBrief([long], [], now);
+  assert.ok(brief[0].length <= 40, brief[0]);
+  assert.doesNotMatch(brief[0], /预约面试时间/);
+  assert.ok(!brief.includes("眼前没有要赶的事"), "not beside something tomorrow");
+  const opened = step("w1", "星海", "测评（截止）", day(2), false, day(20));
+  const closing = step("w2", "天工", "测评（截止）", day(5), false, day(9));
+  assert.match(dashboardBrief([opened, closing], [], now).join("|"), /最早 天工 3\/9 截止/, "the one that closes first");
+  const todo = (id, urgency = "urgent") => ({ id, urgency });
+  assert.match(dashboardBrief([long], [todo("next-a"), todo("task-1")], now).at(-1), /^另有 1 件事/, "what's named isn't counted twice");
+  assert.equal(dashboardBrief([], [], now).at(-1), "眼前没有要赶的事");
+  assert.match(read("src/app/(dashboard)/dashboard/page.tsx"), /hero-pill block max-w-full truncate/);
+});
+
+test("with no sheet and nothing imported, 秋招信息库 opens on the place to paste the link", () => {
+  assert.match(read("src/app/(dashboard)/leads/page.tsx"), /sources > 0 \|\| ownLeads === 0 \? "postings" : "mine"/);
+});
+
+test("restoring a backup keeps 小欧's memory and the sheet subscription", () => {
+  const core = read("src/lib/backup-core.ts");
+  for (const table of ["agentConversation", "agentMemory", "agentBrief"]) assert.match(core, new RegExp(`"${table}"`));
+  const restore = read("src/lib/actions/backup.ts");
+  assert.match(restore, /agentMemory: \[\["userId", "user"\]\]/);
+  assert.match(restore, /const sheets = await tx\.postingSource\.findMany/);
+  assert.match(restore, /tx\.postingSource\.create\(\{ data: sheet \}\)/);
+});
+
 test("a deadline to book a slot is known as one, even when the AI read it", () => {
   const read1 = extract.completeMailDraft(mail({ ai: draft({ title: "示例科技 线上复试", deadline: "2027-03-05T13:30", evidence: "面试日期: 2027/03/06；请您在今天13:30前根据提供的时间段进行面试预约" }) }));
   assert.equal(read1.booking, true);

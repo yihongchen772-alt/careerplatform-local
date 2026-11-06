@@ -39,6 +39,9 @@ async function backupTargetDir(): Promise<string> {
  * null check in isRowValid, not listed separately.
  */
 const FOREIGN_KEYS: Partial<Record<TableName, [field: string, parent: TableName][]>> = {
+  agentConversation: [["userId", "user"]],
+  agentMemory: [["userId", "user"]],
+  agentBrief: [["userId", "user"]],
   desktopNote: [["userId", "user"]],
   calendarEvent: [["userId", "user"], ["noteId", "desktopNote"]],
   eventReminder: [["eventId", "calendarEvent"]],
@@ -311,6 +314,9 @@ export async function importBackup(
       }
       await db.$transaction(async (tx) => {
         const txDelegate = (t: TableName) => (tx as unknown as Record<TableName, Delegate>)[t];
+        // 校招信息表 subscriptions aren't in backups (the link stays on this machine, the rows can be
+        // read again), but wiping the user below would take them: they come back, to sync afresh.
+        const sheets = await tx.postingSource.findMany({ select: { userId: true, url: true, name: true } });
         // Children first so foreign keys never dangle mid-wipe.
         for (const table of [...TABLES].reverse()) {
           await txDelegate(table).deleteMany();
@@ -320,6 +326,9 @@ export async function importBackup(
             await txDelegate(table).create({ data: row });
             restored++;
           }
+        }
+        for (const sheet of sheets) {
+          if (await tx.user.findUnique({ where: { id: sheet.userId }, select: { id: true } })) await tx.postingSource.create({ data: sheet });
         }
         // Backups made before ApplicationPortal existed only carry the legacy
         // Company.portalUrl columns. Materialize those after restore so an old

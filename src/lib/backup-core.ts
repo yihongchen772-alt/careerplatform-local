@@ -25,6 +25,10 @@ export function uploadsDir(): string {
 // build has no login, so they're empty and restoring them means nothing.
 export const TABLES = [
   "user",
+  // 小欧's conversations and memory: deleting the user on restore takes them too, so they must travel with it.
+  "agentConversation",
+  "agentMemory",
+  "agentBrief",
   "dailyDigest",
   "weeklyReview",
   "resumeComparisonSummary",

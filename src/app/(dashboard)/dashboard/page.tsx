@@ -196,7 +196,11 @@ export default async function DashboardPage() {
             <p className="hero-sub text-sm text-muted-foreground">{new Date(now).toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "long" })}</p>
             <h1 className="mt-1 font-semibold">{greeting(new Date(now))}{dbUser?.name && dbUser.name !== "我" ? `，${dbUser.name}` : ""}</h1>
             <ul aria-label="今天的概况" className="mt-3 flex max-w-4xl flex-wrap gap-2">
-              {heroSummary.map((part) => <li key={part} className="hero-pill rounded-full px-3 py-1 text-xs font-medium">{part}</li>)}
+              {heroSummary.map((part) => (
+                <li key={part} className="min-w-0 max-w-full">
+                  <Link href={/邮件里/.test(part) ? "/calendar" : /件事/.test(part) ? "#today-work" : "#upcoming"} title={part} className="hero-pill block max-w-full truncate rounded-full px-3 py-1 text-xs font-medium transition-opacity hover:opacity-75">{part}</Link>
+                </li>
+              ))}
             </ul>
           </div>
           <Link href="/applications" className="hero-action inline-flex items-center gap-1 rounded-full px-3.5 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
@@ -220,6 +224,7 @@ export default async function DashboardPage() {
       <JustFinishedStrip items={justFinished} now={now} />
 
       {/* Today's interviews, one click from their meeting links — what to act on first. */}
+      <div id="upcoming" className="scroll-mt-4" />
       {applications.length > 0 && (
         <UpcomingSchedule
           items={upcoming}
@@ -255,7 +260,7 @@ export default async function DashboardPage() {
 
       <div className="flex items-end justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold tracking-[-0.025em]">今日工作台</h2>
+          <h2 id="today-work" className="scroll-mt-4 text-lg font-semibold tracking-[-0.025em]">今日工作台</h2>
           <p className="mt-1 text-xs text-muted-foreground">先处理眼前的事，再回看整体进展。</p>
         </div>
       </div>

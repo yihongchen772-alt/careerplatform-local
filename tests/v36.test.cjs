@@ -81,7 +81,7 @@ test("总览's line: a 测评 window is not the next 「场」, and quiet 投递
   assert.match(brief[0], /^下一场 后天 13:30 德州仪器 · 一面$/);
   assert.equal(brief[1], "7 天内 2 场");
   assert.match(brief[2], /^1 个测评 \/ 截止待完成 · 最早 比亚迪 后天$/);
-  assert.equal(brief.at(-1), "1 件事今明两天要处理");
+  assert.equal(brief.at(-1), "另有 1 件事今明两天要处理");
   // Today first.
   const morning = new Date(2026, 10, 3, 9, 0).getTime();
   assert.match(dashboardBrief(upcoming, [], morning)[0], /^今天 13:30 德州仪器 · 一面$/);

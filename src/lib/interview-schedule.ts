@@ -159,7 +159,7 @@ export function itemDayKey(item: Pick<ScheduleItem, "startsAt" | "hasTime">): st
   return item.hasTime ? localDayKey(new Date(item.startsAt)) : item.startsAt.slice(0, 10);
 }
 
-function endDayKey(item: Pick<ScheduleItem, "startsAt" | "endsAt" | "hasTime">): string {
+export function endDayKey(item: Pick<ScheduleItem, "startsAt" | "endsAt" | "hasTime">): string {
   if (!item.endsAt) return itemDayKey(item);
   return item.hasTime ? localDayKey(new Date(item.endsAt)) : item.endsAt.slice(0, 10);
 }

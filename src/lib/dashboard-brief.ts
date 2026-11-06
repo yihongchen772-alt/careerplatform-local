@@ -1,4 +1,4 @@
-import { itemDayKey, localDayKey, urgencyOf, whenText, relativeText, type ScheduleItem } from "@/lib/interview-schedule";
+import { dayLabel, endDayKey, itemDayKey, localDayKey, urgencyOf, whenText, relativeText, type ScheduleItem } from "@/lib/interview-schedule";
 import type { Todo } from "@/lib/todos";
 
 /**
@@ -10,7 +10,10 @@ import type { Todo } from "@/lib/todos";
 export function dashboardBrief(upcoming: ScheduleItem[], todos: Todo[], now: number): string[] {
   const live = upcoming.filter((item) => urgencyOf(item, now) !== "past");
   const booked = live.filter((item) => item.hasTime && item.source !== "mail" && item.kind !== "deadline");
-  const who = (item: ScheduleItem) => [item.companyName, item.title].filter(Boolean).join(" · ");
+  // A pill is one line: mail's long titles lose their decoration, then their tail.
+  const short = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
+  const bare = (title: string) => title.replace(/（截止）$/, "").replace(/^预约面试时间\s*·\s*/, "").trim();
+  const who = (item: ScheduleItem) => short([item.companyName, bare(item.title)].filter(Boolean).join(" · "), 24);
   const parts: string[] = [];
   const today = localDayKey(new Date(now));
   const todays = booked.filter((item) => itemDayKey(item) === today);
@@ -27,14 +30,19 @@ export function dashboardBrief(upcoming: ScheduleItem[], todos: Todo[], now: num
   }
   if (todays.length && booked.length > todays.length) parts.push(`7 天内共 ${booked.length} 场`);
   else if (!todays.length && booked.length > 1) parts.push(`7 天内 ${booked.length} 场`);
-  const windows = live.filter((item) => !item.hasTime && item.source !== "mail");
+  // 「最早」 is the one that closes first, not the one that opened first.
+  const windows = live.filter((item) => !item.hasTime && item.source !== "mail").sort((a, b) => endDayKey(a).localeCompare(endDayKey(b)));
   if (windows.length) {
     const first = windows[0];
-    parts.push(`${windows.length} 个测评 / 截止待完成 · 最早 ${first.companyName ?? first.title} ${whenText(first, now)}`);
+    const spans = !!first.endsAt && endDayKey(first) !== itemDayKey(first);
+    parts.push(`${windows.length} 个测评 / 截止待完成 · 最早 ${short(first.companyName ?? bare(first.title), 14)} ${spans ? `${dayLabel(endDayKey(first), now).date} 截止` : whenText(first, now)}`);
   }
   const waiting = live.filter((item) => item.source === "mail").length;
   if (waiting) parts.push(`邮件里 ${waiting} 个时间等你确认`);
-  const pressing = todos.filter((todo) => todo.urgency !== "soon" && !todo.staleDays).length;
-  parts.push(pressing ? `${pressing} 件事今明两天要处理` : "眼前没有要赶的事");
+  // What the pills above already name isn't counted again, and 「没有要赶的事」 isn't said beside a 面试 tomorrow.
+  const named = new Set(upcoming.flatMap((item) => (item.source === "event" ? [`event-${item.sourceId}`] : item.source === "stage" ? [`next-${item.sourceId}`] : [])));
+  const pressing = todos.filter((todo) => todo.urgency !== "soon" && !todo.staleDays && !named.has(todo.id)).length;
+  if (pressing) parts.push(`${booked.length || windows.length ? "另有 " : ""}${pressing} 件事今明两天要处理`);
+  else if (!todays.length && !windows.length && !waiting && !booked.some((item) => /^(?:今天|明天)/.test(whenText(item, now)))) parts.push("眼前没有要赶的事");
   return parts;
 }
