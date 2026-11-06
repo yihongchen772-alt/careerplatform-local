@@ -55,7 +55,8 @@ const SEGMENT = /\s*[-|_–—·•｜:：]\s*|\s{2,}/;
 const STRONG_JOB_FIELD = /应聘(?:岗位|职位)|申请(?:岗位|职位)|投递(?:岗位|职位)|报考(?:岗位|职位)|报名(?:岗位|职位)|第[一1]志愿(?!者)|志愿一|position\s*applied|applied\s*(?:for|position)|applying\s*for|job\s*applied/i;
 // Also what the applicant's own internships are labelled — see classifyFields.
 const WEAK_JOB_FIELD = /^(?:岗位|职位)(?:名称)?$|^job\s*title$|^position(?:\s*title)?$|^role$/i;
-const WISH_FIELD = /意向(?:岗位|职位)|期望(?:岗位|职位)|求职意向|志愿(?:岗位|职位)|第[二三四2-4]志愿|志愿[二三四]|preferred\s*(?:position|role)/i;
+const WISH_FIELD = /意向(?:岗位|职位)|期望(?:岗位|职位)|求职意向|志愿(?:岗位|职位)|preferred\s*(?:position|role)/i;
+const LATER_WISH = /第[二三四2-4]\s*志愿|志愿[二三四2-4]/;
 const EMPLOYER_FIELD = /应聘(?:单位|公司)|报考单位|报名单位|投递(?:单位|公司)|招聘单位|applying\s*(?:company|to)/i;
 const EXPERIENCE_FIELD = /公司|单位|雇主|企业|company|employer|organi[sz]ation/i;
 
@@ -72,7 +73,8 @@ function sameJob(a: string, b: string) {
   const [short, long] = x.length <= y.length ? [x, y] : [y, x];
   return short.length >= 2 && long.includes(short) && short.length / long.length >= 0.5;
 }
-const segmentsOf = (title: string) => title.split(SEGMENT).map((part) => part.trim()).filter(Boolean);
+// A separator inside brackets doesn't divide: 「底盘工程师（2027届-南京） - 星海科技」.
+const segmentsOf = (title: string) => title.replace(/[（(][^（()）]*[）)]/g, (part) => part.replace(/[-|_–—·•｜:：]/g, "\u0001")).split(SEGMENT).map((part) => part.replace(/\u0001/g, "-").trim()).filter(Boolean);
 
 /** A page's address, for "was this the saved job page": a hash route (#/job/12) is part of it. */
 function address(raw: string) {
@@ -81,7 +83,8 @@ function address(raw: string) {
 }
 
 function cleanCompany(raw: string) {
-  let name = raw.replace(/\s+/g, " ").trim().replace(/^(?:欢迎(?:来到|加入|访问|您)?|加入)\s*/, "");
+  // 「星海机器人！」, 「星海集团“星火计划”」: the name, without its flourish.
+  let name = raw.replace(/\s+/g, " ").trim().replace(/^(?:欢迎(?:来到|加入|访问|您)?|加入)\s*/, "").replace(/\s*[“"「『《][^”"」』》]*[”"」』》]\s*$/, "").replace(/[！!。~～]+$/, "");
   for (let i = 0; i < 5; i++) name = name.replace(/\s*(?:20\d{2}(?:届|年度?|级)?|春季|秋季|春招|秋招|暑期|寒假|校园|社会|实习生?|全球|海外|官方|官网|高校|应届(?:毕业)?生?|毕业生|提前批|补录|第[一二三四]批|批次|专场|人才|管培生)$/, "");
   return name.replace(/^20\d{2}(?:届|年度?|级)?\s*/, "").trim();
 }
@@ -258,6 +261,8 @@ function classifyFields(fields: Field[]) {
   let experience = false;
   for (const field of fields) {
     const label = fieldLabel(field);
+    // 第一志愿城市 is a place; 第二志愿岗位 is a fallback job, not the one applied for.
+    if (/志愿/.test(label) && (LATER_WISH.test(label) || /城市|地点|地区|工作地|学校|院校|专业|时间/.test(label))) continue;
     if (STRONG_JOB_FIELD.test(label)) { if (usable(field)) job.push(field); }
     else if (WISH_FIELD.test(label)) { if (usable(field)) wish.push(field); }
     else if (EMPLOYER_FIELD.test(label)) { if (usable(field)) employer.push(field); }
@@ -348,6 +353,11 @@ export function identifyApplication(input: IdentityInput, pool: IdentityPoolPosi
   // Weaker readings, only when nothing above named the employer.
   if (!companyName) {
     for (const title of titles) { const name = companyFromTitle(title, true); if (name) { companyName = name; evidence.push("页面标题"); break; } }
+  }
+  // A 北森 tenant's site is titled with the brand alone: 「星海创新」.
+  if (!companyName) {
+    const brand = pages.filter((page) => /^https?:\/\/[^/]+\.zhiye\.com\//i.test(page.url) && segmentsOf(page.title).length === 1).map((page) => plausibleCompany(page.title)).find(Boolean);
+    if (brand) { companyName = brand; evidence.push("页面标题"); }
   }
   if (!companyName) { const name = companyFromText(textHead); if (name) { companyName = name; evidence.push("投递成功页的文字"); } }
   if (!companyName && input.jdText) { const name = companyFromJdText(input.jdText); if (name) { companyName = name; evidence.push("岗位页面的文字"); } }

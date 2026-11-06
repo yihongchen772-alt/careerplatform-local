@@ -25,10 +25,13 @@ test("the record's answers come from the engine's own reading: every field type,
       { label: "姓名", tag: "input", type: "text", currentValue: "张三" },
       { label: "学校", tag: "input", type: "text", currentValue: "甲大学" },
       { label: "学校", tag: "input", type: "text", currentValue: "乙大学" },
+      { label: "学校", tag: "input", type: "text", currentValue: "乙大学" },
+      { label: "推荐方式*", tag: "custom-select", type: "", currentValue: "校园招聘" },
+      { label: "学校", tag: "input", type: "text", currentValue: "甲大学" },
     ];
   };
   const fields = core.readFormAnswers(scan);
-  assert.deepEqual(fields.map((f) => f.label), ["姓名", "最高学历", "请选择意向城市", "是否接受调剂", "自我评价", "学校", "学校"], "a repeated question with another answer stays; the same one twice doesn't");
+  assert.deepEqual(fields.map((f) => f.label), ["姓名", "最高学历", "请选择意向城市", "是否接受调剂", "自我评价", "姓名", "学校", "学校", "推荐方式", "学校"], "one box read twice in a row is one answer; two records with the same value are two");
   assert.equal(fields.find((f) => f.label === "最高学历").value, "硕士");
   assert.equal(fields.find((f) => f.label === "自我评价").value.length, 5000);
 });
@@ -94,8 +97,33 @@ test("the employer from titles real sites use", () => {
   assert.equal(company("硬件工程师 - 电源方向 - 欢迎加入星海科技"), "星海科技");
   assert.equal(company("硬件工程师（校招） - Join Star Robotics"), "Star Robotics");
   assert.equal(company("星海汽车 奔向远方 | 职位详情"), "星海汽车", "the name, not the slogan after it");
+  assert.equal(company("加入星海机器人！"), "星海机器人", "without its exclamation mark");
+  assert.equal(company("加入星海集团“星火计划”"), "星海集团", "or the programme's name");
+  assert.equal(identify({ title: "底盘工程师（2027届-南京） - 星海科技校园招聘" }).title, "底盘工程师", "a dash inside brackets doesn't divide the title");
+  const onTenant = (title) => identifyApplication({ url: "https://starsea.zhiye.com/form", title, text: "", siteName: null, history: [], fields: [] }, [], []).companyName;
+  assert.equal(onTenant("星海创新"), "星海创新", "a 北森 site titled with the brand alone");
+  assert.equal(onTenant("投递简历"), "");
+  assert.equal(company("星海创新"), "", "elsewhere a lone title says too little");
   assert.equal(company("加入我们"), "");
   assert.equal(company("校园招聘"), "");
+});
+
+test("a 志愿 field names the job only when it is the first choice of a job", () => {
+  const job = (fields) => identifyApplication({ url: "https://jobs.example-tech.cn/form", title: "星海科技有限公司", text: "", siteName: null, history: [], fields, jdText: "", jdHeadings: [] }, [], []).title;
+  assert.equal(job([{ label: "第二志愿城市", value: "南京" }]), "", "a city is not a job");
+  assert.equal(job([{ label: "第一志愿城市", value: "南京" }]), "");
+  assert.equal(job([{ label: "第二志愿岗位", value: "测试工程师" }]), "", "the second choice is not what was applied for");
+  assert.equal(job([{ label: "第二志愿城市", value: "南京" }, { label: "第一志愿岗位", value: "硬件工程师" }]), "硬件工程师");
+  assert.equal(job([{ label: "志愿者经历", value: "社区服务" }, { label: "意向岗位", value: "硬件工程师" }]), "硬件工程师");
+});
+
+test("no made-up questions in the record: a dropdown's own value is not a label, the header's job search is not a field", () => {
+  const preload = read("electron/browser-guest-preload.js");
+  assert.match(preload, /label === value \|\| \/\^\[\\d\\s\+/);
+  const engine = read("electron/autofill-core.js");
+  assert.match(engine, /The site's own job search/);
+  assert.match(read("tests/fill-lab/run.mjs"), /搜索框不算题目/);
+  assert.match(read("electron/browser-view.js"), /\\\*\{2,\}\/\.test\(line\)/, "the signed-in account is no heading");
 });
 
 test("answers read clean: dates whole, no +86, a validation message is not a value", () => {

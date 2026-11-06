@@ -505,6 +505,8 @@ function scanPageFields(prefix, readOnly = false) {
 
   elements.forEach((el) => {
     if (el.type === "password" || !controlVisible(el) || el.closest(SITE_CHROME)) return;
+    // The site's own job search, in a header not marked as one: not a question on the form.
+    if (/(?:职位|岗位).{0,3}关键[字词]|关键[字词].{0,3}(?:职位|岗位)|搜索.{0,3}(?:职位|岗位)|(?:职位|岗位).{0,3}搜索/.test(el.getAttribute("placeholder") || "")) return;
     const hasValue = !!(el.value && String(el.value).trim());
     if (el.disabled && !hasValue) return;
     // Inner inputs of custom selects were handled above.
@@ -4635,9 +4637,8 @@ function readCurrentApplicationFields() {
 // A read-only scan, so it marks nothing on the page. Private fields never leave.
 function readFormAnswers(scan = scanPageFields) {
   const fields = [];
-  const seen = new Set();
   const list = scan("readonly-", true);
-  const labelOf = (field) => String(field.label || field.placeholder || field.name || "").replace(/\s+/g, " ").trim().slice(0, 200);
+  const labelOf = (field) => String(field.label || field.placeholder || field.name || "").replace(/\s+/g, " ").trim().replace(/^[*＊\s]+|[*＊:：\s]+$/g, "").slice(0, 200);
   for (let i = 0; i < list.length; i++) {
     const field = list[i];
     const label = labelOf(field);
@@ -4659,9 +4660,9 @@ function readFormAnswers(scan = scanPageFields) {
     if (/密码|验证码|证件|身份证|银行卡|护照|家庭住址|password|captcha|passport|social security|bank account/i.test(label) || /\d{17}[\dXx]/.test(value)) continue;
     // +86 in front of a phone box is its own little dropdown, not an answer.
     if (/^\+\d{1,4}$/.test(value)) continue;
-    const key = label + "\u0000" + value;
-    if (seen.has(key) || fields.length >= 250) continue;
-    seen.add(key);
+    // One box read twice in a row is one answer. Two records with the same date or level are two.
+    const last = fields[fields.length - 1];
+    if ((last && last.label === label && last.value === value) || fields.length >= 250) continue;
     fields.push({ label, value });
   }
   return fields;

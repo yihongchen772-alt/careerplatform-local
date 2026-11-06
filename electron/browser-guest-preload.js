@@ -194,6 +194,11 @@ function readSentForm(from) {
     label = String(label || "").replace(/\s+/g, " ").trim().slice(0, 200);
     value = String(value || "").trim().slice(0, 5000);
     if (!label || !value || PRIVATE_LABEL.test(label) || /\d{17}[\dXx]/.test(value)) return;
+    // A dropdown with no text of its own before it picks up its value, or the one
+    // beside it, as a label: 「2025」 「8」 「+86」 are not questions.
+    if (label === value || /^[\d\s+\-./:：年月日]+$/.test(label)) return;
+    // Nor is the site's own job search.
+    if (/(?:职位|岗位).{0,3}关键[字词]|关键[字词].{0,3}(?:职位|岗位)|搜索.{0,3}(?:职位|岗位)|(?:职位|岗位).{0,3}搜索/.test(label)) return;
     const key = label + "\u0000" + value;
     if (seen.has(key) || fields.length >= 250) return;
     seen.add(key);

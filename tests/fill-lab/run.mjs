@@ -310,6 +310,7 @@ const suites = {
   "validation-msg": [[
     { label: "下拉照常填上", read: "(document.querySelector('#degree .ant-select-selection-item') || {}).textContent || ''", expect: "硕士" },
     { label: "提示不是答案", read: `(${core.readFormAnswers.toString()})(${core.scanPageFields.toString()}).filter((a) => /必填/.test(a.value)).length`, expect: "0" },
+    { label: "搜索框不算题目", read: `(${core.scanPageFields.toString()})("lab-", true).filter((f) => /关键字/.test(f.placeholder || f.label || "")).length + "|" + document.querySelector("#job-search").value`, expect: "0|" },
     { label: "没选的不记", read: `(${core.readFormAnswers.toString()})(${core.scanPageFields.toString()}).filter((a) => a.label === "其他说明").length`, expect: "0" },
   ]],
   // A job page prints the job's name in its biggest type, above the duties.

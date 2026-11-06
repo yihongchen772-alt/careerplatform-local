@@ -421,7 +421,8 @@ function readJobPageInPage() {
     let dutiesTop = Infinity;
     for (const el of Array.from(document.querySelectorAll("h1, h2, h3, h4, h5, div, span, p, a, strong, b, li, td")).slice(0, 4000)) {
       const line = own(el);
-      if (line.length < 2 || line.length > 60 || el.closest("nav, footer")) continue;
+      // 138****0000: the signed-in account in the header, never part of a job.
+      if (line.length < 2 || line.length > 60 || /\*{2,}/.test(line) || el.closest("nav, footer")) continue;
       const box = el.getBoundingClientRect();
       if (!box.width || !box.height) continue;
       const top = box.top + window.scrollY;
