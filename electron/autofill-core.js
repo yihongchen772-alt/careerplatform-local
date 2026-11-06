@@ -390,7 +390,7 @@ function scanPageFields(prefix, readOnly = false) {
   // What a component-library dropdown currently shows. Element Plus 2.x puts
   // the chosen label in its (no longer transparent) placeholder; Element UI
   // and cascaders in a read-only input; a plain listbox button in its text.
-  const PLACEHOLDER_TEXT = /^(?:请|点击|點擊)?(?:选择|选取|输入|填写|搜索)|^(?:select|choose|search|please (?:select|choose|enter))\b|^(?:--|—)/i;
+  const PLACEHOLDER_TEXT = /^(?:请|点击|點擊)?(?:选择|选取|输入|填写|搜索)|^(?:select|choose|search|please (?:select|choose|enter))\b|^(?:--|—)|^(?:此项|该项|本项)?必填|未填写$|不能为空$|^(?:this field is )?required\b/i;
   function ownText(node) {
     if (typeof node.cloneNode !== "function") return "";
     const copy = node.cloneNode(true);
@@ -1207,7 +1207,7 @@ async function fillCustomSelects(pairs, taskId) {
   const find = (selector) => { for (const root of roots) { const hit = root.querySelector(selector); if (hit) return hit; } return null; };
   const clean = (text) => String(text || "").replace(/[​-‍﻿]/g, "").replace(/\s+/g, " ").replace(/([㐀-鿿]) (?=[㐀-鿿])/g, "$1").trim();
   // Same reading as scanPageFields: what the dropdown currently shows.
-  const PLACEHOLDER_TEXT = /^(?:请|点击|點擊)?(?:选择|选取|输入|填写|搜索)|^(?:select|choose|search|please (?:select|choose|enter))\b|^(?:--|—)/i;
+  const PLACEHOLDER_TEXT = /^(?:请|点击|點擊)?(?:选择|选取|输入|填写|搜索)|^(?:select|choose|search|please (?:select|choose|enter))\b|^(?:--|—)|^(?:此项|该项|本项)?必填|未填写$|不能为空$|^(?:this field is )?required\b/i;
   function ownText(node) {
     if (typeof node.cloneNode !== "function") return "";
     const copy = node.cloneNode(true);
@@ -1978,7 +1978,7 @@ function readFieldValues(ids) {
     }
     return clean(radio.value);
   }
-  const PLACEHOLDER_TEXT = /^(?:请|点击|點擊)?(?:选择|选取|输入|填写|搜索)|^(?:select|choose|search|please (?:select|choose|enter))\b|^(?:--|—)/i;
+  const PLACEHOLDER_TEXT = /^(?:请|点击|點擊)?(?:选择|选取|输入|填写|搜索)|^(?:select|choose|search|please (?:select|choose|enter))\b|^(?:--|—)|^(?:此项|该项|本项)?必填|未填写$|不能为空$|^(?:this field is )?required\b/i;
   function fieldValue(el) {
     const tag = el.tagName.toLowerCase();
     if (tag === "select") return clean(el.options[el.selectedIndex]?.textContent);
@@ -2030,7 +2030,7 @@ function clearSavedUserEdits(saved) {
     }
     return clean(radio.value);
   }
-  const PLACEHOLDER_TEXT = /^(?:请|点击|點擊)?(?:选择|选取|输入|填写|搜索)|^(?:select|choose|search|please (?:select|choose|enter))\b|^(?:--|—)/i;
+  const PLACEHOLDER_TEXT = /^(?:请|点击|點擊)?(?:选择|选取|输入|填写|搜索)|^(?:select|choose|search|please (?:select|choose|enter))\b|^(?:--|—)|^(?:此项|该项|本项)?必填|未填写$|不能为空$|^(?:this field is )?required\b/i;
   function fieldValue(el) {
     const tag = el.tagName.toLowerCase();
     if (tag === "select") return clean(el.options[el.selectedIndex]?.textContent);
@@ -4630,6 +4630,43 @@ function readCurrentApplicationFields() {
   return fields;
 }
 
+// What the form says right now, for the record of a 网申 just sent: the engine's
+// own reading, which knows component dropdowns, radio groups and date pickers.
+// A read-only scan, so it marks nothing on the page. Private fields never leave.
+function readFormAnswers(scan = scanPageFields) {
+  const fields = [];
+  const seen = new Set();
+  const list = scan("readonly-", true);
+  const labelOf = (field) => String(field.label || field.placeholder || field.name || "").replace(/\s+/g, " ").trim().slice(0, 200);
+  for (let i = 0; i < list.length; i++) {
+    const field = list[i];
+    const label = labelOf(field);
+    let value = String(field.currentValue || "").trim().slice(0, 5000);
+    // 年 and 月 as separate dropdowns are one date: 2024 9 2026 6 → 2024-09 ~ 2026-06.
+    if (field.datePart) {
+      const dates = [];
+      let j = i;
+      for (; j < list.length && list[j].datePart && labelOf(list[j]) === label; j++) {
+        const part = String(list[j].currentValue || "").replace(/\D/g, "");
+        if (!part) continue;
+        if (list[j].datePart === "year" || !dates.length) dates.push(part);
+        else dates[dates.length - 1] += "-" + part.padStart(2, "0");
+      }
+      i = j - 1;
+      value = dates.join(" ~ ");
+    }
+    if (!label || !value || field.type === "password" || field.type === "file") continue;
+    if (/密码|验证码|证件|身份证|银行卡|护照|家庭住址|password|captcha|passport|social security|bank account/i.test(label) || /\d{17}[\dXx]/.test(value)) continue;
+    // +86 in front of a phone box is its own little dropdown, not an answer.
+    if (/^\+\d{1,4}$/.test(value)) continue;
+    const key = label + "\u0000" + value;
+    if (seen.has(key) || fields.length >= 250) continue;
+    seen.add(key);
+    fields.push({ label, value });
+  }
+  return fields;
+}
+
 // Cache only values already present on the visited page, for the success screen.
 function watchApplicationFields(contextKey) {
   if (window.__cpArchiveContextKey !== contextKey) { try { sessionStorage.removeItem("cp-submission-fields"); } catch {} }
@@ -4705,7 +4742,7 @@ module.exports = {
   pickPageRegion,
   isThirdPartyField, displayLabel, basicRuleMatches, normalizePhone, englishValue, matchPhoneChoice,
   classifyRepeatBlocks, savedRecordsOnPage, repeatsSavedEntry, previewRecordBlocks, formSkeleton, rowsForGroup, recordReference, awardFieldKind,
-  profileChoices, applyAutofillPlan, validatePageFields, focusFormField, collectApplicationFields, readCurrentApplicationFields, watchApplicationFields,
+  profileChoices, applyAutofillPlan, validatePageFields, focusFormField, collectApplicationFields, readCurrentApplicationFields, readFormAnswers, watchApplicationFields,
   AUTOFILL_MODULES,
   socialValues,
   fillDetail,

@@ -19,6 +19,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const core = require("../../electron/autofill-core.js");
+const viewSource = fs.readFileSync(new URL("../../electron/browser-view.js", import.meta.url), "utf8");
 const LAB = path.dirname(fileURLToPath(import.meta.url));
 const VENDOR = path.join(LAB, ".vendor");
 const only = process.argv.slice(2);
@@ -160,6 +161,17 @@ async function runPage(browser, name, checks, { wait = 600, options = {}, page: 
     if (ok) pass++;
     lines.push(`  ${ok ? "✓" : "✗"} ${check.label.padEnd(18)} 实际=${JSON.stringify(actual).slice(0, 60)}${ok ? "" : `  期望=${check.expect instanceof RegExp ? check.expect : JSON.stringify(check.expect)}`}`);
   }
+  // What 记为已投递 keeps: everything just filled must read back, under its label.
+  const answers = [];
+  for (const f of page.frames()) answers.push(...((await f.evaluate(`(${core.readFormAnswers.toString()})(${core.scanPageFields.toString()})`).catch(() => [])) || []));
+  const answered = new Set(answers.map((a) => a.label.replace(/[\s*＊:：]/g, "")));
+  const bare = (text) => String(text || "").split(" · ").pop().replace(/[\s*＊:：]/g, "");
+  const filled = (result.details || []).filter((d) => ["profile", "memory", "ai"].includes(d.source) && !/需|手填/.test(d.state));
+  const unread = filled.filter((d) => !answered.has(bare(d.label)) && ![...answered].some((label) => label.includes(bare(d.label)) || bare(d.label).includes(label)));
+  const readOk = !filled.length || (filled.length - unread.length) / filled.length >= 0.85;
+  checks = [...checks, { label: "记录读得回", expect: "x" }];
+  if (readOk) pass++;
+  lines.push(`  ${readOk ? "✓" : "✗"} 记录读得回          读回 ${filled.length - unread.length}/${filled.length} 个已填字段${unread.length ? `，没读回：${unread.slice(0, 6).map((d) => d.label).join("、")}` : ""}`);
   console.log(`\n=== ${name}  ${pass}/${checks.length} 通过  (${elapsed}ms) ===`);
   console.log(lines.join("\n"));
   console.log(`  结果: ${result.phase} · ${result.summary ? JSON.stringify(result.summary) : ""}`);
@@ -293,6 +305,18 @@ const suites = {
     { label: "Work authorized", read: sel("#q2"), expect: "Yes" },
     { label: "顶栏搜索框(不动)", read: val("#site-search"), expect: "" },
     { label: "语言切换(不动)", read: "document.getElementById('lang').textContent.trim()", expect: "English" },
+  ]],
+  // A dropdown showing its validation message is empty: not filled, and no answer for the record.
+  "validation-msg": [[
+    { label: "下拉照常填上", read: "(document.querySelector('#degree .ant-select-selection-item') || {}).textContent || ''", expect: "硕士" },
+    { label: "提示不是答案", read: `(${core.readFormAnswers.toString()})(${core.scanPageFields.toString()}).filter((a) => /必填/.test(a.value)).length`, expect: "0" },
+    { label: "没选的不记", read: `(${core.readFormAnswers.toString()})(${core.scanPageFields.toString()}).filter((a) => a.label === "其他说明").length`, expect: "0" },
+  ]],
+  // A job page prints the job's name in its biggest type, above the duties.
+  "jd-heading": [[
+    { label: "最大字是岗位名", read: `(() => { ${viewSource.slice(viewSource.indexOf("function readJobPageInPage() {"), viewSource.indexOf("function scheduleJobPageCapture(tab) {"))}; return readJobPageInPage().headings[0]; })()`, expect: "星海控制算法工程师" },
+    { label: "职责以下不算", read: `(() => { ${viewSource.slice(viewSource.indexOf("function readJobPageInPage() {"), viewSource.indexOf("function scheduleJobPageCapture(tab) {"))}; return readJobPageInPage().headings.includes("公司福利大标题"); })()`, expect: "false" },
+    { label: "导航不算", read: `(() => { ${viewSource.slice(viewSource.indexOf("function readJobPageInPage() {"), viewSource.indexOf("function scheduleJobPageCapture(tab) {"))}; return readJobPageInPage().headings.includes("导航大字"); })()`, expect: "false" },
   ]],
   "custom-widgets": [[
     { label: "姓名(兄弟节点标签)", read: val("#w-name"), expect: "林晓舟" },

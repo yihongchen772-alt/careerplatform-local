@@ -46,7 +46,7 @@ test("the form as sent still comes first; a JD with no job line adds nothing", (
 
 test("the form is read when it is sent — hand-filled too — and never a login or private field", () => {
   const preload = read("electron/browser-guest-preload.js");
-  assert.match(preload, /reportSentForm\(event\.target, buttonText\(event\.submitter\)\)/);
+  assert.match(preload, /reportSentForm\(event\.target, label\)/);
   assert.match(preload, /SEND_TEXT = \/提\\s\*交\|投\\s\*递\|申\\s\*请/);
   assert.match(preload, /type === "password" && shown\(el\)\) return null/, "a visible password box means a login, not a 网申");
   assert.match(preload, /PRIVATE_LABEL\.test\(label\) \|\| \/\\d\{17\}\[\\dXx\]\/\.test\(value\)/);
@@ -96,10 +96,10 @@ test("a brief 投递成功 toast right after a real send is caught; 下一步 do
   assert.match(preload, /new MutationObserver/);
   assert.match(preload, /text\.length <= 300 \? SUCCESS_TEXT\.exec\(text\)/, "a short toast, not a whole page");
   assert.match(preload, /setTimeout\(stopSuccessWatch, 30000\)/);
-  assert.match(preload, /reportSentForm\(target, text\)\) watchForSuccess\(\)/);
+  assert.match(preload, /reportSentForm\(target, text\)\) watchForSuccess\(text\)/);
   assert.match(preload, /const final = !step && \(STRONG_SEND\.test\(label\) \|\| fields\.length >= 3\)/, "确定 on a cookie box is not a send");
   assert.match(preload, /STEP_TEXT\.test\(label\) && !\/提\\s\*交\|投\\s\*递\/\.test\(label\)/, "保存并提交 does send");
-  assert.match(preload, /VAGUE_SUCCESS\.test\(match\[0\]\) && !ABOUT_A_JOB\.test/);
+  assert.match(preload, /VAGUE_SUCCESS\.test\(match\[0\]\) && \(!vagueCounts \|\| !ABOUT_A_JOB\.test/, "a bare 提交成功 only after a clear send, on a page about a job");
   const view = read("electron/browser-view.js");
   assert.match(view, /ipcMain\.on\("browser-guest:success-seen"/);
   assert.match(view, /if \(payload\.final === true\) \{\r?\n\s+tab\.lastSendAt = now;\r?\n\s+submittedSignatures\.delete\(tab\.id\);/);

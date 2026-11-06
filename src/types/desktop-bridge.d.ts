@@ -27,7 +27,7 @@ export type ApplicationSnapshot = {
   /** Resume files that went onto this tab's pages, newest first: by 一键填写 (with its version) or picked/dropped by hand (name, size). */
   uploads?: { by: "autofill" | "page"; at: number; resumeVersionId?: string; name?: string; size?: number; url?: string }[];
   /** The last job description page this tab showed. */
-  jdPage?: { url: string; title: string; text: string; at: number } | null;
+  jdPage?: { url: string; title: string; text: string; headings?: string[]; at: number } | null;
   /** When the applicant last pressed a real send button (提交 / 投递…) in this tab. */
   lastSendAt?: number | null;
 };

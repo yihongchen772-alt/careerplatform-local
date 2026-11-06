@@ -18,6 +18,8 @@ export type IdentityInput = {
   fields: { label: string; value: string }[];
   /** The job description page this tab showed before the form, as text. */
   jdText?: string;
+  /** That page's biggest short texts above its duties, largest first. */
+  jdHeadings?: string[];
 };
 export type IdentityPoolPosition = { id: string; companyName: string; title: string; jdUrl?: string | null };
 /** A company and the siteKey()s of every page known for it. */
@@ -34,6 +36,8 @@ type Field = IdentityInput["fields"][number];
 // Navigation and step names: never the employer, never the job.
 const PAGE_WORDS = /招聘|官网|首页|主页|职位详情|岗位详情|职位列表|岗位列表|职位搜索|投递|申请|应聘|网申|简历|登录|注册|个人中心|候选人|欢迎|加入我们|\bjoin us\b|\bcareers?\b|\bjobs\b|\bjob (?:details?|search|list(?:ings?|s)?)\b|\bapply\b|\bsign ?in\b|\blog ?in\b|\bhome\b|\bportal\b|\bdetails?\b/i;
 const JOB_WORDS = /工程师|经理|专员|分析师|实习生|实习|开发|设计师|设计|运营|产品|管培生|培训生|储备|助理|顾问|研究员|研究|主管|总监|销售|会计|审计|律师|法务|教师|医生|算法|测试|架构师|科学家|分析|策划|编辑|翻译|采购|物流|客服|研发|技术|财务|行政|人力|柜员|交易员|精算|风控|营销|HR|BP|engineer|manager|analyst|intern|developer|designer|specialist|associate|scientist|consultant|officer|coordinator|representative|trainee/i;
+// 品质管理岗, 储备干部 aside, names that end like a job though no word above says so.
+const JOB_ENDING = /(?:岗|岗位|员|师|干部)(?:[（(].*[）)])?$/;
 // A title segment that is the employer, the site or a page, never the job.
 const NOT_A_JOB = /招聘|官网|首页|主页|有限公司|股份|集团|公司$|银行$|证券$|保险$|研究院$|大学$|中心$|careers?$|^jobs?$/i;
 // Endings that make a name an organisation even with a job word inside (华为技术有限公司).
@@ -89,6 +93,9 @@ function plausibleCompany(raw: string) {
   if ((name.match(/[（(]/g) || []).length !== (name.match(/[）)]/g) || []).length) return "";
   if (PLATFORMS.test(normalize(name)) || NOT_A_NAME.test(name) || PAGE_WORDS.test(name)) return "";
   if (COMPANY_SUFFIX.test(name) || BRANCH.test(name)) return name;
+  // 「星海汽车 奔向远方」: the name, then a slogan.
+  const beforeSlogan = /^([\u3400-\u9fff]{2,12}) [\u3400-\u9fff]/.exec(name);
+  if (beforeSlogan && COMPANY_SUFFIX.test(beforeSlogan[1])) return beforeSlogan[1];
   // 朝阳区, 浦东新区: a place, not an employer.
   return !JOB_WORDS.test(name) && !STEP_WORDS.test(name) && !/(?:省|市|区|县|镇)$/.test(name) ? name : "";
 }
@@ -102,6 +109,15 @@ function tidyJob(value: string, companyName: string) {
   if (companyName) {
     const name = escapeRegExp(companyName);
     job = job.replace(new RegExp(`^\\s*${name}\\s*(?:[-–—·|｜:：_]|的)\\s*`), "").replace(new RegExp(`\\s*[-–—·|｜:：_]\\s*${name}\\s*$`), "");
+  }
+  // 「软件开发工程师(J10002)」: a posting's code, not its name.
+  job = job.replace(/\s*[（(]\s*[A-Za-z]{0,4}\d{3,}\s*[）)]\s*$/, "");
+  // 「27届正式批-电机工程师」, 「星海微电子-测试工程师-2027校园招聘」: the batch and the
+  // employer are parts of the line, not of the job. Other parts (a city, a division) stay.
+  const parts = job.split(/\s*[-–—:：|｜]\s*/).filter(Boolean);
+  if (parts.length > 1) {
+    const kept = parts.filter((part) => !/届|校招|秋招|春招|社招|校园招聘|正式批|提前批|批次|^20\d{2}/.test(part) && !(companyName && part.length >= 2 && (part.includes(companyName) || companyName.includes(part))));
+    if (kept.length && kept.length < parts.length && kept.some((part) => JOB_WORDS.test(part) || JOB_ENDING.test(part))) job = kept.join("-");
   }
   return job.replace(/(?:岗位|职位)(?:详情|申请)?$/, "").replace(/^[\s·\-—:：「“"《【]+|[\s·\-—:：」”"》】]+$/g, "").trim();
 }
@@ -139,6 +155,17 @@ function companyFromTitle(title: string, loose: boolean) {
   const greenhouse = GREENHOUSE_TITLE.exec(title.trim());
   if (greenhouse && plausibleCompany(greenhouse[2])) return plausibleCompany(greenhouse[2]);
   const segments = segmentsOf(title);
+  // 飞书招聘 titles every page 「…加入星海科技」 / 「欢迎加入星海科技」 / 「Join Star Robotics」.
+  for (const segment of segments) {
+    const joining = /^(?:欢迎)?加入\s*(.{2,30})$|^join\s+(.{2,40})$/i.exec(segment);
+    const named = joining ? joining[1] || joining[2] : "";
+    if (named && !/^(?:我们|us\b|our\b)/i.test(named) && plausibleCompany(named)) return plausibleCompany(named);
+  }
+  // A title that is nothing but the organisation (北森 sites): 「星海科技有限公司」.
+  if (segments.length === 1 && segments[0].length >= 4 && COMPANY_SUFFIX.test(cleanCompany(segments[0])) && !JOB_WORDS.test(segments[0].replace(COMPANY_SUFFIX, ""))) {
+    const name = plausibleCompany(segments[0]);
+    if (name) return name;
+  }
   for (const segment of segments) {
     const zh = /^(.{2,40}?)(?:招聘|校招|社招)/u.exec(segment);
     const name = zh ? plausibleCompany(zh[1]) : "";
@@ -153,7 +180,12 @@ function companyFromTitle(title: string, loose: boolean) {
   // English parts only beside "Careers" — elsewhere they are often cities.
   const generic = segments.some((segment) => GENERIC_SEGMENT.test(segment));
   const anchored = generic || segments.some((segment) => JOB_WORDS.test(segment) || PAGE_WORDS.test(segment) || STEP_WORDS.test(segment));
-  if (!anchored || segments.length < 2 || segments.length > 4) return "";
+  if (segments.length < 2 || segments.length > 4) return "";
+  // "星海科技 - 期待您的加入！": no job or page word to go by, but one part reads as an organisation.
+  if (!anchored) {
+    const organisations = segments.filter((segment) => segment.length >= 4 && COMPANY_SUFFIX.test(cleanCompany(segment))).map(plausibleCompany).filter(Boolean);
+    return organisations.length === 1 ? organisations[0] : "";
+  }
   const names = segments.filter((segment) => !GENERIC_SEGMENT.test(segment) && (generic || /[\u3400-\u9fff]/.test(segment))).map(plausibleCompany).filter(Boolean);
   return names.length === 1 ? names[0] : "";
 }
@@ -236,7 +268,10 @@ function classifyFields(fields: Field[]) {
   return { job, wish, employer, weak: weak.length === 1 && !experience ? weak : [] };
 }
 
-const JD_DUTIES_LINE = /岗位职责|工作职责|职位描述|岗位描述|工作内容|职位详情|job description|responsibilit/i;
+// Not 职位详情: on many sites that's only the breadcrumb (首页/职位列表/职位详情), above the job's name.
+// A job family on a filter or a tag, not a job: 研发技术, 算法, 产品类, 技术研发.
+const JOB_CATEGORY = /^(?:研发|技术|产品|设计|运营|销售|市场|职能|管理|算法|开发|测试|工程|生产|制造|质量|财务|人力|行政|法务|采购|物流|供应链|营销|综合)(?:技术|研发|开发|设计|工程|管理|运营|类|方向|序列|岗|岗位)?$/;
+const JD_DUTIES_LINE = /岗位职责|工作职责|职位描述|岗位描述|工作内容|job description|responsibilit/i;
 
 /** The lines at the top of a job description page, nearest to 岗位职责 first: where its title and employer are. */
 function jdHead(text: string): string[] {
@@ -245,10 +280,15 @@ function jdHead(text: string): string[] {
   return (duties > 0 ? lines.slice(Math.max(0, duties - 10), duties) : lines.slice(0, 10)).reverse();
 }
 
-/** The job's own name on its description page: a short line with a job word, right above 岗位职责. */
-function jobFromJdText(text: string, companyName: string) {
-  for (const line of jdHead(text)) {
-    if (line.length > 30 || !JOB_WORDS.test(line)) continue;
+/** Not a job's name: 「全职|研发部」, 「20K|上海|本科」, 「类别：研发」, a department or a bare category. */
+function jdLineIsJob(line: string) {
+  return line.length <= 60 && (JOB_WORDS.test(line) || JOB_ENDING.test(line)) && !/[|｜:：]/.test(line) && !/(?:部|组|中心|事业群|团队)$/.test(line) && !JOB_CATEGORY.test(line);
+}
+
+/** The job's own name on its description page: the largest text with a job word, else the line right above 岗位职责. */
+function jobFromJdText(text: string, headings: string[], companyName: string) {
+  for (const line of [...headings, ...jdHead(text)]) {
+    if (!jdLineIsJob(line)) continue;
     const job = tidyJob(line, companyName);
     if (plausibleJob(job) && !NOT_A_JOB.test(job)) return job;
   }
@@ -322,7 +362,7 @@ export function identifyApplication(input: IdentityInput, pool: IdentityPoolPosi
   if (!title) {
     for (const pageTitle of titles) { const job = jobFromTitle(pageTitle, companyName); if (job) { title = job; evidence.push("岗位页面的标题"); break; } }
   }
-  if (!title && input.jdText) { const job = jobFromJdText(input.jdText, companyName); if (job) { title = job; evidence.push("岗位页面的文字"); } }
+  if (!title && input.jdText) { const job = jobFromJdText(input.jdText, input.jdHeadings ?? [], companyName); if (job) { title = job; evidence.push("岗位页面的文字"); } }
   if (!title) fromFields(fields.weak);
   if (!title) fromFields(fields.wish);
 

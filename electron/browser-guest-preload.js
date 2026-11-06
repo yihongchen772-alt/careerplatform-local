@@ -129,7 +129,7 @@ const STRONG_SEND = /提\s*交|投\s*递|申\s*请|报\s*名|submit|apply/i;
 const PRIVATE_LABEL = /密码|验证码|证件|身份证|银行卡|护照|家庭住址|password|captcha|passport|social security|bank account/i;
 const LABEL_LIKE = 'label, legend, dt, th, [class*="label"], [class*="Label"], [class*="title"], [class*="Title"]';
 const SELECT_LIKE = '[class*="select"], [class*="Select"], [class*="picker"], [class*="Picker"], [class*="cascader"]';
-const SHOWN_VALUE = '[class*="selection-item"], [class*="selected-value"], [class*="selectItem"], [class*="select-value"], [class*="display-value"], [class*="selection__rendered"], [class*="tipEle"], [class*="value"]';
+const SHOWN_VALUE = '[class*="selection-item"], [class*="selected-item"], [class*="selected-value"], [class*="selectItem"], [class*="select-value"], [class*="display-value"], [class*="selection__rendered"], [class*="tipEle"], [class*="value"]';
 
 function shown(el) {
   return !!el && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden";
@@ -203,7 +203,9 @@ function readSentForm(from) {
   for (const el of scope.querySelectorAll('input, select, textarea, [contenteditable="true"]')) {
     const type = (el.getAttribute("type") || "").toLowerCase();
     if (type === "password" && shown(el)) return null; // a login, not a 网申
-    if (/^(?:hidden|file|submit|button|reset|image|search)$/.test(type)) continue;
+    if (/^(?:hidden|file|submit|button|reset|image)$/.test(type)) continue;
+    // A site's search box isn't an answer; the search box inside a dropdown (飞书) holds one's place.
+    if (type === "search" && !el.closest(SELECT_LIKE)) continue;
     if (type === "radio" || type === "checkbox") {
       if (!el.checked) continue;
       const option = el.closest("label") || el.parentElement;
@@ -254,8 +256,10 @@ function stopSuccessWatch() {
   successWatch.observer.disconnect();
   successWatch = null;
 }
-function watchForSuccess() {
+function watchForSuccess(label) {
   if (typeof MutationObserver !== "function" || !document.documentElement) return;
+  // A bare 提交成功 after 确定 could be a section being saved; after 提交 / 投递 it's the 网申.
+  const vagueCounts = STRONG_SEND.test(label);
   stopSuccessWatch();
   const observer = new MutationObserver((records) => {
     for (const record of records) {
@@ -264,7 +268,7 @@ function watchForSuccess() {
         const text = String((node.nodeType === 1 ? node.innerText || node.textContent : node.textContent) || "");
         const match = text.length <= 300 ? SUCCESS_TEXT.exec(text) : null;
         if (!match) continue;
-        if (VAGUE_SUCCESS.test(match[0]) && !ABOUT_A_JOB.test(document.title + " " + String((document.body && document.body.innerText) || "").slice(0, 3000))) continue;
+        if (VAGUE_SUCCESS.test(match[0]) && (!vagueCounts || !ABOUT_A_JOB.test(document.title + " " + String((document.body && document.body.innerText) || "").slice(0, 3000)))) continue;
         stopSuccessWatch();
         ipcRenderer.send("browser-guest:success-seen", { evidence: match[0] });
         return;
@@ -280,11 +284,12 @@ function buttonText(el) {
 }
 
 document.addEventListener("submit", (event) => {
-  if (reportSentForm(event.target, buttonText(event.submitter))) watchForSuccess();
+  const label = buttonText(event.submitter);
+  if (reportSentForm(event.target, label)) watchForSuccess(label || "提交");
 }, true);
 document.addEventListener("click", (event) => {
   const target = event.target && event.target.closest ? event.target.closest('button, [role="button"], input[type="submit"], input[type="button"], a, [class*="btn"], [class*="button"]') : null;
   if (!target) return;
   const text = buttonText(target);
-  if (text && text.length <= 12 && SEND_TEXT.test(text) && reportSentForm(target, text)) watchForSuccess();
+  if (text && text.length <= 12 && SEND_TEXT.test(text) && reportSentForm(target, text)) watchForSuccess(text);
 }, true);

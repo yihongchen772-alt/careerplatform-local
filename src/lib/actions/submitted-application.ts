@@ -9,6 +9,7 @@ import { localPathForStoredUrl, saveLocalFile, mimeTypeForExtension, deleteLocal
 import { resolveProfileVariant, parseApplicationProfile } from "@/lib/application-profile";
 import { cityFromJobText, cityFromSubmission, parseCities } from "@/lib/application-city";
 import { submissionSnapshotSchema, safeSubmissionFields } from "@/lib/submission-package";
+import { deleteApplication } from "@/lib/actions/applications";
 import { revalidatePath } from "next/cache";
 const schema = z.object({ companyName: z.string().trim().min(1).max(120), title: z.string().trim().min(1).max(200), appliedDate: z.coerce.date(), applyUrl: z.string().url().max(16384).refine((v) => /^https?:\/\//i.test(v)), source: z.string().max(200).optional(), positionId: z.string().max(100).optional(), resumeVersionId: z.string().max(100).optional(), snapshot: submissionSnapshotSchema.optional(), city: z.string().trim().max(40).optional(),
   /** The job description page the tab showed before the form (browser-view.js jdPage). */
@@ -41,20 +42,42 @@ export async function recordSubmittedApplication(input: z.input<typeof schema>) 
       const duplicate = await tx.application.findFirst({ where: { userId: user.id, companyId, title: data.title, applyUrl: data.applyUrl } });
       if (duplicate) throw new Error("此岗位和页面已经记录过投递，请到投递详情核对");
       const portals = await tx.applicationPortal.findMany({ where: { companyId }, take: 2 });
-      const app = await tx.application.create({ data: { userId: user.id, companyId, positionId: position?.id, title: data.title, appliedDate: data.appliedDate, currentStageDate: data.appliedDate, applyUrl: data.applyUrl, resumeVersionId: resume?.id, portalId: portals.length === 1 ? portals[0].id : null, source: data.source || position?.source, city, currentStage: "APPLIED" } });
+      // A job from outside the pool whose JD was read off its page is kept as a 岗位, already
+      // 已投递: 模拟面试, 面试准备, 简历深挖 and 小欧 all work from a 岗位's JD.
+      const jdRead = data.jd?.text?.trim() || "";
+      let kept: { id: string; created: boolean } | null = position ? { id: position.id, created: false } : null;
+      if (!position && jdRead) {
+        const same = await tx.position.findFirst({ where: { userId: user.id, companyId, title: data.title }, select: { id: true, jdText: true, jdUrl: true } });
+        if (same) {
+          kept = { id: same.id, created: false };
+          if (!same.jdText) await tx.position.update({ where: { id: same.id }, data: { jdText: jdRead, ...(same.jdUrl || !data.jd?.url ? {} : { jdUrl: data.jd.url }) } });
+        } else {
+          const made = await tx.position.create({ data: { userId: user.id, companyId, title: data.title, jdText: jdRead, jdUrl: data.jd?.url, source: data.source, location: city ?? undefined, status: "APPLIED" }, select: { id: true } });
+          kept = { id: made.id, created: true };
+        }
+      }
+      const app = await tx.application.create({ data: { userId: user.id, companyId, positionId: kept?.id, title: data.title, appliedDate: data.appliedDate, currentStageDate: data.appliedDate, applyUrl: data.applyUrl, resumeVersionId: resume?.id, portalId: portals.length === 1 ? portals[0].id : null, source: data.source || position?.source, city, currentStage: "APPLIED" } });
       let attachmentId: string | null = null;
       if (copy) { const attachment = await tx.attachment.create({ data: { userId: user.id, applicationId: app.id, url: copy.url, name: `投递时简历 · ${resume!.name}` } }); attachmentId = attachment.id; }
-      const jd = position?.jdText || data.jd?.text?.trim() || "";
+      const jd = position?.jdText || jdRead;
       // A 候选岗位 saved without its JD gets the one read off the job page.
       if (position && !position.jdText && data.jd?.text?.trim()) await tx.position.update({ where: { id: position.id }, data: { jdText: data.jd.text.trim(), ...(position.jdUrl || !data.jd.url ? {} : { jdUrl: data.jd.url }) } });
       if (data.snapshot) await tx.application.update({ where: { id: app.id }, data: { submissionPackage: { confirmedAt: new Date().toISOString(), pageUrl: data.snapshot.url, company: data.companyName, title: data.title, jd, profile: { name: user.name, contactEmail: user.contactEmail, phone: user.phone, ...profile }, variant: variant?.name || "默认资料", resumeName: resume?.name || "未使用简历", resumeAttachmentId: attachmentId, fields: safeSubmissionFields(data.snapshot.fields) } } });
       await tx.stageHistory.create({ data: { applicationId: app.id, stage: "APPLIED", enteredAt: data.appliedDate } });
-      if (position) await tx.position.update({ where: { id: position.id }, data: { status: "APPLIED" } });
+      if (kept && !kept.created) await tx.position.update({ where: { id: kept.id }, data: { status: "APPLIED" } });
       if (app.portalId) await tx.applicationPortal.update({ where: { id: app.portalId }, data: { contentHash: null } });
       if (position) await tx.applicationDraft.deleteMany({ where: { userId: user.id, OR: [{ contextKey: `job:v1:${position.id}` }, { contextKey: { startsWith: `job:v1:${position.id}|draft:v2:` } }] } });
       else await tx.applicationDraft.deleteMany({ where: { userId: user.id, url: { in: [data.applyUrl, ...(data.snapshot ? [data.snapshot.url] : [])] } } });
-      return { id: app.id };
+      return { id: app.id, createdPositionId: kept?.created ? kept.id : null };
     });
     revalidatePath("/applications"); revalidatePath("/pool"); revalidatePath("/dashboard"); return result;
   } catch (error) { if (copy) await deleteLocalFileByUrl(copy.url); throw error; }
+}
+
+/** 撤销 on a 投递 just recorded: the record goes, and a 岗位 made only for it goes too. */
+export async function undoSubmittedApplication(id: string, createdPositionId?: string | null) {
+  const user = await requireUser();
+  await deleteApplication(String(id ?? ""));
+  if (createdPositionId) await db.position.deleteMany({ where: { id: String(createdPositionId), userId: user.id, applications: { none: {} } } });
+  revalidatePath("/pool");
 }

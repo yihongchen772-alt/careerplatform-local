@@ -11,7 +11,7 @@ export type Recognition = Identity & { usedAi: boolean };
 export async function recognizeApplication(snapshot: ApplicationSnapshot, pool: IdentityPoolPosition[], sites: IdentitySite[], signal?: AbortSignal): Promise<Recognition> {
   const bound = snapshot.positionId ? pool.find((position) => position.id === snapshot.positionId) : null;
   if (bound) return { positionId: bound.id, companyName: bound.companyName, title: bound.title, evidence: ["填写时关联的候选池岗位"], usedAi: false };
-  const input = { url: snapshot.url, title: snapshot.title || "", text: snapshot.text || "", siteName: snapshot.siteName || null, history: snapshot.history || [], fields: snapshot.fields || [], jdText: (snapshot.jdPage?.text || "").slice(0, 4000) };
+  const input = { url: snapshot.url, title: snapshot.title || "", text: snapshot.text || "", siteName: snapshot.siteName || null, history: snapshot.history || [], fields: snapshot.fields || [], jdText: (snapshot.jdPage?.text || "").slice(0, 4000), jdHeadings: snapshot.jdPage?.headings || [] };
   const found = identifyApplication(input, pool, sites);
   if (found.companyName && found.title) return { ...found, usedAi: false };
   try {

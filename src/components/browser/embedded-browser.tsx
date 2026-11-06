@@ -27,7 +27,7 @@ import { cn } from "@/lib/utils";
 import { parseJd } from "@/lib/actions/jd-parse";
 import { startTailoringFromPage } from "@/lib/actions/resume-tailor";
 import { guessResumeUsed } from "@/lib/actions/resume-used";
-import { deleteApplication } from "@/lib/actions/applications";
+import { undoSubmittedApplication } from "@/lib/actions/submitted-application";
 import { PositionFormDialog, type PositionFormInitial } from "@/components/pool/position-form-dialog";
 import { PortalSyncDialog, type PortalCompany } from "@/components/browser/portal-sync-dialog";
 import { MarkAppliedFromBrowserDialog, type PoolPosition } from "@/components/browser/mark-applied-from-browser";
@@ -251,7 +251,7 @@ export function EmbeddedBrowser({
   const [submittedRecognition, setSubmittedRecognition] = useState<{ tabId: number; url: string; result: Recognition | null; resume?: { resumeVersionId: string | null; reason: string } | null } | null>(null);
   const [recordingSubmitted, setRecordingSubmitted] = useState(false);
   // What was just recorded, with 打开 / 撤销. `restore` puts the 投递成功 bar back after 撤销.
-  const [recordedBar, setRecordedBar] = useState<{ tabId: number; id: string; label: string; auto: boolean; note: string; restore: { submitted: NonNullable<typeof submitted>; result: Recognition; resume: { resumeVersionId: string | null; reason: string } | null } } | null>(null);
+  const [recordedBar, setRecordedBar] = useState<{ tabId: number; id: string; createdPositionId: string | null; label: string; auto: boolean; note: string; restore: { submitted: NonNullable<typeof submitted>; result: Recognition; resume: { resumeVersionId: string | null; reason: string } | null } } | null>(null);
   // Tabs being recorded right now: a second announcement of the same 网申 waits it out (after that, main's justRecorded).
   const recordingTabs = useRef(new Set<number>());
   const [submittedDuplicate, setSubmittedDuplicate] = useState(false);
@@ -905,6 +905,7 @@ export function EmbeddedBrowser({
       setRecordedBar({
         tabId: announced.tabId,
         id: body.id,
+        createdPositionId: body.createdPositionId ?? null,
         label: `${companyName} · ${title}`,
         auto,
         note: [resumeName ? `简历「${resumeName}」` : "", kept ? `${kept}一起存好了` : ""].filter(Boolean).join("，"),
@@ -929,7 +930,7 @@ export function EmbeddedBrowser({
     const bar = recordedBar;
     if (!bar) return;
     setRecordedBar(null);
-    await deleteApplication(bar.id);
+    await undoSubmittedApplication(bar.id, bar.createdPositionId);
     void bridge?.applicationRecorded?.(true);
     setRecordedPages((list) => list.filter((page) => page !== bar.restore.submitted.url));
     setSubmitted(bar.restore.submitted);

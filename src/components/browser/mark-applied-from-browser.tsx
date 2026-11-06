@@ -29,7 +29,7 @@ import { cityForSubmittedJob } from "@/lib/actions/city-lookup";
 import { sourceFromUrl } from "@/lib/source-from-url";
 import { recognizeApplication, type Recognition } from "@/components/browser/recognize-application";
 import { guessResumeUsed } from "@/lib/actions/resume-used";
-import { deleteApplication } from "@/lib/actions/applications";
+import { undoSubmittedApplication } from "@/lib/actions/submitted-application";
 
 export type PoolPosition = { id: string; label: string; companyName: string; source: string | null; title: string; jdUrl: string | null };
 type ResumeOption = { id: string; name: string; isDefault: boolean };
@@ -189,7 +189,7 @@ export function MarkAppliedFromBrowserDialog({
       const resumeName = resumeVersions.find((r) => r.id === resumeVersionId)?.name;
       toast.success(`已记为投递：${selected?.companyName || companyName.trim()} · ${selected ? selected.title : title.trim()}`, {
         description: [resumeName ? `简历「${resumeName}」` : "", jd ? "JD 已一起保存" : ""].filter(Boolean).join(" · ") || undefined,
-        action: { label: "撤销", onClick: () => void deleteApplication(body.id).then(() => { void window.desktopBridge?.applicationRecorded?.(true); toast.success("已撤销这条投递"); router.refresh(); }) },
+        action: { label: "撤销", onClick: () => void undoSubmittedApplication(body.id, body.createdPositionId).then(() => { void window.desktopBridge?.applicationRecorded?.(true); toast.success("已撤销这条投递"); router.refresh(); }) },
       });
       onOpenChange(false);
       router.refresh();

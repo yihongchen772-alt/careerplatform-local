@@ -19,6 +19,7 @@ const {
   UNTIL_NOW,
   bareLabel,
   capturePageText,
+  readFormAnswers,
   clearFillMarks,
   clearSavedUserEdits,
   clickAddBlock,
@@ -406,11 +407,36 @@ function detach() {
 // after a 网申 rarely repeats the JD. A JD page names both duties and
 // requirements and is not itself a form; read a moment after it settles,
 // since SPA job pages draw late.
-const JD_DUTIES = /岗位职责|工作职责|职位描述|岗位描述|职位详情|工作内容|job description|responsibilit/i;
+const JD_DUTIES = /岗位职责|工作职责|职位描述|岗位描述|工作内容|job description|responsibilit/i;
 const JD_NEEDS = /任职要求|岗位要求|职位要求|任职资格|任职条件|申请条件|requirements|qualifications/i;
 function readJobPageInPage() {
   const fields = document.querySelectorAll("input:not([type=hidden]), textarea, select").length;
-  return { fields, text: ((document.body && document.body.innerText) || "").slice(0, 30000) };
+  const text = ((document.body && document.body.innerText) || "").slice(0, 30000);
+  // A job page prints the job's name large: the biggest short texts above the
+  // duties heading, which tell it from the category and department lines around it.
+  const headings = [];
+  if (/岗位职责|工作职责|职位描述|岗位描述|工作内容|职位详情|job description|responsibilit/i.test(text)) {
+    const own = (el) => Array.from(el.childNodes).filter((node) => node.nodeType === 3).map((node) => node.textContent).join("").replace(/\s+/g, " ").trim();
+    const items = [];
+    let dutiesTop = Infinity;
+    for (const el of Array.from(document.querySelectorAll("h1, h2, h3, h4, h5, div, span, p, a, strong, b, li, td")).slice(0, 4000)) {
+      const line = own(el);
+      if (line.length < 2 || line.length > 60 || el.closest("nav, footer")) continue;
+      const box = el.getBoundingClientRect();
+      if (!box.width || !box.height) continue;
+      const top = box.top + window.scrollY;
+      if (top < dutiesTop && /^[\d.、一二三四（(\s]*(?:岗位职责|工作职责|职位描述|岗位描述|工作内容|job description|responsibilit)/i.test(line)) dutiesTop = top;
+      items.push({ line, top, size: parseFloat(getComputedStyle(el).fontSize) || 0 });
+    }
+    const seen = new Set();
+    for (const item of items.filter((entry) => entry.top < dutiesTop).sort((a, b) => b.size - a.size || a.top - b.top)) {
+      if (seen.has(item.line)) continue;
+      seen.add(item.line);
+      headings.push(item.line);
+      if (headings.length >= 6) break;
+    }
+  }
+  return { fields, text, headings };
 }
 function scheduleJobPageCapture(tab) {
   clearTimeout(tab.jdTimer);
@@ -419,10 +445,12 @@ function scheduleJobPageCapture(tab) {
     if (!wc || wc.isDestroyed()) return;
     const page = await wc.executeJavaScript(`(${readJobPageInPage.toString()})()`).catch(() => null);
     const text = page && typeof page.text === "string" ? page.text.replace(/\n{3,}/g, "\n\n") : "";
-    if (!page || page.fields >= 12 || text.length < 150 || !JD_DUTIES.test(text) || !JD_NEEDS.test(text)) return;
+    // 职位详情 only as a last resort: on many sites it's just the breadcrumb, above the job's name.
+    const duties = text.search(JD_DUTIES) >= 0 ? text.search(JD_DUTIES) : text.search(/职位详情/);
+    if (!page || page.fields >= 12 || text.length < 150 || duties < 0 || !JD_NEEDS.test(text)) return;
     // Start a little above the duties heading, where the job title usually is.
-    const start = Math.max(0, text.search(JD_DUTIES) - 300);
-    tab.jdPage = { url: wc.getURL().slice(0, 2000), title: String(wc.getTitle() || "").slice(0, 300), text: text.slice(start, start + 8000).trim(), at: Date.now() };
+    const start = Math.max(0, duties - 300);
+    tab.jdPage = { url: wc.getURL().slice(0, 2000), title: String(wc.getTitle() || "").slice(0, 300), text: text.slice(start, start + 8000).trim(), headings: Array.isArray(page.headings) ? page.headings.slice(0, 6).map((line) => String(line).slice(0, 60)) : [], at: Date.now() };
   }, 2500);
 }
 
@@ -959,7 +987,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
   // The form as it was sent (browser-guest-preload.js), each step of it: on the
   // 投递成功 page the form is gone, and 记为已投递 needs its job and answers.
   // The same page sent again (a failed submit, 下一步 twice) replaces its reading.
-  ipcMain.on("browser-guest:form-sent", (event, payload) => {
+  ipcMain.on("browser-guest:form-sent", async (event, payload) => {
     const tab = tabForSender(event.sender);
     if (!tab || !payload || !Array.isArray(payload.fields)) return;
     const now = Date.now();
@@ -969,12 +997,30 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       tab.lastSendAt = now;
       submittedSignatures.delete(tab.id);
     }
-    const fields = payload.fields.slice(0, 250)
+    const quick = payload.fields.slice(0, 250)
       .map((field) => ({ label: typeof field?.label === "string" ? field.label.slice(0, 200) : "", value: typeof field?.value === "string" ? field.value.slice(0, 5000) : "" }))
       .filter((field) => field.label && field.value);
-    if (fields.length < 3) return;
-    const url = tab.view.webContents.getURL().slice(0, 2000);
-    tab.sentForms = [{ url, fields, at: now }, ...(tab.sentForms || []).filter((step) => step.url !== url && now - step.at < 3 * 3600_000)].slice(0, 8);
+    const wc = tab.view.webContents;
+    const url = wc.getURL().slice(0, 2000);
+    const remember = (fields) => {
+      if (fields.length < 3) return;
+      tab.sentForms = [{ url, fields, at: now }, ...(tab.sentForms || []).filter((step) => step.url !== url && now - step.at < 3 * 3600_000)].slice(0, 8);
+    };
+    // The page's own quick copy first: it was read before the click could change anything.
+    remember(quick);
+    // Then the engine's reading, which also knows component dropdowns and date
+    // pickers. It runs at once, normally before a submit's navigation completes;
+    // if the page has moved on by then, the quick copy stands.
+    const read = [];
+    for (const frame of allFrames(wc)) {
+      const answers = await frame.executeJavaScript(`(${readFormAnswers.toString()})(${scanPageFields.toString()})`).catch(() => null);
+      if (Array.isArray(answers)) read.push(...answers);
+    }
+    if (wc.isDestroyed() || wc.getURL().slice(0, 2000) !== url || !read.length) return;
+    // What only the quick copy has (fields the engine skips), unless it's the same answer under another label.
+    const labels = new Set(read.map((field) => field.label));
+    const values = new Set(read.map((field) => field.value));
+    remember([...read, ...quick.filter((field) => !labels.has(field.label) && !values.has(field.value))].slice(0, 250));
   });
   // A brief 投递成功 toast seen right after a send, over a page still showing its form.
   ipcMain.on("browser-guest:success-seen", (event, payload) => {

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>虚构公司 校招投递</title>
+<style>
+body{font:14px sans-serif;margin:20px}
+.ant-form-item{margin:12px 0;max-width:420px}
+.ant-form-item-label label{color:#555}
+.ant-select{position:relative;border:1px solid #d9d9d9;border-radius:6px;min-height:32px;padding:4px 8px;cursor:pointer}
+.ant-select .msg{color:#c00;font-size:12px}
+.pop{position:absolute;left:0;top:100%;background:#fff;border:1px solid #ddd;z-index:9;width:100%}
+.pop div{padding:4px 8px;cursor:pointer}
+</style>
+</head>
+<body>
+<form onsubmit="return false">
+  <div class="ant-form-item"><div class="ant-form-item-label"><label>姓名</label></div><input id="n"></div>
+  <!-- The form library prints its validation message inside the dropdown's own box. -->
+  <div class="ant-form-item"><div class="ant-form-item-label"><label>最高学历</label></div>
+    <div class="ant-select" id="degree"><div class="ant-select-selector"><span class="ant-select-selection-search"><input class="ant-select-selection-search-input" role="combobox" readonly value=""></span></div><div class="msg">必填项未填写</div></div>
+  </div>
+  <div class="ant-form-item"><div class="ant-form-item-label"><label>其他说明</label></div>
+    <div class="ant-select" id="other"><div class="ant-select-selector"><span class="ant-select-selection-search"><input class="ant-select-selection-search-input" role="combobox" readonly value=""></span></div><div class="msg">必填项未填写</div></div>
+  </div>
+</form>
+<script>
+const box = document.getElementById("degree");
+box.addEventListener("mousedown", () => {
+  if (box.querySelector(".pop")) return;
+  const pop = document.createElement("div");
+  pop.className = "pop ant-select-dropdown";
+  pop.setAttribute("role", "listbox");
+  for (const text of ["本科", "硕士", "博士"]) {
+    const item = document.createElement("div");
+    item.className = "ant-select-item ant-select-item-option";
+    item.setAttribute("role", "option");
+    item.textContent = text;
+    item.addEventListener("click", (event) => {
+      event.stopPropagation();
+      box.querySelector(".msg").remove();
+      const shown = document.createElement("span");
+      shown.className = "ant-select-selection-item";
+      shown.textContent = text;
+      box.querySelector(".ant-select-selector").appendChild(shown);
+      pop.remove();
+    });
+    pop.appendChild(item);
+  }
+  document.body.appendChild(pop);
+  const r = box.getBoundingClientRect();
+  pop.style.cssText = `position:absolute;left:${r.left}px;top:${r.bottom + window.scrollY}px;width:${r.width}px`;
+});
+</script>
+</body>
+</html>
