@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import { ExternalLink, FileText } from "lucide-react";
 import { db } from "@/lib/db";
@@ -58,6 +59,8 @@ export async function PostingsPanel({ userId, filters }: { userId: string; filte
   for (const row of industryRows) for (const name of (row.industry ?? "").split("、").filter(Boolean)) industryCounts.set(name, (industryCounts.get(name) ?? 0) + row._count._all);
   const industries = [...industryCounts].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([name]) => name);
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // A remembered page the table has since shrunk past: its last page, not an empty list.
+  if (filters.page > pages) redirect(postingsHref(filters, { page: pages }));
   const cohort = cohortLabel(graduationYear);
   const chips: { id: PostingFilters["chip"]; label: string; count: number }[] = [
     { id: "today", label: "今日新增", count: todayCount },
@@ -109,7 +112,10 @@ export async function PostingsPanel({ userId, filters }: { userId: string; filte
         </div>
       )}
 
-      <p className="text-xs text-muted-foreground">筛出 {total} 条{total > PAGE_SIZE ? `，第 ${filters.page} / ${pages} 页` : ""}</p>
+      <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <span>筛出 {total} 条{total > PAGE_SIZE ? `，第 ${filters.page} / ${pages} 页` : ""}</span>
+        {(filters.q || filters.page > 1 || Object.keys(hidden).length > 0) && <Link href="/leads?view=postings" className="text-primary hover:underline">清除筛选</Link>}
+      </p>
       {rows.length === 0 ? (
         <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">没有符合条件的招聘信息{source.lastSyncedAt ? "，换个筛选试试" : "，正在同步…"}</p>
       ) : (
@@ -130,7 +136,7 @@ export async function PostingsPanel({ userId, filters }: { userId: string; filte
               {rows.map((row) => {
                 const daysLeft = row.deadline ? Math.round((row.deadline.getTime() - today.getTime()) / 86400_000) : null;
                 return (
-                  <tr key={row.id} className="border-t align-top">
+                  <tr key={row.id} data-posting-id={row.id} className="border-t align-top data-[last-opened=true]:bg-primary/10">
                     <td className="max-w-48 px-3 py-2">
                       <p className="font-medium">{row.company}{since && row.firstSeenAt > since && <span className="ml-1.5 rounded bg-red-500/10 px-1 py-px align-middle text-[10px] font-medium text-red-600">新</span>}</p>
                       <p className="text-xs text-muted-foreground">{[row.industry, row.degree, row.writtenTest].filter(Boolean).join(" · ")}</p>

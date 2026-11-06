@@ -184,6 +184,19 @@ test("deadlines read and show as the mail meant them; shortcuts and default resu
   assert.match(read("src/lib/actions/resumes.ts"), /if \(resume\.isDefault\)/);
 });
 
+test("秋招信息库 comes back to its filters, page, scroll and the row last opened", () => {
+  const keeper = read("src/components/leads/list-position-keeper.tsx");
+  assert.match(keeper, /if \(!search && saved\?\.search\)/, "a bare address goes back to the remembered list");
+  assert.match(keeper, /router\.replace\(`\/leads\?\$\{saved\.search\}`, \{ scroll: false \}\)/);
+  assert.match(keeper, /row\.scrollIntoView\(\{ block: "center" \}\)/);
+  assert.match(keeper, /a\[href\^="\/browser"\]/);
+  const panel = read("src/components/leads/postings-panel.tsx");
+  assert.match(panel, /data-posting-id=\{row\.id\}/);
+  assert.match(panel, /清除筛选/);
+  assert.match(panel, /if \(filters\.page > pages\) redirect/);
+  assert.match(read("src/app/(dashboard)/leads/page.tsx"), /<ListPositionKeeper \/>/);
+});
+
 test("a deadline to book a slot is known as one, even when the AI read it", () => {
   const read1 = extract.completeMailDraft(mail({ ai: draft({ title: "示例科技 线上复试", deadline: "2027-03-05T13:30", evidence: "面试日期: 2027/03/06；请您在今天13:30前根据提供的时间段进行面试预约" }) }));
   assert.equal(read1.booking, true);
