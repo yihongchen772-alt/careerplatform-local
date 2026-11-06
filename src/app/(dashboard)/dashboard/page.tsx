@@ -12,6 +12,7 @@ import { learnFromBacklog, loadBacklogNotices } from "@/lib/profile-backlog";
 import { computeFunnel, computeOutcomes } from "@/lib/funnel";
 import { computeShareStats } from "@/lib/share-card";
 import { isCalendarMailTask } from "@/lib/pending-mail";
+import { mailTime, mailTimeOver } from "@/lib/mail-time";
 import { loadPendingMail } from "@/lib/pending-mail-loader";
 import { loadJourneyEvents } from "@/lib/journey-loader";
 import { nudgeEvent } from "@/lib/journey";
@@ -95,9 +96,10 @@ export default async function DashboardPage() {
   });
 
   const total = applications.length;
-  const offers = applications.filter((a) => a.currentStage === "OFFER" || a.currentStage === "ACCEPTED").length;
-  const closed = applications.filter((a) => ["REJECTED", "DECLINED", "WITHDRAWN", "CANCELLED"].includes(a.currentStage)).length;
-  const inProgress = total - offers - closed;
+  // The same counts as 投递记录's 总表: Offer takes in accepted and declined ones, 已结束 every closed one.
+  const offers = applications.filter((a) => ["OFFER", "ACCEPTED", "DECLINED"].includes(a.currentStage)).length;
+  const closed = applications.filter((a) => ["REJECTED", "ACCEPTED", "DECLINED", "WITHDRAWN", "CANCELLED"].includes(a.currentStage)).length;
+  const inProgress = total - closed;
 
   const { levels } = computeFunnel(funnelApps);
   const outcomes = computeOutcomes(funnelApps);
@@ -110,7 +112,15 @@ export default async function DashboardPage() {
   // Mail with a time shows in 接下来 with its own 写入 button; only those with no
   // time need the calendar, so only those are pointed at.
   const mailNeedingTime = (await loadPendingMail(user.id, now)).filter((row) => !row.time);
-  const ownTasks = personalTasks.filter((task) => !isCalendarMailTask(task, now));
+  // A mail taken back (撤销) whose time has passed has nothing left to do.
+  const ownTasks = personalTasks.filter((task) => {
+    if (isCalendarMailTask(task, now)) return false;
+    const time = task.mailUndoneAt ? mailTime(task.mailEventDraft) : null;
+    return !(time && mailTimeOver(time) <= now);
+  });
+  // A task may still name a calendar item that has since gone: no 「导出 ICS」 for that.
+  const linkedEvents = ownTasks.flatMap((task) => (task.mailEventId ? [task.mailEventId] : []));
+  const liveEvents = new Set(linkedEvents.length ? (await db.calendarEvent.findMany({ where: { id: { in: linkedEvents } }, select: { id: true } })).map((event) => event.id) : []);
   // A result in the last two days with nothing written about it: one gentle line, not a card.
   const recentEntries = await db.journeyEntry.findMany({ where: { userId: user.id, createdAt: { gte: new Date(now - 8 * 86_400_000) } }, select: { about: true, createdAt: true } });
   const journeyNudge = nudgeEvent(await loadJourneyEvents(user.id, now), recentEntries.map((entry) => ({ about: entry.about, createdAt: entry.createdAt.toISOString() })), now);
@@ -265,7 +275,7 @@ export default async function DashboardPage() {
               positionId: t.positionId,
               applicationId: t.applicationId,
               done: t.done,
-              mailEventDraft: t.mailEventDraft, mailEventId: t.mailEventId,
+              mailEventDraft: t.mailEventDraft, mailEventId: t.mailEventId && liveEvents.has(t.mailEventId) ? t.mailEventId : null,
             }))}
             positions={positionOptions}
             applications={applicationOptions}

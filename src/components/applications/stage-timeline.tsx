@@ -252,7 +252,10 @@ function TimelineRow({
         {entry.stageLabel && <span className="text-xs font-medium">{entry.stageLabel}</span>}
         {["REJECTED", "WITHDRAWN", "CANCELLED"].includes(entry.stage) && <span className="text-xs text-muted-foreground">结束于：{entry.terminatedAtStageLabel || STAGE_LABELS[entry.terminatedAtStage as ApplicationStage] || "未记录"}</span>}
         <span className="text-xs text-muted-foreground">
-          {new Date(entry.enteredAt).toLocaleString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
+          {/* A day entered without a clock time is stored at UTC midnight: no made-up 08:00. */}
+          {new Date(entry.enteredAt).getTime() % 86_400_000 === 0
+            ? new Date(entry.enteredAt).toLocaleDateString("zh-CN", { timeZone: "UTC", year: "numeric", month: "2-digit", day: "2-digit" })
+            : new Date(entry.enteredAt).toLocaleString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
         </span>
         {entry.note?.startsWith("网申进度同步：") && (
           <Badge variant="outline" className="gap-1 text-xs font-normal text-muted-foreground" title="这一步是 App 从公司官网「我的投递」页自动读出来推进的，不是你手动填的">

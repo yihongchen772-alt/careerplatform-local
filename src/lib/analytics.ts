@@ -86,10 +86,24 @@ function groupBy(
     .sort((a, b) => Number(a.smallSample) - Number(b.smallSample) || b.interviewedRate - a.interviewedRate || b.offerRate - a.offerRate || b.total - a.total);
 }
 
+/** A job direction as a group name: a table row pasted in whole (「(校招) 志愿信息: 第1志愿 申请时间: …」) keeps only its name. */
+export function trackLabel(raw: string | null | undefined): string | null {
+  const text = (raw ?? "").split(/\s*(?:志愿信息|申请时间|简历状态|操作)\s*[:：]/)[0].replace(/\s+/g, " ").trim();
+  const bare = text.replace(/^[(（][^)）]*[)）]$/, "").trim();
+  return bare && bare.length <= 40 ? bare : null;
+}
+
+/** A channel as a group name: a sentence someone wrote in that column is 「其他」, not a channel of its own. */
+export function sourceLabel(raw: string | null | undefined): string | null {
+  const text = (raw ?? "").trim();
+  if (!text) return null;
+  return text.length > 12 || /[，。；;：:]/.test(text) ? "其他" : text;
+}
+
 export function computeConversion(apps: AnalyticsApplication[]) {
   return {
-    bySource: groupBy(apps, (a) => a.source),
-    byTrack: groupBy(apps, (a) => a.position?.track),
+    bySource: groupBy(apps, (a) => sourceLabel(a.source)),
+    byTrack: groupBy(apps, (a) => trackLabel(a.position?.track)),
     byIndustry: groupBy(apps, (a) => a.industry),
     byCity: groupBy(apps, (a) => a.city),
   };

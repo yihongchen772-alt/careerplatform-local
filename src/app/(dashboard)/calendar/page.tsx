@@ -70,7 +70,7 @@ export default async function CalendarPage() {
       dateEnd: h.nextHasTime ? null : h.nextDeadlineEnd?.toISOString() ?? null,
       label: h.nextHasTime
         ? `${clock(h.nextDeadline!)} ${h.application.company.name} · ${h.stageLabel || STAGE_LABELS[h.stage]}（${h.application.title}）`
-        : `${h.application.company.name} · ${h.application.title} 下一步`,
+        : `${h.application.company.name} · ${h.stageLabel || STAGE_LABELS[h.stage]}（${h.application.title}）`,
       timed: h.nextHasTime,
       until: h.nextHasTime ? h.nextDeadlineEnd?.toISOString() ?? null : null,
       done: !!h.completedAt,

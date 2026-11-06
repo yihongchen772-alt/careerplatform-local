@@ -65,6 +65,61 @@ test("one 宣讲会 in three mails is one row in the panel", () => {
   assert.equal(pendingMailRows([t("a", 1), t("b", 2), t("c", 3)], Date.now(), new Set()).length, 1);
 });
 
+test("the AI's pick among a company's 投递 is checked against the job the mail names", () => {
+  const { correctMailApplication: fix } = load("src/lib/mail-application-match.ts");
+  const app = (id, title, companyName = "星海") => ({ id, title, companyName });
+  const apps = [app("motion", "控制算法工程师（人形机器人）"), app("test", "软件测试工程师"), app("robot", "机器人算法工程师（智能）"), app("algo", "算法工程师"), app("x", "销售", "天工")];
+  assert.equal(fix({ subject: "面试邀请", summary: "确认您预约的【通用研发】软件测试工程师初试" }, "motion", apps), "test", "the mail names another");
+  assert.equal(fix({ subject: "面试邀请", summary: "控制算法工程师岗位的面试" }, "motion", apps), "motion", "named without its bracket");
+  assert.equal(fix({ subject: "面试邀请", summary: "请预约时间" }, "motion", apps), "motion", "names none: the pick stands");
+  assert.equal(fix({ subject: "面试", summary: "机器人算法工程师岗位" }, "algo", apps), "robot", "the longer title, not the part of it");
+  assert.equal(fix({ subject: "通知", summary: "软件测试工程师和控制算法工程师岗位都已通过" }, "motion", apps), "motion", "the pick is named too");
+  assert.equal(fix({ subject: "面试", summary: "销售" }, "x", apps), "x", "one 投递 at that company");
+  assert.equal(fix({ subject: "x" }, "gone", apps), "gone");
+  const scan = read("src/lib/actions/inbox-scan.ts");
+  assert.match(scan, /correctMailApplication\(\{ subject: email\.subject, summary: c\.summary/);
+  assert.match(scan, /邮件时间（用户本地时间/, "「今天」 is read in the user's clock, not UTC");
+  assert.match(scan, /mailBeforeStage\(email\.date, app\.currentStageDate\)/);
+});
+
+test("a mail at 02:00 isn't older than a stage entered as that day", () => {
+  const { mailBeforeStage, localStamp } = load("src/lib/dates.ts");
+  const day = new Date("2027-03-05T00:00:00.000Z");
+  assert.equal(mailBeforeStage(new Date(2027, 2, 5, 2), day), false);
+  assert.equal(mailBeforeStage(new Date(2027, 2, 4, 23), day), true);
+  const exact = new Date(2027, 2, 5, 10, 30);
+  assert.equal(mailBeforeStage(new Date(2027, 2, 5, 10, 0), exact), true, "a stage with a clock time compares exactly");
+  assert.equal(mailBeforeStage(new Date(2027, 2, 5, 11, 0), exact), false);
+  assert.equal(localStamp(new Date(2027, 2, 5, 1, 7)), "2027-03-05 01:07");
+});
+
+test("dates in settings render the same on the server and the client", () => {
+  for (const file of ["src/components/settings/mail-accounts-card.tsx", "src/components/productivity/mini-calendar.tsx"]) assert.doesNotMatch(read(file), /toLocale(?:Date|Time)?String\(\)/, file);
+});
+
+test("group names in 转化率: a pasted table row keeps its name, a sentence isn't a channel", () => {
+  const { trackLabel, sourceLabel, computeConversion } = load("src/lib/analytics.ts");
+  assert.equal(trackLabel("技术方向-智能方向(校招) 志愿信息: 第2志愿 申请时间: 2027-01-13 19:58 简历状态: 已申请 操作: 撤销"), "技术方向-智能方向(校招)");
+  assert.equal(trackLabel("(校招) 志愿信息: 第1志愿 申请时间: 2027-01-13"), null, "nothing left but a tag");
+  assert.equal(trackLabel("后端开发"), "后端开发");
+  assert.equal(sourceLabel("官网"), "官网");
+  assert.equal(sourceLabel("线下面试两轮，已拿到实习 Offer，本人主动放弃"), "其他");
+  assert.equal(sourceLabel("渠道：招聘系统"), "其他");
+  const row = (source) => ({ currentStage: "APPLIED", stageHistory: [], source, position: null });
+  assert.equal(computeConversion([row("官网"), row("写了一句话，不是渠道"), row("渠道：内推")]).bySource.map((r) => r.key).sort().join(), ["其他", "官网"].sort().join());
+});
+
+test("the numbers agree between pages; a date-only stage shows no clock; calendar labels name the step", () => {
+  const dash = read("src/app/(dashboard)/dashboard/page.tsx");
+  assert.match(dash, /\["OFFER", "ACCEPTED", "DECLINED"\]\.includes\(a\.currentStage\)/);
+  assert.match(dash, /const inProgress = total - closed;/);
+  assert.match(dash, /task\.mailUndoneAt \? mailTime/);
+  assert.match(read("src/components/applications/stage-timeline.tsx"), /% 86_400_000 === 0/);
+  assert.doesNotMatch(read("src/app/(dashboard)/calendar/page.tsx"), /title\} 下一步/);
+  assert.doesNotMatch(read("src/app/api/calendar-export/route.ts"), /title\} 下一步/);
+  assert.match(read("src/app/(dashboard)/insights/page.tsx"), /其余 \{folded\.length\} 组/);
+});
+
 test("a deadline to book a slot is known as one, even when the AI read it", () => {
   const read1 = extract.completeMailDraft(mail({ ai: draft({ title: "示例科技 线上复试", deadline: "2027-03-05T13:30", evidence: "面试日期: 2027/03/06；请您在今天13:30前根据提供的时间段进行面试预约" }) }));
   assert.equal(read1.booking, true);
@@ -108,6 +163,20 @@ test("isolated DB: what the applicant settled stays settled; one thing is one ca
   assert.equal((await apply(b.id)).status, "same");
   assert.equal((await events("中国电信")).length, 1);
   assert.match((await events("中国电信"))[0].meetingInfo, /e\.example\.com/);
+  // Items from before this rule are merged: one kept, the link and the mails moved over.
+  const dupA = await db.calendarEvent.create({ data: { userId, title: "南山通信AI测评（截止）", description: "", startsAt: new Date(2027, 4, 9), allDay: true, dateKey: "2027-05-09", timeZone: "Asia/Shanghai", source: "email", meetingInfo: "截止 24:00" } });
+  const dupB = await db.calendarEvent.create({ data: { userId, title: "南山通信校招测评（截止）", description: "", startsAt: new Date(2027, 4, 9), allDay: true, dateKey: "2027-05-09", timeZone: "Asia/Shanghai", source: "email", meetingInfo: "https://n.example.com/x" } });
+  const otherCo = await db.calendarEvent.create({ data: { userId, title: "北山测评（截止）", description: "", startsAt: new Date(2027, 4, 9), allDay: true, dateKey: "2027-05-09", timeZone: "Asia/Shanghai", source: "email" } });
+  await task("测评通知：南山通信", null, null, { mailEventId: dupA.id, done: true });
+  const dupMail = await task("测评通知（提醒）：南山通信（北京）", null, null, { mailEventId: dupB.id, done: true, mailUndo: { kind: "event", eventId: dupB.id } });
+  await task("测评通知：北山", null, null, { mailEventId: otherCo.id, done: true });
+  assert.equal(await db.$transaction((tx) => schedule.mergeDuplicateMailEvents(tx, userId)), 1);
+  assert.equal(await db.calendarEvent.count({ where: { title: { contains: "南山通信" } } }), 1);
+  assert.match((await db.calendarEvent.findUnique({ where: { id: dupA.id } })).meetingInfo, /n\.example\.com/);
+  const movedMail = await db.personalTask.findUnique({ where: { id: dupMail.id } });
+  assert.equal(movedMail.mailEventId, dupA.id);
+  assert.equal(movedMail.mailUndo.eventId, dupA.id);
+  assert.ok(await db.calendarEvent.findUnique({ where: { id: otherCo.id } }), "another company's stays");
   // Same company, another kind on that day is its own item.
   const c = await task("面试邀请：中国电信", { title: "中国电信 面试截止", deadline: "2027-05-07" });
   assert.equal((await apply(c.id)).status, "event");
@@ -198,6 +267,14 @@ test("isolated DB: what the applicant settled stays settled; one thing is one ca
   const signedRow = await db.stageHistory.findFirst({ where: { applicationId: "firstco" } });
   assert.equal((await actions.moveStageSchedule(signedRow.id, "third")).ok, true);
   assert.equal((await db.companyAlias.findUnique({ where: { alias: "云岭智能制造" } })).companyId, "third");
+  // A step made date-only loses its calendar copy: the mail behind it stops pointing there.
+  await makeApp("dated", "INTERVIEW_1");
+  const dm = await task("面试邀请：示例科技", { title: "示例科技 一面", localStart: "2027-06-13T10:00" }, "dated");
+  await apply(dm.id);
+  const datedRow = await db.stageHistory.findFirst({ where: { applicationId: "dated" } });
+  assert.ok((await db.personalTask.findUnique({ where: { id: dm.id } })).mailEventId);
+  assert.equal((await actions.setStageSchedule(datedRow.id, { nextDeadline: new Date("2027-06-13T00:00:00.000Z"), nextDeadlineEnd: null, nextHasTime: false, meetingInfo: null, remindMinutes: null })).ok, true);
+  assert.equal((await db.personalTask.findUnique({ where: { id: dm.id } })).mailEventId, null);
   // A step the applicant wrote in stays, only its time moves.
   await makeApp("noted", "APPLIED");
   const nm = await task("面试邀请：长风科技", { title: "长风一面", localStart: "2027-06-12T10:00" }, "noted");

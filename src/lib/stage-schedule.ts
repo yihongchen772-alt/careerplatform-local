@@ -163,7 +163,11 @@ export async function syncApplicationEvents(tx: Prisma.TransactionClient, applic
   for (const row of app.stageHistory) {
     const event = row.calendarEvent;
     if (!row.nextHasTime || !row.nextDeadline) {
-      if (event) await tx.calendarEvent.delete({ where: { id: event.id } });
+      if (event) {
+        await tx.calendarEvent.delete({ where: { id: event.id } });
+        // Mails behind it no longer point at a time that is gone.
+        await tx.personalTask.updateMany({ where: { mailEventId: event.id }, data: { mailEventId: null } });
+      }
       continue;
     }
     const start = row.nextDeadline;

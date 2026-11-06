@@ -127,6 +127,41 @@ function ConversionCard({
   note?: string;
 }) {
   const best = bestGroupLine(rows);
+  // Dozens of one-投递 groups say nothing and bury the ones that do: they fold away.
+  const shown = rows.length > 8 ? rows.filter((r, index) => !r.smallSample || index < 6) : rows;
+  const folded = rows.filter((r) => !shown.includes(r));
+  const rowOf = (r: ConversionRow) => (
+    <div key={r.key} className="space-y-1 border-b pb-3 last:border-0 last:pb-0">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-medium">{r.key}</span>
+        <span className="text-xs text-muted-foreground">
+          投递 {r.total}
+        </span>
+        {r.smallSample && (
+          <Badge variant="outline" className="text-xs">
+            样本少
+          </Badge>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+        <span>
+          <span className="text-muted-foreground">笔试/测评 </span>
+          <span className="font-medium">{formatPercent(r.assessedRate)}</span>
+          <span className="text-xs text-muted-foreground"> ({r.assessed})</span>
+        </span>
+        <span>
+          <span className="text-muted-foreground">面试 </span>
+          <span className="font-medium">{formatPercent(r.interviewedRate)}</span>
+          <span className="text-xs text-muted-foreground"> ({r.interviewed})</span>
+        </span>
+        <span>
+          <span className="text-muted-foreground">Offer </span>
+          <span className="font-medium">{formatPercent(r.offerRate)}</span>
+          <span className="text-xs text-muted-foreground"> ({r.offers})</span>
+        </span>
+      </div>
+    </div>
+  );
   return (
     <Card>
       <CardHeader>
@@ -137,38 +172,13 @@ function ConversionCard({
         {rows.length === 0 && (
           <p className="text-sm text-muted-foreground">{emptyHint}</p>
         )}
-        {rows.map((r) => (
-          <div key={r.key} className="space-y-1 border-b pb-3 last:border-0 last:pb-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-medium">{r.key}</span>
-              <span className="text-xs text-muted-foreground">
-                投递 {r.total}
-              </span>
-              {r.smallSample && (
-                <Badge variant="outline" className="text-xs">
-                  样本少
-                </Badge>
-              )}
-            </div>
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
-              <span>
-                <span className="text-muted-foreground">笔试/测评 </span>
-                <span className="font-medium">{formatPercent(r.assessedRate)}</span>
-                <span className="text-xs text-muted-foreground"> ({r.assessed})</span>
-              </span>
-              <span>
-                <span className="text-muted-foreground">面试 </span>
-                <span className="font-medium">{formatPercent(r.interviewedRate)}</span>
-                <span className="text-xs text-muted-foreground"> ({r.interviewed})</span>
-              </span>
-              <span>
-                <span className="text-muted-foreground">Offer </span>
-                <span className="font-medium">{formatPercent(r.offerRate)}</span>
-                <span className="text-xs text-muted-foreground"> ({r.offers})</span>
-              </span>
-            </div>
-          </div>
-        ))}
+        {shown.map(rowOf)}
+        {folded.length > 0 && (
+          <details className="text-sm">
+            <summary className="cursor-pointer text-xs font-medium text-muted-foreground">其余 {folded.length} 组（样本太少）</summary>
+            <div className="mt-3 space-y-3">{folded.map(rowOf)}</div>
+          </details>
+        )}
         {note && <p className="text-xs text-muted-foreground">{note}</p>}
         {rows.some((r) => r.smallSample) && (
           <p className="text-xs text-muted-foreground">

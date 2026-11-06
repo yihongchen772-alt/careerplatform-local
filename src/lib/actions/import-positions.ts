@@ -1,5 +1,7 @@
 "use server";
 
+import { todayKey } from "@/lib/dates";
+import { trackLabel } from "@/lib/analytics";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
@@ -118,7 +120,7 @@ export async function parseRecruitmentScreenshot(
       throw new UserFacingError("读截图需要能看图的服务商，去账号设置配一个 AI Key（这几家都能读图片）");
     }
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayKey();
     const raw = await generateStructuredWithFile({
       config,
       file: { mimeType, data: fileBase64 },
@@ -198,7 +200,7 @@ async function extractPositions(
     // The model has no clock, so a bare "10.15" gets a guessed (usually
     // training-era, i.e. past) year — which would make every imported
     // deadline look long overdue to the reminder logic. Give it today.
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayKey();
 
     const intro =
       kind === "sheet"
@@ -420,7 +422,7 @@ export async function importLeads(
           userId: user.id,
           companyName,
           title,
-          track: row.track ?? undefined,
+          track: trackLabel(row.track) ?? undefined,
           department: row.department ?? undefined,
           location: row.location ?? undefined,
           salaryMin: row.salaryMin ?? undefined,
@@ -496,7 +498,7 @@ export async function promoteLeads(
           userId: user.id,
           companyId,
           title: lead.title,
-          track: lead.track ?? undefined,
+          track: trackLabel(lead.track) ?? undefined,
           department: lead.department ?? undefined,
           location: lead.location ?? undefined,
           salaryMin: lead.salaryMin ?? undefined,
@@ -623,7 +625,7 @@ export async function refineImportedRows(
     const config = await getUserAiConfig(user.id);
     if (!config) throw new UserFacingError("先去账号设置配置一个 AI Key");
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayKey();
 
     const positions = await inBatches(rows, REFINE_BATCH, REFINE_CONCURRENCY, async (batch) => {
     const listing = batch

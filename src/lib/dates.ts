@@ -15,6 +15,20 @@ export function toDateKey(date: Date): string {
 }
 
 /** Today as `YYYY-MM-DD` in the viewer's own timezone. */
+/**
+ * Is a mail older than a stage's date? A stage date entered as a day is stored
+ * at UTC midnight, which is 08:00 at UTC+8: a mail at 02:00 that same day isn't older.
+ */
+export function mailBeforeStage(mailDate: Date, stageDate: Date): boolean {
+  const dateOnly = stageDate.getTime() % 86_400_000 === 0;
+  return dateOnly ? toDateKey(mailDate) < stageDate.toISOString().slice(0, 10) : mailDate.getTime() < stageDate.getTime();
+}
+
+/** 「2026-11-06 01:30」, this machine's clock: what an AI needs to read 「今天」 in a mail. */
+export function localStamp(date: Date): string {
+  return `${toDateKey(date)} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
 export function todayKey(): string {
   return toDateKey(new Date());
 }

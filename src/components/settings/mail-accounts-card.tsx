@@ -73,7 +73,7 @@ export function MailAccountsCard({ accounts, health }: { accounts: MailAccountOv
         {health?.failing && health.error && (
           <p role="alert" className="rounded-md border border-amber-300/70 bg-amber-50/80 px-3 py-2 text-sm dark:border-amber-500/40 dark:bg-amber-500/10">
             后台自动扫描连续失败：{health.error}
-            {health.lastOkAt && <span className="text-muted-foreground">（上次成功 {new Date(health.lastOkAt).toLocaleString()}）</span>}
+            {health.lastOkAt && <span className="text-muted-foreground">（上次成功 {new Date(health.lastOkAt).toLocaleString("zh-CN")}）</span>}
           </p>
         )}
 
@@ -133,7 +133,7 @@ function AccountRow({ account }: { account: MailAccountOverview }) {
           <p className="truncate text-xs text-muted-foreground">
             {account.email} · {account.imapHost}
             {account.lastCheckedAt &&
-              ` · 上次扫描 ${new Date(account.lastCheckedAt).toLocaleString()}`}
+              ` · 上次扫描 ${new Date(account.lastCheckedAt).toLocaleString("zh-CN")}`}
           </p>
         </div>
         {!enabled && <Badge variant="outline">已暂停</Badge>}

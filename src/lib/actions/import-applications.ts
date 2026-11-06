@@ -1,5 +1,6 @@
 "use server";
 
+import { todayKey } from "@/lib/dates";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
@@ -48,7 +49,7 @@ export async function importApplications(
     const have = new Set(known.map((app) => `${app.companyId}|${app.title.trim().toLowerCase()}`));
 
     const now = new Date();
-    const today = new Date(now.toISOString().slice(0, 10));
+    const today = new Date(todayKey());
     const applicationIds: string[] = [];
     let skipped = 0;
     await db.$transaction(async (tx) => {

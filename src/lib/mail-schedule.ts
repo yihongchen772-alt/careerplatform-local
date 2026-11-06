@@ -88,6 +88,38 @@ async function settleSiblings(tx: Prisma.TransactionClient, input: { userId: str
 }
 
 /**
+ * Items made before same-company mails were merged: two mails' wordings of one
+ * 测评, side by side on one day. One stays, with whichever link there is.
+ */
+export async function mergeDuplicateMailEvents(tx: Prisma.TransactionClient, userId: string): Promise<number> {
+  const events = await tx.calendarEvent.findMany({
+    where: { userId, stageHistoryId: null, source: "email", allDay: true },
+    select: { id: true, dateKey: true, meetingInfo: true, completedAt: true, createdAt: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const mails = await tx.personalTask.findMany({ where: { userId, mailEventId: { in: events.map((event) => event.id) } }, select: { id: true, title: true, mailEventId: true, mailUndo: true } });
+  const titlesOf = (id: string) => mails.filter((mail) => mail.mailEventId === id).map((mail) => mail.title);
+  const gone = new Set<string>();
+  for (const keep of events) {
+    if (gone.has(keep.id)) continue;
+    for (const other of events) {
+      if (other === keep || gone.has(other.id) || other.dateKey !== keep.dateKey || !!other.completedAt !== !!keep.completedAt) continue;
+      const same = titlesOf(keep.id).some((a) => titlesOf(other.id).some((b) => sameMailCompany(a, b) && kindFromText(a) === kindFromText(b)));
+      if (!same) continue;
+      if (/https?:/.test(other.meetingInfo ?? "") && !/https?:/.test(keep.meetingInfo ?? "")) await tx.calendarEvent.update({ where: { id: keep.id }, data: { meetingInfo: other.meetingInfo } });
+      for (const mail of mails.filter((entry) => entry.mailEventId === other.id)) {
+        const undoHere = parseUndo(mail.mailUndo)?.kind === "event";
+        await tx.personalTask.update({ where: { id: mail.id }, data: { mailEventId: keep.id, ...(undoHere ? { mailUndo: { kind: "event", eventId: keep.id } } : {}) } });
+        mail.mailEventId = keep.id;
+      }
+      await tx.calendarEvent.delete({ where: { id: other.id } });
+      gone.add(other.id);
+    }
+  }
+  return gone.size;
+}
+
+/**
  * The applicant said a mail's sender is this company (linked or moved it): the
  * name it signs with is remembered, so the next mail from it finds the 投递.
  */

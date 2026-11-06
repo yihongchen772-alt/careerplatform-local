@@ -14,13 +14,14 @@ import type { ApplicationStage } from "@prisma/client";
 import { STAGE_LABELS } from "@/lib/stage-labels";
 import { classifyAutoTransition } from "@/lib/application-flow";
 import { writeAutoStage } from "@/lib/auto-progress";
-import { applyMailSchedule } from "@/lib/mail-schedule";
+import { applyMailSchedule, mergeDuplicateMailEvents } from "@/lib/mail-schedule";
 import { SCAN_ALERT_STREAK } from "@/lib/scan-health";
 import { alreadyRecorded, createApplicationFromMail, type KnownApplication } from "@/lib/mail-new-application";
 import { resolveCompanyId } from "@/lib/company-resolver";
 import { rereadMailTimes } from "@/lib/mail-reread";
 import { completeMailDraft, mailIsAfterthought } from "@/lib/mail-time-extract";
-import { matchMailApplication, type MatchableApplication } from "@/lib/mail-application-match";
+import { correctMailApplication, matchMailApplication, type MatchableApplication } from "@/lib/mail-application-match";
+import { localStamp, mailBeforeStage } from "@/lib/dates";
 
 const TERMINAL_STAGES: ApplicationStage[] = ["REJECTED", "ACCEPTED", "DECLINED", "WITHDRAWN", "CANCELLED"];
 // What an email can tell us. Offers and rejections included; accepting,
@@ -45,7 +46,7 @@ async function applyEmailStage(
       select: { id: true, currentStage: true, currentStageLabel: true, currentStageDate: true },
     });
     if (!app || classifyAutoTransition(app.currentStage, match.stage) !== "apply") return false;
-    if (email.date.getTime() < app.currentStageDate.getTime()) return false;
+    if (mailBeforeStage(email.date, app.currentStageDate)) return false;
     const subject = email.subject.trim().slice(0, 120) || "（无主题）";
     await writeAutoStage(tx, {
       applicationId: app.id,
@@ -94,7 +95,7 @@ async function classifyEmails(
   const listing = emails
     .map(
       (e, i) =>
-        `[${i}] 发件人：${e.from}\n主题：${e.subject}\n邮件时间：${e.date.toISOString()}\n正文片段：${e.snippet.slice(0, 4000)}`
+        `[${i}] 发件人：${e.from}\n主题：${e.subject}\n邮件时间（用户本地时间，「今天」「明天」按它算）：${localStamp(e.date)}\n正文片段：${e.snippet.slice(0, 4000)}`
     )
     .join("\n\n");
 
@@ -236,8 +237,8 @@ async function runScan(
         if (!email) continue;
         // The AI's pick when it made one; else the company named in the mail.
         const matched = c.applicationId && activeApplications.some((a) => a.id === c.applicationId)
-          ? c.applicationId
-          : matchMailApplication({ subject: email.subject, company: c.company, body: email.snippet }, activeApplications);
+          ? correctMailApplication({ subject: email.subject, summary: c.summary, body: email.snippet }, c.applicationId, activeApplications)
+          : matchMailApplication({ subject: email.subject, company: c.company, body: `${c.summary} ${email.snippet}` }, activeApplications);
         // A time the AI left out but the mail states plainly (考试时间：… / October 30, 2026 14:00).
         // A questionnaire after the interview asks for nothing on the calendar and moves nothing.
         const afterthought = mailIsAfterthought(email.subject, c.type, c.summary);
@@ -329,6 +330,8 @@ async function runScan(
       },
     });
   }
+
+  await db.$transaction((tx) => mergeDuplicateMailEvents(tx, userId)).catch((error) => console.error("[inbox-scan] merging duplicates failed", error));
 
   // Recent mail whose time the first reading missed gets a second look.
   const again = await rereadMailTimes(userId, { days: 4 }).catch((error) => {

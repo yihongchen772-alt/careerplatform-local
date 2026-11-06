@@ -19,6 +19,28 @@ export function mentions(haystack: string, rawName: string): boolean {
   return haystack.includes(name);
 }
 
+const bareJob = (value: string) => fold(value).replace(/[(（【\[][^)）】\]]*[)）】\]]/g, "").replace(/[-_/·,，、|｜:：]/g, "");
+
+/**
+ * The AI's pick among several 投递 at one company is checked against the mail:
+ * a mail naming another of them (「确认您预约的软件测试工程师初试」, picked 运动控制算法工程师) is about
+ * that one. A mail naming none keeps the pick; one naming two equally is left unmatched.
+ */
+export function correctMailApplication(mail: { subject: string; summary?: string; body?: string }, picked: string, apps: MatchableApplication[]): string | null {
+  const chosen = apps.find((app) => app.id === picked);
+  if (!chosen) return picked;
+  const siblings = apps.filter((app) => app.companyName === chosen.companyName);
+  if (siblings.length < 2) return picked;
+  const text = bareJob(`${mail.subject} ${mail.summary ?? ""} ${mail.body ?? ""}`);
+  const named = siblings.map((app) => ({ app, key: bareJob(app.title) })).filter((entry) => entry.key.length >= 4 && text.includes(entry.key)).sort((a, b) => b.key.length - a.key.length);
+  if (!named.length || named[0].app.id === picked) return picked;
+  const pickedEntry = named.find((entry) => entry.app.id === picked);
+  // Named too, and not just as a part of the longer title: the mail may be about both.
+  if (pickedEntry && !named[0].key.includes(pickedEntry.key)) return picked;
+  if (named[1] && named[1].key.length === named[0].key.length && named[1].key !== named[0].key) return null;
+  return named[0].app.id;
+}
+
 const GENERIC_ENDING = /^(?:\(.*|[!。.·]+|股份.*|集团.*|有限.*|公司|科技.*|技术.*|中国|电子.*|微电子.*|控股.*|[a-z][a-z&.\-]*)$/;
 
 export function matchMailApplication(
