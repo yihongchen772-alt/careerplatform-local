@@ -142,7 +142,7 @@ test("isolated DB: what the applicant settled stays settled; one thing is one ca
   const right = await db.application.findUnique({ where: { id: "right" }, include: { stageHistory: true } });
   assert.equal(right.currentStage, "INTERVIEW_1");
   const rightStep = right.stageHistory.find((row) => row.stage === "INTERVIEW_1");
-  assert.equal(rightStep.nextDeadline.getTime(), new Date(2027, 5, 9, 10).getTime());
+  assert.equal(rightStep.nextDeadline.getTime(), Date.UTC(2027, 5, 9, 2));
   assert.match(rightStep.meetingInfo, /m\.example\.com/);
   const moved2 = await db.personalTask.findUnique({ where: { id: w.id } });
   assert.equal(moved2.applicationId, "right");
@@ -151,7 +151,7 @@ test("isolated DB: what the applicant settled stays settled; one thing is one ca
   // To a calendar item of its own, then cleared elsewhere.
   assert.equal((await actions.moveStageSchedule(rightStep.id, null)).ok, true);
   const alone = await db.calendarEvent.findFirst({ where: { userId, stageHistoryId: null, title: { contains: "星海机器人" } } });
-  assert.equal(alone.startsAt.getTime(), new Date(2027, 5, 9, 10).getTime());
+  assert.equal(alone.startsAt.getTime(), Date.UTC(2027, 5, 9, 2));
   assert.equal((await db.application.findUnique({ where: { id: "right" } })).currentStage, "APPLIED");
   assert.equal((await db.personalTask.findUnique({ where: { id: w.id } })).applicationId, null);
 
