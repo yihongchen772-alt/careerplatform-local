@@ -399,3 +399,10 @@ test("the edit dialog offers the fixes; the panel lets a wrong time be changed b
   assert.match(read("src/lib/actions/mail-calendar.ts"), /!RECRUIT_EVENT\.test/);
   assert.match(read("src/lib/pending-mail.ts"), /mailIsAfterthought\("", task\.title\)/);
 });
+
+test("a 投递 keeps the JD with the record and the detail page shows it", () => {
+  assert.match(read("prisma/schema.prisma"), /jdSnapshot String\?/);
+  assert.match(read("src/lib/actions/submitted-application.ts"), /jdSnapshot: jdFrozen/);
+  assert.match(read("src/app/(dashboard)/applications/[id]/page.tsx"), /<ApplicationJdCard/);
+  assert.match(read("src/components/applications/application-jd-card.tsx"), /粘贴 JD/);
+});

@@ -718,6 +718,9 @@ enum ApplicationStage {
 
 model Application {
   submissionPackage Json?
+  /// The 岗位 JD as it read when 投递 was recorded (or pasted later): the 岗位 may be edited or removed afterwards.
+  jdSnapshot String?
+  jdSnapshotUrl String?
   workflowChecklist Json?
   workflowRevision Int @default(0)
   id               String           @id @default(cuid())

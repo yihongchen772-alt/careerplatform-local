@@ -56,7 +56,9 @@ export async function recordSubmittedApplication(input: z.input<typeof schema>) 
           kept = { id: made.id, created: true };
         }
       }
-      const app = await tx.application.create({ data: { userId: user.id, companyId, positionId: kept?.id, title: data.title, appliedDate: data.appliedDate, currentStageDate: data.appliedDate, applyUrl: data.applyUrl, resumeVersionId: resume?.id, portalId: portals.length === 1 ? portals[0].id : null, source: data.source || position?.source, city, currentStage: "APPLIED" } });
+      // The JD as it reads right now, frozen with the record: the 岗位 may be edited or deleted later.
+      const jdFrozen = (position?.jdText?.trim() || jdRead || "") || null;
+      const app = await tx.application.create({ data: { jdSnapshot: jdFrozen, jdSnapshotUrl: jdFrozen ? (data.jd?.url || position?.jdUrl || null) : null, userId: user.id, companyId, positionId: kept?.id, title: data.title, appliedDate: data.appliedDate, currentStageDate: data.appliedDate, applyUrl: data.applyUrl, resumeVersionId: resume?.id, portalId: portals.length === 1 ? portals[0].id : null, source: data.source || position?.source, city, currentStage: "APPLIED" } });
       let attachmentId: string | null = null;
       if (copy) { const attachment = await tx.attachment.create({ data: { userId: user.id, applicationId: app.id, url: copy.url, name: `投递时简历 · ${resume!.name}` } }); attachmentId = attachment.id; }
       const jd = position?.jdText || jdRead;
