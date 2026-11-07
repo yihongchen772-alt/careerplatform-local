@@ -414,8 +414,32 @@ test("a 投递 keeps the JD with the record and the detail page shows it", () =>
 test("a form opened in a new tab keeps the JD of the page it was opened from; clearing and bad links are refused", () => {
   const view = read("electron/browser-view.js");
   assert.match(view, /void passJobPageOn\(tab, createTab\(details\.url/);
-  assert.match(view, /tab\.jdPage\.fromOpener \|\| visited\.has\(tab\.jdPage\.url\)/);
+  assert.match(view, /tab\.jdPage\?\.fromOpener \? inheritedJdFits\(/);
   assert.match(view, /opener\.jdPage\?\.url === showing && !opened\.jdPage/);
   assert.match(read("src/lib/actions/application-jd.ts"), /JD 不能为空/);
   assert.match(read("src/components/applications/application-jd-card.tsx"), /\^https\?:/);
+});
+
+test("a JD taken from the opener stays only while the tab is on that company's sites", () => {
+  const { noteLanding, inheritedJdFits } = require("../electron/saved-logins");
+  const jd = "https://careers.example-a.cn/job/1";
+  const form = "https://app.mokahr.com/campus-recruitment/examplea/1#/apply";
+  const other = "https://app.mokahr.com/campus-recruitment/exampleb/9#/apply";
+
+  // JD on the company's site, form on the ATS, reached through a short link.
+  let landing = noteLanding(undefined, "https://t.example.cn/x", 1000);
+  landing = noteLanding(landing, form, 3000);
+  assert.equal(inheritedJdFits(jd, landing, [form]), true, "the form it was opened for");
+  assert.equal(inheritedJdFits(jd, landing, [jd]), true, "back on the JD's own site");
+
+  // Later moves are not redirects: login is fine to come back from, another company is not.
+  landing = noteLanding(landing, "https://sso.example.net/login", 60_000);
+  assert.equal(inheritedJdFits(jd, landing, ["https://sso.example.net/login", form]), true, "the form last sent still counts");
+  assert.equal(inheritedJdFits(jd, landing, [form]), true, "returned from login");
+  assert.equal(inheritedJdFits(jd, landing, [other]), false, "another company on the same ATS host");
+  assert.equal(inheritedJdFits(jd, landing, ["https://jobs.example-b.cn/apply"]), false, "another company's own site");
+  assert.equal(inheritedJdFits(jd, landing, ["https://jobs.example-b.cn/apply", other]), false, "and its form");
+
+  assert.equal(noteLanding(noteLanding(undefined, form, 90_000), "https://x.example.cn/", 104_000).sites.length, 2, "the window starts when the tab first lands");
+  assert.equal(inheritedJdFits(jd, undefined, ["about:blank"]), true, "a blank page says nothing either way");
 });

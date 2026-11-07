@@ -104,6 +104,7 @@ test("投递成功: one click with the resume shown, 撤销 after; the dialog sa
   assert.match(read("src/lib/actions/resume-used.ts"), /sites\.has\(siteKey\(u\.url\) \?\? hostOf\(u\.url\)\)/, "another company's upload in the same tab is left out");
   assert.match(browser, /result\?\.companyName && result\.title && !resumeUnsure \?/, "a file it can't place is checked, not recorded as the default");
   const view = read("electron/browser-view.js");
-  assert.match(view, /Date\.now\(\) - tab\.jdPage\.at < 2 \* 3600_000 && \(tab\.jdPage\.fromOpener \|\| visited\.has\(tab\.jdPage\.url\)\)/, "only a JD this tab went through, or was opened from, lately");
+  assert.match(view, /Date\.now\(\) - tab\.jdPage\.at < 2 \* 3600_000 && jdHere/, "only a JD this tab went through, or was opened from, lately");
+  assert.match(view, /tab\.jdPage\?\.fromOpener \? inheritedJdFits\([^\n]*: visited\.has\(tab\.jdPage\?\.url\)/);
   assert.match(read("src/lib/actions/submitted-application.ts"), /cityFromJobText\(data\.jd\.text\)/);
 });

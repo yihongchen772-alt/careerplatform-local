@@ -2,7 +2,7 @@ const crypto = require("node:crypto");
 const { ipcMain, WebContentsView, BrowserWindow, Menu, session, shell, app, clipboard, dialog } = require("electron");
 const fs = require("fs");
 const path = require("path");
-const { createLoginStore, loginRealm, realmLabel } = require("./saved-logins");
+const { createLoginStore, loginRealm, realmLabel, noteLanding, inheritedJdFits } = require("./saved-logins");
 
 // The page-injected helpers and field matchers live in autofill-core.js so
 // the Chrome extension can reuse them unchanged.
@@ -458,7 +458,8 @@ function scheduleJobPageCapture(tab) {
 }
 // 「立即投递」 often opens the form in a new tab, away from the JD: the new tab
 // takes the JD its opener is showing right now (read now if the click came
-// before the delayed read). The tab's own JD page, if it reaches one, replaces it.
+// before the delayed read). The tab's own JD page, if it reaches one, replaces it;
+// if the tab wanders off to another site, inheritedJdFits drops it at read time.
 async function passJobPageOn(opener, opened) {
   const wc = opener.view.webContents;
   if (!wc || wc.isDestroyed()) return;
@@ -518,7 +519,8 @@ function createTab(url, { activate = true } = {}) {
     pendingPlans.delete(tab.id);
     stopFillTask(tab.id, "页面已变化，已停止填写；请在当前页面重新填写");
   });
-  wc.on("did-navigate", () => {
+  wc.on("did-navigate", (_event, url) => {
+    tab.landing = noteLanding(tab.landing, url);
     lastAiFilled.delete(tab.id);
     // A new page: its own login box (if any) will announce itself.
     if (loginStates.has(tab.id)) sendLoginState(tab, null);
@@ -1505,7 +1507,9 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     // The JD only if this tab went through it on the way here (or was opened from it),
     // lately: one tab may have sent another company's 网申 before, and that JD is not this one's.
     const visited = new Set(wc.navigationHistory.getAllEntries().map((entry) => entry.url));
-    const jdPage = tab.jdPage && Date.now() - tab.jdPage.at < 2 * 3600_000 && (tab.jdPage.fromOpener || visited.has(tab.jdPage.url)) ? tab.jdPage : null;
+    const lastSent = [...(tab.sentForms || [])].sort((a, b) => b.at - a.at)[0];
+    const jdHere = tab.jdPage?.fromOpener ? inheritedJdFits(tab.jdPage.url, tab.landing, [wc.getURL(), lastSent?.url].filter(Boolean)) : visited.has(tab.jdPage?.url);
+    const jdPage = tab.jdPage && Date.now() - tab.jdPage.at < 2 * 3600_000 && jdHere ? tab.jdPage : null;
     // Nothing readable here (the 投递成功 page): the form as it was sent, all its
     // steps — the newest, then the earlier ones on the same site within the hour
     // before each — merged, later answers winning.

@@ -36,6 +36,28 @@ function loginRealm(rawUrl) {
   return url.origin;
 }
 
+// A tab's landing: the sites it reached right after opening. Redirects (a short
+// link, then the ATS) land within seconds; anything later was somebody's choice.
+const LANDING_WINDOW_MS = 15_000;
+function noteLanding(landing, rawUrl, now = Date.now()) {
+  const realm = loginRealm(rawUrl);
+  if (!landing) return { at: now, sites: realm ? [realm] : [] };
+  if (realm && now - landing.at < LANDING_WINDOW_MS && !landing.sites.includes(realm)) landing.sites.push(realm);
+  return landing;
+}
+
+/**
+ * Whether a JD taken from the opener still describes what this tab is doing:
+ * a page in view (or the form last sent) must be on the opener's site or where
+ * the tab landed. Elsewhere it is another company's, so no JD beats a wrong one.
+ * A page whose realm can't be told (about:blank) says nothing either way.
+ */
+function inheritedJdFits(jdUrl, landing, pageUrls) {
+  const allowed = new Set([loginRealm(jdUrl), ...(landing?.sites || [])].filter(Boolean));
+  const seen = pageUrls.map(loginRealm).filter(Boolean);
+  return !seen.length || seen.some((realm) => allowed.has(realm));
+}
+
 /** 「app.mokahr.com/bytedance」 — how a realm is shown to the applicant. */
 function realmLabel(realm) {
   return String(realm || "").replace(/^https?:\/\//i, "");
@@ -159,4 +181,4 @@ function createLoginStore({ dir }) {
   };
 }
 
-module.exports = { createLoginStore, loginRealm, realmLabel };
+module.exports = { createLoginStore, loginRealm, realmLabel, noteLanding, inheritedJdFits };
