@@ -7,7 +7,7 @@ import { getResumeContext } from "@/lib/resume-context";
 import { getUserAiConfig, callTextAi } from "@/lib/ai-providers";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
 import { interviewBriefAiSchema, parseInterviewBrief, type InterviewBrief } from "@/lib/interview-brief";
-import { parseSubmissionPackage } from "@/lib/submission-package";
+import { applicationJd } from "@/lib/application-jd";
 import { STAGE_LABELS, AUTO_NOTE_PREFIXES } from "@/lib/stage-labels";
 import type { InterviewQa } from "@/lib/validation";
 
@@ -24,7 +24,7 @@ export async function generateInterviewBrief(applicationId: string, resumeVersio
     if (!resumeId) throw new UserFacingError("先去「简历版本」上传一份简历，速览要结合你的经历");
     const { resumeText } = await getResumeContext(resumeId, user.id);
 
-    const jd = application.position?.jdText || parseSubmissionPackage(application.submissionPackage)?.jd || "";
+    const jd = applicationJd(application);
     // The applicant's own notes on this company: what they were asked before.
     const notes = await db.stageHistory.findMany({
       where: { application: { userId: user.id, companyId: application.companyId }, note: { not: null }, AND: AUTO_NOTE_PREFIXES.map((prefix) => ({ NOT: { note: { startsWith: prefix } } })) },

@@ -119,6 +119,8 @@ export async function markPositionApplied(
       data: {
         userId: user.id,
         positionId: position.id,
+        jdSnapshot: position.jdText?.trim() || null,
+        jdSnapshotUrl: position.jdText?.trim() ? position.jdUrl : null,
         companyId: position.companyId,
         portalId: portals.length === 1 ? portals[0].id : null,
         applyUrl,
@@ -169,6 +171,8 @@ export async function markPositionsApplied(
         data: {
           userId: user.id,
           positionId: position.id,
+          jdSnapshot: position.jdText?.trim() || null,
+          jdSnapshotUrl: position.jdText?.trim() ? position.jdUrl : null,
           companyId: position.companyId,
           title: position.title,
           appliedDate: input.appliedDate,

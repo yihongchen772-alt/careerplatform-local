@@ -188,7 +188,7 @@ export function MarkAppliedFromBrowserDialog({
       onRecorded?.();
       const resumeName = resumeVersions.find((r) => r.id === resumeVersionId)?.name;
       toast.success(`已记为投递：${selected?.companyName || companyName.trim()} · ${selected ? selected.title : title.trim()}`, {
-        description: [resumeName ? `简历「${resumeName}」` : "", jd ? "JD 已一起保存" : selected ? "" : "没读到 JD，可在投递详情里粘贴"].filter(Boolean).join(" · ") || undefined,
+        description: [resumeName ? `简历「${resumeName}」` : "", body.jdSaved ? "JD 已一起保存" : "没读到 JD，可在投递详情里粘贴"].filter(Boolean).join(" · ") || undefined,
         action: { label: "撤销", onClick: () => void undoSubmittedApplication(body.id, body.createdPositionId).then(() => { void window.desktopBridge?.applicationRecorded?.(true); toast.success("已撤销这条投递"); router.refresh(); }) },
       });
       onOpenChange(false);

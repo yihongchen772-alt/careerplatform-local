@@ -70,7 +70,7 @@ export async function recordSubmittedApplication(input: z.input<typeof schema>) 
       if (app.portalId) await tx.applicationPortal.update({ where: { id: app.portalId }, data: { contentHash: null } });
       if (position) await tx.applicationDraft.deleteMany({ where: { userId: user.id, OR: [{ contextKey: `job:v1:${position.id}` }, { contextKey: { startsWith: `job:v1:${position.id}|draft:v2:` } }] } });
       else await tx.applicationDraft.deleteMany({ where: { userId: user.id, url: { in: [data.applyUrl, ...(data.snapshot ? [data.snapshot.url] : [])] } } });
-      return { id: app.id, createdPositionId: kept?.created ? kept.id : null };
+      return { id: app.id, createdPositionId: kept?.created ? kept.id : null, jdSaved: !!jdFrozen };
     });
     revalidatePath("/applications"); revalidatePath("/pool"); revalidatePath("/dashboard"); return result;
   } catch (error) { if (copy) await deleteLocalFileByUrl(copy.url); throw error; }

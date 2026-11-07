@@ -405,4 +405,17 @@ test("a 投递 keeps the JD with the record and the detail page shows it", () =>
   assert.match(read("src/lib/actions/submitted-application.ts"), /jdSnapshot: jdFrozen/);
   assert.match(read("src/app/(dashboard)/applications/[id]/page.tsx"), /<ApplicationJdCard/);
   assert.match(read("src/components/applications/application-jd-card.tsx"), /粘贴 JD/);
+  // Every way of marking a job applied keeps the JD, and the 面试 tools read the kept one.
+  assert.equal(read("src/lib/actions/positions.ts").match(/jdSnapshot: position\.jdText/g).length, 2);
+  assert.match(read("src/lib/actions/applications.ts"), /jdSnapshot: linked\?\.jdText/);
+  for (const file of ["src/lib/actions/interview-qa.ts", "src/lib/actions/interview-brief.ts", "src/app/(dashboard)/applications/[id]/brief/page.tsx"]) assert.match(read(file), /applicationJd\(application\)/);
+});
+
+test("a form opened in a new tab keeps the JD of the page it was opened from; clearing and bad links are refused", () => {
+  const view = read("electron/browser-view.js");
+  assert.match(view, /void passJobPageOn\(tab, createTab\(details\.url/);
+  assert.match(view, /tab\.jdPage\.fromOpener \|\| visited\.has\(tab\.jdPage\.url\)/);
+  assert.match(view, /opener\.jdPage\?\.url === showing && !opened\.jdPage/);
+  assert.match(read("src/lib/actions/application-jd.ts"), /JD 不能为空/);
+  assert.match(read("src/components/applications/application-jd-card.tsx"), /\^https\?:/);
 });

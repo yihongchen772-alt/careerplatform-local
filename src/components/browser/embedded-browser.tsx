@@ -901,14 +901,14 @@ export function EmbeddedBrowser({
       void bridge.applicationRecorded?.();
       setRecordedPages((list) => [...list, snapshot.url]);
       const resumeName = resumeVersions.find((r) => r.id === resumeId)?.name;
-      const kept = [jd ? "JD" : "", snapshot.fields.length ? `${snapshot.fields.length} 项填写内容` : ""].filter(Boolean).join(" 和 ");
+      const kept = [body.jdSaved ? "JD" : "", snapshot.fields.length ? `${snapshot.fields.length} 项填写内容` : ""].filter(Boolean).join(" 和 ");
       setRecordedBar({
         tabId: announced.tabId,
         id: body.id,
         createdPositionId: body.createdPositionId ?? null,
         label: `${companyName} · ${title}`,
         auto,
-        note: [resumeName ? `简历「${resumeName}」` : "", kept ? `${kept}一起存好了` : ""].filter(Boolean).join("，"),
+        note: [resumeName ? `简历「${resumeName}」` : "", kept ? `${kept}一起存好了` : "", body.jdSaved ? "" : "没读到 JD，可在投递详情里粘贴"].filter(Boolean).join("，"),
         restore: { submitted: announced, result, resume },
       });
       setSubmitted(null);

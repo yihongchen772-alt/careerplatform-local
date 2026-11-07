@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { BackLink } from "@/components/ui/back-link";
 import { STAGE_LABELS, AUTO_NOTE_PREFIXES } from "@/lib/stage-labels";
-import { parseSubmissionPackage } from "@/lib/submission-package";
+import { applicationJd } from "@/lib/application-jd";
 import { parseInterviewBrief } from "@/lib/interview-brief";
 import { loadApplicationSchedule } from "@/lib/schedule-loader";
 import { currentTimeMs } from "@/lib/dates";
@@ -37,7 +37,7 @@ export default async function InterviewBriefPage({ params }: { params: Promise<{
   ]);
   const next = schedule.items.find((item) => isUpcoming(item, now, 3650)) ?? null;
   const qa = application.interviewQA ? (application.interviewQA.content as InterviewQa) : null;
-  const jd = application.position?.jdText || parseSubmissionPackage(application.submissionPackage)?.jd || "";
+  const jd = applicationJd(application);
   const brief = application.interviewBrief ? parseInterviewBrief(application.interviewBrief.content) : null;
 
   return (

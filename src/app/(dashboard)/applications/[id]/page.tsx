@@ -2,6 +2,7 @@ import { ApplicationJdCard } from "@/components/applications/application-jd-card
 import { ApplicationWorkspace } from "@/components/applications/application-workspace";
 import { parseWorkflowChecklist } from "@/lib/application-workflow";
 import { parseSubmissionPackage } from "@/lib/submission-package";
+import { applicationJd } from "@/lib/application-jd";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
@@ -260,7 +261,7 @@ export default async function ApplicationDetailPage({
       </div>
 
       <div id="materials" className="scroll-mt-20 space-y-6">
-        <ApplicationJdCard applicationId={application.id} text={application.jdSnapshot || application.position?.jdText || ""} url={application.jdSnapshotUrl || application.position?.jdUrl || ""} />
+        <ApplicationJdCard applicationId={application.id} text={applicationJd(application)} url={application.jdSnapshotUrl || application.position?.jdUrl || ""} />
         <ApplicationWorkspace key={`${application.id}-${application.currentStage}`} id={application.id} company={application.company.name} title={application.title} stage={application.currentStage} revision={application.workflowRevision} checklist={parseWorkflowChecklist(application.workflowChecklist)} material={parseSubmissionPackage(application.submissionPackage)} attachments={application.attachments} />
         <Card>
           <CardHeader>

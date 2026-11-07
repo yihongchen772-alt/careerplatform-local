@@ -26,8 +26,11 @@ export async function createApplication(
 
   await db.$transaction(async (tx) => {
     const portals = await tx.applicationPortal.findMany({ where: { companyId }, select: { id: true }, take: 2 });
+    const linked = data.positionId ? await tx.position.findFirst({ where: { id: data.positionId, userId: user.id }, select: { jdText: true, jdUrl: true } }) : null;
     const application = await tx.application.create({
       data: {
+        jdSnapshot: linked?.jdText?.trim() || null,
+        jdSnapshotUrl: linked?.jdText?.trim() ? linked.jdUrl : null,
         userId: user.id,
         positionId: data.positionId ?? undefined,
         companyId,

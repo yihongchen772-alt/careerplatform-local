@@ -439,20 +439,32 @@ function readJobPageInPage() {
   }
   return { fields, text, headings };
 }
+async function captureJobPage(tab) {
+  const wc = tab.view.webContents;
+  if (!wc || wc.isDestroyed()) return;
+  const page = await wc.executeJavaScript(`(${readJobPageInPage.toString()})()`).catch(() => null);
+  if (wc.isDestroyed()) return;
+  const text = page && typeof page.text === "string" ? page.text.replace(/\n{3,}/g, "\n\n") : "";
+  // 职位详情 only as a last resort: on many sites it's just the breadcrumb, above the job's name.
+  const duties = text.search(JD_DUTIES) >= 0 ? text.search(JD_DUTIES) : text.search(/职位详情/);
+  if (!page || page.fields >= 12 || text.length < 150 || duties < 0 || !JD_NEEDS.test(text)) return;
+  // Start a little above the duties heading, where the job title usually is.
+  const start = Math.max(0, duties - 300);
+  tab.jdPage = { url: wc.getURL().slice(0, 2000), title: String(wc.getTitle() || "").slice(0, 300), text: text.slice(start, start + 8000).trim(), headings: Array.isArray(page.headings) ? page.headings.slice(0, 6).map((line) => String(line).slice(0, 60)) : [], at: Date.now() };
+}
 function scheduleJobPageCapture(tab) {
   clearTimeout(tab.jdTimer);
-  tab.jdTimer = setTimeout(async () => {
-    const wc = tab.view.webContents;
-    if (!wc || wc.isDestroyed()) return;
-    const page = await wc.executeJavaScript(`(${readJobPageInPage.toString()})()`).catch(() => null);
-    const text = page && typeof page.text === "string" ? page.text.replace(/\n{3,}/g, "\n\n") : "";
-    // 职位详情 only as a last resort: on many sites it's just the breadcrumb, above the job's name.
-    const duties = text.search(JD_DUTIES) >= 0 ? text.search(JD_DUTIES) : text.search(/职位详情/);
-    if (!page || page.fields >= 12 || text.length < 150 || duties < 0 || !JD_NEEDS.test(text)) return;
-    // Start a little above the duties heading, where the job title usually is.
-    const start = Math.max(0, duties - 300);
-    tab.jdPage = { url: wc.getURL().slice(0, 2000), title: String(wc.getTitle() || "").slice(0, 300), text: text.slice(start, start + 8000).trim(), headings: Array.isArray(page.headings) ? page.headings.slice(0, 6).map((line) => String(line).slice(0, 60)) : [], at: Date.now() };
-  }, 2500);
+  tab.jdTimer = setTimeout(() => { void captureJobPage(tab); }, 2500);
+}
+// 「立即投递」 often opens the form in a new tab, away from the JD: the new tab
+// takes the JD its opener is showing right now (read now if the click came
+// before the delayed read). The tab's own JD page, if it reaches one, replaces it.
+async function passJobPageOn(opener, opened) {
+  const wc = opener.view.webContents;
+  if (!wc || wc.isDestroyed()) return;
+  const showing = wc.getURL().slice(0, 2000);
+  if (opener.jdPage?.url !== showing) await captureJobPage(opener);
+  if (opener.jdPage?.url === showing && !opened.jdPage) opened.jdPage = { ...opener.jdPage, fromOpener: true };
 }
 
 // Sites show HR the uploaded file's own name: 「张三-简历.pdf」, not the App's
@@ -587,7 +599,7 @@ function createTab(url, { activate = true } = {}) {
         },
       };
     }
-    createTab(details.url, { activate: true });
+    void passJobPageOn(tab, createTab(details.url, { activate: true }));
     return { action: "deny" };
   });
   // Electron pages have no context menu at all by default — right-click
@@ -1490,10 +1502,10 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     const history = wc.navigationHistory.getAllEntries().slice(0, wc.navigationHistory.getActiveIndex() + 1)
       .filter((entry) => /^https?:/i.test(entry.url)).slice(-15).map((entry) => ({ url: entry.url.slice(0, 2000), title: String(entry.title || "").slice(0, 300) }));
     const page = await wc.executeJavaScript(`(() => ({ text: (${capturePageText.toString()})().slice(0, 4000), siteName: (document.querySelector('meta[property="og:site_name"], meta[name="application-name"]') || {}).content || "" }))()`).catch(() => ({ text: "", siteName: "" }));
-    // The JD only if this tab went through it on the way here, lately: one tab may
-    // have sent another company's 网申 before, and that JD is not this one's.
+    // The JD only if this tab went through it on the way here (or was opened from it),
+    // lately: one tab may have sent another company's 网申 before, and that JD is not this one's.
     const visited = new Set(wc.navigationHistory.getAllEntries().map((entry) => entry.url));
-    const jdPage = tab.jdPage && Date.now() - tab.jdPage.at < 2 * 3600_000 && visited.has(tab.jdPage.url) ? tab.jdPage : null;
+    const jdPage = tab.jdPage && Date.now() - tab.jdPage.at < 2 * 3600_000 && (tab.jdPage.fromOpener || visited.has(tab.jdPage.url)) ? tab.jdPage : null;
     // Nothing readable here (the 投递成功 page): the form as it was sent, all its
     // steps — the newest, then the earlier ones on the same site within the hour
     // before each — merged, later answers winning.

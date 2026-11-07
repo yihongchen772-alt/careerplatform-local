@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
+import { applicationJd } from "@/lib/application-jd";
 import { requireUser } from "@/lib/session";
 import { getResumeContext } from "@/lib/resume-context";
 import { getUserAiConfig, callTextAi } from "@/lib/ai-providers";
@@ -29,13 +30,12 @@ async function run(
 
   const { resumeText } = await getResumeContext(resumeVersionId, user.id);
 
+  const jd = applicationJd(application);
   const jobDescription = [
     `公司：${application.company.name}`,
     `岗位：${application.title}`,
     application.position?.track ? `方向：${application.position.track}` : null,
-    application.position?.jdText
-      ? `\nJD 正文：\n${application.position.jdText.slice(0, 6000)}`
-      : null,
+    jd ? `\nJD 正文：\n${jd.slice(0, 6000)}` : null,
   ]
     .filter(Boolean)
     .join("\n");
@@ -44,7 +44,7 @@ async function run(
 
 目标岗位：
 ${jobDescription}
-${!application.position?.jdText ? "\n注意：没有 JD 正文，只能依据岗位名称判断，题目会更通用一些。" : ""}
+${!jd ? "\n注意：没有 JD 正文，只能依据岗位名称判断，题目会更通用一些。" : ""}
 
 候选人简历情况：
 ${resumeText}
