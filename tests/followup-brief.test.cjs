@@ -245,6 +245,45 @@ test("isolated DB: rounds, 已完成 and its reminders, follow-up to-dos, mail i
   const kept = await db.$transaction((tx) => mailSchedule.applyMailSchedule(tx, { taskId: late.id, userId: "local-user", stage: null }));
   assert.equal(kept.status, "event");
   assert.equal((await db.application.findUnique({ where: { id: "ahead" } })).currentStage, "INTERVIEW_3");
+  // 一面 done (its time came from mail too), then an invitation naming no round:
+  // that is 二面 on a step of its own; 一面 keeps its time and its 复盘.
+  const invite = (applicationId, title, start) => db.personalTask.create({ data: { userId: "local-user", applicationId, title, note: "视频面试邀约\n\n邮件主题：视频面试邀约", mailEventDraft: { title, localStart: start, localEnd: "", timeZone: "Asia/Shanghai", location: "", meetingUrl: "https://meeting.example.cn/b", evidence: `面试时间：${start}`, deadline: "", windowStart: "", booking: false } } });
+  const before = new Date(Date.now() - 4 * DAY);
+  await makeApp("second", "INTERVIEW_1");
+  const first = await db.stageHistory.findFirst({ where: { applicationId: "second" } });
+  await db.stageHistory.update({ where: { id: first.id }, data: { nextDeadline: before, nextHasTime: true, scheduleSource: "email", completedAt: new Date(Date.now() - 3 * DAY), note: "一面复盘" } });
+  const round2 = await invite("second", "示例科技 软件测试工程师 视频面试", "2027-04-03T14:00");
+  assert.equal((await db.$transaction((tx) => mailSchedule.applyMailSchedule(tx, { taskId: round2.id, userId: "local-user", stage: null }))).status, "stage");
+  const second = await db.application.findUnique({ where: { id: "second" }, include: { stageHistory: true } });
+  assert.equal(second.currentStage, "INTERVIEW_2");
+  const firstAfter = second.stageHistory.find((entry) => entry.id === first.id);
+  assert.equal(firstAfter.nextDeadline.getTime(), before.getTime(), "一面 keeps its own time");
+  assert.equal(firstAfter.note, "一面复盘");
+  assert.equal(second.stageHistory.find((entry) => entry.stage === "INTERVIEW_2").nextDeadline.getTime(), local(2027, 4, 3, 14).getTime());
+  // Not marked done but its time is over: the same.
+  await makeApp("over", "INTERVIEW_2");
+  const overRow = await db.stageHistory.findFirst({ where: { applicationId: "over" } });
+  await db.stageHistory.update({ where: { id: overRow.id }, data: { nextDeadline: before, nextHasTime: true, scheduleSource: "email" } });
+  await (async () => { const created = await invite("over", "面试邀请", "2027-04-04T10:00"); return db.$transaction((tx) => mailSchedule.applyMailSchedule(tx, { taskId: created.id, userId: "local-user", stage: null })); })();
+  assert.equal((await db.application.findUnique({ where: { id: "over" } })).currentStage, "INTERVIEW_3");
+  assert.equal((await db.stageHistory.findUnique({ where: { id: overRow.id } })).nextDeadline.getTime(), before.getTime());
+  // A round named outright that is already behind, or no round after HR 面: a calendar item, steps untouched.
+  await makeApp("named", "INTERVIEW_1");
+  const namedRow = await db.stageHistory.findFirst({ where: { applicationId: "named" } });
+  await db.stageHistory.update({ where: { id: namedRow.id }, data: { nextDeadline: before, nextHasTime: true, scheduleSource: "email", completedAt: before } });
+  assert.equal((await (async () => { const created = await invite("named", "一面提醒", "2027-04-05T10:00"); return db.$transaction((tx) => mailSchedule.applyMailSchedule(tx, { taskId: created.id, userId: "local-user", stage: null })); })()).status, "event");
+  assert.equal((await db.application.findUnique({ where: { id: "named" } })).currentStage, "INTERVIEW_1");
+  await makeApp("hr", "HR_INTERVIEW");
+  const hrRow = await db.stageHistory.findFirst({ where: { applicationId: "hr" } });
+  await db.stageHistory.update({ where: { id: hrRow.id }, data: { nextDeadline: before, nextHasTime: true, completedAt: before } });
+  assert.equal((await (async () => { const created = await invite("hr", "面试邀请", "2027-04-06T10:00"); return db.$transaction((tx) => mailSchedule.applyMailSchedule(tx, { taskId: created.id, userId: "local-user", stage: null })); })()).status, "event");
+  // A round still ahead is changed in place (改期), as before.
+  await makeApp("moved", "INTERVIEW_1");
+  const movedRow = await db.stageHistory.findFirst({ where: { applicationId: "moved" } });
+  await db.stageHistory.update({ where: { id: movedRow.id }, data: { nextDeadline: local(2027, 4, 7, 10), nextHasTime: true, scheduleSource: "email" } });
+  await (async () => { const created = await invite("moved", "面试改期", "2027-04-08T10:00"); return db.$transaction((tx) => mailSchedule.applyMailSchedule(tx, { taskId: created.id, userId: "local-user", stage: null })); })();
+  assert.equal((await db.application.findUnique({ where: { id: "moved" } })).currentStage, "INTERVIEW_1");
+  assert.equal((await db.stageHistory.findUnique({ where: { id: movedRow.id } })).nextDeadline.getTime(), local(2027, 4, 8, 10).getTime());
 
   // 面试速览: written once, kept, and odd model output is tidied rather than lost.
   const brief = load("src/lib/actions/interview-brief.ts", mocks);

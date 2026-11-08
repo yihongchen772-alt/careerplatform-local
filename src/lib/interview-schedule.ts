@@ -386,6 +386,12 @@ export const AI_INTERVIEW_TEXT = /AI\s*(?:视频)?面试|AI\s*面|智能面试|�
 
 const INTERVIEW_ROUNDS: ApplicationStage[] = ["INTERVIEW_1", "INTERVIEW_2", "INTERVIEW_3", "HR_INTERVIEW"];
 
+/** The interview round after this one (一面 → 二面 … → HR 面), null after the last. */
+export function nextInterviewRound(current: ApplicationStage): ApplicationStage | null {
+  const index = INTERVIEW_ROUNDS.indexOf(current);
+  return index >= 0 && index < INTERVIEW_ROUNDS.length - 1 ? INTERVIEW_ROUNDS[index + 1] : null;
+}
+
 /** The round an invitation names outright (「二面」「终面」「在线测评」), if any. */
 export function stageFromText(text: string): ApplicationStage | null {
   // Before the rounds: 「AI 面试」 says 面试 but is no human round.

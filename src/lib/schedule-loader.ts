@@ -73,7 +73,7 @@ type DraftTask = {
   note: string | null;
   mailEventDraft: unknown;
   applicationId: string | null;
-  application: { id: string; title: string; currentStage: ApplicationStage; currentStageDate: Date; company: { name: string }; stageHistory: { id: string; stage: ApplicationStage; enteredAt: Date; nextDeadline: Date | null; nextHasTime: boolean; scheduleSource: string | null }[] } | null;
+  application: { id: string; title: string; currentStage: ApplicationStage; currentStageDate: Date; company: { name: string }; stageHistory: { id: string; stage: ApplicationStage; completedAt?: Date | null; enteredAt: Date; nextDeadline: Date | null; nextHasTime: boolean; scheduleSource: string | null }[] } | null;
 };
 
 /** A recognised time that is not written anywhere yet. */
@@ -85,7 +85,9 @@ export function draftItem(task: DraftTask): ScheduleItem | null {
   // A 宣讲会 is not a change to the 投递's time.
   if (app && !TERMINAL.includes(app.currentStage) && !time.booking && !RECRUIT_EVENT.test(`${task.title} ${time.title}`)) {
     const row = currentStageRow(app, app.stageHistory);
-    if (row?.nextDeadline && (row.nextHasTime || !time.hasTime) && row.nextDeadline.getTime() !== time.startsAt.getTime()) conflictsWith = row.nextDeadline.toISOString();
+    // A round already done or over is not what the invitation changes: it is the next one.
+    const finished = !!row?.completedAt || (!!row?.nextDeadline && row.nextDeadline.getTime() < Date.now());
+    if (row?.nextDeadline && !finished && (row.nextHasTime || !time.hasTime) && row.nextDeadline.getTime() !== time.startsAt.getTime()) conflictsWith = row.nextDeadline.toISOString();
   }
   return {
     key: `mail:${task.id}`,
@@ -118,7 +120,7 @@ const draftTaskSelect = {
       currentStage: true,
       currentStageDate: true,
       company: { select: { name: true } },
-      stageHistory: { select: { id: true, stage: true, enteredAt: true, nextDeadline: true, nextHasTime: true, scheduleSource: true } },
+      stageHistory: { select: { id: true, stage: true, enteredAt: true, nextDeadline: true, nextHasTime: true, scheduleSource: true, completedAt: true } },
     },
   },
 } as const;

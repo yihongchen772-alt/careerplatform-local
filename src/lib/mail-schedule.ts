@@ -1,6 +1,6 @@
 import type { ApplicationStage, Prisma } from "@prisma/client";
 import { mailTime, mailTimeOver } from "@/lib/mail-time";
-import { isTerminalStage, kindFromText, targetStageFor } from "@/lib/interview-schedule";
+import { isTerminalStage, kindFromText, nextInterviewRound, stageFromText, targetStageFor } from "@/lib/interview-schedule";
 import { EXAM_OR_INTERVIEW, RECRUIT_EVENT, mailIsAfterthought } from "@/lib/mail-time-extract";
 import { fold, mentions } from "@/lib/mail-application-match";
 import { companyOf, sameMailCompany } from "@/lib/mail-company";
@@ -55,7 +55,7 @@ const taskSelect = {
       userId: true,
       currentStage: true,
       currentStageDate: true,
-      stageHistory: { select: { id: true, stage: true, enteredAt: true, nextDeadline: true, nextDeadlineEnd: true, nextHasTime: true, meetingInfo: true, remindMinutes: true, scheduleSource: true } },
+      stageHistory: { select: { id: true, stage: true, enteredAt: true, nextDeadline: true, nextDeadlineEnd: true, nextHasTime: true, meetingInfo: true, remindMinutes: true, scheduleSource: true, completedAt: true } },
     },
   },
 } satisfies Prisma.PersonalTaskSelect;
@@ -240,11 +240,23 @@ export async function applyMailSchedule(
       }
     }
   }
-  // A time the user typed that is already over belongs to the round just
-  // finished: a later invitation is the next round, not a change to it.
-  if (row && !input.force) {
-    const typed = scheduleOf(row);
-    if (typed.scheduleSource !== "email" && typed.nextHasTime && typed.nextDeadline && typed.nextDeadline.getTime() < now.getTime() && time.startsAt.getTime() > now.getTime() && typed.nextDeadline.getTime() !== time.startsAt.getTime()) row = undefined;
+  // A round already behind (marked done, or its time is over, whoever wrote
+  // it) is finished: a later invitation is the next round, not a change to it.
+  // Written over it, the new time would sit on a done step that 接下来 skips,
+  // and the round just had would lose its own time.
+  if (row && app && !input.force) {
+    const had = scheduleOf(row);
+    const over = had.nextHasTime && had.nextDeadline && had.nextDeadline.getTime() < now.getTime() && had.nextDeadline.getTime() !== time.startsAt.getTime();
+    if ((row.completedAt || over) && time.startsAt.getTime() > now.getTime()) {
+      const text = `${time.title} ${task.title} ${time.evidence}`;
+      // An invitation that names no round, after an interview round: the next one.
+      const next = !input.stage && !stageFromText(text) && kindFromText(text) === "interview" ? nextInterviewRound(row.stage) : null;
+      const subject = task.note?.match(/邮件主题：(.+)/)?.[1]?.trim().slice(0, 120) || task.title;
+      const placed = next && row.stage === app.currentStage
+        ? await rowForSchedule(tx, app.id, next, { kind: "forward", auto: { evidence: `邮件「${subject}」`, note: `邮件自动识别：「${subject}」` } })
+        : null;
+      row = placed ? (await tx.stageHistory.findUnique({ where: { id: placed.rowId }, select: taskSelect.application.select.stageHistory.select })) ?? undefined : undefined;
+    }
   }
   if (app && row) {
     const current = scheduleOf(row);
