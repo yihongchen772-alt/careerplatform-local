@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { AiProgress } from "@/components/ui/ai-progress";
-import { createPosition, updatePosition } from "@/lib/actions/positions";
+import { createPosition, positionCompanyName, updatePosition } from "@/lib/actions/positions";
 import { findDuplicatePositions } from "@/lib/actions/job-capture";
 import { parseJd } from "@/lib/actions/jd-parse";
 
@@ -135,6 +135,8 @@ export function PositionFormDialog({
   const [parsing, setParsing] = useState(false);
   const [jdText, setJdText] = useState(initial?.jdText ?? "");
   const [scoreReason, setScoreReason] = useState("");
+  // The company name AI read off the JD, so a name typed over it is known to be a correction.
+  const [parsedCompany, setParsedCompany] = useState("");
   const [form, setForm] = useState<FormState>(
     initial ? toForm(initial) : emptyForm
   );
@@ -147,6 +149,7 @@ export function PositionFormDialog({
     if (next) {
       captureKey.current = null; attemptedPayload.current = null; setDuplicates([]); setAllowDuplicate(false);
       setForm(initial ? toForm(initial) : emptyForm);
+      setParsedCompany("");
       setJdText(initial?.jdText ?? "");
       setScoreReason("");
     }
@@ -187,6 +190,7 @@ export function PositionFormDialog({
         growth: String(Math.round(parsed.growthScore)),
       }));
       setScoreReason(parsed.scoreReason);
+      setParsedCompany(parsed.companyName ?? "");
       toast.success("已自动填充并打分，请检查一下再保存");
     } finally {
       setParsing(false);
@@ -226,7 +230,9 @@ export function PositionFormDialog({
       };
       if (mode === "edit" && positionId) {
         await updatePosition(positionId, payload);
-        toast.success("已保存修改");
+        const savedAs = await positionCompanyName(positionId);
+        if (savedAs && savedAs !== payload.companyName.trim()) toast.success(`已保存修改，公司按已有的「${savedAs}」记录（认为是同一家）`);
+        else toast.success("已保存修改");
       } else {
         const fingerprint = JSON.stringify([payload.companyName, payload.title, payload.jdUrl]);
         if (!allowDuplicate || fingerprint !== duplicateFingerprint) {
@@ -240,8 +246,11 @@ export function PositionFormDialog({
         }
         captureKey.current ??= crypto.randomUUID();
         attemptedPayload.current = payloadText;
-        await createPosition(payload, captureKey.current);
-        toast.success("已添加到候选池");
+        const createdId = await createPosition(payload, captureKey.current, { rejectedCompanyName: parsedCompany || undefined });
+        const savedAs = await positionCompanyName(createdId);
+        if (savedAs && savedAs !== payload.companyName.trim()) toast.success(`已添加到候选池，公司按已有的「${savedAs}」记录（认为是同一家）；不对的话点「编辑」改回来`);
+        else toast.success("已添加到候选池");
+        setParsedCompany("");
         setForm(emptyForm);
         setJdText("");
         setScoreReason("");

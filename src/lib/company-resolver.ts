@@ -21,6 +21,10 @@ type ResolveOptions = {
    * flow has historically attributed provenance this way. */
   addedByUserId?: string;
   verified?: boolean;
+  /** A company the user just said a name is NOT: the one a position was filed
+   * under before they changed its name, or the name AI read off the JD that
+   * they typed over. No alias or AI match may lead back to it. */
+  notCompany?: { id?: string; name?: string };
 };
 
 /**
@@ -46,12 +50,24 @@ export async function resolveCompanyIds(
   let unresolved = names.filter((n) => !result.has(n));
   if (unresolved.length === 0) return result;
 
+  const notName = opts.notCompany?.name?.trim();
+  const avoided = opts.notCompany?.id
+    ?? (notName ? (await db.company.findFirst({ where: { name: notName }, select: { id: true } }))?.id : undefined);
+
   // 2. A name this function has already resolved as an alias before.
   const aliasRows = await db.companyAlias.findMany({
     where: { alias: { in: unresolved } },
-    select: { alias: true, companyId: true },
+    select: { id: true, alias: true, companyId: true },
   });
-  for (const row of aliasRows) result.set(row.alias, row.companyId);
+  for (const row of aliasRows) {
+    // The user has just contradicted this alias: forget it rather than keep
+    // filing the name under the company they corrected it away from.
+    if (row.companyId === avoided) {
+      await db.companyAlias.delete({ where: { id: row.id } }).catch(() => {});
+      continue;
+    }
+    result.set(row.alias, row.companyId);
+  }
 
   unresolved = unresolved.filter((n) => !result.has(n));
   if (unresolved.length === 0) return result;
@@ -74,7 +90,7 @@ export async function resolveCompanyIds(
             config,
             timeoutMs: 30000,
             thinkingBudget: 512,
-            prompt: `下面是几个刚出现的公司名称，判断每一个是不是已有公司列表里某一家的别名/英文名/简称/全称变体/子公司——比如"DJI"和"大疆创新"是同一家，"深圳市大疆创新科技有限公司"和"大疆"也是同一家；跟已有列表里任何一家都不是同一家公司的，不要硬凑。
+            prompt: `下面是几个刚出现的公司名称，判断每一个是不是已有公司列表里某一家的别名/英文名/简称/全称变体——比如"DJI"和"大疆创新"是同一家，"深圳市大疆创新科技有限公司"和"大疆"也是同一家。母公司和子公司、同一集团下的不同公司、名字相近的不同公司都**不算**同一家（"荣耀"不是"华为"，"小鹏汇天"不是"小鹏汽车"）；跟已有列表里任何一家都不是同一家公司的，不要硬凑。
 
 新出现的名称：
 ${unresolved.map((n) => `- ${n}`).join("\n")}
@@ -109,6 +125,7 @@ ${candidates.map((c) => c.name).join("\n")}
               if (!m.matchedName) continue;
               const companyId = byName.get(m.matchedName);
               if (!companyId) continue; // AI named something not actually in the list — ignore rather than trust it
+              if (companyId === avoided) continue; // the very company the user corrected this name away from
               result.set(m.newName, companyId);
               // Race-safe: two concurrent resolutions could both decide to
               // record the same alias — the unique constraint on `alias`

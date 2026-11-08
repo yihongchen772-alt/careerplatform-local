@@ -8,7 +8,7 @@ import { computeInterestScore } from "@/lib/scoring";
 import { resolveCompanyId } from "@/lib/company-resolver";
 import { z } from "zod";
 
-export async function createPosition(input: z.infer<typeof positionSchema>, captureKey?: string) {
+export async function createPosition(input: z.infer<typeof positionSchema>, captureKey?: string, opts: { rejectedCompanyName?: string } = {}) {
   const user = await requireUser();
   const data = positionSchema.parse(input);
 
@@ -17,7 +17,12 @@ export async function createPosition(input: z.infer<typeof positionSchema>, capt
     const saved = await db.position.findUnique({ where: { captureKey } });
     if (saved?.userId === user.id) return saved.id;
   }
-  const companyId = await resolveCompanyId(data.companyName, { aiUserId: user.id });
+  // A name AI read off the JD that the user then typed over is not the company.
+  const rejected = opts.rejectedCompanyName?.trim();
+  const companyId = await resolveCompanyId(data.companyName, {
+    aiUserId: user.id,
+    notCompany: rejected && rejected !== data.companyName.trim() ? { name: rejected } : undefined,
+  });
 
   const createData = {
       userId: user.id,
@@ -47,6 +52,13 @@ export async function createPosition(input: z.infer<typeof positionSchema>, capt
   return created.id;
 }
 
+/** The company a saved position ended up under — the form tells the user when it differs from what they typed. */
+export async function positionCompanyName(id: string): Promise<string | null> {
+  const user = await requireUser();
+  const position = await db.position.findFirst({ where: { id, userId: user.id }, select: { company: { select: { name: true } } } });
+  return position?.company.name ?? null;
+}
+
 export async function updatePosition(
   id: string,
   input: Partial<z.infer<typeof positionSchema>>
@@ -59,7 +71,11 @@ export async function updatePosition(
 
   let companyId = existing.companyId;
   if (data.companyName) {
-    companyId = await resolveCompanyId(data.companyName, { aiUserId: user.id });
+    // Changing the name is the user saying it was filed under the wrong
+    // company: never let an alias or AI match put it straight back there.
+    const current = await db.company.findUnique({ where: { id: existing.companyId }, select: { name: true } });
+    const renamed = current?.name !== data.companyName.trim();
+    companyId = await resolveCompanyId(data.companyName, { aiUserId: user.id, notCompany: renamed ? { id: existing.companyId } : undefined });
   }
 
   const mergedBreakdown = data.scoreBreakdown
