@@ -247,7 +247,7 @@ test("isolated DB: rounds, 已完成 and its reminders, follow-up to-dos, mail i
   assert.equal((await db.application.findUnique({ where: { id: "ahead" } })).currentStage, "INTERVIEW_3");
   // 一面 done (its time came from mail too), then an invitation naming no round:
   // that is 二面 on a step of its own; 一面 keeps its time and its 复盘.
-  const invite = (applicationId, title, start) => db.personalTask.create({ data: { userId: "local-user", applicationId, title, note: "视频面试邀约\n\n邮件主题：视频面试邀约", mailEventDraft: { title, localStart: start, localEnd: "", timeZone: "Asia/Shanghai", location: "", meetingUrl: "https://meeting.example.cn/b", evidence: `面试时间：${start}`, deadline: "", windowStart: "", booking: false } } });
+  const invite = (applicationId, title, start) => db.personalTask.create({ data: { userId: "local-user", applicationId, title, note: "视频面试邀约\n\n邮件主题：视频面试邀约", mailEventDraft: { title, localStart: start, localEnd: "", timeZone: "", location: "", meetingUrl: "https://meeting.example.cn/b", evidence: `面试时间：${start}`, deadline: "", windowStart: "", booking: false } } });
   const before = new Date(Date.now() - 4 * DAY);
   await makeApp("second", "INTERVIEW_1");
   const first = await db.stageHistory.findFirst({ where: { applicationId: "second" } });
