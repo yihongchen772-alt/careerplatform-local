@@ -48,6 +48,8 @@ export type DesktopBridgeAutofillOptions = {
   region?: DesktopBridgeRegion;
   /** Press the page's 添加 button when the profile has more 教育/实习/项目 rows than blocks shown. */
   expandBlocks?: boolean;
+  /** After an added entry is filled cleanly, press its own 保存 and go on to the next one. Never a 提交. */
+  saveBlocks?: boolean;
   /** 网申资料方案 id; omitted = the default profile. */
   variantId?: string;
 };

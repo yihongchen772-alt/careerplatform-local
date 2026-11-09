@@ -175,6 +175,8 @@ async function fillTab(tabId, options) {
       mode: options.mode, questionIds: options.questionIds, previewEdits: options.previewEdits, positionId: task.positionId, regenerate: options.regenerate, answerLength: options.answerLength,
       variantId: options.variantId ?? prefs.variantId ?? undefined,
       expandBlocks: options.expandBlocks ?? !!prefs.expandBlocks,
+      // 只有在弹出窗口里点「一键填写」才带上；右键菜单和自动触发不替你保存。
+      saveBlocks: !!options.saveBlocks,
       modules: options.modules ?? prefs.fillModules,
     });
     // 填写统计: what this fill did, and when (a later hand-typed page saves a sample).

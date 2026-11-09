@@ -479,3 +479,29 @@ test("propose_actions and applyAssistantAction: new action types validate and sm
   assert.equal(proposed[0].type, "update_offer");
   assert.equal(proposed[0].offerAnnualTotal, 42);
 });
+
+test("agent loop: read-only lookups run together, writes stay in order, long results say they were cut", async () => {
+  let active = 0, peak = 0, round = 0; const order = [];
+  const result = await runAgent({
+    chat: async (request) => {
+      if (round++ === 0) return turn("", [call("get_application", { id: "a" }), call("get_position", { id: "b" }), call("remember", { text: "x" }), call("search_records", { query: "长" })]);
+      const results = request.messages.at(-1).results;
+      assert.deepEqual(results.map((r) => r.call.name), ["get_application", "get_position", "remember", "search_records"]);
+      assert.match(results[3].content, /被截掉了/);
+      assert.doesNotMatch(results[0].content, /被截掉了/);
+      return turn("好了");
+    },
+    request: { config: {}, system: "s", messages: [{ role: "user", text: "q" }], tools: [{ name: "x" }] },
+    execute: async (c) => {
+      order.push(`start:${c.name}`); active++; peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 15)); active--; order.push(`end:${c.name}`);
+      return { content: c.name === "search_records" ? "字".repeat(13000) : "ok", label: c.name, summary: "" };
+    },
+    describe,
+    emit: () => {},
+  });
+  assert.equal(result.reply, "好了");
+  assert.equal(peak, 2, "the two lookups overlapped, nothing else did");
+  assert.ok(order.indexOf("end:remember") < order.indexOf("start:search_records") && order.indexOf("end:get_position") < order.indexOf("start:remember"));
+  assert.equal(result.steps.length, 4);
+});

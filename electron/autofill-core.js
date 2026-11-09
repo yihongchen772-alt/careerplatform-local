@@ -3087,7 +3087,9 @@ function savedRecordsOnPage(profile, pageText) {
   return saved;
 }
 
-function classifyRepeatBlocks(fields, profile, pageText = "") {
+// `savedGroups`: modules this run just saved an entry of. Their cards count
+// even with the form gone (a pop-up closes once its entry is saved).
+function classifyRepeatBlocks(fields, profile, pageText = "", savedGroups = []) {
   const rowIndexes = new Map(), repeats = new Map(), blocks = new Map();
   for (const field of fields) {
     const info = resolveRepeatField(field, rowIndexes);
@@ -3144,7 +3146,7 @@ function classifyRepeatBlocks(fields, profile, pageText = "") {
     // input block on the page already holds (it is that block's text).
     const held = reserved.get(group) || new Set();
     const cards = [...indexes].filter((index) => !held.has(index));
-    if (!cards.length || ![...blocks.values()].some((block) => block.group === group)) continue;
+    if (!cards.length || !(savedGroups.includes(group) || [...blocks.values()].some((block) => block.group === group))) continue;
     rowIndexes.set(`${group}:saved`, cards.length);
     reserved.set(group, new Set([...held, ...cards]));
   }
@@ -3245,7 +3247,7 @@ function fillDetail(field, pair, filledSet, failedSet, reasons = {}) {
 
 // "有 2 段教育经历，页面只有 1 组" — most portals render one empty block and
 // hide the rest behind an 添加 button, which autofill deliberately never clicks.
-function missingRepeatCounts(profile, rowIndexes) {
+function missingRepeatCounts(profile, rowIndexes, all = false) {
   // Cards already saved on the page count as shown.
   const seen = (group, kind) => Math.max(rowIndexes.get(`${group}:${kind}:in`) || 0, rowIndexes.get(`${group}:${kind}:out`) || 0) + (rowIndexes.get(`${group}:saved`) || 0);
   const checks = [
@@ -3257,9 +3259,8 @@ function missingRepeatCounts(profile, rowIndexes) {
     ["skill", "name", (profile.skills || []).length, "专业技能"],
     ["language", "name", (profile.languages || []).length, "语言成绩"],
   ];
-  return checks
-    .map(([group, kind, saved, label]) => ({ group, label, saved, shown: seen(group, kind) }))
-    .filter(({ saved, shown }) => shown > 0 && saved > shown);
+  const rows = checks.map(([group, kind, saved, label]) => ({ group, label, saved, shown: seen(group, kind) }));
+  return all ? rows : rows.filter(({ saved, shown }) => shown > 0 && saved > shown);
 }
 
 // Modules the page shows with no row at all, only an 「添加」 (飞书's 社交账号 and
@@ -3345,6 +3346,76 @@ async function clickAddBlock(group, dryRun = false) {
   await new Promise((resolve) => setTimeout(resolve, 700));
   const modal = Array.from(document.querySelectorAll(".ant-modal-wrap, .el-dialog__wrapper, .el-overlay-dialog, [role='dialog'][aria-modal='true']")).some(visible);
   return { clicked: true, text: (target.textContent || "").trim().slice(0, 20), modal };
+}
+
+// Injected: presses the page's own 「保存 / 确定」 for the one entry that was just
+// filled, so the next 项目经历 / 获奖 can be added without the applicant saving
+// each by hand. `ids` are the boxes this round wrote. With a pop-up open the
+// button is looked for inside the pop-up; otherwise inside the smallest block
+// that holds those boxes and nothing else. Never a 提交 / 投递 / 下一步: only a
+// button whose whole text is 保存 / 确定 / 确认 / 完成. Nothing is pressed while
+// a required box in the block is empty or the page flags one of them.
+async function saveFilledBlock(ids, issues = []) {
+  const SAVE = /^(?:保\s*存|确\s*定|确\s*认|完\s*成|保存本条|保存并关闭|save|ok|confirm|done)$/i;
+  const NEVER = /提交|投递|申请|下一步|发布|submit|apply|next/i;
+  const clean = (text) => String(text || "").replace(/\s+/g, " ").trim();
+  const visible = (el) => { const r = el.getBoundingClientRect(); const st = getComputedStyle(el); return r.width > 0 && r.height > 0 && st.visibility !== "hidden" && st.display !== "none"; };
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const MODAL = ".ant-modal-wrap, .el-dialog__wrapper, .el-overlay-dialog, [role='dialog'][aria-modal='true']";
+  const openModals = () => Array.from(document.querySelectorAll(MODAL)).filter(visible);
+  const marked = (root) => Array.from(root.querySelectorAll("[data-cp-fill-id]"));
+  const idOf = (el) => el.getAttribute("data-cp-fill-id").replace(/:\d+$/, "");
+  const mine = new Set(ids);
+  const own = marked(document).filter((el) => mine.has(idOf(el)));
+  if (!own.length) return { found: false };
+  const buttonsIn = (root) => Array.from(root.querySelectorAll("button, a, [role='button'], .ant-btn, .el-button, input[type='button']"))
+    .filter((el) => visible(el) && !el.disabled && el.getAttribute("aria-disabled") !== "true" && SAVE.test(clean(el.textContent || el.value)));
+  const modal = openModals().pop();
+  let scope = null;
+  if (modal) {
+    if (!own.some((el) => modal.contains(el))) return { found: false };
+    scope = modal;
+  } else {
+    // The entry's own block: grows from the filled boxes until it holds them
+    // all, and stops before it would take in a box of another entry.
+    for (let node = own[0].parentElement, depth = 0; node && node !== document.body && depth < 10; node = node.parentElement, depth++) {
+      if (marked(node).some((el) => !mine.has(idOf(el)))) break;
+      if (own.every((el) => node.contains(el)) && buttonsIn(node).length) { scope = node; break; }
+    }
+    if (!scope) return { found: false };
+  }
+  const buttons = buttonsIn(scope).filter((el) => !NEVER.test(clean(el.textContent || el.value)));
+  // 「保存」 over 「确定」 when the pop-up has both; two of the same is not ours to pick.
+  const pick = buttons.filter((el) => /保\s*存|save/i.test(clean(el.textContent || el.value)));
+  const candidates = pick.length ? pick : buttons;
+  if (candidates.length !== 1) return { found: true, saved: false, reason: buttons.length ? "ambiguous" : "nobutton" };
+  // A date / option picker still open inside the block would swallow the click.
+  const flagged = new Set(issues);
+  const empties = [];
+  for (const el of scope.querySelectorAll("input, textarea, select")) {
+    if (!visible(el) || el.disabled || ["hidden", "button", "submit", "checkbox", "radio", "file"].includes(el.type)) continue;
+    const row = el.closest(".ant-form-item, .el-form-item, .form-group, [class*='form-item'], [class*='formItem']");
+    const label = clean(row?.querySelector("label, [class*='label']")?.textContent || el.getAttribute("aria-label") || el.placeholder || "");
+    const required = el.required || el.getAttribute("aria-required") === "true" || !!row?.querySelector(".ant-form-item-required, [class*='required']") || !!el.closest(".is-required") || /^\*|\*$/.test(label);
+    const shown = el.tagName === "SELECT" ? el.value : (el.value || clean(row?.querySelector(".ant-select-selection-item, .el-select__selected-item")?.textContent));
+    if (required && !clean(shown)) empties.push(label.replace(/[*：:]/g, "").trim() || "必填项");
+  }
+  if (empties.length) return { found: true, saved: false, reason: "required", labels: [...new Set(empties)].slice(0, 3) };
+  if (marked(scope).some((el) => flagged.has(idOf(el)))) return { found: true, saved: false, reason: "invalid" };
+  const target = candidates[0];
+  const before = own.map((el) => String(el.value ?? el.textContent ?? ""));
+  target.scrollIntoView({ block: "center" });
+  target.click();
+  for (let tries = 0; tries < 12; tries++) {
+    await wait(250);
+    if (modal) {
+      if (!modal.isConnected || !visible(modal)) return { found: true, saved: true, modal: true };
+    } else if (own.every((el) => !el.isConnected || !visible(el)) || (before.some(Boolean) && own.every((el) => !el.isConnected || !String(el.value ?? "").trim()))) {
+      return { found: true, saved: true, modal: false };
+    }
+  }
+  const message = clean(scope.querySelector(".ant-form-item-explain-error, .el-form-item__error, [role='alert']")?.textContent).slice(0, 40);
+  return { found: true, saved: false, reason: "stuck", message };
 }
 
 // Resume pages that show what was saved as plain text (海康威视's 个人中心 简历)
@@ -3991,7 +4062,7 @@ async function fillFrames(adapter, pairs, frameById, initialUrl) {
   return { filled, failed, skipped, reasons, failedOptions };
 }
 
-// `options`: { variantId, expandBlocks } from the UI, plus round/modal/added
+// `options`: { variantId, expandBlocks, saveBlocks } from the UI, plus round/modal/added
 // carried between 自动补齐栏目 rounds.
 async function runAutofillCore(adapter, resumeVersionId, options = {}) {
   const initialUrl = adapter.url();
@@ -4037,7 +4108,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
 
     const pairs = [];
     let candidates = []; // fields going to AI: {id, label, kind, options?}
-    const { repeats, blocks, rowIndexes } = classifyRepeatBlocks(fields, profile, pageText);
+    const { repeats, blocks, rowIndexes } = classifyRepeatBlocks(fields, profile, pageText, Object.keys(options.saveGuard || {}));
     const conflicts = [...blocks.values()].map((block) => block.conflict).filter(Boolean);
     const pageContext = options.positionId ? `job:v1:${options.positionId}` : portalContext(initialUrl);
     let neverGuessCount = 0;
@@ -4364,7 +4435,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     }
     if (shortFilled > 0) parts.push(`AI 从简历里补全了 ${shortFilled} 个其他字段`);
     const savedCards = ["education", "experience", "project", "award", "campus"].reduce((sum, group) => sum + (rowIndexes.get(`${group}:saved`) || 0), 0);
-    if (savedCards > 0) parts.push(`页面上已保存的 ${savedCards} 段经历没有重复填，空白的一组接着填了下一段`);
+    if (savedCards > 0 && !(options.savedBlocks || []).length) parts.push(`页面上已保存的 ${savedCards} 段经历没有重复填，空白的一组接着填了下一段`);
     const repeatedEmpty = fields.filter((field) => repeatsSaved.has(field.id) && !field.hasValue && !field.userEdited).length;
     if (repeatedEmpty > 0) parts.push(`${repeatedEmpty} 个字段要填的内容上面已保存过，没重复填；还有别的要加就手填这一组`);
     if (uploadedResumeCount > 0) parts.push(`已上传简历附件到 ${uploadedResumeCount} 个位置`);
@@ -4386,14 +4457,48 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     }
     const added = options.added || [];
     const missing = missingRepeatCounts(profile, rowIndexes).filter(({ group }) => modules.has(group));
-    const empty = emptyModules(profile, rowIndexes, fields).filter(({ group }) => modules.has(moduleOfGroup(group)));
+    // 整类经历都已经以卡片存在页面上（上次存好的）：不再点「添加」弹一张空表出来。
+    const cardsOnPage = savedRecordsOnPage(profile, pageText);
+    const empty = emptyModules(profile, rowIndexes, fields).filter(({ group, saved }) => modules.has(moduleOfGroup(group)) && (cardsOnPage.get(group)?.size || 0) < saved);
     const round = options.round || 0;
-    if (options.expandBlocks && !options.region && (missing.length || empty.length) && round < 4 && !options.modal && adapter.stillOnPage(initialUrl)) {
+    // 逐段自动保存：一段填干净了就替你点它自己的「保存」，再接着加下一段。
+    // 保存后页面上认不出多了一段（`saveGuard`）就停，不会把同一段存两遍。
+    const maxRounds = options.saveBlocks ? 24 : 4;
+    const accumulated = { filled: previous.filled + filled.length, uploaded: previous.uploaded + uploadedResumeCount, details: allDetails, shortened: [...(previous.shortened || []), ...shortened] };
+    const shownOf = (group) => missingRepeatCounts(profile, rowIndexes, true).find((row) => row.group === group)?.shown || 0;
+    const saveGuard = options.saveGuard || {};
+    const stalled = (group) => group in saveGuard && shownOf(group) <= saveGuard[group];
+    const savedBlocks = options.savedBlocks || [];
+    let saveStop = "";
+    const trySave = async (group, label, ids, guard) => {
+      if (!ids.length || !filled.length) return null;
+      if (failed.length) { saveStop = "有字段没写进去"; return null; }
+      let outcome = null;
+      for (const frame of await adapter.frames()) {
+        assertActive();
+        outcome = await adapter.run(frame, saveFilledBlock, [ids, validation.map((issue) => issue.id)]).catch(() => null);
+        if (outcome && outcome.found) break;
+      }
+      if (outcome?.saved) {
+        adapter.status({ phase: "scanning", message: `已保存一段${label}，继续下一段…` });
+        return runAutofillCore(adapter, resumeVersionId, { ...options, round: round + 1, modal: false, modalGroup: undefined, saveGuard: { ...saveGuard, [group]: guard }, savedBlocks: [...savedBlocks, label], accumulated });
+      }
+      saveStop = !outcome?.found ? "" : outcome.reason === "required" ? `「${outcome.labels.join("」「")}」还空着` : outcome.reason === "invalid" ? "网页提示有内容没通过校验" : outcome.reason === "stuck" ? `点了保存但网页没收下${outcome.message ? `（${outcome.message}）` : ""}` : "没找到唯一的保存按钮";
+      return null;
+    };
+    if (options.saveBlocks && options.modal && options.modalGroup && !options.region && round < maxRounds && adapter.stillOnPage(initialUrl)) {
+      const next = await trySave(options.modalGroup.group, options.modalGroup.label, filled, options.modalGroup.shown);
+      if (next) return next;
+    }
+    let guardStop = "";
+    if (options.expandBlocks && !options.region && (missing.length || empty.length) && round < maxRounds && !options.modal && adapter.stillOnPage(initialUrl)) {
       const clicked = [];
       let modal = false;
+      let modalGroup;
       // 按了「添加」却没长出这一类栏目（吉利的证书不是技能）：同一个按钮不再按，不留一排空白组。
       const pressed = { ...(options.pressed || {}) };
       for (const { group, label, shown } of [...missing, ...empty]) {
+        if (stalled(group)) { guardStop = label; continue; }
         if (group in pressed && pressed[group] >= shown) continue;
         pressed[group] = shown;
         for (const frame of await adapter.frames()) {
@@ -4402,6 +4507,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
           if (result && result.clicked) {
             clicked.push(label);
             modal = modal || result.modal;
+            if (result.modal) modalGroup = { group, label, shown };
             break;
           }
         }
@@ -4409,16 +4515,36 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       }
       if (clicked.length) {
         adapter.status({ phase: "scanning", message: `已点页面上的「添加」补出 ${clicked.join("、")}，继续填写…` });
-        return runAutofillCore(adapter, resumeVersionId, { ...options, round: round + 1, modal, pressed, added: [...added, ...clicked], accumulated: { filled: previous.filled + filled.length, uploaded: previous.uploaded + uploadedResumeCount, details: allDetails, shortened: [...(previous.shortened || []), ...shortened] } });
+        return runAutofillCore(adapter, resumeVersionId, { ...options, round: round + 1, modal, modalGroup, pressed, added: [...added, ...clicked], accumulated });
+      }
+    }
+    // 没有「添加」可点：这类栏目一次只有一张空表，存了这段才出下一段。
+    // 这一轮替你存过的栏目，最后一段也一并存上，不留半截。
+    if (options.saveBlocks && options.expandBlocks && !options.region && !options.modal && round < maxRounds && adapter.stillOnPage(initialUrl)) {
+      const rows = missingRepeatCounts(profile, rowIndexes, true).filter(({ group }) => modules.has(group));
+      for (const { group, label, shown } of rows.filter(({ group }) => missing.some((row) => row.group === group) || group in saveGuard)) {
+        const blockKeys = new Set(filled.filter((id) => repeats.get(id)?.group === group).map((id) => repeats.get(id).blockKey));
+        if (!blockKeys.size) continue;
+        if (stalled(group)) { guardStop = label; continue; }
+        const ids = fields.filter((field) => blockKeys.has(repeats.get(field.id)?.blockKey)).map((field) => field.id);
+        const next = await trySave(group, label, ids, shown);
+        if (next) return next;
+        if (saveStop) break;
       }
     }
     if (added.length) {
       const counts = added.reduce((map, label) => map.set(label, (map.get(label) || 0) + 1), new Map());
       parts.unshift(`已自动添加 ${[...counts].map(([label, n]) => `${n} 组${label}`).join("、")}`);
-      if (options.modal) parts.push("新栏目在弹窗里：核对后点弹窗的保存，再点一次一键填写继续下一段");
+      if (options.modal) parts.push(saveStop ? `新栏目在弹窗里，${saveStop}，没替你保存：补好后点弹窗的保存，再点一次一键填写继续下一段` : "新栏目在弹窗里：核对后点弹窗的保存，再点一次一键填写继续下一段");
+    }
+    if (!options.modal && saveStop) parts.push(`这一段${saveStop}，没替你保存：补好后点网页上的保存，再点一次一键填写继续下一段`);
+    if (guardStop) parts.push(`刚保存的${guardStop}没在页面上认出来，为免重复先停在这里：看一眼页面，没问题再点一次一键填写`);
+    if (savedBlocks.length) {
+      const counts = savedBlocks.reduce((map, label) => map.set(label, (map.get(label) || 0) + 1), new Map());
+      parts.unshift(`已替你逐段保存 ${[...counts].map(([label, n]) => `${n} 段${label}`).join("、")}（只点了每段自己的「保存」，没有提交申请）`);
     }
     const missingBlocks = missing.map(({ saved, shown, label }) => `有 ${saved} 段${label}、页面只有 ${shown} 组`);
-    if (missingBlocks.length && !options.region) {
+    if (missingBlocks.length && !options.region && !saveStop && !guardStop && !options.modal) {
       parts.push(options.expandBlocks
         ? `网申资料里${missingBlocks.join("、")}，没找到能自动点的「添加」按钮——请手动添加后再点一次一键填写`
         : `网申资料里${missingBlocks.join("、")}，但这页的对应栏目不够——先点页面上的「添加」再点一次一键填写，或勾选「自动补齐栏目」`);
@@ -4448,6 +4574,9 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       parts.unshift(line);
       notes.push(line);
     }
+    if (savedBlocks.length) notes.push(`已替你逐段保存 ${savedBlocks.length} 段经历（没有提交申请），提交前在页面上看一眼`);
+    if (saveStop) notes.push(`有一段${saveStop}，没替你保存：补好后点它的保存，再点一次一键填写`);
+    if (guardStop) notes.push(`刚保存的${guardStop}没在页面上认出来，先停下了：没问题再点一次一键填写`);
     const expandable = options.expandBlocks ? [] : emptyOnPage.map(({ label }) => label);
     if (expandable.length) notes.push(`这页还少${expandable.map((label) => `「${label}」`).join("")}，要先点页面上的「添加」`);
     const allShortened = [...(previous.shortened || []), ...shortened];
@@ -4847,6 +4976,7 @@ module.exports = {
   clearFillMarks,
   clearSavedUserEdits,
   clickAddBlock,
+  saveFilledBlock,
   openEditSection,
   emptyModules,
   fitToLimit,

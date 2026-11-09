@@ -22,6 +22,7 @@ import { rereadMailTimes } from "@/lib/mail-reread";
 import { completeMailDraft, mailIsAfterthought } from "@/lib/mail-time-extract";
 import { correctMailApplication, matchMailApplication, type MatchableApplication } from "@/lib/mail-application-match";
 import { localStamp, mailBeforeStage } from "@/lib/dates";
+import { rescueMail } from "@/lib/mail-rescue";
 
 const TERMINAL_STAGES: ApplicationStage[] = ["REJECTED", "ACCEPTED", "DECLINED", "WITHDRAWN", "CANCELLED"];
 // What an email can tell us. Offers and rejections included; accepting,
@@ -231,7 +232,9 @@ async function runScan(
 
     if (emails.length > 0) {
       const classifications = await classifyEmails(emails, aiConfig, activeApplications, autoApply);
+      const judged = new Set<number>();
       for (const c of classifications) {
+        if (c.isJobRelated) judged.add(c.index);
         if (!c.isJobRelated) continue;
         const email = emails[c.index];
         if (!email) continue;
@@ -307,6 +310,28 @@ async function runScan(
           } catch (error) {
             console.error("[inbox-scan] schedule write failed", error);
           }
+        }
+      }
+      // Mail the AI called unrelated (or skipped) that still reads like an interview /
+      // test / offer from a company applied to: kept as a 「可能相关」 待办 to check.
+      const rescueApps = activeApplications.length ? activeApplications : (await db.application.findMany({ where: { userId, currentStage: { notIn: TERMINAL_STAGES } }, select: { id: true, currentStage: true, company: { select: { name: true, aliases: { select: { alias: true } } } } }, take: 200 })).map((a) => ({ id: a.id, title: "", currentStage: a.currentStage, companyName: a.company.name, aliases: a.company.aliases.map((entry) => entry.alias) }));
+      for (const [index, email] of emails.entries()) {
+        if (judged.has(index)) continue;
+        const hit = rescueMail(email, rescueApps);
+        if (!hit) continue;
+        try {
+          await db.personalTask.create({
+            data: {
+              userId,
+              applicationId: hit.applicationId,
+              sourceMailKey: mailTaskKey(account.id, email.uid),
+              title: `${hit.type}：${hit.company}`,
+              note: `自动判断不确定，这封邮件可能和这家公司的投递有关，请看看原邮件。\n\n邮件主题：${email.subject}\n来自：${email.from}\n收件箱：${account.label}`,
+            },
+          });
+          found += 1;
+        } catch (error) {
+          if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")) throw error;
         }
       }
     }

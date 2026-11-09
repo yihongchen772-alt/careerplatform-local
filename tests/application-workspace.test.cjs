@@ -117,4 +117,17 @@ test('isolated DB: confirmed package is immutable, duplicate creation rolls back
   const rules = load('src/lib/actions/application-rules.ts', mocks); const ruleInput = load('src/lib/application-rules.ts').applicationRulesSchema.parse({ maxPositions: 2 }); assert.equal((await rules.saveApplicationRules('job', 0, ruleInput)).ok, true); assert.equal((await rules.saveApplicationRules('job', 0, ruleInput)).ok, false);
   const draft = { title: '虚构面试', localStart: '2026-10-10T14:00', localEnd: '', timeZone: 'Asia/Shanghai', location: '线上', meetingUrl: 'https://fixture.example/meeting', evidence: '邮件写明 10月10日14点' }; const task = await db.personalTask.create({ data: { userId: 'local-user', title: '面试通知', mailEventDraft: draft } }); const calendar = load('src/lib/actions/mail-calendar.ts', mocks);
   const a = await calendar.confirmMailCalendar(task.id, draft, 30); const b = await calendar.confirmMailCalendar(task.id, draft, 30); assert.equal(a.ok, true); assert.equal(b.data.existing, true); assert.equal(a.data.id, b.data.id); assert.equal(await db.calendarEvent.count(), 1); assert.equal(await db.eventReminder.count(), 1);
+  // 邮件没认出是哪条投递、也没读出时间：在弹窗里选投递和步骤，时间记到那条投递上。
+  const loose = await db.personalTask.create({ data: { userId: 'local-user', title: '面试安排：星辰虚构科技', sourceMailKey: 'fixture-mail-1' } });
+  const choices = await calendar.mailLinkChoices(loose.id); assert.equal(choices.ok, true); assert.equal(choices.data.applicationId, null); assert.ok(choices.data.applications.some((item) => item.id === app.id)); assert.ok(choices.data.stages.some((item) => item.value === 'INTERVIEW_2'));
+  const typedDraft = { ...draft, title: '星辰虚构科技 面试安排', localStart: '2026-10-12T10:00', evidence: '' };
+  const linked = await calendar.confirmMailCalendar(loose.id, typedDraft, 60, { applicationId: app.id, stage: 'INTERVIEW_2' }); assert.equal(linked.ok, true, linked.message); assert.equal(linked.data.applicationId, app.id);
+  const moved = await db.application.findUniqueOrThrow({ where: { id: app.id }, include: { stageHistory: true } }); const step = moved.stageHistory.find((row) => row.stage === 'INTERVIEW_2'); assert.ok(step, '选的步骤上有了一行'); assert.equal(step.nextDeadline.toISOString(), '2026-10-12T02:00:00.000Z'); assert.equal(step.remindMinutes, 60);
+  const after = await db.personalTask.findUniqueOrThrow({ where: { id: loose.id } }); assert.equal(after.applicationId, app.id); assert.equal(after.done, true); assert.ok(after.mailEventId);
+  assert.equal(await db.companyAlias.count({ where: { companyId: 'company', alias: '星辰虚构科技' } }), 1, '这家公司邮件里的叫法记住了');
+  // 明确选「不关联」：即使邮件认到了投递，也只建一条单独日程。
+  const alone = await db.personalTask.create({ data: { userId: 'local-user', title: '宣讲提醒：虚构企业', sourceMailKey: 'fixture-mail-2', applicationId: app.id } });
+  const single = await calendar.confirmMailCalendar(alone.id, { ...draft, title: '宣讲提醒', localStart: '2026-10-13T19:00' }, 30, { applicationId: null }); assert.equal(single.ok, true, single.message); assert.equal(single.data.applicationId, null);
+  // 别人的或不存在的投递不接受。
+  const bad = await db.personalTask.create({ data: { userId: 'local-user', title: '虚构通知', sourceMailKey: 'fixture-mail-3' } }); assert.equal((await calendar.confirmMailCalendar(bad.id, typedDraft, 30, { applicationId: 'no-such' })).ok, false);
 });

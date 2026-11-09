@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>远山集团 · 网申（存了这一条才出下一条）</title>
+<style>body{font:14px sans-serif;max-width:640px;margin:20px auto}.card{border:1px solid #ddd;border-radius:6px;padding:8px 12px;margin:8px 0}.form-item{margin:10px 0;display:flex;gap:8px;align-items:center}.form-item span{width:110px}</style></head>
+<body>
+<h3>个人信息</h3>
+<div class="form-item"><span>姓名</span><input id="n1"></div>
+<h3>获奖情况</h3>
+<div id="award-list"></div>
+<div class="award-form">
+  <div class="form-item"><span>奖项名称</span><input id="a1"></div>
+  <div class="form-item"><span>获奖级别</span><input id="a2"></div>
+  <div class="form-item"><span>获奖时间</span><input id="a3" placeholder="如 2023-11"></div>
+  <button type="button" id="save-award">保存</button>
+</div>
+<p><button type="button" onclick="window.__submitted = true">保存并提交</button></p>
+<script>
+window.__saves = 0;
+document.getElementById("save-award").addEventListener("click", () => {
+  const boxes = ["a1", "a2", "a3"].map((id) => document.getElementById(id));
+  if (!boxes[0].value.trim()) return;
+  const card = document.createElement("div");
+  card.className = "card";
+  card.textContent = boxes.map((el) => el.value).filter(Boolean).join(" | ");
+  document.getElementById("award-list").appendChild(card);
+  window.__saves++;
+  setTimeout(() => boxes.forEach((el) => { el.value = ""; }), 200);
+});
+</script>
+</body></html>

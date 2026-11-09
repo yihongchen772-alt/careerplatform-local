@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>星河科技 · 校园招聘（经历在弹窗里一条条加）</title>
+<style>body{font:14px sans-serif;max-width:680px;margin:20px auto}.card{border:1px solid #ddd;border-radius:6px;padding:8px 12px;margin:8px 0}.ant-form-item{margin:10px 0;display:flex;gap:8px;align-items:center}.ant-form-item label{width:110px}.ant-modal-wrap{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none}.ant-modal{background:#fff;width:460px;margin:80px auto;padding:16px;border-radius:8px}.err{color:#c00}</style></head>
+<body>
+<h3>基本信息</h3>
+<div class="ant-form-item"><label>姓名</label><input id="n1"></div>
+<h3>项目经历</h3>
+<div id="project-list"></div>
+<button type="button" id="add-project">+ 添加项目经历</button>
+<h3>获奖情况</h3>
+<div id="award-list"></div>
+<button type="button" id="add-award">+ 添加获奖情况</button>
+<p><button type="button" id="submit" onclick="window.__submitted = true">提交申请</button></p>
+
+<div class="ant-modal-wrap" id="project-modal"><div class="ant-modal">
+  <h4>项目经历</h4>
+  <div class="ant-form-item"><label class="ant-form-item-required">项目名称</label><input name="pname"></div>
+  <div class="ant-form-item"><label>担任角色</label><input name="prole"></div>
+  <div class="ant-form-item"><label>开始时间</label><input name="pstart" placeholder="如 2025-03"></div>
+  <div class="ant-form-item"><label>项目描述</label><textarea name="pdesc"></textarea></div>
+  <div class="ant-form-item strict" style="display:none"><label class="ant-form-item-required">指导老师工号</label><input name="pmentor"></div>
+  <span class="err"></span>
+  <button type="button" class="cancel">取消</button> <button type="button" class="save">保存</button>
+</div></div>
+<div class="ant-modal-wrap" id="award-modal"><div class="ant-modal">
+  <h4>获奖情况</h4>
+  <div class="ant-form-item"><label class="ant-form-item-required">奖项名称</label><input name="aname"></div>
+  <div class="ant-form-item"><label>获奖级别</label><input name="alevel"></div>
+  <div class="ant-form-item"><label>获奖时间</label><input name="adate" placeholder="如 2023-11"></div>
+  <span class="err"></span>
+  <button type="button" class="cancel">取消</button> <button type="button" class="save">确定</button>
+</div></div>
+<script>
+const strict = location.search.includes("strict");
+if (strict) document.querySelectorAll(".strict").forEach((el) => { el.style.display = "flex"; });
+window.__saves = 0;
+for (const kind of ["project", "award"]) {
+  const modal = document.getElementById(kind + "-modal");
+  const inputs = () => Array.from(modal.querySelectorAll("input, textarea")).filter((el) => el.offsetWidth > 0);
+  document.getElementById("add-" + kind).addEventListener("click", () => { modal.style.display = "block"; inputs().forEach((el) => { el.value = ""; }); modal.querySelector(".err").textContent = ""; });
+  modal.querySelector(".cancel").addEventListener("click", () => { modal.style.display = "none"; });
+  modal.querySelector(".save").addEventListener("click", () => {
+    const required = Array.from(modal.querySelectorAll(".ant-form-item")).filter((row) => row.offsetWidth > 0 && row.querySelector(".ant-form-item-required")).map((row) => row.querySelector("input"));
+    if (required.some((el) => !el.value.trim())) { modal.querySelector(".err").textContent = "请填写必填项"; return; }
+    const card = document.createElement("div");
+    card.className = "card";
+    card.textContent = inputs().map((el) => el.value).filter(Boolean).join(" | ");
+    document.getElementById(kind + "-list").appendChild(card);
+    window.__saves++;
+    // 真站保存要过一下接口，弹窗晚一点才关。
+    setTimeout(() => { modal.style.display = "none"; }, 300);
+  });
+}
+</script>
+</body></html>

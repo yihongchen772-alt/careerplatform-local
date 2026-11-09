@@ -272,6 +272,9 @@ export function EmbeddedBrowser({
   const expandPreference = usePreference("careerplatform.browser.expandBlocks", "1") !== "0";
   const [expandOverride, setExpandOverride] = useState<boolean | null>(null);
   const expandBlocks = expandOverride ?? expandPreference;
+  const saveBlocksPreference = usePreference("careerplatform.browser.saveBlocks", "1") !== "0";
+  const [saveBlocksOverride, setSaveBlocksOverride] = useState<boolean | null>(null);
+  const saveBlocks = saveBlocksOverride ?? saveBlocksPreference;
   const fullWindowPreference = usePreference("careerplatform.browser.expanded", "0") === "1";
   const [fullWindowOverride, setFullWindowOverride] = useState<boolean | null>(null);
   const expanded = fullWindowOverride ?? fullWindowPreference;
@@ -416,6 +419,10 @@ export function EmbeddedBrowser({
   function setExpandBlocks(next: boolean) {
     setExpandOverride(next);
     writePreference("careerplatform.browser.expandBlocks", next ? "1" : "0");
+  }
+  function setSaveBlocks(next: boolean) {
+    setSaveBlocksOverride(next);
+    writePreference("careerplatform.browser.saveBlocks", next ? "1" : "0");
   }
   function setAutoRememberAnswers(next: boolean) {
     setRememberOverride(next);
@@ -748,7 +755,7 @@ export function EmbeddedBrowser({
     setDetected(null);
     setAutofilling(true);
     setStatus((old) => ({ phase: "scanning", message: "正在读取页面…", plan: old?.plan }));
-    bridge.autofill(resumeVersionId || undefined, { expandBlocks, variantId: variantChoice || undefined, modules: fillModules, positionId: positionId || undefined, ...extra });
+    bridge.autofill(resumeVersionId || undefined, { expandBlocks, saveBlocks: expandBlocks && saveBlocks, variantId: variantChoice || undefined, modules: fillModules, positionId: positionId || undefined, ...extra });
   }
 
   // 框选填写: drag a box over the page, then preview just the fields in it.
@@ -1015,6 +1022,7 @@ export function EmbeddedBrowser({
           { checked: autoFill, set: setAutoFillEveryPage, title: "每页自动填", hint: "网申分好几页时，每翻到一页有空表单就自动填，不用每页点一次。" },
           { checked: autoRecord, set: setAutoRecordSubmitted, title: "投递成功后自动记录", hint: "刚点了提交、页面显示投递成功，并且认得出公司和岗位，就直接记进投递记录（带上用的简历、填写内容和 JD），可以撤销。关掉后改为提示你点一下。" },
           { checked: expandBlocks, set: setExpandBlocks, title: "自动补齐栏目", hint: "资料里的教育 / 实习 / 项目比页面栏目多时，自动点页面上的「添加」再接着填；只点文字明确的添加按钮，不会点提交。" },
+          { checked: saveBlocks, set: setSaveBlocks, title: "逐段自动保存", hint: "项目 / 获奖这类要在弹窗里一条条加的经历：一段填好、必填项都齐了，就替你点这一段自己的「保存」再加下一段，不用每段点一次。只在你点「一键填写」时生效，只点保存 / 确定，不会点提交；有必填项空着就停下等你。需要先开着「自动补齐栏目」。" },
           { checked: autoRemember, set: setAutoRememberAnswers, title: "记住我手填的内容", hint: "网申资料里还空着的（研究方向、校园经历、技能…）直接记进去，可撤销；其他手填或修改的经历与回答先放进待核对。" },
         ].map((item) => (
           <label key={item.title} className="flex items-start gap-2 rounded-md p-1.5 hover:bg-muted">
@@ -1163,6 +1171,7 @@ export function EmbeddedBrowser({
                   <DropdownMenuSeparator />
                   <DropdownMenuCheckboxItem closeOnClick={false} checked={autoFill} onCheckedChange={(checked) => setAutoFillEveryPage(!!checked)}>每页自动填</DropdownMenuCheckboxItem>
                   <DropdownMenuCheckboxItem closeOnClick={false} checked={expandBlocks} onCheckedChange={(checked) => setExpandBlocks(!!checked)}>自动补齐栏目</DropdownMenuCheckboxItem>
+                  <DropdownMenuCheckboxItem closeOnClick={false} disabled={!expandBlocks} checked={expandBlocks && saveBlocks} onCheckedChange={(checked) => setSaveBlocks(!!checked)}>逐段自动保存</DropdownMenuCheckboxItem>
                   <DropdownMenuCheckboxItem closeOnClick={false} checked={autoRecord} onCheckedChange={(checked) => setAutoRecordSubmitted(!!checked)}>投递成功后自动记录</DropdownMenuCheckboxItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem disabled={!currentUrl} onClick={() => void handleRegionFill()}><SquareDashedMousePointer />框选一块区域填写…</DropdownMenuItem>

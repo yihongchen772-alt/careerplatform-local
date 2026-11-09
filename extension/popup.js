@@ -139,7 +139,7 @@ async function load() {
   }
   setConn(`已连接 · v${statusInfo.appVersion}`, "ok");
   show("main");
-  const prefs = await chrome.storage.local.get(["resumeVersionId", "variantId", "expandBlocks", "fillModules", "fillModulesVersion", "autoRemember"]);
+  const prefs = await chrome.storage.local.get(["resumeVersionId", "variantId", "expandBlocks", "saveBlocks", "fillModules", "fillModulesVersion", "autoRemember"]);
   if (Array.isArray(prefs.fillModules)) {
     if (prefs.fillModulesVersion !== 2 && ["basic", "education", "experience", "project", "questions", "other", "resume"].every((id) => prefs.fillModules.includes(id))) prefs.fillModules.push("award");
     // v3 added 校园经历: on for whoever fills 实习/工作经历 (it used to be filled as one).
@@ -163,6 +163,7 @@ async function load() {
   for (const v of statusInfo.variants) variant.appendChild(option(v.id, v.name));
   variant.value = prefs.variantId || "";
   $("expand").checked = !!prefs.expandBlocks;
+  $("saveBlocks").checked = prefs.saveBlocks !== false;
   const last = await send("lastStatus").catch(() => null);
   if (last && Date.now() - last.at < 10 * 60 * 1000) {
     renderDetails(last.details || []);
@@ -227,6 +228,7 @@ $("retry").addEventListener("click", load);
 $("resume").addEventListener("change", (e) => chrome.storage.local.set({ resumeVersionId: e.target.value }));
 $("variant").addEventListener("change", (e) => chrome.storage.local.set({ variantId: e.target.value }));
 $("expand").addEventListener("change", (e) => chrome.storage.local.set({ expandBlocks: e.target.checked }));
+$("saveBlocks").addEventListener("change", (e) => chrome.storage.local.set({ saveBlocks: e.target.checked }));
 for (const input of document.querySelectorAll("[data-module]")) input.addEventListener("change", saveScope);
 $("scope-all").addEventListener("click", () => {
   for (const input of document.querySelectorAll("[data-module]")) input.checked = true;
@@ -248,7 +250,7 @@ $("fill").addEventListener("click", async () => {
   updateScope();
   message("正在读取页面…");
   try {
-    await send("fill", { resumeVersionId: $("resume").value || undefined, variantId: $("variant").value || undefined, expandBlocks: $("expand").checked, modules });
+    await send("fill", { resumeVersionId: $("resume").value || undefined, variantId: $("variant").value || undefined, expandBlocks: $("expand").checked, saveBlocks: $("expand").checked && $("saveBlocks").checked, modules });
   } catch (err) {
     message(err.message, "error");
     filling = false;

@@ -283,6 +283,7 @@ export default async function DashboardPage() {
               applicationId: t.applicationId,
               done: t.done,
               mailEventDraft: t.mailEventDraft, mailEventId: t.mailEventId && liveEvents.has(t.mailEventId) ? t.mailEventId : null,
+              fromMail: !!t.sourceMailKey,
             }))}
             positions={positionOptions}
             applications={applicationOptions}

@@ -28,7 +28,7 @@ export function dueTag(dueDate: string, now: number): { text: string; late: bool
   return null;
 }
 
-export type PersonalTaskRow = PersonalTaskInitial & { done: boolean; mailEventDraft?: unknown; mailEventId?: string | null };
+export type PersonalTaskRow = PersonalTaskInitial & { done: boolean; mailEventDraft?: unknown; mailEventId?: string | null; /** Made from a mail: can be put on the calendar even when the mail named no time. */ fromMail?: boolean };
 
 export function PersonalTaskCard({
   tasks,
@@ -200,7 +200,9 @@ function TaskRow({
             .join(" · ")}
         </p>
         {task.note && <TaskNote note={task.note} />}
-        {task.mailEventDraft ? <MailEventDialog taskId={task.id} initial={task.mailEventDraft} eventId={task.mailEventId} /> : null}
+        {task.mailEventDraft ? <MailEventDialog taskId={task.id} initial={task.mailEventDraft} eventId={task.mailEventId} />
+          // 邮件没读出日程（进度更新、其他通知）：补个时间也能进日历和「接下来」。
+          : task.fromMail && !task.done ? <MailEventDialog taskId={task.id} initial={{ title: task.title.replace(/^([^：]{1,12})：(.+)$/, "$2 $1") }} eventId={task.mailEventId} label="补时间，加到「接下来」" /> : null}
       </div>
       <div className="flex shrink-0 gap-1">
         <PersonalTaskFormDialog

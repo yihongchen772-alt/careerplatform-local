@@ -17,6 +17,8 @@ export type AgentEvent = { type: "step"; step: AgentStep } | { type: "note"; tex
 /** Enough for "plan my week" (records, a few JDs, the resume, a search) without running away with the Key. */
 export const MAX_TOOL_ROUNDS = 12;
 const MAX_RESULT_CHARS = 12000;
+/** Tools that only read: safe to run at the same time. */
+const READ_ONLY_TOOLS = new Set(["search_records", "filter_applications", "get_workspace_overview", "get_application", "get_position", "resume_context", "research_web", "read_webpage", "list_missing_cities", "recall_conversations"]);
 
 /**
  * The agent loop: the model sees the conversation and the tools, and either
@@ -38,7 +40,7 @@ export async function runAgent({ chat, request, execute, describe, emit, review,
 }): Promise<{ reply: string; steps: AgentStep[] }> {
   const messages: AgentMessage[] = [...request.messages];
   const steps: AgentStep[] = [];
-  const seen = new Map<string, string>();
+  const seen = new Map<string, Promise<string>>();
   let reviewed = false;
   // Weaker models sometimes write the real answer beside a tool call and
   // end with only "完成了，按钮在下面"; keep the longest such draft.
@@ -60,32 +62,51 @@ export async function runAgent({ chat, request, execute, describe, emit, review,
     if (turn.text && turn.text.length <= 80 && !turn.text.includes("\n")) emit({ type: "note", text: turn.text });
     if (turn.text.length > draft.length) draft = turn.text;
     messages.push({ role: "assistant", text: turn.text, calls: turn.calls, raw: turn.raw });
-    const results: { call: ToolCall; content: string }[] = [];
-    for (const call of turn.calls) {
+    // Lookups that only read run side by side (a week-plan asks for several
+    // records at once); anything that writes or remembers runs alone, in order.
+    const outcomes: ({ call: ToolCall; content: string; step: AgentStep | null } | undefined)[] = new Array(turn.calls.length);
+    const runOne = async (call: ToolCall, index: number) => {
       const key = JSON.stringify([call.name, call.args]);
-      const step: AgentStep = { id: `${round}-${results.length}`, tool: call.name, label: describe(call), status: "running", summary: "" };
-      const repeated = seen.get(key);
-      if (repeated !== undefined) {
+      const step: AgentStep = { id: `${round}-${index}`, tool: call.name, label: describe(call), status: "running", summary: "" };
+      const earlier = seen.get(key);
+      if (earlier) {
         // The same lookup again returns what it returned before, without running it twice.
-        results.push({ call, content: `（与之前同一次调用的结果相同）\n${repeated}` });
-        continue;
+        const repeated = await earlier.catch(() => null);
+        if (repeated !== null) return { call, content: `（与之前同一次调用的结果相同）\n${repeated}`, step: null };
       }
-      try {
-        emit({ type: "step", step: { ...step } });
+      const work = (async () => {
         const outcome = await execute(call);
-        const content = outcome.content.slice(0, MAX_RESULT_CHARS);
+        const long = outcome.content.length > MAX_RESULT_CHARS;
+        const content = long ? `${outcome.content.slice(0, MAX_RESULT_CHARS)}\n…（结果太长，后面 ${outcome.content.length - MAX_RESULT_CHARS} 字被截掉了；要看后面的部分，请换更具体的条件再查一次，不要把这当成完整结果）` : outcome.content;
         Object.assign(step, { label: outcome.label, status: "success", summary: outcome.summary, href: outcome.href });
-        seen.set(key, content);
-        results.push({ call, content });
+        return content;
+      })();
+      seen.set(key, work);
+      emit({ type: "step", step: { ...step } });
+      try {
+        return { call, content: await work, step };
       } catch (error) {
+        seen.delete(key);
         if (!(error instanceof UserFacingError)) console.error(`[agent:${call.name}]`, error);
         const message = error instanceof UserFacingError ? error.message : "工具执行出错";
         Object.assign(step, { status: "error", summary: message.slice(0, 300) });
-        results.push({ call, content: `执行失败：${message}。不能把失败当作查询无结果，也不要反复重试同样的调用。` });
+        return { call, content: `执行失败：${message}。不能把失败当作查询无结果，也不要反复重试同样的调用。`, step };
       }
-      steps.push(step);
-      emit({ type: "step", step: { ...step } });
+    };
+    for (let i = 0; i < turn.calls.length;) {
+      if (!READ_ONLY_TOOLS.has(turn.calls[i].name)) {
+        const done = await runOne(turn.calls[i], i);
+        outcomes[i] = done; if (done.step) { steps.push(done.step); emit({ type: "step", step: { ...done.step } }); }
+        i++;
+        continue;
+      }
+      let end = i;
+      while (end < turn.calls.length && READ_ONLY_TOOLS.has(turn.calls[end].name)) end++;
+      const batch = await Promise.all(turn.calls.slice(i, end).map((call, k) => runOne(call, i + k)));
+      batch.forEach((done, k) => { outcomes[i + k] = done; if (done.step) { steps.push(done.step); emit({ type: "step", step: { ...done.step } }); } });
+      i = end;
     }
+    const results = outcomes.map((done) => ({ call: done!.call, content: done!.content }));
     messages.push({ role: "tool", results });
   }
 }

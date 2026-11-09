@@ -106,6 +106,11 @@ function fakeAi(questions) {
   });
 }
 
+function manyEntries(p) {
+  p.projects = [...p.projects, { name: "用户留存归因分析", role: "数据分析", start: "2024-09", end: "2024-12", description: "用分层回归拆解留存变化", responsibilities: "负责指标口径与建模" }];
+  p.awards = [...p.awards, { name: "国家奖学金", issuer: "教育部", level: "国家级", date: "2023-10", description: "" }, { name: "校级优秀学生干部", issuer: "", level: "校级", date: "2023-12", description: "" }];
+}
+
 async function runPage(browser, name, checks, { wait = 600, options = {}, page: pageName, query = "", between, profile: patchProfile } = {}) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   const errors = [];
@@ -170,13 +175,15 @@ async function runPage(browser, name, checks, { wait = 600, options = {}, page: 
   const bare = (text) => String(text || "").split(" · ").pop().replace(/[\s*＊:：]/g, "");
   const filled = (result.details || []).filter((d) => ["profile", "memory", "ai"].includes(d.source) && !/需|手填/.test(d.state));
   const unread = filled.filter((d) => !answered.has(bare(d.label)) && ![...answered].some((label) => label.includes(bare(d.label)) || bare(d.label).includes(label)));
-  const readOk = !filled.length || (filled.length - unread.length) / filled.length >= 0.85;
+  // 逐段保存后表单变成了卡片，框已经不在页面上，读回这一项不适用。
+  const readOk = !filled.length || !!options.saveBlocks || (filled.length - unread.length) / filled.length >= 0.85;
   checks = [...checks, { label: "记录读得回", expect: "x" }];
   if (readOk) pass++;
   lines.push(`  ${readOk ? "✓" : "✗"} 记录读得回          读回 ${filled.length - unread.length}/${filled.length} 个已填字段${unread.length ? `，没读回：${unread.slice(0, 6).map((d) => d.label).join("、")}` : ""}`);
   console.log(`\n=== ${name}  ${pass}/${checks.length} 通过  (${elapsed}ms) ===`);
   console.log(lines.join("\n"));
   console.log(`  结果: ${result.phase} · ${result.summary ? JSON.stringify(result.summary) : ""}`);
+  if (process.env.LAB_VERBOSE) console.log(`  说明: ${result.message}\n  明细: ${JSON.stringify((result.details || []).map((d) => `${d.label}=${d.state}`))}`);
   if (process.env.VERBOSE) console.log("  消息:", result.message);
   console.log(`  交给 AI 的字段: ${aiQuestions.map((q) => `${q.label}(${q.kind})`).join("、") || "无"}`);
   const manual = (result.details || []).filter((d) => d.source === "manual").map((d) => `${d.label}:${d.state}`);
@@ -406,6 +413,37 @@ Object.assign(suites, {
     { label: "证书 换一条（AI 知道已保存）", read: val("#c1"), expect: "计算机二级证书" },
     { label: "颁发机构 跟着新的一条", read: val("#c2"), expect: "教育部考试中心" },
   ]],
+  // 逐段自动保存：弹窗里的经历填好就点它自己的保存，接着加下一段。
+  "modal-add": [[
+    { label: "姓名", read: val("#n1"), expect: "林晓舟" },
+    { label: "项目 两段都存了", read: `document.querySelectorAll("#project-list .card").length`, expect: "2" },
+    { label: "项目1 内容", read: `document.querySelector("#project-list .card").textContent`, expect: /校园二手交易推荐系统.*负责人.*2025-03/ },
+    { label: "项目2 是另一段", read: `document.querySelectorAll("#project-list .card")[1].textContent`, expect: /用户留存归因分析.*数据分析/ },
+    { label: "获奖 三段都存了", read: `document.querySelectorAll("#award-list .card").length`, expect: "3" },
+    { label: "获奖 没有重复", read: `new Set(Array.from(document.querySelectorAll("#award-list .card")).map((c) => c.textContent.split(" | ")[0])).size`, expect: "3" },
+    { label: "弹窗都关了", read: `Array.from(document.querySelectorAll(".ant-modal-wrap")).filter((m) => m.style.display === "block").length`, expect: "0" },
+    { label: "只点了 5 次保存", read: "window.__saves", expect: "5" },
+    { label: "没碰提交申请", read: "String(!!window.__submitted)", expect: "false" },
+    { label: "结果里说明存了几段", result: (r) => r.message, expect: /已替你逐段保存.*2 段项目经历.*3 段获奖情况/ },
+  ], { options: { expandBlocks: true, saveBlocks: true }, profile: manyEntries }],
+  "modal-add-required": [[
+    { label: "必填项空着就不保存", read: `document.querySelectorAll("#project-list .card").length`, expect: "0" },
+    { label: "弹窗留着等你补", read: `document.getElementById("project-modal").style.display`, expect: "block" },
+    { label: "弹窗里已填好项目名称", read: `document.querySelector("[name=pname]").value`, expect: "校园二手交易推荐系统" },
+    { label: "说明为什么没保存", result: (r) => r.message, expect: /指导老师工号」还空着，没替你保存/ },
+    { label: "没碰提交申请", read: "String(!!window.__submitted)", expect: "false" },
+  ], { page: "modal-add", query: "?strict", options: { expandBlocks: true, saveBlocks: true }, profile: manyEntries }],
+  "modal-add-off": [[
+    { label: "关掉逐段保存就只填不存", read: "window.__saves", expect: "0" },
+    { label: "弹窗留着等你点保存", result: (r) => r.message, expect: /核对后点弹窗的保存/ },
+  ], { page: "modal-add", options: { expandBlocks: true }, profile: manyEntries }],
+  "save-next": [[
+    { label: "获奖 三段都存了", read: `document.querySelectorAll("#award-list .card").length`, expect: "3" },
+    { label: "获奖 没有重复", read: `new Set(Array.from(document.querySelectorAll("#award-list .card")).map((c) => c.textContent.split(" | ")[0])).size`, expect: "3" },
+    { label: "空表单没有多填", read: val("#a1"), expect: "" },
+    { label: "没碰保存并提交", read: "String(!!window.__submitted)", expect: "false" },
+    { label: "结果里说明存了几段", result: (r) => r.message, expect: /已替你逐段保存 3 段获奖情况/ },
+  ], { options: { expandBlocks: true, saveBlocks: true }, profile: manyEntries }],
   "one-at-a-time-fresh": [[
     { label: "第一条 语种", read: sel("#l1"), expect: "英语" },
     { label: "第一条 语言等级", read: val("#l2"), expect: "CET-6 560" },
