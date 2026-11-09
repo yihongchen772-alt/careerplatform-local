@@ -26,12 +26,16 @@ jobs:
             architecture: x64
             target: --win --x64
             artifact: windows-x64
+            builder_cache: ~/AppData/Local/electron-builder/Cache
+            electron_cache: ~/AppData/Local/electron/Cache
           - name: macOS Apple Silicon
             os: macos-15
             platform: darwin
             architecture: arm64
             target: --mac --arm64
             artifact: macos-arm64
+            builder_cache: ~/Library/Caches/electron-builder
+            electron_cache: ~/Library/Caches/electron
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     env:
@@ -73,6 +77,24 @@ jobs:
           NODE
 
       - run: npm ci
+
+      # electron-builder downloads Electron, NSIS and the signing tools from GitHub
+      # releases at build time. When that service times out (504) the whole release
+      # fails for reasons that have nothing to do with the code, so keep what was
+      # downloaded: the next build restores it and only fetches what is missing.
+      - name: Read the versions of the tools electron-builder downloads
+        id: tools
+        run: |
+          echo "electron=$(node -p "require('electron/package.json').version")" >> "$GITHUB_OUTPUT"
+          echo "builder=$(node -p "require('electron-builder/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Restore downloaded packaging tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ matrix.builder_cache }}
+            ${{ matrix.electron_cache }}
+          key: packaging-tools-${{ runner.os }}-electron-${{ steps.tools.outputs.electron }}-builder-${{ steps.tools.outputs.builder }}
+
       - run: npm run test:agent
       - run: npm run test:desktop
       - run: node --test tests/productivity.test.cjs
@@ -85,7 +107,17 @@ jobs:
       - name: Smoke test the isolated runtime without source dependencies
         run: node scripts/packaging-smoke.cjs
       - name: Build installer locally without publishing
-        run: npx --no-install electron-builder --config electron-builder.cjs ${{ matrix.target }} --publish never
+        # Retried: a download that times out succeeds on the next try, and what an
+        # earlier try already fetched is kept in the tool cache.
+        run: |
+          for attempt in 1 2 3; do
+            if npx --no-install electron-builder --config electron-builder.cjs ${{ matrix.target }} --publish never; then
+              exit 0
+            fi
+            echo "::warning::electron-builder attempt $attempt of 3 failed"
+            [ "$attempt" -lt 3 ] && sleep 30
+          done
+          exit 1
       - name: Verify release asset set
         env:
           EXPECTED_PLATFORM: ${{ matrix.platform }}
