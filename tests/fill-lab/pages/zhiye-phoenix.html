@@ -61,6 +61,15 @@ body{font:14px sans-serif;max-width:900px;margin:20px auto}
   <div class="form-item__title form-item__title--right"><label class="form-item__text">工作职责</label></div>
   <div class="form-item__control"><div class="phoenix-textarea phoenix-textarea--hasBottomBar phoenix-textarea--error"><textarea id="exp-desc" class="phoenix-textarea__realTextarea" placeholder="请输入"></textarea><div class="phoenix-textarea__bottomBar"><span class="phoenix-textarea__barItem"><span class="phoenix-textarea__currentCount">0</span>/2000</span></div></div><span class="form-item__error">必填</span></div>
 </div></div>
+<div class="sec">学习情况</div>
+<div class="fields-col"><div class="form-item form-item--phoenix">
+  <div class="form-item__title form-item__title--right"><label class="form-item__text">学习形式</label></div>
+  <div class="form-item__control" id="study-mode-slot"></div>
+</div></div>
+<div class="fields-col"><div class="form-item form-item--phoenix">
+  <div class="form-item__title form-item__title--right"><label class="form-item__text">具体学制</label></div>
+  <div class="form-item__control" id="study-years-slot"></div>
+</div></div>
 <div class="sec">获奖情况</div>
 <div class="fields-col"><div class="form-item form-item--phoenix">
   <div class="form-item__title form-item__title--right"><label class="form-item__text">奖项</label></div>
@@ -103,6 +112,9 @@ const SLOTS = {
   "award-level-slot": ["award-level", "", { list: ["校级", "省级", "国家级"] }],
   "award-date-slot": ["award-date", "", { date: "day" }],
   "campus-slot": ["campus", "", { list: ["本部", "新校区", "南校区"] }],
+  // 申能 (zhiye, 网申样本 v1.61): 「非全日制」 listed before 「全日制」 must not be picked for it.
+  "study-mode-slot": ["study-mode", "", { list: ["非全日制", "全日制"] }],
+  "study-years-slot": ["study-years", "", { list: ["二年制", "三年制", "四年制", "五年制"] }],
 };
 for (const [slot, [id, shown]] of Object.entries(SLOTS)) document.getElementById(slot).innerHTML = selectHtml(id, shown);
 let popup = null;

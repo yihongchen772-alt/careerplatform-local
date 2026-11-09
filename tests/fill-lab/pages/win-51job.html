@@ -1,0 +1,16 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>前程无忧式：最高学历与本科分开填，学校和专业是省份→学校两级下拉</title><style>body{font:14px sans-serif;max-width:860px;margin:20px auto}.form-item{margin:8px 0}</style></head><body>
+<!-- Fictional, after the field layout of a 51job campus form seen in 网申样本: no repeat blocks;
+     the 本科 of a 硕士 is asked as its own 「本科…」 fields; each school / major is two selects with one label. -->
+<h3>教育经历</h3>
+<div class=form-item><label for=top>最高学历 *</label><select id=top><option value=''>请选择</option><option>大专</option><option>本科</option><option>硕士</option><option>博士</option></select></div>
+<div class=form-item><label for=type>学历类型 *</label><select id=type><option value=''>请选择</option><option>全日制</option><option>非全日制</option></select></div>
+<div class=form-item><label for=grad>毕业时间 *</label><input id=grad></div>
+<div class=form-item><label>毕业学校 *</label><select id=s-prov aria-label='毕业学校 *'><option value=''>请选择</option><option>北京</option><option>上海</option><option>江苏省</option></select><select id=s-school aria-label='毕业学校 *'><option value=''>请选择</option><option>同济大学</option><option>复旦大学</option><option>南京大学</option><option>东南大学</option></select></div>
+<div class=form-item><label for=s-other>其他学校</label><input id=s-other></div>
+<div class=form-item><label>专业 *</label><select id=m-cat aria-label='专业 *'><option value=''>请选择</option><option>经济学类</option><option>统计学类（理学）</option><option>数学类（理学）</option></select><select id=m-major aria-label='专业 *'><option value=''>请选择</option><option>应用统计学</option><option>统计学</option><option>数学与应用数学</option></select></div>
+<div class=form-item><label for=b-type>本科学历类型 *</label><select id=b-type><option value=''>请选择</option><option>全日制</option><option>非全日制</option></select></div>
+<div class=form-item><label for=b-grad>本科毕业时间 *</label><input id=b-grad></div>
+<div class=form-item><label>本科毕业学校 *</label><select id=b-prov aria-label='本科毕业学校 *'><option value=''>请选择</option><option>北京</option><option>上海</option><option>江苏省</option></select><select id=b-school aria-label='本科毕业学校 *'><option value=''>请选择</option><option>同济大学</option><option>复旦大学</option><option>南京大学</option><option>东南大学</option></select></div>
+<div class=form-item><label for=b-other>本科其他学校</label><input id=b-other></div>
+<div class=form-item><label>本科专业 *</label><select id=b-cat aria-label='本科专业 *'><option value=''>请选择</option><option>经济学类</option><option>统计学类（理学）</option><option>数学类（理学）</option></select><select id=b-major aria-label='本科专业 *'><option value=''>请选择</option><option>应用统计学</option><option>统计学</option><option>数学与应用数学</option></select></div>
+</body></html>

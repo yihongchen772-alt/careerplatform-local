@@ -86,6 +86,8 @@ const base = `http://127.0.0.1:${server.address().port}`;
 function fakeAi(questions) {
   return questions.map((q) => {
     // A dropdown reaches the AI with the choices the page really offers, and every box with its section.
+    // Which 省份 a named school is in: the question has to carry the school.
+    if (/所在的省份或地区/.test(q.label)) { const place = /复旦/.test(q.label) ? "上海" : /南京大学/.test(q.label) ? "江苏省" : ""; return { id: q.id, answer: (q.options || []).includes(place) ? place : "NEEDS_MANUAL_INPUT" }; }
     if (/校区/.test(q.label)) return { id: q.id, answer: q.kind === "choice" && (q.options || []).includes("本部") ? "本部" : "NEEDS_MANUAL_INPUT" };
     if (/兴趣小组/.test(q.label)) return { id: q.id, answer: `所在栏目=${q.section || "无"}` };
     if (q.kind === "choice") {
@@ -500,6 +502,8 @@ Object.assign(suites, {
     { label: "意向行业(多选不乱填)", read: tip("#industry"), expect: "" },
     { label: "所在校区(读出选项交给AI选)", read: tip("#campus"), expect: "本部" },
     { label: "栏目传给AI", read: val("#club"), expect: "所在栏目=其他信息" },
+    { label: "学习形式(非全日制排在前面)", read: tip("#study-mode"), expect: "全日制" },
+    { label: "具体学制(二年制)", read: tip("#study-years"), expect: "二年制" },
   ], { profile: (p) => { p.preferredCities = "上海、苏州、杭州"; } }],
   "jd-meituan-v24": [[
     { label: "考试分数", read: val("#s1"), expect: "560" },
@@ -680,6 +684,38 @@ Object.assign(suites, {
     { label: "工作 结束(下拉比输入框深一层)", read: mk("c0.to"), expect: "2025-09" },
     { label: "城市框(勾选+确定，多个城市)", read: mk("cities"), expect: "上海市 南京市" },
   ], { wait: 300, profile: (p) => { p.preferredCities = "上海,南京,火星"; p.experiences = [...p.experiences, { company: "美团", department: "", role: "实习生", start: "2024-11", end: "2025-02", description: "" }]; } }],
+  "win-51job": [[
+    { label: "最高学历", read: sel("#top"), expect: "硕士" },
+    { label: "学历类型(全日制)", read: sel("#type"), expect: "全日制" },
+    { label: "毕业时间", read: val("#grad"), expect: "2026-06" },
+    { label: "毕业学校 省份", read: sel("#s-prov"), expect: "上海" },
+    { label: "毕业学校 学校", read: sel("#s-school"), expect: "复旦大学" },
+    { label: "其他学校(选上了就空着)", read: val("#s-other"), expect: "" },
+    { label: "专业 第二级", read: sel("#m-major"), expect: "统计学" },
+    { label: "本科学历类型", read: sel("#b-type"), expect: "全日制" },
+    { label: "本科毕业时间(本科那段)", read: val("#b-grad"), expect: "2024-06" },
+    { label: "本科毕业学校 省份", read: sel("#b-prov"), expect: "江苏省" },
+    { label: "本科毕业学校 学校", read: sel("#b-school"), expect: "南京大学" },
+    { label: "本科专业 第二级", read: sel("#b-major"), expect: "数学与应用数学" },
+  ]],
+  "win-moka": [[
+    { label: "硕士 学校", read: val("#e0-school"), expect: "复旦大学" },
+    { label: "硕士 学历", read: sel("#e0-deg"), expect: "硕士" },
+    { label: "本科一段 学校", read: val("#u-school"), expect: "南京大学" },
+    { label: "本科一段 专业", read: val("#u-major"), expect: "数学与应用数学" },
+    { label: "本科一段 学历", read: sel("#u-deg"), expect: "本科" },
+    { label: "项目 职责(短框=角色)", read: val("#p-role"), expect: "负责人" },
+    { label: "项目中职责(长框)", read: val("#p-duty"), expect: "负责模型设计与评估" },
+    { label: "项目描述", read: val("#p-desc"), expect: "基于协同过滤的推荐系统" },
+  ]],
+  "win-study": [[
+    { label: "个人信息 学习形式", read: sel("#mode"), expect: "全日制" },
+    { label: "教育 学历", read: sel("#z-deg"), expect: "硕士研究生" },
+    { label: "具体学制(按起止算)", read: sel("#z-years"), expect: "2年" },
+    { label: "教育 学习形式", read: sel("#z-mode"), expect: "全日制" },
+    { label: "受教育类型", read: sel("#z-edu-type"), expect: "统招全日制" },
+    { label: "是否全日制", read: sel("#z-full"), expect: "是" },
+  ]],
   "wizard": [[
     { label: "第1步 姓名", read: val("#a1"), expect: "林晓舟" },
     { label: "第1步 性别", read: sel("#a4"), expect: "女" },

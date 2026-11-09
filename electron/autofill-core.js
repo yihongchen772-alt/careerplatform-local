@@ -2162,10 +2162,12 @@ const BASIC_FIELD_RULES = [
   { keys: ["交换生经历", "交换经历", "海外交换", "交换学习", "海外经历", "海外学习经历"], not: /是否接受|愿意|意向/, get: (p) => p.exchange, learn: "exchange", yesNo: true },
   { keys: ["是否学生干部", "是否担任学生干部", "是否担任过学生干部", "是否为学生干部"], get: (p) => (p.campus || []).some((row) => row.role) ? "是" : null },
   // Still studying full time, read from the education rows (蔚来's 是否为全日制在校学生, 应届, 学习形式).
-  { keys: ["全日制在校", "是否全日制", "是否为全日制", "全日制学生", "是否为在校学生", "是否在校学生"], get: (p) => studyingNow(p) && studyMode(p) === "全日制" ? "是" : null },
+  { keys: ["全日制在校", "全日制学生", "是否为在校学生", "是否在校学生"], get: (p) => studyingNow(p) && studyMode(p) === "全日制" ? "是" : null },
+  // 「是否全日制」 on an education row asks how that study was done, whether or not it is over.
+  { keys: ["是否全日制", "是否为全日制"], not: /在校/, get: (p) => studyMode(p) ? (studyMode(p) === "全日制" ? "是" : "否") : null },
   // Only as a question: 「应届生求职登录」 is a page heading, not this.
   { keys: ["是否应届", "是否为应届"], not: /往届|非应届/, get: (p) => studyingNow(p) ? "是" : null },
-  { keys: ["学习形式", "教育形式", "就读方式", "学历类型", "学历性质", "培养方式"], get: (p) => studyMode(p) },
+  { keys: ["学习形式", "教育形式", "就读方式", "学历类型", "学历性质", "培养方式", "受教育类型", "教育方式"], get: (p) => studyMode(p) },
   // 国籍 is not the country of residence (studying in 新加坡 is still 中国): 民族 / 政治面貌 / 籍贯 say 中国.
   { keys: ["国籍"], not: /父|母|配偶|家庭|亲属|紧急/, get: (p) => p.nationality || (p.ethnicity || p.politics || p.hometown ? "中国" : null), nationality: true },
   { keys: ["招聘信息来源", "信息来源", "获知渠道", "了解渠道", "得知渠道", "从何处得知", "how did you hear", "where did you hear"], get: (p) => p.jobSource, learn: "jobSource" },
@@ -2479,6 +2481,7 @@ function educationFieldKind(haystack, inSection, bare = "") {
   if (/专业|major|field of study/i.test(haystack)) return /技能|证书|资格|排名|方向|课程|实践|能力/.test(haystack) ? null : "major";
   if (/学历|学位|degree|education.?level/i.test(haystack)) return "degree";
   if (/gpa|绩点|平均分|平均成绩|学习成绩|加权/i.test(haystack) || (inSection && /^成绩$/.test(bare))) return /排名|rank/i.test(haystack) ? null : "gpa";
+  if (/学制/.test(bare || haystack)) return "years";
   if (NOT_A_DATE.test(haystack)) return null;
   if (/入学/.test(haystack) || (inSection && START_LABEL.test(haystack))) return "start";
   if (/毕业(?:时间|年份|年月|日期)|graduation/i.test(haystack) || (inSection && END_LABEL.test(haystack))) return "end";
@@ -2546,7 +2549,7 @@ function campusFieldKind(haystack, bare = "", inSection = false) {
   return null;
 }
 
-function projectFieldKind(haystack, bare = "", inSection = false) {
+function projectFieldKind(haystack, bare = "", inSection = false, field = null) {
   if (/项目(?:名称|名)(?!称)|project[\s_-]*(?:name|title)/i.test(haystack)) return "name";
   if (/项目(?:角色|职位|职务)|project[\s_-]*role/i.test(haystack)) return "role";
   if (/项目(?:开始|起始)|project[\s_-]*start/i.test(haystack)) return "start";
@@ -2560,6 +2563,8 @@ function projectFieldKind(haystack, bare = "", inSection = false) {
   if (/^(?:链接|网址|地址|link|url)$/.test(bare)) return "link";
   if (/^(?:名称|name|title)$/.test(bare)) return "name";
   if (/^(?:担任)?(?:角色|职务|职位)(?:[/／](?:角色|职务|职位))?$|^role$/.test(bare)) return "role";
+  // Moka asks a one-line 「职责」 next to a 「项目中职责」 paragraph: the line is the role.
+  if (/^(?:担任)?职责$/.test(bare) && field && !longTextBox({ ...field, label: "" })) return "role";
   if (/^(?:开始(?:时间|日期)?|起始(?:时间|日期)?|start(?:date)?)$/.test(bare)) return "start";
   if (/^(?:结束(?:时间|日期)?|截止(?:时间|日期)?|end(?:date)?)$/.test(bare)) return "end";
   if (RANGE_LABEL.test(bare)) return "range";
@@ -2625,7 +2630,10 @@ function resolveRepeatField(field, rowIndexes) {
   if (/[?？]|为什么|为何|谈谈|你(?:的|在|如何)|如何|遇到|挑战|收获|\bwhy\b|\bhow\b|tell us/i.test(field.label || "")) return null;
   const bare = bareLabel(field);
   // "是否 211 院校" / "有无海外经历" ask about a row; they are never its school or name.
-  if (/^学历(?:类型|性质)$|^培养方式$/.test(bare)) return null;
+  // 「本科学历类型」 asks 全日制 or not, like 学历类型; 「其他学校」 is only for a school
+  // the list lacks (51job), not a second copy of the one just picked.
+  if (/^(?:本科|硕士|博士|研究生|最高|第一)?学历(?:类型|性质)$|^培养方式$/.test(bare)) return null;
+  if (isOtherChoiceBox(field)) return null;
   if (/^(?:是否|有无|是不是)/.test(bare) || (field.options?.length && field.options.every((option) => /^(?:是|否|有|无|yes|no)$/i.test(String(option).trim())))) return null;
   const haystack = fieldHaystack(field);
   const section = String(field.section || "");
@@ -2636,7 +2644,7 @@ function resolveRepeatField(field, rowIndexes) {
   const awardKind = info ? null : awardFieldKind(haystack, bare, group === "award");
   // 奖学金 / 评优表彰 are lists of their own on 京东: each takes only its own kind of award.
   if (awardKind) info = { group: "award", kind: awardKind, pick: awardPick(`${section} ${field.label || ""}`) };
-  const projectKind = info ? null : projectFieldKind(haystack, bare, group === "project");
+  const projectKind = info ? null : projectFieldKind(haystack, bare, group === "project", field);
   if (!info && projectKind) info = { group: "project", kind: projectKind };
   if (!info && (!group || group === "skill")) {
     const kind = skillFieldKind(field, haystack, bare, group === "skill");
@@ -2666,8 +2674,13 @@ function resolveRepeatField(field, rowIndexes) {
   // 听说 and 读写 are two levels of the same language row, each counted on its own.
   const kindTag = info.kind === "level" && info.group === "language" ? `level:${bare}` : info.kind;
   const key = `${info.group}${pickTag}:${kindTag}:${group === info.group ? "in" : "out"}`;
-  // The 月 / 日 dropdown of a split date continues its 年 dropdown's row.
-  const continuesDate = field.datePart === "month" || field.datePart === "day";
+  // The 月 / 日 dropdown of a split date continues its 年 dropdown's row; so does
+  // the second of two dropdowns under one label (51job: 省份 then 学校, 门类 then 专业).
+  const choice = (item) => item.tag === "select" || item.tag === "custom-select" || !!item.options;
+  const last = rowIndexes?.get("__last");
+  const cascade = !!last && choice(field) && last.choice && last.label === field.label && last.section === section && last.blockKey === (field.blockKey || "") && last.key === `${info.group}:${info.kind}` && ["school", "major", "department"].includes(info.kind) && !field.datePart;
+  rowIndexes?.set("__last", { label: field.label, section, blockKey: field.blockKey || "", key: `${info.group}:${info.kind}`, choice: choice(field) });
+  const continuesDate = field.datePart === "month" || field.datePart === "day" || cascade;
   const counted = continuesDate ? Math.max(0, (rowIndexes?.get(key) || 1) - 1) : rowIndexes?.get(key) || 0;
   if (!continuesDate) rowIndexes?.set(key, counted + 1);
   const anchor = info.group === "experience" ? "company" : info.group === "education" ? "school" : "name";
@@ -2814,6 +2827,23 @@ function dateRangeValue(field, start, end) {
   return `${from}${separator}${to}`;
 }
 
+// 具体学制 from a row's own dates: 2024-09 to 2026-06 is 2 年, 2020-09 to 2024-06 is 4 年.
+const CHINESE_YEARS = ["", "一", "二", "三", "四", "五", "六", "七", "八"];
+function studyYearsOption(field, row) {
+  const a = dateParts(row.start), b = dateParts(row.end);
+  if (!a || !b || !a.m || !b.m) return null;
+  const years = Math.round(((Number(b.y) - Number(a.y)) * 12 + Number(b.m) - Number(a.m)) / 12);
+  if (years < 1 || years > 8) return null;
+  if (!field.options) return `${years}年`;
+  const says = (option) => {
+    const text = String(option).replace(/\s+/g, "");
+    const digit = /(\d+(?:\.\d+)?)\s*年/.exec(text);
+    if (digit) return Number(digit[1]) === years;
+    return new RegExp(`^${CHINESE_YEARS[years]}${years === 2 ? "|^两" : ""}`).test(text) || new RegExp(`[^一二三四五六七八两]${CHINESE_YEARS[years]}年`).test(` ${text}`);
+  };
+  return field.options.find(says) || null;
+}
+
 function rowDateValue(field, kind, row) {
   if (kind === "range") return dateRangeValue(field, row.start, row.end);
   if (kind === "start" || kind === "end") return formatDateForField(field, row[kind]);
@@ -2889,6 +2919,7 @@ function repeatFieldValue(field, info, profile) {
   const row = info.degreeHint ? rows.find((item) => degreeLevel(item.degree) === info.degreeHint) : rows[info.row];
   if (!row) return null;
   if (info.kind === "summary") return [row.school, row.degree, row.major, [row.start, row.end].filter(Boolean).join(" 至 "), row.gpa && `GPA ${row.gpa}`].filter(Boolean).join("；");
+  if (info.kind === "years") return studyYearsOption(field, row);
   return info.kind === "degree" ? matchDegreeOption(field, row.degree) : matchFieldOption(field, rowDateValue(field, info.kind, row));
 }
 
@@ -3188,6 +3219,11 @@ function displayLabel(field) {
   return String(field.label || field.placeholder || field.name || "").replace(/^[*＊\s]+|[*＊：:\s]+$/g, "") || "未命名字段";
 }
 
+// 51job's 「其他学校」 / 「其他专业」 are only for a school or major its list lacks.
+function isOtherChoiceBox(field) {
+  return /^(?:本科|硕士|博士|研究生)?其他(?:学校|院校|专业)(?:名称)?$/.test(bareLabel(field));
+}
+
 function fillDetail(field, pair, filledSet, failedSet, reasons = {}) {
   const own = displayLabel(field);
   const label = field.section && !own.includes(field.section) && (sectionGroup(field.section) || THIRD_PARTY.test(field.section)) ? `${field.section} · ${own}` : own;
@@ -3202,6 +3238,7 @@ function fillDetail(field, pair, filledSet, failedSet, reasons = {}) {
     return { label, state: pair.reused ? "AI 草稿（复用），请核对" : "AI 生成，请核对", source: "ai" };
   }
   if (isNeverGuessField(field)) return { label, state: "敏感或需核对，请手填", source: "manual", deliberate: true };
+  if (isOtherChoiceBox(field) && !pair) return { label, state: "列表里选不到时才需要填", source: "manual", deliberate: true };
   if (pair && failedSet.has(pair.label || pair.id)) return { label, state: reasons[pair.label || pair.id] || "写入没成功，请手填", source: "manual" };
   return { label, state: "没有对应资料，请手填", source: "manual" };
 }
@@ -3771,8 +3808,35 @@ function formSkeleton() {
   return root.outerHTML.slice(0, 600000);
 }
 
+// What the page shows as text, for 「already saved on the page」: a dropdown's
+// own list is left out. 51job lists every school in its 毕业学校 select, so the
+// applicant's school is in the page text before anything was filled.
 function readPageText() {
-  return String((document.body && document.body.innerText) || "").slice(0, 80000);
+  const root = document.body || document.documentElement;
+  if (!root) return "";
+  const LISTS = "select,datalist,option,optgroup,script,style,noscript,template,textarea,[role=listbox],[role=option],[role=tree],[role=treeitem],[role=menu],[role=menuitem]";
+  const shown = new Map();
+  const visible = (el) => {
+    if (shown.has(el)) return shown.get(el);
+    const yes = typeof el.checkVisibility === "function" ? el.checkVisibility({ visibilityProperty: true }) : !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+    shown.set(el, yes);
+    return yes;
+  };
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const el = node.parentElement;
+      if (!el || !node.nodeValue.trim() || el.closest(LISTS) || !visible(el)) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  const parts = [];
+  let size = 0;
+  for (let node = walker.nextNode(); node && size < 80000; node = walker.nextNode()) {
+    const text = node.nodeValue.replace(/\s+/g, " ").trim();
+    parts.push(text);
+    size += text.length + 1;
+  }
+  return parts.join("\n").slice(0, 80000);
 }
 
 async function scanFrames(adapter) {
@@ -4037,6 +4101,17 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
         neverGuessCount++;
         continue;
       }
+      // The first of two dropdowns under one label lists 省份 or 专业门类, not schools or
+      // majors: which one the saved school / major belongs to is the AI's to say.
+      if (repeat && ["school", "major"].includes(repeat.kind) && field.options?.length >= 3) {
+        const raw = repeatFieldValue({ ...field, options: null }, repeat, profile);
+        const grouping = repeat.kind === "school" ? /省|市$|自治区|特别行政区|^(?:北京|上海|天津|重庆|香港|澳门|台湾|海外|国外|境外)/ : /类|门类|学科/;
+        if (raw && field.options.filter((option) => grouping.test(option)).length >= field.options.length / 2) {
+          candidates.push({ id: field.id, label: `${field.label}：「${raw}」所在的${repeat.kind === "school" ? "省份或地区" : "专业大类"}`, kind: "choice", options: field.options, section: String(field.section || "").trim().slice(0, 40) || undefined });
+          continue;
+        }
+      }
+      if (isOtherChoiceBox(field)) continue;
       if (repeat && !repeatFieldGoesToAi(repeat, profile)) continue;
       const value = repeat ? null : matchFlatField(field, profile);
       if (value) {
@@ -4736,6 +4811,8 @@ async function applyAutofillPlan(adapter, input) {
 }
 
 module.exports = {
+  studyYearsOption,
+  isOtherChoiceBox,
   fieldIdsInRect,
   iframeOffsets,
   insertIntoLastField,
