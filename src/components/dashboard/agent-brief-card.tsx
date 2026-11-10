@@ -78,7 +78,7 @@ export function AgentBriefCard({ daily, weekly, dailyDue, weeklyDue }: { daily: 
     <Card className="overflow-hidden">
       <CardContent className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="flex size-8 items-center justify-center rounded-xl bg-[image:var(--gradient-accent)] text-primary-foreground shadow-[0_6px_14px_-6px_var(--primary)]"><Sparkles className="size-4" /></span>
+          <span className="flex size-8 items-center justify-center rounded-xl bg-primary text-primary-foreground"><Sparkles className="size-4" /></span>
           <p className="font-semibold">小欧 · {TITLES[tab]}</p>
           {tabs.length > 1 && (
             <div className="ml-1 flex gap-1 text-xs">

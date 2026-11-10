@@ -535,8 +535,8 @@
   --card-shadow: 0 1px 1px rgba(0, 0, 0, 0.02), 0 12px 32px -16px rgba(0, 0, 0, 0.18);
   --card-shadow-hover: 0 1px 2px rgba(0, 0, 0, 0.03), 0 18px 40px -16px rgba(0, 0, 0, 0.22);
   --card-blur: 28px;
-  --btn-primary-bg: var(--gradient-accent);
-  --btn-primary-shadow: 0 6px 18px -8px color-mix(in oklch, var(--glow-1), transparent 20%);
+  --btn-primary-bg: var(--primary);
+  --btn-primary-shadow: 0 6px 18px -8px rgba(0, 0, 0, 0.256);
   --btn-radius: 9999px;
   --sidebar-surface: color-mix(in oklch, var(--card) 45%, transparent);
   --sidebar-edge: color-mix(in oklch, var(--foreground) 6%, transparent);
@@ -551,8 +551,8 @@
   --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.03), 0 10px 24px -12px rgba(0, 0, 0, 0.12);
   --card-shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.04), 0 16px 32px -14px rgba(0, 0, 0, 0.16);
   --card-blur: 24px;
-  --btn-primary-bg: var(--gradient-accent);
-  --btn-primary-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 8px 20px -6px color-mix(in oklch, var(--glow-1), transparent 25%);
+  --btn-primary-bg: var(--primary);
+  --btn-primary-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 8px 20px -6px rgba(0, 0, 0, 0.24);
   --btn-radius: 9999px;
   --sidebar-surface: color-mix(in oklch, var(--sidebar) 80%, transparent);
   --sidebar-edge: color-mix(in oklch, var(--border) 60%, transparent);
@@ -568,23 +568,23 @@
   --surface-card: var(--card);
   --card-edge: color-mix(in oklch, var(--foreground) 4%, transparent);
   /* Shadows carry a little of the brand color, the way the reference cards glow. */
-  --card-shadow: 0 1px 2px rgba(15, 23, 42, 0.03), 0 14px 34px -16px color-mix(in oklch, var(--primary), transparent 72%);
-  --card-shadow-hover: 0 2px 4px rgba(15, 23, 42, 0.04), 0 20px 44px -16px color-mix(in oklch, var(--primary), transparent 62%);
+  --card-shadow: 0 1px 2px rgba(15, 23, 42, 0.03), 0 14px 34px -16px rgba(0, 0, 0, 0.09);
+  --card-shadow-hover: 0 2px 4px rgba(15, 23, 42, 0.04), 0 20px 44px -16px rgba(0, 0, 0, 0.122);
   --card-blur: 0px;
-  --btn-primary-bg: var(--gradient-accent);
-  --btn-primary-shadow: 0 8px 20px -8px color-mix(in oklch, var(--primary), transparent 35%);
+  --btn-primary-bg: var(--primary);
+  --btn-primary-shadow: 0 8px 20px -8px rgba(0, 0, 0, 0.208);
   --btn-radius: 9999px;
   --sidebar-surface: transparent;
   --sidebar-edge: transparent;
-  --nav-active-bg: var(--gradient-accent);
-  --nav-active-shadow: 0 8px 18px -8px color-mix(in oklch, var(--primary), transparent 30%);
-  --nav-active-fg: var(--primary-foreground);
-  --nav-active-icon: var(--primary-foreground);
+  /* The sidebar selects the way a Mac sidebar does: a grey row, the icon in the accent. */
+  --nav-active-bg: color-mix(in oklch, var(--foreground) 8%, transparent);
+  --nav-active-shadow: 0 0 0 0 transparent;
+  --nav-active-fg: var(--foreground);
+  --nav-active-icon: var(--primary);
   --hero-bg: radial-gradient(120% 140% at 100% 0%, color-mix(in oklch, var(--glow-2), white 10%) 0%, transparent 55%), var(--gradient-accent);
   --page-bg:
-    radial-gradient(1100px 620px at 100% -8%, color-mix(in oklch, var(--glow-1), transparent 80%), transparent 62%),
-    radial-gradient(900px 640px at -6% 108%, color-mix(in oklch, var(--glow-2), transparent 78%), transparent 60%),
-    color-mix(in oklch, var(--background) 94%, var(--primary) 3%);
+    radial-gradient(1100px 620px at 100% -8%, color-mix(in oklch, var(--glow-1), transparent 91%), transparent 62%),
+    var(--background);
   --glow-opacity: 0;
   --page-heading: 1.875rem;
 }
@@ -595,8 +595,7 @@
   --card-shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.35), 0 18px 40px -14px rgba(0, 0, 0, 0.6);
   --nav-active-shadow: 0 8px 18px -10px rgba(0, 0, 0, 0.6);
   --page-bg:
-    radial-gradient(1100px 620px at 100% -8%, color-mix(in oklch, var(--glow-1), transparent 86%), transparent 62%),
-    radial-gradient(900px 640px at -6% 108%, color-mix(in oklch, var(--glow-2), transparent 88%), transparent 60%),
+    radial-gradient(1100px 620px at 100% -8%, color-mix(in oklch, var(--glow-1), transparent 92%), transparent 62%),
     var(--background);
 }
 
@@ -614,7 +613,7 @@ html[data-style="soft"] body {
   margin: 12px 0 12px 12px;
   border-radius: 1.5rem;
   background: color-mix(in oklch, var(--card) 72%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in oklch, var(--foreground) 5%, transparent), 0 16px 40px -20px color-mix(in oklch, var(--primary), transparent 70%);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--foreground) 5%, transparent), 0 16px 40px -20px rgba(0, 0, 0, 0.096);
   backdrop-filter: blur(24px);
 }
 [data-style="soft"] .app-sidebar > div {
@@ -635,8 +634,7 @@ html[data-style="soft"] body {
   border-radius: 1.5rem;
   padding: 1.5rem 1.75rem;
   background:
-    radial-gradient(70% 160% at 0% 0%, color-mix(in oklch, var(--primary) 14%, transparent) 0%, transparent 62%),
-    radial-gradient(50% 140% at 100% 100%, color-mix(in oklch, var(--glow-2) 10%, transparent) 0%, transparent 70%),
+    radial-gradient(70% 160% at 0% 0%, color-mix(in oklch, var(--primary) 8%, transparent) 0%, transparent 62%),
     var(--card);
   box-shadow: inset 0 0 0 1px var(--card-edge), var(--card-shadow);
 }
@@ -667,8 +665,7 @@ html[data-style="soft"] body {
   padding: 1.25rem 1.6rem;
   border-radius: 1.5rem;
   background:
-    radial-gradient(70% 160% at 0% 0%, color-mix(in oklch, var(--primary) 12%, transparent) 0%, transparent 62%),
-    radial-gradient(50% 140% at 100% 100%, color-mix(in oklch, var(--glow-2) 10%, transparent) 0%, transparent 70%),
+    radial-gradient(70% 160% at 0% 0%, color-mix(in oklch, var(--primary) 7%, transparent) 0%, transparent 62%),
     var(--card);
   box-shadow: inset 0 0 0 1px var(--card-edge), var(--card-shadow);
 }
@@ -677,9 +674,8 @@ html[data-style="soft"] body {
   letter-spacing: -0.02em;
 }
 [data-style="soft"] .page-hero-chip {
-  background: var(--gradient-accent);
+  background: var(--primary);
   color: var(--primary-foreground);
-  box-shadow: 0 8px 18px -8px color-mix(in oklch, var(--primary), transparent 30%);
 }
 .dark[data-style="soft"] .page-hero {
   background:
@@ -695,17 +691,15 @@ html[data-style="soft"] body {
   border-radius: 9999px;
 }
 [data-style="soft"] [data-slot="calendar"] button[data-selected-single="true"] {
-  background: var(--gradient-accent);
+  background: var(--primary);
   color: var(--primary-foreground);
   border-radius: 9999px;
-  box-shadow: 0 6px 14px -6px color-mix(in oklch, var(--primary), transparent 30%);
 }
 
 /* A section's icon tile: the brand gradient in 柔光, a tint elsewhere. */
 [data-style="soft"] .section-chip {
-  background: var(--gradient-accent);
+  background: var(--primary);
   color: var(--primary-foreground);
-  box-shadow: 0 6px 14px -6px color-mix(in oklch, var(--primary), transparent 35%);
 }
 /* 总览's one-line facts, as pills: muted elsewhere, frosted on the gradient. */
 .hero-pill {
@@ -786,10 +780,11 @@ main h1 {
    too, so no page keeps the old hairline-and-square look. Coloured boxes
    (warnings, highlights) keep their own colours; only plain ones change. */
 [data-style="soft"] {
-  --soft-tile: color-mix(in oklch, var(--primary) 4%, var(--card));
-  --soft-tile-strong: color-mix(in oklch, var(--primary) 8%, var(--card));
-  --soft-line: color-mix(in oklch, var(--primary) 12%, transparent);
-  --soft-field: color-mix(in oklch, var(--primary) 5%, var(--card));
+  /* System greys, not brand tints: colour is kept for what can be pressed. */
+  --soft-tile: color-mix(in oklch, var(--foreground) 3%, var(--card));
+  --soft-tile-strong: color-mix(in oklch, var(--foreground) 5.5%, var(--card));
+  --soft-line: color-mix(in oklch, var(--foreground) 9%, transparent);
+  --soft-field: color-mix(in oklch, var(--foreground) 5%, var(--card));
 }
 .dark[data-style="soft"] {
   --soft-tile: color-mix(in oklch, white 4%, var(--card));
@@ -856,18 +851,18 @@ main h1 {
 [data-style="soft"] [data-slot="tabs-trigger"][data-active],
 [data-style="soft"] [data-slot="tabs-trigger"][aria-selected="true"] {
   background: var(--card);
-  box-shadow: 0 2px 8px -3px color-mix(in oklch, var(--primary), transparent 65%);
+  box-shadow: 0 2px 8px -3px rgba(0, 0, 0, 0.112);
 }
 
 /* Pop-ups and menus float like the cards. */
 [data-style="soft"] :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"]) {
-  border-radius: 1.75rem;
+  border-radius: 1.25rem;
   border: none;
-  box-shadow: 0 0 0 1px var(--soft-line), 0 30px 70px -24px color-mix(in oklch, var(--primary), transparent 55%);
+  box-shadow: 0 0 0 1px var(--soft-line), 0 30px 70px -24px rgba(0, 0, 0, 0.144);
 }
 [data-style="soft"] :is([data-slot="dropdown-menu-content"], [data-slot="select-content"], [data-slot="dropdown-menu-sub-content"]) {
   border-radius: 1.1rem;
-  box-shadow: 0 0 0 1px var(--soft-line), 0 18px 40px -16px color-mix(in oklch, var(--primary), transparent 55%);
+  box-shadow: 0 0 0 1px var(--soft-line), 0 18px 40px -16px rgba(0, 0, 0, 0.144);
 }
 [data-style="soft"] :is([data-slot="dropdown-menu-item"], [data-slot="select-item"]) {
   border-radius: 0.7rem;
@@ -878,29 +873,22 @@ main h1 {
 }
 [data-style="soft"] [data-sonner-toast] {
   border-radius: 1rem !important;
-  box-shadow: 0 0 0 1px var(--soft-line), 0 14px 34px -14px color-mix(in oklch, var(--primary), transparent 55%) !important;
+  box-shadow: 0 0 0 1px var(--soft-line), 0 14px 34px -14px rgba(0, 0, 0, 0.144) !important;
 }
 
 /* 小欧's window in 柔光: a floating panel with a gradient band on top. */
 [data-style="soft"] .assistant-panel {
   border: none;
-  border-radius: 1.75rem;
-  box-shadow: 0 0 0 1px var(--soft-line), 0 30px 70px -24px color-mix(in oklch, var(--primary), transparent 50%);
+  border-radius: 1.25rem;
+  box-shadow: 0 0 0 1px var(--soft-line), 0 30px 70px -24px rgba(0, 0, 0, 0.16);
 }
 [data-style="soft"] .assistant-head {
-  background: var(--hero-bg);
-  color: var(--primary-foreground);
-  border-bottom: none;
-}
-.dark[data-style="soft"] .assistant-head {
-  background: linear-gradient(135deg, color-mix(in oklch, var(--primary), black 45%), color-mix(in oklch, var(--glow-2), black 50%));
-  color: #fff;
-}
-[data-style="soft"] .assistant-head :is(.text-muted-foreground, [data-slot="button"]) {
-  color: inherit;
+  background: color-mix(in oklch, var(--card) 80%, transparent);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--soft-line);
 }
 [data-style="soft"] .bubble-user {
-  background: var(--gradient-accent);
+  background: var(--primary);
   color: var(--primary-foreground);
   border-radius: 1.1rem 1.1rem 0.35rem 1.1rem;
   margin-left: 2.5rem;

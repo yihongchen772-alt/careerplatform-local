@@ -41,7 +41,7 @@ export function FunnelCard({
                 </span>
                 <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-muted">
                   <div
-                    className="h-full rounded-full bg-[image:var(--gradient-accent)]"
+                    className="h-full rounded-full bg-primary"
                     style={{ width: `${Math.max(level.shareOfTotal * 100, level.count > 0 ? 2 : 0)}%` }}
                   />
                 </div>

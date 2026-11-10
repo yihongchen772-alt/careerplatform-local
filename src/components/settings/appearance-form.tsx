@@ -15,7 +15,7 @@ const MODES: { id: ThemeMode; label: string; icon: typeof Sun }[] = [
 /** A tiny window drawn the way each style draws surfaces. */
 function StylePreview({ style }: { style: ThemeStyle }) {
   const card = style === "soft" ? "rounded-lg bg-white shadow-[0_4px_12px_-6px_rgba(15,23,42,0.25)]" : style === "minimal" ? "rounded-[3px] border border-black/10 bg-white" : style === "glass" ? "rounded-md border border-white/70 bg-white/55 shadow-[0_4px_10px_-6px_rgba(0,0,0,0.25)] backdrop-blur" : "rounded-md bg-white shadow-[0_3px_8px_-4px_rgba(0,0,0,0.25)]";
-  const button = style === "minimal" ? "rounded-[3px] bg-[var(--primary)]" : style === "soft" ? "rounded-full bg-[var(--primary)]" : "rounded-full bg-[image:var(--gradient-accent)]";
+  const button = style === "minimal" ? "rounded-[3px] bg-[var(--primary)]" : style === "soft" ? "rounded-full bg-[var(--primary)]" : "rounded-full bg-[var(--primary)]";
   return (
     <span className={cn("relative block h-20 overflow-hidden rounded-lg border border-black/5 p-2", style === "minimal" ? "bg-[#fafafa]" : style === "soft" ? "bg-[#f2f3f7]" : "bg-[#f3f3f7]")}>
       {style === "glass" && <span className="absolute -right-3 -top-4 size-14 rounded-full bg-[var(--glow-1)] opacity-50 blur-xl" />}
