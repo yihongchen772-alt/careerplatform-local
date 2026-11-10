@@ -12,7 +12,8 @@ export type AgentStep = {
 
 export type ToolOutcome = { content: string; label: string; summary: string; href?: string };
 
-export type AgentEvent = { type: "step"; step: AgentStep } | { type: "note"; text: string };
+/** `reset` starts a new model turn; `delta` is the next piece of its text as it is written. */
+export type AgentEvent = { type: "step"; step: AgentStep } | { type: "note"; text: string } | { type: "reset" } | { type: "delta"; text: string };
 
 /** Enough for "plan my week" (records, a few JDs, the resume, a search) without running away with the Key. */
 export const MAX_TOOL_ROUNDS = 12;
@@ -27,7 +28,7 @@ const READ_ONLY_TOOLS = new Set(["search_records", "filter_applications", "get_w
  * following a fixed sequence. When the round budget runs out it must answer
  * with what it has.
  */
-export async function runAgent({ chat, request, execute, describe, emit, review, maxRounds = MAX_TOOL_ROUNDS }: {
+export async function runAgent({ chat, request, execute, describe, emit, review, maxRounds = MAX_TOOL_ROUNDS, stream = false }: {
   chat: (request: ChatRequest) => Promise<ChatTurn>;
   request: Omit<ChatRequest, "tools"> & { tools: ToolSpec[] };
   execute: (call: ToolCall) => Promise<ToolOutcome>;
@@ -37,6 +38,8 @@ export async function runAgent({ chat, request, execute, describe, emit, review,
   /** Checks a finished reply once; a returned note sends the model back to fix it. */
   review?: (reply: string) => string | null;
   maxRounds?: number;
+  /** Stream each turn's text to `emit` as it is written. */
+  stream?: boolean;
 }): Promise<{ reply: string; steps: AgentStep[] }> {
   const messages: AgentMessage[] = [...request.messages];
   const steps: AgentStep[] = [];
@@ -48,7 +51,8 @@ export async function runAgent({ chat, request, execute, describe, emit, review,
   for (let round = 0; ; round++) {
     const lastRound = round >= Math.min(Math.max(maxRounds, 0), MAX_TOOL_ROUNDS);
     if (lastRound) messages.push({ role: "user", text: "（系统提示：这一轮的工具步数用完了。请直接用已经查到的内容回答；没做完的事明确告诉用户还差什么。）" });
-    const turn = await chat({ ...request, messages, tools: lastRound ? [] : request.tools });
+    if (stream) emit({ type: "reset" });
+    const turn = await chat({ ...request, messages, tools: lastRound ? [] : request.tools, ...(stream ? { onText: (text: string) => emit({ type: "delta", text }) } : {}) });
     if (!turn.calls.length || lastRound) {
       if (!turn.text) throw new UserFacingError("AI 没有给出回答，请重试");
       const problem = !lastRound && !reviewed ? review?.(turn.text) : null;

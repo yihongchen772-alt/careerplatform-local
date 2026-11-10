@@ -103,7 +103,7 @@ export function BriefView({
             {busy ? "生成中，约 20 秒…" : brief ? "重新生成" : "生成速览"}
           </Button>
           <Button size="sm" variant="outline" className="gap-1" onClick={() => window.print()}><Printer className="size-3.5" />打印 / 存 PDF</Button>
-          {brief && updatedAt && <span className="text-[11px] text-muted-foreground">生成于 {new Date(updatedAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>}
+          {brief && updatedAt && <span className="text-xs text-muted-foreground">生成于 {new Date(updatedAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>}
         </div>
       </header>
 

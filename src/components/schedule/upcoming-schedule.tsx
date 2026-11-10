@@ -117,7 +117,7 @@ export function UpcomingSchedule({ items, now: serverNow, applications, days = 7
           const label = dayLabel(group.key, now);
           return (
             <div key={group.key}>
-              <p className="mb-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground">{label.day}{label.day.startsWith("周") || ["今天", "明天", "后天", "昨天"].includes(label.day) ? ` · ${label.date}` : ""}</p>
+              <p className="mb-1.5 text-xs font-semibold tracking-wide text-muted-foreground">{label.day}{label.day.startsWith("周") || ["今天", "明天", "后天", "昨天"].includes(label.day) ? ` · ${label.date}` : ""}</p>
               <ul className="space-y-1.5">
                 {group.items.map((item) => (
                   <ScheduleRow
@@ -184,7 +184,7 @@ function ScheduleRow({ item, now, busy, clash, onComplete, onWrite, onDismiss, o
       <div className="flex min-w-0 flex-1 items-start gap-3">
         <div className="w-[5.5rem] shrink-0 pt-0.5">
           <p className="text-sm font-semibold tabular-nums">{item.hasTime ? `${clock(start)}${end ? `–${clock(end)}` : ""}` : item.endsAt ? "窗口" : item.kind === "interview" ? "全天" : "截止"}</p>
-          <p className={cn("mt-0.5 text-[11px] leading-4", URGENCY_TEXT[urgency])}>
+          <p className={cn("mt-0.5 text-xs leading-4", URGENCY_TEXT[urgency])}>
             {urgency === "now" && <span className="mr-1 inline-block size-1.5 animate-pulse rounded-full bg-emerald-500 align-middle" />}
             {relativeText(item, now)}
           </p>
@@ -205,29 +205,29 @@ function ScheduleRow({ item, now, busy, clash, onComplete, onWrite, onDismiss, o
             </p>
           )}
           {item.cancelNotice && (
-            <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-rose-700 dark:text-rose-300" title={item.cancelNotice.subject}>
+            <p className="mt-0.5 flex items-center gap-1.5 text-xs text-rose-700 dark:text-rose-300" title={item.cancelNotice.subject}>
               <TriangleAlert className="size-3 shrink-0" />
               <span className="truncate">公司发过取消通知「{item.cancelNotice.subject}」，确认后在「⋯」里清掉或删除</span>
               <button type="button" disabled={busy} onClick={onCancelNoticeSeen} className="shrink-0 font-medium underline-offset-2 hover:underline">知道了</button>
             </p>
           )}
           {item.source === "mail" && (
-            <p className="mt-0.5 flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-300">
+            <p className="mt-0.5 flex items-center gap-1 text-xs text-amber-700 dark:text-amber-300">
               <Mail className="size-3" />
               {item.conflictsWith ? `邮件里的时间，和你记录的 ${absoluteWhen(item.conflictsWith)} 不同，还没写入` : "邮件里识别到的时间，还没写入投递和日历"}
             </p>
           )}
           {item.source === "event" && !item.applicationId && (
             item.suggestion ? (
-              <p className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+              <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                 <Sparkles className="size-3 text-primary" />
                 <span>像是「{item.suggestion.label}」的安排</span>
                 <button type="button" disabled={busy} onClick={onAccept} className="rounded-full bg-primary/10 px-2 py-0.5 font-medium text-primary transition-colors hover:bg-primary/15 disabled:opacity-50">{busy ? "关联中…" : "是，关联"}</button>
               </p>
             ) : item.companyName && item.companyApplications ? (
-              <p className="mt-0.5 text-[11px] text-muted-foreground">{item.companyName} 有 {item.companyApplications} 条进行中的投递，点「关联投递」选是哪一条</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">{item.companyName} 有 {item.companyApplications} 条进行中的投递，点「关联投递」选是哪一条</p>
             ) : (
-              <p className="mt-0.5 text-[11px] text-muted-foreground">{item.fromMail ? "邮件里的安排，已在日历中；没认出是哪条投递" : "你自己加的日程，不属于任何投递"}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">{item.fromMail ? "邮件里的安排，已在日历中；没认出是哪条投递" : "你自己加的日程，不属于任何投递"}</p>
             )
           )}
         </div>
@@ -294,7 +294,7 @@ function LinkDialog({ item, applications, onClose, onPick }: { item: ScheduleIte
           className="h-9 w-full rounded-xl border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40"
         />
         <div className="max-h-72 space-y-1 overflow-y-auto">
-          {!term && suggested.length > 0 && <p className="px-1 text-[11px] text-muted-foreground">{item?.companyName ? `${item.companyName} 的投递` : "标题里提到的公司"}</p>}
+          {!term && suggested.length > 0 && <p className="px-1 text-xs text-muted-foreground">{item?.companyName ? `${item.companyName} 的投递` : "标题里提到的公司"}</p>}
           {results.map((app) => (
             <button key={app.id} type="button" onClick={() => { setQuery(""); onPick(app); }} className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-muted">
               <span className="font-medium">{app.companyName}</span>

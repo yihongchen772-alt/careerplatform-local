@@ -1492,7 +1492,7 @@ export function EmbeddedBrowser({
               header={(
                 <div className="flex items-center gap-2 border-b px-3 py-2">
                   <Sparkles className="size-4 text-primary" />
-                  <div className="min-w-0 flex-1"><p className="text-sm font-medium">小欧</p><p className="truncate text-[11px] text-muted-foreground">{currentUrl ? `看着：${activeTab?.title || currentUrl}` : "打开一个网页后，小欧能看着它回答"}</p></div>
+                  <div className="min-w-0 flex-1"><p className="text-sm font-medium">小欧</p><p className="truncate text-xs text-muted-foreground">{currentUrl ? `看着：${activeTab?.title || currentUrl}` : "打开一个网页后，小欧能看着它回答"}</p></div>
                   <ToolbarIcon label="关闭小欧" onClick={() => setAgentOpen(false)}><X /></ToolbarIcon>
                 </div>
               )}

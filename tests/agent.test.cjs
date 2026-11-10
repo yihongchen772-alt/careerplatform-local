@@ -505,3 +505,112 @@ test("agent loop: read-only lookups run together, writes stay in order, long res
   assert.ok(order.indexOf("end:remember") < order.indexOf("start:search_records") && order.indexOf("end:get_position") < order.indexOf("start:remember"));
   assert.equal(result.steps.length, 4);
 });
+
+test("records a reply looked up go with it into the next turn", () => {
+  const { collectRefs } = loadTs("src/lib/agent/refs.ts", {});
+  const refs = new Map();
+  collectRefs(refs, "- [投递ID:app1][进度ID:row1] 星河科技 · 后端；阶段：一面\n- [投递ID:app1] 重复\n{\"岗位ID\": \"pos9\"}");
+  assert.deepEqual([...refs.keys()], ["app1", "pos9"]);
+  const { historyMessages } = loadTs("src/lib/agent/llm.ts", { "@/lib/ai-providers": { OPENAI_COMPATIBLE_BASE_URL: {} }, "@/lib/action-result": actionResult, "@/lib/ai-provider-labels": { AI_PROVIDER_OPTIONS: [] } });
+  const messages = historyMessages("deepseek", [{ role: "user", content: "看看星河" }, { role: "assistant", content: "在一面", refs: [...refs.values()].join("\n") }]);
+  assert.match(messages[1].text, /在一面[\s\S]*\[投递ID:app1\]/);
+});
+
+// Streaming: each provider's server-sent events, split at awkward places on purpose.
+function sse(events, cut = 7) {
+  const text = events.map((event) => `data: ${typeof event === "string" ? event : JSON.stringify(event)}\n\n`).join("");
+  const bytes = new TextEncoder().encode(text);
+  return { ok: true, status: 200, body: new ReadableStream({ start(controller) { for (let i = 0; i < bytes.length; i += cut) controller.enqueue(bytes.slice(i, i + cut)); controller.close(); } }) };
+}
+const streamConfig = (provider, model) => ({ provider, apiKey: "k", model });
+
+test("streaming: OpenAI-compatible text arrives piece by piece; a tool call's arguments are put back together", async () => {
+  const bodies = [];
+  const { mod, restore } = llmWith(async (url, init) => {
+    bodies.push(JSON.parse(init.body));
+    return sse([
+      { choices: [{ delta: { content: "先查" } }] },
+      { choices: [{ delta: { content: "一下" } }] },
+      { choices: [{ delta: { tool_calls: [{ index: 0, id: "c1", function: { name: "get_position", arguments: "{\"posi" } }] } }] },
+      { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: "tionId\":\"p1\"}" } }] } }] },
+      "[DONE]",
+    ]);
+  });
+  try {
+    const pieces = [];
+    const turn = await mod.createChat()({ config: streamConfig("deepseek", "m"), system: "s", messages: [{ role: "user", text: "q" }], tools: [toolSpec], onText: (t) => pieces.push(t) });
+    assert.equal(bodies[0].stream, true);
+    assert.deepEqual(pieces, ["先查", "一下"]);
+    assert.equal(turn.text, "先查一下");
+    assert.deepEqual(turn.calls.map((c) => [c.id, c.name, c.args]), [["c1", "get_position", { positionId: "p1" }]]);
+    assert.equal(turn.raw.tool_calls[0].function.arguments, "{\"positionId\":\"p1\"}");
+  } finally { restore(); }
+});
+
+test("streaming: a provider that refuses stream answers the plain way", async () => {
+  let n = 0;
+  const { mod, restore } = llmWith(async (url, init) => {
+    n++;
+    if (JSON.parse(init.body).stream) return { ok: false, status: 400, body: null, text: async () => "no stream" };
+    return okJson({ choices: [{ message: { role: "assistant", content: "好的" } }] });
+  });
+  try {
+    const turn = await mod.createChat()({ config: streamConfig("deepseek", "m"), system: "s", messages: [{ role: "user", text: "q" }], tools: [], onText: () => {} });
+    assert.equal(turn.text, "好的"); assert.equal(n, 2);
+  } finally { restore(); }
+});
+
+test("streaming: Gemini parts and Anthropic blocks are rebuilt from the events", async () => {
+  const urls = [];
+  const gem = llmWith(async (url) => {
+    urls.push(url);
+    return sse([
+      { candidates: [{ content: { parts: [{ text: "想想", thought: true }, { text: "你好" }] } }] },
+      { candidates: [{ content: { parts: [{ text: "，小陈" }, { functionCall: { name: "get_position", args: { positionId: "p2" } }, thoughtSignature: "sig" }] }, finishReason: "STOP" }] },
+    ]);
+  });
+  try {
+    const pieces = [];
+    const turn = await gem.mod.createChat()({ config: streamConfig("gemini", "gemini-x"), system: "s", messages: [{ role: "user", text: "q" }], tools: [toolSpec], onText: (t) => pieces.push(t) });
+    assert.match(urls[0], /streamGenerateContent\?alt=sse/);
+    assert.deepEqual(pieces, ["你好", "，小陈"]);
+    assert.equal(turn.text, "你好，小陈");
+    assert.equal(turn.calls[0].args.positionId, "p2");
+    assert.equal(turn.raw.parts.find((p) => p.functionCall).thoughtSignature, "sig");
+  } finally { gem.restore(); }
+  const ant = llmWith(async () => sse([
+    { type: "message_start", message: {} },
+    { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
+    { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "查一下" } },
+    { type: "content_block_stop", index: 0 },
+    { type: "content_block_start", index: 1, content_block: { type: "tool_use", id: "tu1", name: "get_position", input: {} } },
+    { type: "content_block_delta", index: 1, delta: { type: "input_json_delta", partial_json: "{\"positionId\":" } },
+    { type: "content_block_delta", index: 1, delta: { type: "input_json_delta", partial_json: "\"p3\"}" } },
+    { type: "content_block_stop", index: 1 },
+    { type: "message_stop" },
+  ]));
+  try {
+    const pieces = [];
+    const turn = await ant.mod.createChat()({ config: streamConfig("anthropic", "claude-x"), system: "s", messages: [{ role: "user", text: "q" }], tools: [toolSpec], onText: (t) => pieces.push(t) });
+    assert.deepEqual(pieces, ["查一下"]);
+    assert.deepEqual(turn.calls.map((c) => [c.id, c.args]), [["tu1", { positionId: "p3" }]]);
+    assert.deepEqual(turn.raw[1].input, { positionId: "p3" });
+  } finally { ant.restore(); }
+});
+
+test("agent loop: streamed text is forwarded, and each model turn starts over", async () => {
+  const events = [];
+  let round = 0;
+  await runAgent({
+    chat: async (request) => {
+      if (round++ === 0) { request.onText("先看"); return turn("先看", [call("search_records", { query: "x" })]); }
+      request.onText("结论"); return turn("结论");
+    },
+    request: { config: {}, system: "s", messages: [{ role: "user", text: "q" }], tools: [{ name: "search_records" }] },
+    execute: async () => ({ content: "ok", label: "l", summary: "" }),
+    describe,
+    emit: (event) => events.push(event.type === "delta" ? `delta:${event.text}` : event.type),
+    stream: true,
+  });
+  assert.deepEqual(events.filter((e) => e === "reset" || e.startsWith("delta")), ["reset", "delta:先看", "reset", "delta:结论"]);
+});

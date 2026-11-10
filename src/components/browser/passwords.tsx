@@ -73,7 +73,7 @@ export function PasswordKeyButton({ bridge, tabId, state, onManage }: { bridge: 
             <DropdownMenuItem key={account.id} onClick={() => fill(account.id)}>
               <KeyRound className="size-4" />
               <span className="truncate">{account.username || "（没有账号名）"}</span>
-              {state.filled === account.username && <span className="ml-auto text-[11px] text-muted-foreground">已填</span>}
+              {state.filled === account.username && <span className="ml-auto text-xs text-muted-foreground">已填</span>}
             </DropdownMenuItem>
           )) : <DropdownMenuItem disabled>还没有保存这个网站的账号；登录一次后会问你要不要保存</DropdownMenuItem>}
         </DropdownMenuGroup>
@@ -85,7 +85,7 @@ export function PasswordKeyButton({ bridge, tabId, state, onManage }: { bridge: 
               {state.nearby.slice(0, 6).map((account) => (
                 <DropdownMenuItem key={account.id} onClick={() => fill(account.id)}>
                   <span className="truncate">{account.username || "（没有账号名）"}</span>
-                  <span className="ml-auto max-w-28 truncate text-[11px] text-muted-foreground">{account.site}</span>
+                  <span className="ml-auto max-w-28 truncate text-xs text-muted-foreground">{account.site}</span>
                 </DropdownMenuItem>
               ))}
             </DropdownMenuGroup>

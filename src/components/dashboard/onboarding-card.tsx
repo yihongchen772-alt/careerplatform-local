@@ -57,7 +57,7 @@ export function OnboardingCard({ steps, defaultOpen = false }: { steps: Onboardi
           <span className="min-w-0 flex-1">
             <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
               <span className="text-sm font-semibold">上手四步</span>
-              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium tabular-nums text-primary">{doneCount}/{steps.length}</span>
+              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium tabular-nums text-primary">{doneCount}/{steps.length}</span>
             </span>
             <span className="mt-0.5 block truncate text-xs text-muted-foreground">下一步：{remaining[0].title}</span>
           </span>

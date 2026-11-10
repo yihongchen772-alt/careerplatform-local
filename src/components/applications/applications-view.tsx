@@ -354,7 +354,7 @@ export function ApplicationsView({ applications, now: serverNow, funnel, cityLoo
             <kbd className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded border border-border/80 px-1.5 font-sans text-[10px] text-muted-foreground">/</kbd>
           )}
         </div>}
-        <div className="inline-flex w-fit shrink-0 gap-1 rounded-full border border-border/70 bg-card/75 p-1 shadow-sm backdrop-blur-xl" aria-label="投递记录视图">
+        <div className="inline-flex w-fit shrink-0 gap-1 rounded-full bg-muted p-1" aria-label="投递记录视图">
           {([
             { id: "board" as const, label: "看板", icon: LayoutGrid },
             { id: "table" as const, label: "列表", icon: List },
@@ -368,7 +368,7 @@ export function ApplicationsView({ applications, now: serverNow, funnel, cityLoo
                 onClick={() => setView(option.id)}
                 className={cn(
                   "flex h-8 items-center gap-1.5 rounded-full px-3.5 text-xs font-medium transition-all duration-200",
-                  view === option.id ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:text-foreground"
+                  view === option.id ? "bg-card text-foreground shadow-sm ring-1 ring-black/5 dark:bg-white/15 dark:ring-white/10" : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 <Icon className="size-3.5" />
@@ -392,7 +392,7 @@ export function ApplicationsView({ applications, now: serverNow, funnel, cityLoo
               onClick={() => chooseFilter(key)}
               className={cn(
                 "inline-flex h-7 items-center gap-1 rounded-full border px-3 text-xs font-medium transition-colors",
-                filter === key ? "border-foreground bg-foreground text-background" : "border-border/70 bg-card/70 text-muted-foreground hover:border-primary/30 hover:text-foreground"
+                filter === key ? "border-primary bg-primary text-primary-foreground" : "border-border/70 bg-card/70 text-muted-foreground hover:border-primary/30 hover:text-foreground"
               )}
             >
               {FILTER_LABELS[key]}

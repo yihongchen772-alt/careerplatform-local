@@ -80,4 +80,5 @@ export const assistantActionSchema = z.object({
 
 export type AssistantAction = z.infer<typeof assistantActionSchema>;
 
-export type AssistantChatMessage = { role: "user" | "assistant"; content: string };
+/** `refs`: the records a reply looked up (「[投递ID:…] 公司 · 岗位」), so the next turn can use them without searching again. */
+export type AssistantChatMessage = { role: "user" | "assistant"; content: string; refs?: string };

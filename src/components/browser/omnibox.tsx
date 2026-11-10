@@ -179,7 +179,7 @@ export function Omnibox({
           className="h-full min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground"
         />
         {!focused && zoomPercent !== 100 && (
-          <button type="button" onClick={onZoomReset} title={`网页缩放 ${zoomPercent}%，点按还原为 100%`} className="flex h-6 shrink-0 items-center gap-1 rounded-full px-2 text-[11px] text-muted-foreground hover:bg-foreground/10 hover:text-foreground">
+          <button type="button" onClick={onZoomReset} title={`网页缩放 ${zoomPercent}%，点按还原为 100%`} className="flex h-6 shrink-0 items-center gap-1 rounded-full px-2 text-xs text-muted-foreground hover:bg-foreground/10 hover:text-foreground">
             <ZoomIn className="size-3.5" />
             {zoomPercent}%
           </button>
@@ -225,7 +225,7 @@ export function Omnibox({
               </div>
             );
           })}
-          <p className="px-3.5 pt-1 text-[11px] text-muted-foreground">↑↓ 选择 · 回车打开 · {mod}回车在新标签页打开</p>
+          <p className="px-3.5 pt-1 text-xs text-muted-foreground">↑↓ 选择 · 回车打开 · {mod}回车在新标签页打开</p>
         </div>
       )}
     </div>

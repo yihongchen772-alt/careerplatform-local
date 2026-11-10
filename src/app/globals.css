@@ -812,13 +812,13 @@ main h1 {
 
 /* Form fields: filled, no hard outline, a brand ring on focus. */
 [data-style="soft"] :is([data-slot="input"], [data-slot="textarea"], [data-slot="select-trigger"], [data-slot="input-group"]),
-[data-style="soft"] main :is(input[type="text"], input[type="search"], input[type="number"], input[type="date"], input[type="month"], input[type="time"], input[type="datetime-local"], input:not([type]), select, textarea):not([data-slot]) {
+[data-style="soft"] :is(main, [role="dialog"]) :is(input[type="text"], input[type="search"], input[type="number"], input[type="date"], input[type="month"], input[type="time"], input[type="datetime-local"], input:not([type]), select, textarea):not([data-slot]) {
   background-color: var(--soft-field);
   border-color: transparent;
   border-radius: 0.85rem;
 }
 [data-style="soft"] :is([data-slot="input"], [data-slot="textarea"], [data-slot="select-trigger"]):focus-visible,
-[data-style="soft"] main :is(input, select, textarea):not([data-slot]):focus-visible {
+[data-style="soft"] :is(main, [role="dialog"]) :is(input, select, textarea):not([data-slot]):focus-visible {
   border-color: color-mix(in oklch, var(--primary) 45%, transparent);
   box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 18%, transparent);
 }
@@ -900,4 +900,55 @@ main h1 {
   background: var(--soft-tile-strong);
   border-radius: 1.1rem 1.1rem 1.1rem 0.35rem;
   margin-right: 1.5rem;
+}
+
+/* ---------- 深色：苹果式中性灰层次 ----------
+   Every palette's dark mode shares the system greys Apple uses (page #161618,
+   raised cards #232325, controls #2c2c2e, hairlines of white). A palette only
+   colours what can be pressed (primary, accent, ring), so teal / champagne /
+   titanium no longer tint the whole window. Later in the file and more
+   specific than each `.dark[data-palette=…]`, so it applies to all of them. */
+:root.dark,
+:root.dark[data-palette] {
+  --background: #161618;
+  --foreground: #f5f5f7;
+  --card: #232325;
+  --card-foreground: #f5f5f7;
+  --popover: #2a2a2d;
+  --popover-foreground: #f5f5f7;
+  --secondary: #2c2c2e;
+  --secondary-foreground: #f5f5f7;
+  --muted: #2c2c2e;
+  --muted-foreground: #98989f;
+  --border: rgb(255 255 255 / 0.09);
+  --input: rgb(255 255 255 / 0.12);
+  --sidebar: #1c1c1e;
+  --sidebar-foreground: #f5f5f7;
+  --sidebar-accent: rgb(255 255 255 / 0.08);
+  --sidebar-accent-foreground: #f5f5f7;
+  --sidebar-border: rgb(255 255 255 / 0.08);
+}
+/* Raised surfaces show a faint light edge on top instead of a shadow you can't see. */
+:root.dark {
+  --card-edge: rgb(255 255 255 / 0.07);
+  --card-shadow: 0 1px 0 0 rgb(255 255 255 / 0.04) inset, 0 10px 30px -12px rgb(0 0 0 / 0.6);
+  --card-shadow-hover: 0 1px 0 0 rgb(255 255 255 / 0.05) inset, 0 16px 38px -12px rgb(0 0 0 / 0.7);
+  --nav-active-bg: rgb(255 255 255 / 0.09);
+}
+:root.dark[data-style="soft"] {
+  --soft-tile: rgb(255 255 255 / 0.035);
+  --soft-tile-strong: rgb(255 255 255 / 0.06);
+  --soft-line: rgb(255 255 255 / 0.08);
+  --soft-field: rgb(255 255 255 / 0.06);
+  --page-bg: radial-gradient(1100px 620px at 100% -8%, color-mix(in oklch, var(--primary), transparent 93%), transparent 62%), var(--background);
+}
+:root.dark[data-style="soft"] :is(.hero-card, .page-hero) {
+  background: radial-gradient(70% 160% at 0% 0%, color-mix(in oklch, var(--primary) 9%, transparent) 0%, transparent 62%), var(--card);
+}
+:root.dark[data-style="soft"] .app-sidebar {
+  background: rgb(36 36 38 / 0.72);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.07), 0 16px 40px -20px rgb(0 0 0 / 0.7);
+}
+:root.dark[data-style="soft"] .assistant-head {
+  background: rgb(36 36 38 / 0.8);
 }

@@ -101,7 +101,7 @@ export function ApplicationEditForm({
             <div className="flex items-center justify-between">
               <Label className="text-xs text-muted-foreground">城市</Label>
               {citySource && city.trim() === initialCity.trim() && (
-                <span className="text-[11px] text-muted-foreground">
+                <span className="text-xs text-muted-foreground">
                   {citySource === "公司所在地" ? "按公司所在地推测（修改后保存即确认）" : `自动识别自${citySource}`}
                 </span>
               )}

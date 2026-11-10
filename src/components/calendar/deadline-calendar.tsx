@@ -215,7 +215,7 @@ export function DeadlineCalendar({
             <div className="space-y-3">
               {groups.map((group) => (
                 <div key={group.key}>
-                  {!selected && <p className="mb-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground">{group.label}</p>}
+                  {!selected && <p className="mb-1.5 text-xs font-semibold tracking-wide text-muted-foreground">{group.label}</p>}
                   <ul className="space-y-1.5">{group.items.map(row)}</ul>
                 </div>
               ))}

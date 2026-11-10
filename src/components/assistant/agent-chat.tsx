@@ -37,7 +37,7 @@ export type PageDraft = { question: string; answer: string };
 /** The 网申 page open beside 小欧 (网申浏览器's side panel). */
 export type AgentPageContext = { url: string; title: string; text: string; questions: { label: string; value: string }[]; positionId?: string };
 
-type TurnResult = { ok: true; reply: string; actions: AssistantAction[]; drafts: PageDraft[]; steps: AgentStep[]; notices: string[] } | { ok: false; message: string };
+type TurnResult = { ok: true; reply: string; actions: AssistantAction[]; drafts: PageDraft[]; steps: AgentStep[]; notices: string[]; refs: string } | { ok: false; message: string };
 type Tab = "chat" | "history" | "plan" | "memory";
 
 /** Where the chat lived before it was kept in the database (moved over once). */
@@ -102,7 +102,7 @@ async function streamTurn(message: string, history: AssistantChatMessage[], page
     for (const line of lines) {
       if (!line.trim()) continue;
       const event = JSON.parse(line);
-      if (event.type === "done") return { ok: true, reply: event.reply, actions: event.actions ?? [], drafts: event.drafts ?? [], steps: event.steps ?? [], notices: event.notices ?? [] };
+      if (event.type === "done") return { ok: true, reply: event.reply, actions: event.actions ?? [], drafts: event.drafts ?? [], steps: event.steps ?? [], notices: event.notices ?? [], refs: typeof event.refs === "string" ? event.refs : "" };
       if (event.type === "error") return { ok: false, message: event.message };
       onEvent(event);
     }
@@ -114,7 +114,7 @@ function toDisplay(stored: Array<Record<string, unknown>>, keepActions: boolean)
   return stored.map((m, id) => {
     const actions = keepActions && Array.isArray(m.actions) ? m.actions.map((item) => assistantActionSchema.safeParse(item)).filter((item) => item.success).map((item) => item.data) : undefined;
     return {
-      id, role: m.role as "user" | "assistant", content: String(m.content ?? ""), actions, applied: Array.isArray(m.applied) ? (m.applied as number[]) : [],
+      id, role: m.role as "user" | "assistant", content: String(m.content ?? ""), refs: typeof m.refs === "string" ? m.refs : undefined, actions, applied: Array.isArray(m.applied) ? (m.applied as number[]) : [],
       steps: Array.isArray(m.steps) ? (m.steps as AgentStep[]) : undefined, notices: Array.isArray(m.notices) ? (m.notices as string[]) : undefined,
       failedRequest: m.failedRequest as DisplayMessage["failedRequest"],
       drafts: Array.isArray(m.drafts) ? (m.drafts as PageDraft[]) : undefined, filled: Array.isArray(m.filled) ? (m.filled as number[]) : [],
@@ -123,7 +123,7 @@ function toDisplay(stored: Array<Record<string, unknown>>, keepActions: boolean)
 }
 
 function toStored(messages: DisplayMessage[]) {
-  return messages.map(({ role, content, actions, applied, steps, notices, failedRequest, drafts, filled }) => ({ role, ...(drafts?.length ? { drafts, filled: filled ?? [] } : {}), content: content.slice(0, 16000), ...(actions?.length ? { actions } : {}), ...(applied?.length ? { applied } : {}), ...(steps?.length ? { steps: steps.map((step) => ({ ...step, label: step.label.slice(0, 300), summary: step.summary.slice(0, 400) })) } : {}), ...(notices?.length ? { notices } : {}), ...(failedRequest ? { failedRequest: { message: failedRequest.message, history: failedRequest.history.slice(-20) } } : {}) }));
+  return messages.map(({ role, content, refs, actions, applied, steps, notices, failedRequest, drafts, filled }) => ({ role, ...(refs ? { refs: refs.slice(0, 4000) } : {}), ...(drafts?.length ? { drafts, filled: filled ?? [] } : {}), content: content.slice(0, 16000), ...(actions?.length ? { actions } : {}), ...(applied?.length ? { applied } : {}), ...(steps?.length ? { steps: steps.map((step) => ({ ...step, label: step.label.slice(0, 300), summary: step.summary.slice(0, 400) })) } : {}), ...(notices?.length ? { notices } : {}), ...(failedRequest ? { failedRequest: { message: failedRequest.message, history: failedRequest.history.slice(-20) } } : {}) }));
 }
 
 function when(iso: string) {
@@ -161,7 +161,7 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
   const [threads, setThreads] = useState<AgentThreadSummary[] | null>(null);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
-  const [live, setLive] = useState<{ steps: AgentStep[]; note: string }>({ steps: [], note: "" });
+  const [live, setLive] = useState<{ steps: AgentStep[]; note: string; text: string }>({ steps: [], note: "", text: "" });
   const [applying, setApplying] = useState<string | null>(null);
   const [state, setState] = useState<AgentState | null>(null);
   const [planDraft, setPlanDraft] = useState<string | null>(null);
@@ -220,7 +220,7 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
   }, [messages, loaded, sending]);
 
   useEffect(() => {
-    if (tab === "chat") bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    if (tab === "chat") bottomRef.current?.scrollIntoView({ behavior: live.text ? "auto" : "smooth", block: "end" });
   }, [messages, live, sending, tab]);
 
   const loadThreads = useCallback(async () => {
@@ -241,9 +241,9 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
     setMessages(next);
   }
 
-  function addMessage(role: "user" | "assistant", content: string, actions?: AssistantAction[], steps?: AgentStep[], notices?: string[], drafts?: PageDraft[]) {
+  function addMessage(role: "user" | "assistant", content: string, actions?: AssistantAction[], steps?: AgentStep[], notices?: string[], drafts?: PageDraft[], refs?: string) {
     const id = nextId.current++;
-    update((prev) => [...prev, { id, role, content, actions, steps, notices, applied: [], drafts: drafts?.length ? drafts : undefined, filled: [] }]);
+    update((prev) => [...prev, { id, role, content, ...(refs ? { refs } : {}), actions, steps, notices, applied: [], drafts: drafts?.length ? drafts : undefined, filled: [] }]);
   }
 
   function newChat() {
@@ -275,7 +275,7 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
   }
 
   async function runTurn(content: string, history: AssistantChatMessage[]): Promise<TurnResult> {
-    setLive({ steps: [], note: "" });
+    setLive({ steps: [], note: "", text: "" });
     try {
       const page = pageContext ? await pageContext().catch(() => null) : null;
       return await streamTurn(content, history, page, (event) => {
@@ -283,11 +283,14 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
           const step = event.step;
           setLive((prev) => ({ ...prev, steps: prev.steps.some((item) => item.id === step.id) ? prev.steps.map((item) => item.id === step.id ? step : item) : [...prev.steps, step] }));
         } else if (event.type === "note" && event.text) setLive((prev) => ({ ...prev, note: event.text! }));
+        // The reply as the model writes it; a new model turn (after looking things up) starts over.
+        else if (event.type === "reset") setLive((prev) => ({ ...prev, text: "" }));
+        else if (event.type === "delta" && event.text) setLive((prev) => ({ ...prev, text: prev.text + event.text }));
       });
     } catch {
       return { ok: false, message: "连接中断，本次请求未完成。请稍后重试。" };
     } finally {
-      setLive({ steps: [], note: "" });
+      setLive({ steps: [], note: "", text: "" });
     }
   }
 
@@ -299,7 +302,7 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
       const res = await runTurn(message.failedRequest.message, message.failedRequest.history);
       if (!res.ok) toast.error(res.message);
       update((prev) => prev.map((m) => m.id !== message.id ? m : res.ok
-        ? { id: m.id, role: "assistant", content: res.reply, actions: res.actions, steps: res.steps, notices: res.notices, applied: [], drafts: res.drafts.length ? res.drafts : undefined, filled: [] }
+        ? { id: m.id, role: "assistant", content: res.reply, ...(res.refs ? { refs: res.refs } : {}), actions: res.actions, steps: res.steps, notices: res.notices, applied: [], drafts: res.drafts.length ? res.drafts : undefined, filled: [] }
         : { ...m, content: res.message }));
     } finally {
       busyRef.current = false;
@@ -313,7 +316,7 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
     if (content.length > 6000) { toast.error("单条消息请控制在 6000 字以内"); return; }
     busyRef.current = true;
     setTab("chat");
-    const history = messages.filter((m) => !m.failedRequest).map(({ role, content }) => ({ role, content }));
+    const history = messages.filter((m) => !m.failedRequest).map(({ role, content, refs }) => ({ role, content, ...(refs ? { refs } : {}) }));
     addMessage("user", content);
     // A tapped suggestion leaves whatever was being typed alone.
     if (text === undefined) setInput("");
@@ -321,7 +324,7 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
     try {
       const res = await runTurn(content, history);
       onReply?.();
-      if (res.ok) addMessage("assistant", res.reply, res.actions, res.steps, res.notices, res.drafts);
+      if (res.ok) addMessage("assistant", res.reply, res.actions, res.steps, res.notices, res.drafts, res.refs || undefined);
       else {
         // A failed call should be noticed even with the window scrolled away.
         toast.error(res.message);
@@ -527,7 +530,7 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
                       </div>
                     )}
                   </div>
-                  {!!m.notices?.length && <p className="px-1 text-[11px] text-amber-600 dark:text-amber-400">{m.notices.join("；")}</p>}
+                  {!!m.notices?.length && <p className="px-1 text-xs text-amber-600 dark:text-amber-400">{m.notices.join("；")}</p>}
 
                   {!!m.steps?.length && (
                     <details className="rounded-lg border p-2 text-xs">
@@ -588,6 +591,12 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
                 <p className="flex items-center gap-1.5 font-medium"><Loader2 className="size-3.5 animate-spin" />{live.steps.length ? "小欧正在做…" : "小欧在想该怎么做…"}</p>
                 {live.note && <p className="mt-1 text-muted-foreground">{live.note}</p>}
                 {!!live.steps.length && <ol className="mt-2 space-y-1.5">{live.steps.map((step) => <StepLine key={step.id} step={step} onNavigate={onNavigate} />)}</ol>}
+              </div>
+            )}
+            {sending && live.text.trim() && (
+              <div className="bubble-ai rounded-lg bg-muted p-2.5 text-sm" aria-live="off">
+                <MarkdownText text={live.text} />
+                <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse rounded-sm bg-foreground/50 align-middle" aria-hidden />
               </div>
             )}
             <div ref={bottomRef} />

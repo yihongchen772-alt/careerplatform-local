@@ -146,7 +146,7 @@ export default async function ApplicationDetailPage({
             { label: "简历版本", value: application.resumeVersion?.name || "未关联" },
           ].map((item) => (
             <div key={item.label} className="min-w-0">
-              <p className="hero-sub text-[11px] font-medium text-muted-foreground">{item.label}</p>
+              <p className="hero-sub text-xs font-medium text-muted-foreground">{item.label}</p>
               <p className="mt-1 truncate text-sm font-semibold" title={item.value}>{item.value}</p>
             </div>
           ))}

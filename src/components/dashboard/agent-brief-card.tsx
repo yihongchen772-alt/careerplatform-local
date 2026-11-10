@@ -122,7 +122,7 @@ export function AgentBriefCard({ daily, weekly, dailyDue, weeklyDue }: { daily: 
                 })}
               </div>
             )}
-            <p className="text-[11px] text-muted-foreground">{new Date(brief.createdAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} 写的 · 可在设置 → AI 关掉自动简报</p>
+            <p className="text-xs text-muted-foreground">{new Date(brief.createdAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} 写的 · 可在设置 → AI 关掉自动简报</p>
           </>
         ) : null}
       </CardContent>

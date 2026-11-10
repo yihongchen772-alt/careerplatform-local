@@ -121,9 +121,9 @@ export function AutofillMemoryCard({ initial }: { initial: MemoryAnswer[] }) {
               <div className="max-h-[26rem] space-y-2 overflow-y-auto pr-1">
                 {filtered.map((row) => (
                   <button key={row.id} type="button" onClick={() => select(row)} className={cn("w-full rounded-xl border p-3 text-left transition-colors", selectedId === row.id ? "border-primary/40 bg-primary/5" : "border-border/60 bg-background/35 hover:bg-muted/50")}>
-                    <span className="block truncate text-sm font-medium">{row.questionLabel}<span className="ml-2 text-[11px] font-normal text-muted-foreground">{row.kind === "field" ? "基础资料" : "开放题"}</span></span>
+                    <span className="block truncate text-sm font-medium">{row.questionLabel}<span className="ml-2 text-xs font-normal text-muted-foreground">{row.kind === "field" ? "基础资料" : "开放题"}</span></span>
                     <span className="mt-1 block truncate text-xs text-muted-foreground">{row.answer}</span>
-                    <span className="mt-2 block truncate text-[11px] text-muted-foreground" title={scopeName(row.contextKey)}>{scopeName(row.contextKey)} · {new Date(row.updatedAt).toLocaleDateString("zh-CN")}</span>
+                    <span className="mt-2 block truncate text-xs text-muted-foreground" title={scopeName(row.contextKey)}>{scopeName(row.contextKey)} · {new Date(row.updatedAt).toLocaleDateString("zh-CN")}</span>
                   </button>
                 ))}
                 {filtered.length === 0 && <p className="py-6 text-center text-xs text-muted-foreground">没有匹配的记忆</p>}

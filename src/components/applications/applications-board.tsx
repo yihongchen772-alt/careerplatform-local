@@ -83,15 +83,15 @@ function ApplicationCard({ app, closed = false, hit, now }: { app: BoardApplicat
           <p className="truncate text-xs text-muted-foreground" title={app.title}><Highlight text={app.title} ranges={hit?.title} />{cityHint(app.cities ?? [], app.title, app.citySource === "公司所在地") ? <span className="ml-1.5 text-muted-foreground/80">· {cityHint(app.cities ?? [], app.title, app.citySource === "公司所在地")}</span> : null}</p>
         </div>
       </div>
-      <div className="mt-2 flex items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground">
+      <div className="mt-2 flex items-center gap-1.5 text-xs tabular-nums text-muted-foreground">
         <span className={cn("shrink-0 rounded-full px-1.5 py-px font-medium", tone.pill)}>{STAGE_LABELS[app.currentStage]}</span>
         {detail && <span className="min-w-0 truncate text-foreground/80" title={detail}>{detail}</span>}
         {app.portalSuggestedStage && <span className="shrink-0 rounded-full bg-amber-500/10 px-1.5 py-px font-medium text-amber-700 dark:text-amber-300">官网待核对</span>}
         <span className="ml-auto shrink-0" title={`投递于 ${app.appliedDate.slice(0, 10)}`}>{app.appliedDate.slice(5, 10).replace("-", "/")}</span>
         {!closed && <span className={cn("flex shrink-0 items-center gap-0.5", stay >= 14 && "font-medium text-amber-700 dark:text-amber-400")} title={`这一步已停留 ${stay} 天`}><Clock3 className="size-3" />{stay}天</span>}
       </div>
-      {portalDiffers && <p className="mt-1 truncate text-[11px] text-muted-foreground" title={`官网显示：${app.portalStatus}`}>官网显示 · {app.portalStatus}</p>}
-      {app.terminatedAtStage && <p className="mt-1 text-[11px] text-muted-foreground">结束于：{app.terminatedAtStageLabel || STAGE_LABELS[app.terminatedAtStage as ApplicationStage]}</p>}
+      {portalDiffers && <p className="mt-1 truncate text-xs text-muted-foreground" title={`官网显示：${app.portalStatus}`}>官网显示 · {app.portalStatus}</p>}
+      {app.terminatedAtStage && <p className="mt-1 text-xs text-muted-foreground">结束于：{app.terminatedAtStageLabel || STAGE_LABELS[app.terminatedAtStage as ApplicationStage]}</p>}
       {!closed && <ProgressLine applicationId={app.id} step={app.step} next={app.nextSchedule} now={now} className="relative z-10 mt-1.5" />}
       <QuickStageMenu applicationId={app.id} companyName={app.companyName} currentStage={app.currentStage} step={app.step} className="absolute right-2 top-2 z-10 bg-card/95" />
     </div>

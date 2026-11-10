@@ -515,7 +515,7 @@ export function ApplicationsTable({
                 </TableCell>
                 <TableCell className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">
                   {new Date(app.appliedDate).toLocaleDateString("zh-CN")}
-                  {(app.source || app.referrer) && <span className="block max-w-24 truncate text-[11px] tabular-nums" title={[app.source, app.referrer ? `内推：${app.referrer}` : ""].filter(Boolean).join(" · ")}>{[app.source, app.referrer ? `内推：${app.referrer}` : ""].filter(Boolean).join(" · ")}</span>}
+                  {(app.source || app.referrer) && <span className="block max-w-24 truncate text-xs tabular-nums" title={[app.source, app.referrer ? `内推：${app.referrer}` : ""].filter(Boolean).join(" · ")}>{[app.source, app.referrer ? `内推：${app.referrer}` : ""].filter(Boolean).join(" · ")}</span>}
                 </TableCell>
                 <TableCell>
                   <span

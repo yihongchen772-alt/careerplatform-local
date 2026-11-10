@@ -102,7 +102,7 @@ export function AssistantWidget() {
             onReply={() => { if (!openRef.current) setUnread(true); }}
             header={(
               <div className="assistant-head flex items-center gap-1 border-b px-3 py-2">
-                <div className="flex-1"><p className="text-sm font-medium">小欧</p><p className="text-[11px] text-muted-foreground">求职 agent · 规划决策 · 找岗位 · 记录进展</p></div>
+                <div className="flex-1"><p className="text-sm font-medium">小欧</p><p className="text-xs text-muted-foreground">求职 agent · 规划决策 · 找岗位 · 记录进展</p></div>
                 <Button type="button" variant="ghost" size="icon" className="size-7" aria-label={wide ? "恢复宽度" : "放大"} onClick={() => setWide((v) => !v)}>
                   {wide ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
                 </Button>

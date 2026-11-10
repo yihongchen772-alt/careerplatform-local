@@ -7,11 +7,12 @@ import { createChat, historyMessages } from "@/lib/agent/llm";
 import { runAgent, type AgentEvent } from "@/lib/agent/run";
 import { AGENT_TOOLS, describeToolCall, executeTool } from "@/lib/agent/tools";
 import { buildAgentSystemPrompt } from "@/lib/agent/prompt";
+import { collectRefs } from "@/lib/agent/refs";
 import type { AssistantAction } from "@/lib/assistant-shared";
 
 const bodySchema = z.object({
   message: z.string().trim().min(1, "说点什么吧").max(6000, "单条消息请控制在 6000 字以内。"),
-  history: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(16000) })).max(100).default([]),
+  history: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(16000), refs: z.string().max(4000).optional() })).max(100).default([]),
   /** The 网申 page open beside 小欧 in the 网申浏览器's side panel. */
   page: z.object({
     url: z.string().max(2000),
@@ -71,6 +72,7 @@ export async function POST(request: Request) {
       };
       try {
         const proposed: AssistantAction[] = [];
+        const refs = new Map<string, string>();
         const drafts: { question: string; answer: string }[] = [];
         const notices: string[] = [];
         // Falling over to a backup model is worth knowing about, not hiding.
@@ -98,14 +100,15 @@ export async function POST(request: Request) {
               }
               return Promise.resolve({ content: `已生成 ${added} 张「填进这一栏」卡片，用户还没点，不能说已经填好。`, label: `写好 ${added} 道题`, summary: drafts.map((item) => item.question.slice(0, 20)).join("、").slice(0, 200) || "没有可用的回答" });
             }
-            return executeTool(user.id, call, proposed);
+            return executeTool(user.id, call, proposed).then((outcome) => { collectRefs(refs, outcome.content); return outcome; });
           },
           describe: describeToolCall,
           emit: send,
+          stream: true,
           // Promising buttons without proposing them leaves the user with nothing to click.
           review: (reply) => !proposed.length && /按钮|点击.{0,6}(保存|加入|添加)|点一下/.test(reply) ? "你在回答里提到了按钮，但还没有调用 propose_actions，用户看不到任何按钮。需要的话现在调用 propose_actions 生成，然后再回答；不需要就改掉回答里关于按钮的说法。" : null,
         });
-        send({ type: "done", reply: result.reply, actions: proposed, drafts, steps: result.steps, notices });
+        send({ type: "done", reply: result.reply, actions: proposed, drafts, steps: result.steps, notices, refs: [...refs.values()].join("\n").slice(0, 4000) });
       } catch (error) {
         if (!(error instanceof UserFacingError)) console.error("[agent]", error);
         send({ type: "error", message: error instanceof UserFacingError ? error.message : "小欧这次没跑完，请稍后重试" });

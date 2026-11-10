@@ -146,7 +146,7 @@ export function Notes() {
             </button>
           ))}
         </div>
-        <p className="mt-1.5 text-[11px] leading-relaxed opacity-70">
+        <p className="mt-1.5 text-xs leading-relaxed opacity-70">
           {layer === "desktop" ? "一直待在所有窗口下面，不会挡住你打开的页面。要编辑时，点菜单栏图标里的「显示便利贴」，它会临时浮上来，点别处后回到桌面。"
             : layer === "top" ? "一直浮在所有窗口最上面。"
             : "和普通窗口一样，打开别的窗口或页面时会被盖住。"}
@@ -162,6 +162,6 @@ export function Notes() {
 
     {note ? <textarea disabled={changing} aria-label="便签正文" className="min-h-0 flex-1 resize-none border-0 bg-transparent px-5 py-4 text-base leading-8 outline-none placeholder:opacity-50" style={note.template === "lined" ? { backgroundImage: `repeating-linear-gradient(transparent,transparent 31px,${palette.border} 32px)`, backgroundPosition: "0 8px" } : undefined} placeholder="写下今天想记住的事…" value={note.content} maxLength={100000} onChange={(e) => edit({ content: e.target.value })} /> : <div className="flex flex-1 flex-col items-center justify-center gap-3 px-5 text-center"><StickyNote className="size-10 opacity-30" /><p className="text-sm opacity-70">一张轻便的桌面便签，随手记下灵感和待办。</p><button type="button" disabled={changing} onClick={add} className="rounded-full border px-4 py-1.5 text-sm hover:bg-white/30" style={{ borderColor: palette.border }}>新建便签</button></div>}
     {conflict && <button className="px-4 text-left text-xs underline" onClick={async () => { if (!confirm("放弃本窗口草稿并重新加载？请先复制需要保留的文字。")) return; localStorage.removeItem(draftKey(note?.id || "")); blocked.current = false; setConflict(false); dirty.current = false; if (note) await switchNote(note.id); }}>重新加载</button>}
-    <p role="status" className="shrink-0 px-5 pb-2 text-[11px] opacity-60">{status}</p>
+    <p role="status" className="shrink-0 px-5 pb-2 text-xs opacity-60">{status}</p>
   </main>;
 }

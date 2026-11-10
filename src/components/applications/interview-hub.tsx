@@ -260,9 +260,9 @@ export function InterviewHub({
                   </Button>
                 )}
               </div>
-              {next.source === "mail" && <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-300">{next.conflictsWith ? "这是邮件里识别到的时间，和你记录的不同；确认后点「写入日程」替换。" : "这是邮件里识别到的时间，还没写入；确认无误点「写入日程」。"}</p>}
+              {next.source === "mail" && <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">{next.conflictsWith ? "这是邮件里识别到的时间，和你记录的不同；确认后点「写入日程」替换。" : "这是邮件里识别到的时间，还没写入；确认无误点「写入日程」。"}</p>}
               {next.source === "stage" && next.hasTime && next.remindMinutes !== null && next.remindMinutes !== undefined && urgency !== "past" && (
-                <p className="mt-2 text-[11px] text-muted-foreground">{next.remindMinutes === 0 ? "开始时" : next.remindMinutes >= 1440 ? `提前 ${next.remindMinutes / 1440} 天` : next.remindMinutes >= 60 ? `提前 ${next.remindMinutes / 60} 小时` : `提前 ${next.remindMinutes} 分钟`}弹系统提醒 · 已在日历中</p>
+                <p className="mt-2 text-xs text-muted-foreground">{next.remindMinutes === 0 ? "开始时" : next.remindMinutes >= 1440 ? `提前 ${next.remindMinutes / 1440} 天` : next.remindMinutes >= 60 ? `提前 ${next.remindMinutes / 60} 小时` : `提前 ${next.remindMinutes} 分钟`}弹系统提醒 · 已在日历中</p>
               )}
               {later.length > 0 && (
                 <ul className="mt-4 space-y-1 border-t border-border/50 pt-3 text-xs text-muted-foreground">
@@ -300,7 +300,7 @@ export function InterviewHub({
                 <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-primary/8 text-primary"><Icon className="size-4" /></span>
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-medium">{tool.label}</span>
-                  <span className="block truncate text-[11px] text-muted-foreground">{tool.hint}</span>
+                  <span className="block truncate text-xs text-muted-foreground">{tool.hint}</span>
                 </span>
               </>
             );
@@ -323,7 +323,7 @@ export function InterviewHub({
               </li>
             ))}
           </ul>
-          <Link href="/dashboard" className="mt-2 inline-block text-[11px] text-primary hover:underline">在「日历」或「总览 → 我的待办」里处理</Link>
+          <Link href="/dashboard" className="mt-2 inline-block text-xs text-primary hover:underline">在「日历」或「总览 → 我的待办」里处理</Link>
         </details>
       )}
     </section>
@@ -423,7 +423,7 @@ function AfterStep({ applicationId, companyName, jobTitle, currentStage, step, r
           </DropdownMenu>
         )}
         <Button size="sm" variant="outline" className="h-7 rounded-full px-2.5 text-xs text-destructive" disabled={busy !== null} onClick={() => moveTo("REJECTED")}>没过</Button>
-        <span className="text-[11px] text-muted-foreground">还在等就不用点</span>
+        <span className="text-xs text-muted-foreground">还在等就不用点</span>
       </div>
       {step.followUp && (
         <div className="space-y-2 rounded-xl border border-amber-500/30 bg-amber-500/[0.05] p-3 text-xs">

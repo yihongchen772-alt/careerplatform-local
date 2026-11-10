@@ -204,7 +204,7 @@ export function ScheduleFields({
           <span>撞期了：和{clashes.map((clash) => `「${clash.label}」${absoluteWhen(clash.startsAt)}${clash.endsAt ? `–${clock(new Date(clash.endsAt))}` : ""}`).join("、")}时间重叠。可以照常保存，记得和 HR 协调改期。</span>
         </p>
       )}
-      <p className="text-[11px] leading-4 text-muted-foreground">
+      <p className="text-xs leading-4 text-muted-foreground">
         {value.time ? "有具体时间的安排会进日历，到点前弹系统提醒（App 需在运行或常驻托盘）。" : "只填日期就是截止日；填上几点就当作面试/笔试时间，进日历并提醒。"}
       </p>
     </div>

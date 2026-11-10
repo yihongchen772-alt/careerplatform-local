@@ -335,8 +335,8 @@ function TimelineRow({
               {scheduleText(entry)}
             </span>
           )}
-          {entry.scheduleSource === "email" && <span className="inline-flex items-center gap-0.5 text-[11px] text-muted-foreground" title="时间是从邮件里自动识别写入的"><Mail className="size-3" />邮件识别</span>}
-          {entry.nextHasTime && entry.remindMinutes !== null && entry.remindMinutes !== undefined && <span className="text-[11px] text-muted-foreground">· 已进日历并提醒</span>}
+          {entry.scheduleSource === "email" && <span className="inline-flex items-center gap-0.5 text-xs text-muted-foreground" title="时间是从邮件里自动识别写入的"><Mail className="size-3" />邮件识别</span>}
+          {entry.nextHasTime && entry.remindMinutes !== null && entry.remindMinutes !== undefined && <span className="text-xs text-muted-foreground">· 已进日历并提醒</span>}
           {entry.meetingInfo && <span className="min-w-0 basis-full truncate text-muted-foreground" title={entry.meetingInfo}>{meetingSummary(entry.meetingInfo, entry.stage === "ASSESSMENT" || entry.stage === "OA" || entry.stage === "AI_INTERVIEW")}</span>}
           {entry.meetingInfo && <MeetingActions info={entry.meetingInfo} size="xs" exam={entry.stage === "ASSESSMENT" || entry.stage === "OA" || entry.stage === "AI_INTERVIEW"} />}
         </div>

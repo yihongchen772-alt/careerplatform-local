@@ -26,7 +26,7 @@ export function MeetingActions({ info, size = "sm", className, compact = false, 
   const url = extractMeetingUrl(info);
   const number = extractMeetingNumber(info);
   const copyText = number ?? info.trim();
-  const height = size === "xs" ? "h-6 px-2 text-[11px]" : "h-7 px-2.5 text-xs";
+  const height = size === "xs" ? "h-6 px-2 text-xs" : "h-7 px-2.5 text-xs";
   return (
     <span className={cn("inline-flex flex-wrap items-center gap-1.5", className)}>
       {url && (

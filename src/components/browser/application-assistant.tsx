@@ -213,7 +213,7 @@ function PlanEditor({ plan, busy, bridge, onApply, onQuestion, onRows }: { plan:
   const patch = (id: string, value: Partial<typeof rows[number]>) => setRows((items) => items.map((p) => p.id === id ? { ...p, ...value, edited: true } : p));
   const selectedCount = rows.filter((p) => p.selected && p.eligible).length;
   return <div className="space-y-2">
-    <div className="flex items-baseline justify-between gap-2"><h3 className="text-xs font-medium">填写前预览</h3><span className="text-[11px] text-muted-foreground">{saveState}</span></div>
+    <div className="flex items-baseline justify-between gap-2"><h3 className="text-xs font-medium">填写前预览</h3><span className="text-xs text-muted-foreground">{saveState}</span></div>
     <p className="text-xs text-muted-foreground">先整段选择经历，再核对字段。AI 草稿需要自行勾选。</p>
     {plan.blocks?.filter((block) => block.fieldIds.some((id) => rows.some((row) => row.id === id && row.eligible))).map((block) => <div key={block.id} className="space-y-1 rounded-md border border-primary/30 bg-primary/5 p-2 text-xs">
       <label className="block font-medium">{block.label}<select aria-label={`${block.label}整段来源`} disabled={busy || !block.choices.length} className={cn(panelSelect, "mt-1")} value={block.choices.find((choice) => {

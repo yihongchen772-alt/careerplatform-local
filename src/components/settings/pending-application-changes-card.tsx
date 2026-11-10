@@ -140,7 +140,7 @@ export function PendingApplicationChangesCard({ initial, currentMemories, curren
           <div className="min-w-0 flex-1">
             <p className="flex flex-wrap items-center gap-x-2 text-sm font-medium">
               {row.label}
-              <span className="text-[11px] font-normal text-muted-foreground">{record ? `新${MEMORY_CATEGORIES[record.category]}` : row.profileField ? `网申资料 · ${row.profileField.label}` : answer?.kind === "essay" ? "问答" : "字段"}{matchingMemory ? " · 与已有经历相似" : ""}</span>
+              <span className="text-xs font-normal text-muted-foreground">{record ? `新${MEMORY_CATEGORIES[record.category]}` : row.profileField ? `网申资料 · ${row.profileField.label}` : answer?.kind === "essay" ? "问答" : "字段"}{matchingMemory ? " · 与已有经历相似" : ""}</span>
             </p>
             <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">{preview(row)}</p>
             {row.profileField && profileValues[row.profileField.key]?.trim() && <p className="mt-0.5 text-xs text-muted-foreground">网申资料里现在是「{profileValues[row.profileField.key].slice(0, 40)}」，记进去会替换它</p>}

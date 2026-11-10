@@ -37,6 +37,8 @@ export type ChatRequest = {
   /** Empty: the model must answer in text now. */
   tools: ToolSpec[];
   timeoutMs?: number;
+  /** Given: the reply is streamed, and each piece of its text arrives here as it is written. */
+  onText?: (delta: string) => void;
 };
 
 const MAX_TOKENS = 8192;
@@ -72,6 +74,31 @@ async function post(url: string, headers: Record<string, string>, body: unknown,
     if (!TRANSIENT.has(response.status) || attempt >= 2) return response;
     await response.body?.cancel().catch(() => {});
     await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
+  }
+}
+
+/** The JSON objects of a server-sent-event stream (`data: {…}` lines), as they arrive. */
+async function* sseEvents(response: Response): AsyncGenerator<Record<string, unknown>> {
+  if (!response.body) return;
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+    const lines = buffer.split(/\r?\n/);
+    buffer = done ? "" : lines.pop() ?? "";
+    for (const line of lines) {
+      if (!line.startsWith("data:")) continue;
+      const data = line.slice(5).trim();
+      if (!data || data === "[DONE]") continue;
+      try {
+        yield JSON.parse(data);
+      } catch {
+        // A keep-alive or a line split oddly: nothing to read in it.
+      }
+    }
+    if (done) return;
   }
 }
 
@@ -123,7 +150,7 @@ export function geminiModels(model: string): string[] {
   return list.length ? list : ["gemini-3.5-flash-lite"];
 }
 
-async function geminiTurn({ config, system, messages, tools, timeoutMs = 60000 }: ChatRequest, state: { modelIndex: number }, notice: (text: string) => void): Promise<ChatTurn> {
+async function geminiTurn({ config, system, messages, tools, timeoutMs = 60000, onText }: ChatRequest, state: { modelIndex: number }, notice: (text: string) => void): Promise<ChatTurn> {
   const contents = (model: string) => messages.map((message) => {
     if (message.role === "user") return { role: "user", parts: [{ text: message.text }] };
     if (message.role === "assistant") return { role: "model", parts: geminiParts(message.raw, model) };
@@ -133,7 +160,7 @@ async function geminiTurn({ config, system, messages, tools, timeoutMs = 60000 }
   // Stay on the model that answered: its thought signatures are valid only for it.
   for (let i = state.modelIndex; i < models.length; i++) {
     const model = models[i];
-    const response = await post(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, { "x-goog-api-key": config.apiKey }, {
+    const response = await post(`https://generativelanguage.googleapis.com/v1beta/models/${model}:${onText ? "streamGenerateContent?alt=sse" : "generateContent"}`, { "x-goog-api-key": config.apiKey }, {
       systemInstruction: { parts: [{ text: system }] },
       contents: contents(model),
       ...(tools.length ? { tools: [{ functionDeclarations: tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: geminiSchema(tool.parameters) })) }] } : {}),
@@ -148,7 +175,21 @@ async function geminiTurn({ config, system, messages, tools, timeoutMs = 60000 }
       throw httpError(config, response.status, model);
     }
     state.modelIndex = i;
-    const data = await response.json();
+    let data: { candidates?: { content?: { parts?: GeminiPart[] }; finishReason?: string }[] };
+    if (onText) {
+      // Each event carries the next parts; text parts are pieces of one reply.
+      const streamed: GeminiPart[] = [];
+      let finishReason: string | undefined;
+      for await (const event of sseEvents(response)) {
+        const candidate = (event as typeof data).candidates?.[0];
+        for (const part of candidate?.content?.parts ?? []) {
+          streamed.push(part);
+          if (part.text && !part.thought) onText(part.text);
+        }
+        finishReason = candidate?.finishReason ?? finishReason;
+      }
+      data = { candidates: [{ content: { parts: streamed }, finishReason }] };
+    } else data = await response.json();
     const parts: GeminiPart[] = data?.candidates?.[0]?.content?.parts ?? [];
     const calls = parts.filter((part) => part.functionCall).map((part, index) => ({ id: part.functionCall!.id || `gemini-${Date.now()}-${index}`, name: part.functionCall!.name, args: parseArgs(part.functionCall!.args) }));
     const text = parts.filter((part) => part.text && !part.thought).map((part) => part.text).join("").trim();
@@ -162,7 +203,7 @@ async function geminiTurn({ config, system, messages, tools, timeoutMs = 60000 }
 
 type OpenAiMessage = { role: string; content?: string | null; tool_calls?: { id: string; type: "function"; function: { name: string; arguments: string } }[]; tool_call_id?: string; reasoning_content?: string };
 
-async function openAiTurn({ config, system, messages, tools, timeoutMs = 60000 }: ChatRequest): Promise<ChatTurn> {
+async function openAiTurn({ config, system, messages, tools, timeoutMs = 60000, onText }: ChatRequest): Promise<ChatTurn> {
   if (config.provider === "gemini" || config.provider === "anthropic") throw new Error("not an OpenAI-compatible provider");
   const wire: OpenAiMessage[] = [{ role: "system", content: system }];
   for (const message of messages) {
@@ -170,18 +211,50 @@ async function openAiTurn({ config, system, messages, tools, timeoutMs = 60000 }
     else if (message.role === "assistant") wire.push(message.raw as OpenAiMessage);
     else for (const { call, content } of message.results) wire.push({ role: "tool", tool_call_id: call.id, content });
   }
-  const response = await post(`${config.baseUrl || OPENAI_COMPATIBLE_BASE_URL[config.provider]}/chat/completions`, { Authorization: `Bearer ${config.apiKey}` }, {
+  const body = {
     model: config.model,
     messages: wire,
     ...(tools.length ? { tools: tools.map((tool) => ({ type: "function", function: { name: tool.name, description: tool.description, parameters: tool.parameters } })) } : {}),
     max_tokens: MAX_TOKENS,
-  }, timeoutMs, who(config));
+  };
+  const url = `${config.baseUrl || OPENAI_COMPATIBLE_BASE_URL[config.provider]}/chat/completions`;
+  let response = await post(url, { Authorization: `Bearer ${config.apiKey}` }, onText ? { ...body, stream: true } : body, timeoutMs, who(config));
+  // A provider that refuses streaming (with tools) still answers the plain way.
+  let streaming = !!onText;
+  if (onText && response.status === 400) {
+    await response.body?.cancel().catch(() => {});
+    response = await post(url, { Authorization: `Bearer ${config.apiKey}` }, body, timeoutMs, who(config));
+    streaming = false;
+  }
   if (!response.ok) {
     console.error(`[agent:${config.provider}] ${response.status}`, (await response.text().catch(() => "")).slice(0, 500));
     throw httpError(config, response.status);
   }
-  const data = await response.json();
-  const message: OpenAiMessage = data?.choices?.[0]?.message ?? { role: "assistant", content: "" };
+  let message: OpenAiMessage;
+  if (streaming && onText) {
+    // Text and reasoning arrive in pieces; a tool call's id and name come once, its arguments in pieces, by index.
+    let content = "";
+    let reasoning = "";
+    const pending: { id: string; name: string; args: string }[] = [];
+    for await (const event of sseEvents(response)) {
+      const delta = (event as { choices?: { delta?: { content?: string | null; reasoning_content?: string | null; tool_calls?: { index?: number; id?: string; function?: { name?: string; arguments?: string } }[] } }[] }).choices?.[0]?.delta;
+      if (!delta) continue;
+      if (delta.content) { content += delta.content; onText(delta.content); }
+      if (delta.reasoning_content) reasoning += delta.reasoning_content;
+      for (const piece of delta.tool_calls ?? []) {
+        const index = piece.index ?? pending.length;
+        const call = (pending[index] ??= { id: "", name: "", args: "" });
+        if (piece.id) call.id = piece.id;
+        if (piece.function?.name) call.name += piece.function.name;
+        if (piece.function?.arguments) call.args += piece.function.arguments;
+      }
+    }
+    const toolCalls = pending.filter(Boolean).map((call) => ({ id: call.id, type: "function" as const, function: { name: call.name, arguments: call.args } }));
+    message = { role: "assistant", content, ...(toolCalls.length ? { tool_calls: toolCalls } : {}), ...(reasoning ? { reasoning_content: reasoning } : {}) };
+  } else {
+    const data = await response.json();
+    message = data?.choices?.[0]?.message ?? { role: "assistant", content: "" };
+  }
   const calls = (message.tool_calls ?? []).map((call, index) => ({ id: call.id || `call-${index}`, name: call.function?.name ?? "", args: parseArgs(call.function?.arguments) }));
   const raw: OpenAiMessage = { role: "assistant", content: message.content ?? "", ...(message.tool_calls?.length ? { tool_calls: message.tool_calls.map((call, index) => ({ ...call, id: calls[index].id })) } : {}), ...(message.reasoning_content ? { reasoning_content: message.reasoning_content } : {}) };
   return { text: (message.content ?? "").trim(), calls, raw };
@@ -191,7 +264,7 @@ async function openAiTurn({ config, system, messages, tools, timeoutMs = 60000 }
 
 type AnthropicBlock = { type: string; text?: string; id?: string; name?: string; input?: unknown };
 
-async function anthropicTurn({ config, system, messages, tools, timeoutMs = 60000 }: ChatRequest): Promise<ChatTurn> {
+async function anthropicTurn({ config, system, messages, tools, timeoutMs = 60000, onText }: ChatRequest): Promise<ChatTurn> {
   const wire = messages.map((message) => {
     if (message.role === "user") return { role: "user", content: message.text };
     if (message.role === "assistant") return { role: "assistant", content: message.raw as AnthropicBlock[] };
@@ -203,13 +276,32 @@ async function anthropicTurn({ config, system, messages, tools, timeoutMs = 6000
     messages: wire,
     ...(tools.length ? { tools: tools.map((tool) => ({ name: tool.name, description: tool.description, input_schema: tool.parameters })) } : {}),
     max_tokens: MAX_TOKENS,
+    ...(onText ? { stream: true } : {}),
   }, timeoutMs, who(config));
   if (!response.ok) {
     console.error(`[agent:anthropic] ${response.status}`, (await response.text().catch(() => "")).slice(0, 500));
     throw httpError(config, response.status);
   }
-  const data = await response.json();
-  const blocks: AnthropicBlock[] = data?.content ?? [];
+  let blocks: AnthropicBlock[];
+  if (onText) {
+    // Blocks open, grow (text, or a tool's input as pieces of JSON) and close, by index.
+    blocks = [];
+    const inputs: string[] = [];
+    for await (const event of sseEvents(response)) {
+      const index = typeof event.index === "number" ? event.index : 0;
+      if (event.type === "content_block_start") blocks[index] = { ...(event.content_block as AnthropicBlock) };
+      else if (event.type === "content_block_delta") {
+        const delta = event.delta as { type?: string; text?: string; partial_json?: string };
+        const block = (blocks[index] ??= { type: delta.type === "input_json_delta" ? "tool_use" : "text" });
+        if (delta.type === "text_delta" && delta.text) { block.text = (block.text ?? "") + delta.text; onText(delta.text); }
+        if (delta.type === "input_json_delta" && delta.partial_json) inputs[index] = (inputs[index] ?? "") + delta.partial_json;
+      } else if (event.type === "error") throw new UserFacingError(`${who(config)} 调用中断：服务商那边过载或出错，请稍后重试`);
+    }
+    blocks = blocks.map((block, index) => block && block.type === "tool_use" && inputs[index] !== undefined ? { ...block, input: parseArgs(inputs[index]) } : block).filter(Boolean);
+  } else {
+    const data = await response.json();
+    blocks = data?.content ?? [];
+  }
   const calls = blocks.filter((block) => block.type === "tool_use").map((block) => ({ id: block.id ?? "", name: block.name ?? "", args: parseArgs(block.input) }));
   const text = blocks.filter((block) => block.type === "text").map((block) => block.text ?? "").join("").trim();
   return { text, calls, raw: blocks.length ? blocks : [{ type: "text", text: text || " " }] };
@@ -235,9 +327,11 @@ export function textReply(provider: UserAiConfig["provider"], text: string): Age
 }
 
 /** Earlier turns as alternating user / assistant messages, starting with the user. */
-export function historyMessages(provider: UserAiConfig["provider"], history: { role: "user" | "assistant"; content: string }[]): AgentMessage[] {
+export function historyMessages(provider: UserAiConfig["provider"], history: { role: "user" | "assistant"; content: string; refs?: string }[]): AgentMessage[] {
   const messages: AgentMessage[] = [];
-  for (const turn of history) {
+  for (const raw of history) {
+    // What an earlier reply looked up rides along with it, as a note to 小欧 itself.
+    const turn = raw.role === "assistant" && raw.refs?.trim() ? { ...raw, content: `${raw.content}\n\n（系统附注：这一轮查到的记录，后面可以直接用这些 ID，不必重新查；数据可能已变，要改记录前先确认）\n${raw.refs.trim()}` } : raw;
     const last = messages[messages.length - 1];
     if (turn.role === "user") {
       if (last?.role === "user") last.text += `\n${turn.content}`;

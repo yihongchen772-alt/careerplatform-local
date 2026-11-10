@@ -185,7 +185,7 @@ function TaskRow({
       />
       <div className="min-w-0 flex-1">
         <p className={task.done ? "truncate text-muted-foreground line-through" : "truncate font-medium"}>
-          {tag && <span className={tag.late ? "mr-1.5 rounded-full bg-destructive/10 px-1.5 py-0.5 text-[11px] font-normal text-destructive" : "mr-1.5 rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground"}>{tag.text}</span>}
+          {tag && <span className={tag.late ? "mr-1.5 rounded-full bg-destructive/10 px-1.5 py-0.5 text-xs font-normal text-destructive" : "mr-1.5 rounded-full bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground"}>{tag.text}</span>}
           {task.title}
         </p>
         <p className="text-xs text-muted-foreground">

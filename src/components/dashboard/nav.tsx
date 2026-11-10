@@ -162,13 +162,13 @@ function NavContent({
       >
         <Search className="size-3.5 shrink-0" />
         搜索
-        <kbd className="ml-auto hidden font-sans text-[11px] text-muted-foreground/70 md:inline">⌘K</kbd>
+        <kbd className="ml-auto hidden font-sans text-xs text-muted-foreground/70 md:inline">⌘K</kbd>
       </button>
 
       <nav aria-label="主导航" className="mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto">
         {groups.map((group) => (
           <div key={group.label ?? "main"} className="space-y-0.5">
-            {group.label && <p className="px-2.5 pb-0.5 text-[11px] font-medium text-muted-foreground/60">{group.label}</p>}
+            {group.label && <p className="px-2.5 pb-0.5 text-xs font-medium text-muted-foreground/60">{group.label}</p>}
             {group.links.map((link) => (
               <NavItem
                 key={link.href}
@@ -190,7 +190,7 @@ function NavContent({
           <div className="min-w-0 flex-1"><NavItem link={settingsLink} active={isActive(settingsLink.href)} onNavigate={onNavigate} /></div>
           <ThemeToggle />
         </div>
-        <p className="truncate px-2.5 pt-1 text-[11px] text-muted-foreground/70">{userLabel}</p>
+        <p className="truncate px-2.5 pt-1 text-xs text-muted-foreground/70">{userLabel}</p>
       </div>
     </div>
   );

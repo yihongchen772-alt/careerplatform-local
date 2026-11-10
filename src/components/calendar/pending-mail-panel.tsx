@@ -91,7 +91,7 @@ export function PendingMailPanel({ items }: { items: PendingMail[] }) {
               <li key={item.id} className="flex flex-col gap-2 rounded-xl border border-border/60 bg-background/35 p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
-                    <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{kind}</span>
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">{kind}</span>
                     <span className="min-w-0 truncate">{item.company ?? "（没看出公司）"} · {item.type}</span>
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground [overflow-wrap:anywhere]">
@@ -101,7 +101,7 @@ export function PendingMailPanel({ items }: { items: PendingMail[] }) {
                         : item.booked ? "你已经约好了，但邮件里没写具体时间。到预约页面看一眼，把时间填在这里。" : "邮件里没写具体时间（常见于要你自己点链接约时间的）。约好后把时间填上。"}
                   </p>
                   {item.summary && <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground [overflow-wrap:anywhere]">{item.summary}</p>}
-                  {item.subject && <p className="mt-0.5 truncate text-[11px] text-muted-foreground/80" title={item.subject}>邮件：{item.subject}</p>}
+                  {item.subject && <p className="mt-0.5 truncate text-xs text-muted-foreground/80" title={item.subject}>邮件：{item.subject}</p>}
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
                   {item.time ? (

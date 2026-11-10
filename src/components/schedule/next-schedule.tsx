@@ -59,7 +59,7 @@ export function ProgressLine({ applicationId, step, next, now, className }: { ap
         <button
           type="button"
           disabled={busy}
-          className="inline-flex h-6 items-center gap-1 rounded-full border border-amber-500/40 bg-card px-2 text-[11px] font-medium text-amber-800 hover:bg-amber-500/10 dark:text-amber-200"
+          className="inline-flex h-6 items-center gap-1 rounded-full border border-amber-500/40 bg-card px-2 text-xs font-medium text-amber-800 hover:bg-amber-500/10 dark:text-amber-200"
           onClick={async () => { setBusy(true); try { await completeStep(step.rowId, () => router.refresh()); } finally { setBusy(false); } }}
         >
           <CheckCircle2 className="size-3" />已完成
