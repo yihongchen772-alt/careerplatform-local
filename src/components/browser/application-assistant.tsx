@@ -13,8 +13,9 @@ type Job = { id: string; company: string; title: string; jd: string | null; url:
 
 // Native controls on purpose: their pop-ups are drawn by the OS above the
 // web page, which App-drawn menus can't be while the page is showing.
-export const panelSelect = "h-8 w-full rounded-md border bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-60";
-const panelText = "w-full rounded-md border bg-background p-2 text-xs leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring/50";
+/** Same look as <NativeSelect size="sm">, kept as a class for the dense side panel. */
+export const panelSelect = "native-select h-8 w-full min-w-0 appearance-none rounded-lg border border-input bg-transparent pr-7 pl-2 text-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60 dark:bg-input/30";
+const panelText = "w-full rounded-lg border border-input bg-transparent p-2 text-xs leading-relaxed outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30";
 
 // Same colours as the outlines fillFields draws on the page, so a dot here
 // and a border there mean the same thing.

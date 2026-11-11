@@ -811,13 +811,13 @@ main h1 {
 }
 
 /* Form fields: filled, no hard outline, a brand ring on focus. */
-[data-style="soft"] :is([data-slot="input"], [data-slot="textarea"], [data-slot="select-trigger"], [data-slot="input-group"]),
+[data-style="soft"] :is([data-slot="input"], [data-slot="textarea"], [data-slot="select-trigger"], [data-slot="native-select"], [data-slot="input-group"]),
 [data-style="soft"] :is(main, [role="dialog"]) :is(input[type="text"], input[type="search"], input[type="number"], input[type="date"], input[type="month"], input[type="time"], input[type="datetime-local"], input:not([type]), select, textarea):not([data-slot]) {
   background-color: var(--soft-field);
   border-color: transparent;
   border-radius: 0.85rem;
 }
-[data-style="soft"] :is([data-slot="input"], [data-slot="textarea"], [data-slot="select-trigger"]):focus-visible,
+[data-style="soft"] :is([data-slot="input"], [data-slot="textarea"], [data-slot="select-trigger"], [data-slot="native-select"]):focus-visible,
 [data-style="soft"] :is(main, [role="dialog"]) :is(input, select, textarea):not([data-slot]):focus-visible {
   border-color: color-mix(in oklch, var(--primary) 45%, transparent);
   box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 18%, transparent);
@@ -952,3 +952,13 @@ main h1 {
 :root.dark[data-style="soft"] .assistant-head {
   background: rgb(36 36 38 / 0.8);
 }
+
+/* <NativeSelect>: an Apple-style chevron in place of the OS arrow. Mid grey
+   reads on both light and dark fields. */
+.native-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%238e8e93' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.5 6.5 8 10l3.5-3.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.6rem center;
+  background-size: 14px;
+}
+.native-select[data-size="sm"] { background-position: right 0.45rem center; background-size: 12px; }

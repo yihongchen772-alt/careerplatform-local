@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Send, Check, Plus, Loader2, CircleAlert, CircleCheck, Trash2, Copy, MessageSquareText } from "lucide-react";
+import { Send, Check, Plus, Loader2, CircleAlert, CircleCheck, Trash2, Copy, MessageSquareText, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -73,14 +73,29 @@ export const DEFAULT_QUICK_QUESTIONS = ["今天有什么安排？", "帮我规�
 function StepLine({ step, onNavigate }: { step: AgentStep; onNavigate?: () => void }) {
   const Icon = step.status === "running" ? Loader2 : step.status === "error" ? CircleAlert : CircleCheck;
   return (
-    <li className="flex gap-1.5">
-      <Icon className={`mt-0.5 size-3.5 shrink-0 ${step.status === "running" ? "animate-spin text-muted-foreground" : step.status === "error" ? "text-destructive" : "text-green-600"}`} />
+    <li className="relative pb-2 pl-5 last:pb-0 before:absolute before:top-[18px] before:bottom-0.5 before:left-[6.5px] before:w-px before:bg-border last:before:hidden">
+      <Icon className={`absolute top-0.5 left-0 size-3.5 ${step.status === "running" ? "animate-spin text-muted-foreground" : step.status === "error" ? "text-destructive" : "text-green-600"}`} />
       <div className="min-w-0">
-        <p className={step.status === "error" ? "text-destructive" : "font-medium"}>{step.label}</p>
+        <p className={step.status === "error" ? "text-destructive" : "text-foreground"}>{step.label}</p>
         {step.summary && <p className="text-muted-foreground">{step.summary}</p>}
         {step.href && <Link href={step.href} onClick={onNavigate} className="text-primary underline">{hrefLinkLabel(step.href)}</Link>}
       </div>
     </li>
+  );
+}
+
+/** "做了 N 步" — folded by default, opens into the step timeline. */
+function StepsSummary({ steps, onNavigate }: { steps: AgentStep[]; onNavigate?: () => void }) {
+  const failed = steps.filter((step) => step.status === "error").length;
+  return (
+    <details className="group/steps px-1 text-xs">
+      <summary className="flex w-fit cursor-pointer list-none items-center gap-1 text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+        {failed ? <CircleAlert className="size-3.5 text-destructive" /> : <CircleCheck className="size-3.5 text-green-600" />}
+        做了 {steps.length} 步{failed ? `（${failed} 步没成）` : ""}
+        <ChevronRight className="size-3.5 transition-transform group-open/steps:rotate-90" />
+      </summary>
+      <ol className="mt-2">{steps.map((step) => <StepLine key={step.id} step={step} onNavigate={onNavigate} />)}</ol>
+    </details>
   );
 }
 
@@ -112,9 +127,15 @@ async function streamTurn(message: string, history: AssistantChatMessage[], page
 
 function toDisplay(stored: Array<Record<string, unknown>>, keepActions: boolean): DisplayMessage[] {
   return stored.map((m, id) => {
-    const actions = keepActions && Array.isArray(m.actions) ? m.actions.map((item) => assistantActionSchema.safeParse(item)).filter((item) => item.success).map((item) => item.data) : undefined;
+    const storedApplied = Array.isArray(m.applied) ? (m.applied as number[]) : [];
+    // Actions that no longer parse are dropped, so `applied` (positions in the
+    // stored list) is re-pointed at the kept ones — otherwise a later action
+    // would show 已保存 without being saved, or a saved one could save twice.
+    const kept = keepActions && Array.isArray(m.actions) ? m.actions.map((item, index) => ({ index, parsed: assistantActionSchema.safeParse(item) })).filter((item) => item.parsed.success) : undefined;
+    const actions = kept?.map((item) => item.parsed.data!);
+    const applied = kept ? kept.flatMap((item, at) => (storedApplied.includes(item.index) ? [at] : [])) : storedApplied;
     return {
-      id, role: m.role as "user" | "assistant", content: String(m.content ?? ""), refs: typeof m.refs === "string" ? m.refs : undefined, actions, applied: Array.isArray(m.applied) ? (m.applied as number[]) : [],
+      id, role: m.role as "user" | "assistant", content: String(m.content ?? ""), refs: typeof m.refs === "string" ? m.refs : undefined, actions, applied,
       steps: Array.isArray(m.steps) ? (m.steps as AgentStep[]) : undefined, notices: Array.isArray(m.notices) ? (m.notices as string[]) : undefined,
       failedRequest: m.failedRequest as DisplayMessage["failedRequest"],
       drafts: Array.isArray(m.drafts) ? (m.drafts as PageDraft[]) : undefined, filled: Array.isArray(m.filled) ? (m.filled as number[]) : [],
@@ -517,8 +538,9 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
               </div>
             ) : (
               messages.map((m) => (
-                <div key={m.id} className="space-y-1.5">
-                  <div className={m.failedRequest ? "rounded-lg border border-destructive/40 bg-destructive/5 p-2.5 text-sm" : m.role === "assistant" ? "bubble-ai group relative rounded-lg bg-muted p-2.5 text-sm" : "bubble-user rounded-lg bg-primary/10 p-2.5 text-sm"}>
+                <div key={m.id} className="flex flex-col gap-1.5">
+                  {!!m.steps?.length && <StepsSummary steps={m.steps} onNavigate={onNavigate} />}
+                  <div className={m.failedRequest ? "mr-6 rounded-2xl rounded-bl-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm" : m.role === "assistant" ? "bubble-ai group relative mr-6 rounded-2xl rounded-bl-md bg-muted px-3 py-2 text-sm" : "bubble-user max-w-[85%] self-end rounded-2xl rounded-br-md bg-primary px-3 py-2 text-sm text-primary-foreground"}>
                     {m.role === "assistant" && !m.failedRequest ? <MarkdownText text={m.content} /> : <p className="whitespace-pre-wrap">{m.failedRequest && <CircleAlert className="mr-1 inline size-3.5 -translate-y-px text-destructive" />}{m.content}</p>}
                     {m.role === "assistant" && !m.failedRequest && m.content.length > 40 && (
                       <button type="button" aria-label="复制这条回答" title="复制" className="absolute right-1.5 top-1.5 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground group-hover:opacity-100 focus:opacity-100" onClick={() => copy(m.content)}><Copy className="size-3.5" /></button>
@@ -531,13 +553,6 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
                     )}
                   </div>
                   {!!m.notices?.length && <p className="px-1 text-xs text-amber-600 dark:text-amber-400">{m.notices.join("；")}</p>}
-
-                  {!!m.steps?.length && (
-                    <details className="rounded-lg border p-2 text-xs">
-                      <summary className="cursor-pointer font-medium">做了 {m.steps.length} 步{m.steps.some((step) => step.status === "error") ? `（${m.steps.filter((step) => step.status === "error").length} 步没成）` : ""}</summary>
-                      <ol className="mt-2 space-y-1.5">{m.steps.map((step) => <StepLine key={step.id} step={step} onNavigate={onNavigate} />)}</ol>
-                    </details>
-                  )}
 
                   {m.drafts?.map((draft, i) => {
                     const done = m.filled?.includes(i);
@@ -563,8 +578,8 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
                     const done = m.applied?.includes(i);
                     const busy = applying === `${m.id}:${i}`;
                     return (
-                      <button key={i} type="button" disabled={done || !!applying} onClick={() => handleApply(m.id, i, action)} className="flex w-full items-center gap-2 rounded-md border border-dashed px-2.5 py-2 text-left text-xs transition-colors enabled:hover:bg-muted disabled:opacity-70">
-                        {done ? <Check className="size-3.5 shrink-0 text-green-600" /> : <Plus className="size-3.5 shrink-0 text-muted-foreground" />}
+                      <button key={i} type="button" disabled={done || !!applying} onClick={() => handleApply(m.id, i, action)} className="flex w-full items-center gap-2 rounded-xl border bg-card px-3 py-2 text-left text-xs shadow-xs transition-colors enabled:hover:bg-muted disabled:shadow-none disabled:opacity-70">
+                        {done ? <Check className="size-3.5 shrink-0 text-green-600" /> : <Plus className="size-3.5 shrink-0 text-primary" />}
                         <span className="min-w-0 flex-1">
                           {action.label}
                           {/* The label says things like "下周三", but what
@@ -574,7 +589,7 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
                               click, not after. */}
                           {action.date && <span className="ml-1 text-muted-foreground">（{action.date}）</span>}
                         </span>
-                        <span className="shrink-0 text-muted-foreground">{done ? "已保存" : busy ? "保存中..." : "点击保存"}</span>
+                        <span className={cn("shrink-0 rounded-full px-2 py-0.5", done || busy ? "text-muted-foreground" : "bg-primary/10 font-medium text-primary")}>{done ? "已保存" : busy ? "保存中…" : "保存"}</span>
                       </button>
                     );
                   })}
@@ -587,14 +602,14 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
               ))
             )}
             {sending && (
-              <div className="rounded-lg border border-dashed p-2.5 text-xs" aria-live="polite">
-                <p className="flex items-center gap-1.5 font-medium"><Loader2 className="size-3.5 animate-spin" />{live.steps.length ? "小欧正在做…" : "小欧在想该怎么做…"}</p>
+              <div className="px-1 text-xs" aria-live="polite">
+                <p className="flex items-center gap-1.5 text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />{live.steps.length ? "小欧正在做…" : "小欧在想该怎么做…"}</p>
                 {live.note && <p className="mt-1 text-muted-foreground">{live.note}</p>}
-                {!!live.steps.length && <ol className="mt-2 space-y-1.5">{live.steps.map((step) => <StepLine key={step.id} step={step} onNavigate={onNavigate} />)}</ol>}
+                {!!live.steps.length && <ol className="mt-2">{live.steps.map((step) => <StepLine key={step.id} step={step} onNavigate={onNavigate} />)}</ol>}
               </div>
             )}
             {sending && live.text.trim() && (
-              <div className="bubble-ai rounded-lg bg-muted p-2.5 text-sm" aria-live="off">
+              <div className="bubble-ai mr-6 rounded-2xl rounded-bl-md bg-muted px-3 py-2 text-sm" aria-live="off">
                 <MarkdownText text={live.text} />
                 <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse rounded-sm bg-foreground/50 align-middle" aria-hidden />
               </div>

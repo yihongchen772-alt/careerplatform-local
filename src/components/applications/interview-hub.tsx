@@ -38,6 +38,7 @@ import { ScheduleFields, scheduleDraftFrom, scheduleFromDraft, type ScheduleDraf
 import { completeStep } from "@/components/schedule/step-actions";
 import { useNow } from "@/components/schedule/use-now";
 import { copyText } from "@/lib/copy-text";
+import { NativeSelect } from "@/components/ui/native-select";
 
 export type HubRow = {
   id: string;
@@ -205,14 +206,14 @@ export function InterviewHub({
               {mode === "add" ? (
                 <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
                   <label htmlFor="hub-round">添加安排：这是</label>
-                  <select
+                  <NativeSelect
                     id="hub-round"
                     value={round}
                     onChange={(event) => setRound(event.target.value as ApplicationStage)}
-                    className="h-8 rounded-xl border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+                    className="w-auto"
                   >
                     {choices.map((stage) => <option key={stage} value={stage}>{STAGE_LABELS[stage]}{stage === currentStage ? "（当前）" : ""}</option>)}
-                  </select>
+                  </NativeSelect>
                   {round !== currentStage && <span className="text-xs font-normal text-muted-foreground">保存后进度推进到「{STAGE_LABELS[round]}」</span>}
                 </div>
               ) : (

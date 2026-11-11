@@ -18,6 +18,7 @@ import { AiProgress } from "@/components/ui/ai-progress";
 import { createPosition, positionCompanyName, updatePosition } from "@/lib/actions/positions";
 import { findDuplicatePositions } from "@/lib/actions/job-capture";
 import { parseJd } from "@/lib/actions/jd-parse";
+import { NativeSelect } from "@/components/ui/native-select";
 
 type FormState = {
   recruitmentType: string;
@@ -354,7 +355,7 @@ export function PositionFormDialog({
                 onChange={(e) => set("salaryMax", e.target.value)}
               />
             </Field>
-            <Field label="招聘类型"><select aria-label="招聘类型" className="w-full rounded border p-2" value={form.recruitmentType} onChange={(e) => set("recruitmentType", e.target.value)}><option value="">未提供</option><option>校招</option><option>实习</option><option>社招</option></select></Field>
+            <Field label="招聘类型"><NativeSelect aria-label="招聘类型" className="h-9" value={form.recruitmentType} onChange={(e) => set("recruitmentType", e.target.value)}><option value="">未提供</option><option>校招</option><option>实习</option><option>社招</option></NativeSelect></Field>
             <Field label="渠道">
               <Input
                 value={form.source}

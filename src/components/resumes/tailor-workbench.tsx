@@ -52,6 +52,7 @@ import {
 } from "@/lib/resume-doc";
 import { deleteTailoring, generateTailoring, saveTailoringAsVersion, saveTailoringDoc } from "@/lib/actions/resume-tailor";
 import type { TailorResumeOption } from "@/components/resumes/tailor-start";
+import { NativeSelect } from "@/components/ui/native-select";
 
 const PAGE_PX = (297 * 96) / 25.4;
 // The preview's page: styles only. The body is drawn by paintFrame, so the frame never reloads.
@@ -602,9 +603,9 @@ export function TailorWorkbench({
                 </div>
                 <label className="flex items-center gap-2 text-xs">
                   底稿
-                  <select value={regenResume} onChange={(e) => setRegenResume(e.target.value)} className="h-7 min-w-0 flex-1 rounded-md border bg-background px-2">
+                  <NativeSelect size="sm" value={regenResume} onChange={(e) => setRegenResume(e.target.value)} className="flex-1">
                     {resumes.map((r) => <option key={r.id} value={r.id}>{r.name}{r.isDefault ? "（默认）" : ""}</option>)}
-                  </select>
+                  </NativeSelect>
                 </label>
                 <label className="flex items-center gap-2 text-xs text-muted-foreground">
                   <input type="checkbox" checked={rereadBase} onChange={(e) => setRereadBase(e.target.checked)} />

@@ -11,6 +11,7 @@ import { meetingSummary, relativeText, whenText, type ScheduleItem } from "@/lib
 import type { InterviewBrief } from "@/lib/interview-brief";
 import { MeetingActions } from "@/components/schedule/meeting-actions";
 import { useNow } from "@/components/schedule/use-now";
+import { NativeSelect } from "@/components/ui/native-select";
 
 type Note = { id: string; round: string; note: string; date: string; applicationId: string; title: string };
 
@@ -94,9 +95,9 @@ export function BriefView({
         )}
         <div className="mt-4 flex flex-wrap items-center gap-2 print:hidden">
           {resumes.length > 1 && (
-            <select aria-label="用哪份简历" value={resumeId} onChange={(event) => setResumeId(event.target.value)} className="h-8 rounded-xl border border-input bg-transparent px-2 text-sm dark:bg-input/30">
+            <NativeSelect aria-label="用哪份简历" value={resumeId} onChange={(event) => setResumeId(event.target.value)} className="w-auto">
               {resumes.map((resume) => <option key={resume.id} value={resume.id}>{resume.name}</option>)}
-            </select>
+            </NativeSelect>
           )}
           <Button size="sm" className="gap-1" disabled={busy} onClick={generate}>
             {brief ? <RefreshCw className="size-3.5" /> : <Sparkles className="size-3.5" />}

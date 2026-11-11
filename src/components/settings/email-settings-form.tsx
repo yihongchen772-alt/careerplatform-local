@@ -21,6 +21,7 @@ import {
 } from "@/lib/actions/email-settings";
 import { EMAIL_PROVIDER_OPTIONS } from "@/lib/email-provider-labels";
 import type { EmailProviderId } from "@/lib/email-provider-labels";
+import { NativeSelect } from "@/components/ui/native-select";
 
 export function EmailSettingsForm({ currentUser, schedule }: { currentUser: string | null; schedule: { enabled: boolean; time: string; timeZone: string; lastError: string | null } }) {
   const [reminderEnabled, setReminderEnabled] = useState(schedule.enabled);
@@ -129,7 +130,7 @@ export function EmailSettingsForm({ currentUser, schedule }: { currentUser: stri
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={reminderEnabled} onChange={(e) => setReminderEnabled(e.target.checked)} />每天定时邮件提醒</label>
           <div className="flex flex-wrap gap-3">
             <div className="space-y-1"><Label htmlFor="email-reminder-time">每天提醒时间</Label><Input id="email-reminder-time" type="time" required value={reminderTime} onChange={(e) => setReminderTime(e.target.value)} className="w-36" /></div>
-            <div className="space-y-1"><Label htmlFor="email-reminder-zone">时区</Label><select id="email-reminder-zone" className="block h-9 rounded-md border px-2 text-sm" value={reminderZone} onChange={(e) => setReminderZone(e.target.value)}>{zones.map((zone) => <option key={zone} value={zone}>{zone}</option>)}</select></div>
+            <div className="space-y-1"><Label htmlFor="email-reminder-zone">时区</Label><NativeSelect id="email-reminder-zone" className="h-9 w-auto" value={reminderZone} onChange={(e) => setReminderZone(e.target.value)}>{zones.map((zone) => <option key={zone} value={zone}>{zone}</option>)}</NativeSelect></div>
           </div>
           <p className="text-xs text-muted-foreground">App 运行时每分钟检查。关闭窗口后仍要提醒，请开启下方「后台提醒」；电脑关机或休眠时不能发送，重新打开后补发当天提醒。当天没有紧急待办则不发邮件。</p>
           {schedule.lastError && <p className="text-xs text-destructive">上次自动提醒失败：{schedule.lastError}，到期后会重试。</p>}

@@ -31,6 +31,7 @@ import { MeetingActions, copyMeeting } from "@/components/schedule/meeting-actio
 import { useNow } from "@/components/schedule/use-now";
 import { completeEvent, completeStep } from "@/components/schedule/step-actions";
 import { KIND_STYLE } from "@/components/schedule/kind-style";
+import { Input } from "@/components/ui/input";
 
 export type LinkableApplication = { id: string; companyName: string; title: string; aliases?: string[]; currentStage: ApplicationStage };
 
@@ -286,12 +287,12 @@ function LinkDialog({ item, applications, onClose, onPick }: { item: ScheduleIte
           <DialogTitle>这个安排属于哪条投递？</DialogTitle>
           <DialogDescription>{item ? `${[item.companyName, item.title].filter(Boolean).join(" · ")} · ${absoluteWhen(item.startsAt, item.hasTime)}` : ""}。关联后{item?.hasTime ? "时间写进那条投递的当前进度，日历和提醒跟着它走" : "这个截止日写进那条投递的当前进度，日历跟着它走"}。</DialogDescription>
         </DialogHeader>
-        <input
+        <Input
           autoFocus
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="搜公司或岗位，拼音首字母也行"
-          className="h-9 w-full rounded-xl border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40"
+          className="h-9"
         />
         <div className="max-h-72 space-y-1 overflow-y-auto">
           {!term && suggested.length > 0 && <p className="px-1 text-xs text-muted-foreground">{item?.companyName ? `${item.companyName} 的投递` : "标题里提到的公司"}</p>}

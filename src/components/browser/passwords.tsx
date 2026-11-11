@@ -17,6 +17,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Infobar } from "@/components/browser/infobar";
 import type { DesktopBridge, LoginOffer, LoginState, SavedLogin } from "@/types/desktop-bridge";
+import { Input } from "@/components/ui/input";
 
 /**
  * 网申浏览器 saved passwords, Chrome-style: an offer to keep an account after
@@ -177,7 +178,7 @@ export function PasswordManagerDialog({ bridge, open, onOpenChange }: { bridge: 
         ) : (
           <div className="space-y-4">
             {data.logins.length > 4 && (
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜网站或账号" aria-label="搜索保存的密码" className="h-8 w-full rounded-xl border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40" />
+              <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜网站或账号" aria-label="搜索保存的密码" />
             )}
             {logins.length === 0 ? (
               <p className="rounded-xl border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">{data.logins.length ? "没有匹配的账号" : "还没有保存的密码。在网申浏览器里登录网站后，会问你要不要保存。"}</p>

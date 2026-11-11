@@ -29,6 +29,7 @@ import {
   type StagePostmortem,
 } from "@/lib/actions/stage-postmortem";
 import type { ApplicationStage } from "@prisma/client";
+import { NativeSelect } from "@/components/ui/native-select";
 
 export type TimelineEntry = {
   id: string;
@@ -196,7 +197,7 @@ function TimelineRow({
           <div className="space-y-1">
             <Label className="text-xs text-muted-foreground">企业阶段名称（可选）</Label>
             <Input value={stageLabel} maxLength={100} onChange={(e) => setStageLabel(e.target.value)} placeholder="例如：群面 / 技术终面" />
-            {["REJECTED", "WITHDRAWN", "CANCELLED"].includes(stage) && <select aria-label="终止阶段" value={endedStage} onChange={(e) => setEndedStage(e.target.value)} className="w-full border bg-background p-2"><option value="">未记录</option>{Object.entries(STAGE_LABELS).filter(([key]) => !["REJECTED", "WITHDRAWN", "CANCELLED", "ACCEPTED", "DECLINED"].includes(key)).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>}
+            {["REJECTED", "WITHDRAWN", "CANCELLED"].includes(stage) && <NativeSelect aria-label="终止阶段" value={endedStage} onChange={(e) => setEndedStage(e.target.value)} className="h-9"><option value="">未记录</option>{Object.entries(STAGE_LABELS).filter(([key]) => !["REJECTED", "WITHDRAWN", "CANCELLED", "ACCEPTED", "DECLINED"].includes(key)).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</NativeSelect>}
           </div>
           <div className="space-y-1">
             <Label className="text-xs text-muted-foreground">面试形式</Label>

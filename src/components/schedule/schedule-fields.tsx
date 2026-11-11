@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { absoluteWhen, clock, localDayKey } from "@/lib/interview-schedule";
 import { scheduleConflicts } from "@/lib/actions/schedule";
+import { NativeSelect } from "@/components/ui/native-select";
 
 /**
  * 时间安排 for a 投递 step: a day, optionally a clock time (then it goes on
@@ -187,14 +188,13 @@ export function ScheduleFields({
         {value.time && (
           <div className="space-y-1">
             <Label htmlFor={`${idPrefix}-remind`} className="text-xs text-muted-foreground">提醒</Label>
-            <select
+            <NativeSelect
               id={`${idPrefix}-remind`}
               value={value.remind}
               onChange={(event) => patch({ remind: event.target.value })}
-              className="h-8 w-full rounded-xl border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
             >
               {REMIND_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
+            </NativeSelect>
           </div>
         )}
       </div>

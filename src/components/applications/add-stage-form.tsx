@@ -20,6 +20,7 @@ import { FileUploadButton } from "@/components/ui/file-upload-button";
 import { STAGE_LABELS } from "@/lib/stage-labels";
 import { EMPTY_SCHEDULE, ScheduleFields, scheduleFromDraft, type ScheduleDraft } from "@/components/schedule/schedule-fields";
 import type { ApplicationStage } from "@prisma/client";
+import { NativeSelect } from "@/components/ui/native-select";
 
 export function AddStageForm({
   applicationId,
@@ -106,7 +107,7 @@ export function AddStageForm({
       <div className="flex items-center justify-between gap-2"><p className="text-sm font-medium">记录企业进展</p><button type="button" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setOpen(false)}>收起</button></div>
       <p className="text-xs text-muted-foreground">企业流程不固定。先选宽泛类别，再写官网或邮件里的实际阶段；可跳步、重复或直接记录未通过。</p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {["REJECTED", "WITHDRAWN", "CANCELLED"].includes(stage) && <label className="space-y-1 text-sm">在哪个阶段结束<select className="block w-full rounded border bg-background p-2" value={endedStage} onChange={(e) => setEndedStage(e.target.value)}><option value="">未记录</option>{Object.entries(STAGE_LABELS).filter(([key]) => !["REJECTED", "WITHDRAWN", "CANCELLED", "ACCEPTED", "DECLINED"].includes(key)).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>}
+        {["REJECTED", "WITHDRAWN", "CANCELLED"].includes(stage) && <label className="space-y-1 text-sm">在哪个阶段结束<NativeSelect className="h-9" value={endedStage} onChange={(e) => setEndedStage(e.target.value)}><option value="">未记录</option>{Object.entries(STAGE_LABELS).filter(([key]) => !["REJECTED", "WITHDRAWN", "CANCELLED", "ACCEPTED", "DECLINED"].includes(key)).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</NativeSelect></label>}
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">新状态</Label>
           <Select

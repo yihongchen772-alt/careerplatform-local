@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { saveApplicationJd } from "@/lib/actions/application-jd";
 import { copyText } from "@/lib/copy-text";
+import { Textarea } from "@/components/ui/textarea";
 
 /** The 岗位 JD kept with this 投递 — read off the job page when it was recorded; pasteable when it could not be. */
 export function ApplicationJdCard({ applicationId, text, url }: { applicationId: string; text: string; url: string }) {
@@ -20,7 +21,7 @@ export function ApplicationJdCard({ applicationId, text, url }: { applicationId:
   }
   return <Card><CardHeader><CardTitle>岗位 JD</CardTitle></CardHeader><CardContent className="space-y-3 text-sm">
     {editing ? <>
-      <textarea aria-label="岗位 JD" autoFocus className="min-h-64 w-full rounded border bg-background p-2 text-sm" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="把岗位职责、任职要求粘贴到这里" />
+      <Textarea aria-label="岗位 JD" autoFocus className="max-h-[60vh] min-h-64" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="把岗位职责、任职要求粘贴到这里" />
       <div className="flex gap-2"><Button size="sm" disabled={busy || !draft.trim()} onClick={save}>保存</Button><Button size="sm" variant="outline" disabled={busy} onClick={() => { setDraft(text); setEditing(false); }}>取消</Button></div>
     </> : text ? <>
       <details open><summary className="cursor-pointer text-muted-foreground">岗位描述（{text.length} 字）</summary><p className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap">{text}</p></details>

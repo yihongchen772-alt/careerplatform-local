@@ -14,6 +14,7 @@ import { defaultScheduleStage, scheduleStageChoices } from "@/lib/interview-sche
 import { matchApplication } from "@/lib/application-search";
 import { STAGE_LABELS } from "@/lib/stage-labels";
 import { addCalendarItem, addStageSchedule } from "@/lib/actions/schedule";
+import { NativeSelect } from "@/components/ui/native-select";
 
 export type ScheduleApplication = { id: string; companyName: string; aliases: string[]; title: string; currentStage: ApplicationStage };
 
@@ -116,9 +117,9 @@ export function AddScheduleDialog({ applications, defaultDate, trigger }: { appl
           {chosen ? (
             <div className="space-y-1.5">
               <Label htmlFor="add-schedule-round" className="text-xs text-muted-foreground">是哪一轮</Label>
-              <select id="add-schedule-round" value={round} onChange={(event) => setRound(event.target.value as ApplicationStage)} className="h-8 w-full rounded-xl border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30">
+              <NativeSelect id="add-schedule-round" value={round} onChange={(event) => setRound(event.target.value as ApplicationStage)}>
                 {rounds.map((stage) => <option key={stage} value={stage}>{STAGE_LABELS[stage]}</option>)}
-              </select>
+              </NativeSelect>
             </div>
           ) : (
             <div className="space-y-1.5">
