@@ -77,7 +77,7 @@ test("the AI's pick among a company's 投递 is checked against the job the mail
   assert.equal(fix({ subject: "面试", summary: "销售" }, "x", apps), "x", "one 投递 at that company");
   assert.equal(fix({ subject: "x" }, "gone", apps), "gone");
   const scan = read("src/lib/actions/inbox-scan.ts");
-  assert.match(scan, /correctMailApplication\(\{ subject: email\.subject, summary: c\.summary/);
+  assert.match(scan, /resolveMailApplication\(\{ subject: email\.subject, company: c\.company, summary: c\.summary/);
   assert.match(scan, /邮件时间（用户本地时间/, "「今天」 is read in the user's clock, not UTC");
   assert.match(scan, /mailBeforeStage\(email\.date, app\.currentStageDate\)/);
 });

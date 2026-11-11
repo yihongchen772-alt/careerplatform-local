@@ -13,6 +13,8 @@ export type MailTime = {
   evidence: string;
   /** The date is the last day to pick an interview slot, not the interview. */
   booking: boolean;
+  /** A cut-off with its clock time (「11 月 11 日 17:00 前」): the moment it is over. */
+  deadlineAt?: Date | null;
 };
 
 const LOCAL_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
@@ -46,11 +48,21 @@ export function mailTime(draft: unknown, fallbackZone = systemTimeZone()): MailT
     const opening = DAY.exec(value.windowStart.trim());
     const first = opening ? utcDay(opening[1]) : null;
     const windowed = !!first && first.getTime() < last.getTime();
+    const zone = isValidTimeZone(value.timeZone.trim()) ? value.timeZone.trim() : fallbackZone;
+    let deadlineAt: Date | null = null;
+    if (deadline[2] && !atMidnight) {
+      try {
+        deadlineAt = confirmedWallTime(`${deadline[1]}T${deadline[2]}`, zone);
+      } catch {
+        deadlineAt = null;
+      }
+    }
     return {
       startsAt: windowed ? first! : last,
       endsAt: windowed ? last : null,
       hasTime: false,
-      timeZone: isValidTimeZone(value.timeZone.trim()) ? value.timeZone.trim() : fallbackZone,
+      timeZone: zone,
+      deadlineAt,
       meetingInfo: meetingInfoOf(atMidnight ? "截止 24:00" : deadline[2] ? `截止 ${deadline[2]}` : ""),
       title: value.title.trim(),
       evidence: value.evidence.trim(),
@@ -79,5 +91,6 @@ export function mailTime(draft: unknown, fallbackZone = systemTimeZone()): MailT
 /** The last moment a mail time still matters: the slot's start, or the end of a deadline's last day. */
 export function mailTimeOver(time: MailTime): number {
   if (time.hasTime) return time.startsAt.getTime();
+  if (time.deadlineAt) return time.deadlineAt.getTime();
   return (time.endsAt ?? time.startsAt).getTime() + 86_400_000;
 }

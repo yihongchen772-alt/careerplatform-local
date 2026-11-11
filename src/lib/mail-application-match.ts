@@ -35,6 +35,8 @@ export function correctMailApplication(mail: { subject: string; summary?: string
   const named = siblings.map((app) => ({ app, key: bareJob(app.title) })).filter((entry) => entry.key.length >= 4 && text.includes(entry.key)).sort((a, b) => b.key.length - a.key.length);
   if (!named.length || named[0].app.id === picked) return picked;
   const pickedEntry = named.find((entry) => entry.app.id === picked);
+  // As closely named as the best (the same title applied to twice): keep the pick.
+  if (pickedEntry && pickedEntry.key.length === named[0].key.length) return picked;
   // Named too, and not just as a part of the longer title: the mail may be about both.
   if (pickedEntry && !named[0].key.includes(pickedEntry.key)) return picked;
   if (named[1] && named[1].key.length === named[0].key.length && named[1].key !== named[0].key) return null;
@@ -73,4 +75,65 @@ export function matchMailApplication(
   const full = fold(`${mail.subject} ${mail.body ?? ""}`);
   const named = best.filter((app) => fold(app.title).length >= 4 && full.includes(fold(app.title)));
   return named.length === 1 ? named[0].id : null;
+}
+
+/** Words that say what kind of job it is. Two titles sharing none are different jobs. */
+const ROLE_WORDS = ["测试", "算法", "软件", "硬件", "电气", "机械", "结构", "嵌入式", "前端", "后端", "产品", "运营", "销售", "市场", "数据", "质量", "工艺", "供应链", "采购", "财务", "人力", "客户", "项目", "仿真", "电机", "芯片", "射频", "运维", "plc", "自动化", "机器人", "视觉", "控制", "通信", "网络", "安全", "需求", "规划", "电子", "化工", "材料"];
+
+function roleWords(title: string): Set<string> {
+  const text = bareJob(title);
+  return new Set(ROLE_WORDS.filter((word) => text.includes(word)));
+}
+
+/**
+ * The mail names one job and the record is another kind of job at that
+ * company (「软件测试工程师」 vs 「运动控制算法工程师」). A category record
+ * (「上海校招 - 测试类」) still fits a 测试 mail; a title with no role word fits anything.
+ */
+export function jobConflicts(mailJob: string | null | undefined, recordTitle: string): boolean {
+  const said = bareJob(mailJob ?? "");
+  const record = bareJob(recordTitle);
+  if (said.length < 2 || !record || said.includes(record) || record.includes(said)) return false;
+  const a = roleWords(said);
+  const b = roleWords(record);
+  if (!a.size || !b.size) return false;
+  for (const word of a) if (b.has(word)) return false;
+  return true;
+}
+
+function companyNamed(haystack: string, app: MatchableApplication) {
+  return [app.companyName, ...(app.aliases ?? [])].some((name) => mentions(haystack, name));
+}
+
+/**
+ * Which 投递 a mail is about, from the AI's pick (if any) checked against the mail:
+ * - a pick at a company the mail never names, while it names another one you
+ *   applied to, is a slip (a 博凯 reminder linked to a 中国移动 record): the
+ *   company the mail names wins;
+ * - among one company's records the job the mail spells out wins, closed ones
+ *   included (`all`): an invitation for a job marked 已拒 still belongs to it;
+ * - a record of another kind of job than the one the mail names is not it.
+ */
+export function resolveMailApplication(
+  mail: { subject: string; company?: string | null; summary?: string; body?: string; jobTitle?: string | null },
+  picked: string | null,
+  active: MatchableApplication[],
+  all: MatchableApplication[] = active
+): string | null {
+  const text = { subject: mail.subject, company: mail.company, body: `${mail.summary ?? ""} ${mail.body ?? ""}` };
+  const haystack = fold(`${mail.subject} ${mail.company ?? ""} ${mail.summary ?? ""} ${(mail.body ?? "").slice(0, 400)}`);
+  let chosen = picked && active.some((app) => app.id === picked) ? picked : null;
+  if (chosen) {
+    const app = active.find((entry) => entry.id === chosen)!;
+    if (!companyNamed(haystack, app) && all.some((other) => other.companyName !== app.companyName && companyNamed(haystack, other))) {
+      chosen = matchMailApplication(text, active);
+    }
+  } else {
+    chosen = matchMailApplication(text, active);
+  }
+  const pool = [...active, ...all.filter((app) => !active.some((entry) => entry.id === app.id))];
+  if (chosen) chosen = correctMailApplication({ subject: mail.subject, summary: [mail.summary, mail.jobTitle].filter(Boolean).join(" "), body: mail.body }, chosen, pool);
+  const app = chosen ? pool.find((entry) => entry.id === chosen) : null;
+  if (app && jobConflicts(mail.jobTitle, app.title)) return null;
+  return chosen;
 }

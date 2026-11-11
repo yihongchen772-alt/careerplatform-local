@@ -66,8 +66,10 @@ test("mail: a 测评 with a cut-off is a deadline day, with its link and time", 
   assert.equal(value.endsAt.toISOString(), "2026-10-20T00:00:00.000Z");
   assert.match(value.meetingInfo, /https:\/\/exam\.example\.com\/t\/abc/);
   assert.match(value.meetingInfo, /截止 23:59/);
-  // Over only after the last day.
-  assert.equal(time.mailTimeOver(value), Date.UTC(2026, 9, 21));
+  // Over at the cut-off it names (23:59 in Shanghai), not hours later.
+  assert.equal(time.mailTimeOver(value), Date.UTC(2026, 9, 20, 15, 59));
+  // A cut-off day without a clock is over after that day.
+  assert.equal(time.mailTimeOver(time.mailTime({ ...draft, deadline: "2026-10-20" })), Date.UTC(2026, 9, 21));
   assert.equal(time.mailTime({ ...draft, deadline: "", windowStart: "" }), null);
   assert.equal(time.mailTime({ ...draft, deadline: "下周" }), null);
 });

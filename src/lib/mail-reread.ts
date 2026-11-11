@@ -3,6 +3,7 @@ import { getUserScanAccounts, fetchEmailsByUid } from "@/lib/imap";
 import { mailTime } from "@/lib/mail-time";
 import { completeMailDraft, EXAM_OR_INTERVIEW } from "@/lib/mail-time-extract";
 import { matchMailApplication } from "@/lib/mail-application-match";
+import { inviteTitle } from "@/lib/mail-calendar";
 import { applyMailSchedule } from "@/lib/mail-schedule";
 import type { ApplicationStage } from "@prisma/client";
 
@@ -66,7 +67,7 @@ export async function rereadMailTimes(userId: string, options: { days?: number; 
       result.checked += 1;
       const [type, company] = task.title.split("：");
       const draft = email.calendarInvite
-        ? { ...email.calendarInvite, title: email.calendarInvite.title || task.title }
+        ? { ...email.calendarInvite, title: inviteTitle(email.calendarInvite.title, task.title) }
         : completeMailDraft({ ai: task.mailEventDraft as Record<string, string> | null, subject: email.subject, body: email.snippet, mailDate: email.date, type, company });
       if (!draft || !mailTime(draft)) continue;
       const matched = task.applicationId ?? matchMailApplication({ subject: email.subject, company, body: email.snippet }, apps);

@@ -24,6 +24,12 @@ export function parseCalendarInvite(text: string): MailEventDraft | null {
   const decode = (line: string) => line.slice(line.indexOf(":") + 1).replace(/\\n/gi, "\n").replace(/\\([,;\\])/g, "$1");
   const date = (line: string) => { const raw = decode(line); const match = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})\d{2}(Z)?$/.exec(raw); return match ? `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}` : ""; };
   const rawStart = get("DTSTART"); const timezone = /;TZID=([^;:]+)/.exec(rawStart)?.[1]?.replace(/^"|"$/g, "") || (/Z$/.test(rawStart) ? "UTC" : "");
-  const description = decode(get("DESCRIPTION")); const url = decode(get("URL")) || description.match(/https?:\/\/[^\s<>]+/)?.[0] || "";
+  const description = decode(get("DESCRIPTION")); const url = decode(get("URL")) || decode(get("LOCATION")).match(/https?:\/\/[^\s<>]+/)?.[0] || description.match(/https?:\/\/[^\s<>]+/)?.[0] || "";
   return mailEventDraftSchema.parse({ title: decode(get("SUMMARY")), localStart: date(rawStart), localEnd: date(get("DTEND")), timeZone: timezone, location: decode(get("LOCATION")), meetingUrl: url.slice(0, 2000), evidence: `邮件日历邀请：${decode(rawStart)}${get("STATUS") ? `；${decode(get("STATUS"))}` : ""}` });
+}
+
+/** An invite's own title unless it says nothing (「新面试」「Teams Meeting」): then the mail's type and company. */
+export function inviteTitle(title: string, fallback: string): string {
+  const bare = title.trim().replace(/\s+/g, " ");
+  return !bare || /^(?:新的?)?(?:面试|会议|视频面试|线上面试|在线面试)$|^(?:new |microsoft )?(?:teams )?(?:meeting|interview|event)$/i.test(bare) ? fallback : bare;
 }
