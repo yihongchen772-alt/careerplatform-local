@@ -34,6 +34,11 @@ const LIBRARIES = {
   "element-plus.js": "https://cdn.jsdelivr.net/npm/element-plus@2.8.8/dist/index.full.min.js",
   "element-plus.css": "https://cdn.jsdelivr.net/npm/element-plus@2.8.8/dist/index.css",
   "element-zh.js": "https://cdn.jsdelivr.net/npm/element-plus@2.8.8/dist/locale/zh-cn.min.js",
+  // B 站式：老版 Ant Design Vue 1.x（Vue 2），选择框和日历的结构和新版不同。
+  "vue2.js": "https://cdn.jsdelivr.net/npm/vue@2.7.16/dist/vue.min.js",
+  "moment.js": "https://cdn.jsdelivr.net/npm/moment@2.30.1/min/moment.min.js",
+  "antdv1.js": "https://cdn.jsdelivr.net/npm/ant-design-vue@1.7.8/dist/antd.min.js",
+  "antdv1.css": "https://cdn.jsdelivr.net/npm/ant-design-vue@1.7.8/dist/antd.min.css",
 };
 fs.mkdirSync(VENDOR, { recursive: true });
 for (const [name, url] of Object.entries(LIBRARIES)) {
@@ -754,6 +759,19 @@ Object.assign(suites, {
     { label: "受教育类型", read: sel("#z-edu-type"), expect: "统招全日制" },
     { label: "是否全日制", read: sel("#z-full"), expect: "是" },
   ]],
+  "win-bili": [[
+    { label: "姓名", read: mk("name"), expect: "林晓舟" },
+    { label: "出生日期(只读框+弹出日历)", read: mk("birth"), expect: "2002-03-15" },
+    { label: "学校", read: mk("school"), expect: "复旦大学" },
+    { label: "开始(月份日历)", read: mk("from"), expect: "2024-09" },
+    { label: "结束(至)", read: mk("to"), expect: "2026-06" },
+    { label: "学历(老版选择框)", read: mk("degree"), expect: "硕士" },
+    { label: "是否全日制(选项是 全日制/非全日制)", read: mk("full"), expect: "全日制" },
+    { label: "学习形式(不选非全日制)", read: mk("mode"), expect: "全国普通高等院校全日制" },
+    { label: "学校所在国家/地区(按学校)", read: mk("country"), expect: "中国" },
+    { label: "英语水平", read: mk("english"), expect: "大学英语六级" },
+    { label: "六级成绩(选了才出来，分数段)", read: mk("cet6"), expect: "550-710" },
+  ], { wait: 600, profile: (p) => { p.english = "CET-6 560"; p.languages = [{ name: "CET-6", language: "英语", score: "560", date: "2023-06" }]; p.currentCity = "新加坡"; } }],
   "wizard": [[
     { label: "第1步 姓名", read: val("#a1"), expect: "林晓舟" },
     { label: "第1步 性别", read: sel("#a4"), expect: "女" },

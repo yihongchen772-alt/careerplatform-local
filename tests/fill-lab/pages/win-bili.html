@@ -1,0 +1,29 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>B 站式：老版 Ant Design Vue 的选择框和日历</title>
+<link rel="stylesheet" href="/vendor/antdv1.css">
+<style>body{font:14px sans-serif;max-width:860px;margin:20px auto}.row{display:flex;gap:12px;align-items:center;margin:10px 0}.row>label{width:120px}</style>
+<script src="/vendor/vue2.js"></script><script src="/vendor/moment.js"></script><script src="/vendor/antdv1.js"></script></head><body>
+<!-- Fictional, after a form built with ant-design-vue 1.x seen in 网申样本: the select has no input
+     (its click handler sits on .ant-select-selection), dates are read-only boxes whose calendar
+     pops up with its own typing box, and choosing 英语水平 reveals a score-band box. -->
+<div id="app">
+  <h3>基本信息</h3>
+  <div class="row ant-form-item"><label class="ant-form-item-required">姓名</label><a-input v-model="f.name" placeholder="请输入姓名" style="width:240px"></a-input></div>
+  <div class="row ant-form-item"><label class="ant-form-item-required">出生日期</label><a-date-picker v-model="f.birth" placeholder="请选择" value-format="YYYY-MM-DD"></a-date-picker></div>
+  <h3>教育经历</h3>
+  <div class="row ant-form-item"><label>学校名称</label><a-input v-model="f.school" placeholder="请输入学校名称" style="width:240px"></a-input></div>
+  <div class="row ant-form-item"><label>时间</label>
+    <a-month-picker v-model="f.from" placeholder="请选择日期" value-format="YYYY-MM"></a-month-picker><span class="to">至</span>
+    <a-month-picker v-model="f.to" placeholder="请选择日期" value-format="YYYY-MM"></a-month-picker></div>
+  <div class="row ant-form-item"><label class="ant-form-item-required">学历</label><a-select v-model="f.degree" placeholder="请选择学历" style="width:240px"><a-select-option v-for="d in ['本科','硕士','博士']" :key="d" :value="d">{{d}}</a-select-option></a-select></div>
+  <div class="row ant-form-item"><label class="ant-form-item-required">是否全日制</label><a-select v-model="f.full" placeholder="请选择是否全日制" style="width:240px"><a-select-option value="全日制">全日制</a-select-option><a-select-option value="非全日制">非全日制</a-select-option></a-select></div>
+  <div class="row ant-form-item"><label>学习形式</label><a-select v-model="f.mode" placeholder="请选择" style="width:240px"><a-select-option v-for="d in ['全国普通高等院校全日制','全国普通高等院校非全日制','海外留学生']" :key="d" :value="d">{{d}}</a-select-option></a-select></div>
+  <div class="row ant-form-item"><label>学校所在国家/地区</label><a-select v-model="f.country" placeholder="请选择" style="width:240px"><a-select-option v-for="d in ['中国','新加坡','英国']" :key="d" :value="d">{{d}}</a-select-option></a-select></div>
+  <h3>语言能力</h3>
+  <div class="row ant-form-item"><label>英语水平</label><a-select v-model="f.english" placeholder="请选择" style="width:240px"><a-select-option v-for="d in ['大学英语四级','大学英语六级','雅思']" :key="d" :value="d">{{d}}</a-select-option></a-select></div>
+  <div v-if="f.english === '大学英语六级'" class="row ant-form-item"><label>六级成绩</label><a-select v-model="f.cet6" placeholder="请选择" style="width:240px"><a-select-option v-for="d in ['0-424','425-549','550-710']" :key="d" :value="d">{{d}}</a-select-option></a-select></div>
+</div>
+<script>
+window.__state = {};
+new Vue({ el: "#app", data: { f: { name: "", birth: undefined, school: "", from: undefined, to: undefined, degree: undefined, full: undefined, mode: undefined, country: undefined, english: undefined, cet6: undefined } },
+  watch: { f: { deep: true, handler(v) { window.__state = { ...v }; } } } });
+</script></body></html>

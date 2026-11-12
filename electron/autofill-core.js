@@ -461,7 +461,7 @@ function scanPageFields(prefix, readOnly = false) {
   // 把文字写进去网站并不收，所以当下拉处理：填的时候点开看页面新冒出来的列表，
   // 什么都没冒出来才退回当普通输入框。
   queryAll('input[type="text"], input:not([type])').forEach((el) => {
-    if (!isVisible(el) || el.disabled || el.closest(SITE_CHROME) || el.closest(PICKER) || (el.readOnly && el.closest("[class*='sd-Dropdown-container']"))) return;
+    if (!isVisible(el) || el.disabled || el.closest(SITE_CHROME) || el.closest(PICKER) || el.closest(".ant-calendar-picker") || (el.readOnly && el.closest("[class*='sd-Dropdown-container']"))) return;
     if ([...customContainers].some((container) => container === el || inside(container, el))) return;
     let box = null;
     for (let node = parentOf(el), depth = 0; node && depth < 3 && !box; node = parentOf(node), depth++) {
@@ -537,7 +537,10 @@ function scanPageFields(prefix, readOnly = false) {
     // Moka 的出生日期：只读框，点开是它自己的日历，engine 能点。
     const sdCalendar = el.readOnly && !!el.closest("[class*='sd-Dropdown-container']") && !el.closest("[class*='sd-Select-container']");
     if (sdCalendar) entry.sdCalendar = true;
-    if (el.readOnly && !hasValue && !pickerBox && !sdCalendar) {
+    // 老版 Ant Design（Vue 1.x / React 3.x）的日历：只读框，点开的日历 engine 会操作。
+    const antCalendar = el.readOnly && !!el.closest(".ant-calendar-picker");
+    if (antCalendar) entry.antCalendar = true;
+    if (el.readOnly && !hasValue && !pickerBox && !sdCalendar && !antCalendar) {
       // A read-only box that opens the site's own calendar can't be typed
       // into; it is still listed so the result says "pick it on the page".
       if (!/日期|时间|年月|生日|date|birth|calendar/i.test(`${entry.label} ${entry.placeholder} ${entry.name}`)) return;
@@ -620,8 +623,19 @@ function scanPageFields(prefix, readOnly = false) {
       field.required = !!el.required || el.getAttribute("aria-required") === "true" || !!el.closest(".ant-form-item-required, .is-required") || !!el.closest(".ant-form-item")?.querySelector(".ant-form-item-required");
       field.maxLength = el.maxLength > 0 ? el.maxLength : null;
       field.pattern = el.getAttribute("pattern") || "";
+      // 「时间 [日历] 至 [日历]」：两个老版 Ant Design 日历并排是一段时间；「至」后那个用这一行的标签。
+      const calendar = el.matches("input") ? el.closest(".ant-calendar-picker") : null;
+      const pair = calendar?.parentElement ? Array.from(calendar.parentElement.children).filter((node) => node.matches(".ant-calendar-picker")) : [];
+      if (pair.length === 2) {
+        field.rangePart = pair[0] === calendar ? "start" : "end";
+        if (field.rangePart === "end" && (!field.label || /^(?:至|到|~|-|—|–)$/.test(field.label))) {
+          const first = pair[0].querySelector("input");
+          const start = results.find((other) => nodes.get(other.id) === first);
+          if (start) field.label = start.label;
+        }
+      }
       // 飞书招聘's 起止时间: two plain boxes in one range picker, no 开始 / 结束 placeholders.
-      if (el.matches("input") && !/开始|结束|起|止|start|end|from|to/i.test(field.placeholder || "")) {
+      else if (el.matches("input") && !/开始|结束|起|止|start|end|from|to/i.test(field.placeholder || "")) {
         const rangeSelector = "[class*='range-picker' i], [class*='date-range' i], [class*='daterange' i]";
         // The nearest wrapper holds one box; the range picker is the first one around two.
         for (let box = el.closest(rangeSelector); box; box = box.parentElement?.closest(rangeSelector)) {
@@ -937,6 +951,12 @@ async function fillFields(pairs) {
     const el = find('[data-cp-fill-id="' + p.id + '"]');
     if (!el && p.mappingKey) { missing.push(p.id); continue; }
     const rich = !!el && el.isContentEditable && !/^(?:INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
+    if (el && el.readOnly && el.closest(".ant-calendar-picker")) {
+      if (el.value && String(el.value).trim()) { skipped.push(p.id); continue; }
+      if (await pickAntCalendar(el, p.value)) { mark(el, p.source || "profile", p.answerId); confirmManual(el, p); filled.push(p.id); }
+      else failed.push(p.label || p.id);
+      continue;
+    }
     if (el && el.readOnly && el.closest("[class*='sd-Dropdown-container']")) {
       if (el.value && String(el.value).trim()) { skipped.push(p.id); continue; }
       if (await (el.closest("[class*='location_info']") ? pickSdLocation(el, p.value) : pickSdCalendar(el, p.value))) { mark(el, p.source || "profile", p.answerId); confirmManual(el, p); filled.push(p.id); }
@@ -1114,6 +1134,50 @@ async function fillFields(pairs) {
   }
 
   // Moka 日历：先到年（默认停在 1990），再点月，有日的再点日。
+  // 老版 Ant Design 日历：日期面板里有输入框，打进去回车；月份面板没有，翻到那一年再点第几个月。
+  async function pickAntCalendar(el, value) {
+    const m = /(\d{4})\D+(\d{1,2})(?:\D+(\d{1,2}))?/.exec(String(value));
+    if (!m) return false;
+    const year = Number(m[1]); const month = Number(m[2]); const day = m[3] ? Number(m[3]) : 0;
+    const shown = (node) => !!node && node.getClientRects().length > 0 && getComputedStyle(node).visibility !== "hidden";
+    // The panel this click opened: a neighbouring calendar's panel may still be fading out.
+    const before = new Set(Array.from(document.querySelectorAll(".ant-calendar-picker-container")).filter(shown));
+    const panel = () => { const open = Array.from(document.querySelectorAll(".ant-calendar-picker-container")).filter((node) => shown(node) && !node.className.includes("slide-up-leave")); return open.find((node) => !before.has(node)) || open[open.length - 1]; };
+    for (let waited = 0; waited < 600 && Array.from(before).some((node) => shown(node)); waited += 100) await sleep(100);
+    el.focus();
+    el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    el.click();
+    for (let waited = 0; waited < 900 && !panel(); waited += 100) await sleep(100);
+    const box = panel();
+    if (!box) return false;
+    const typed = box.querySelector(".ant-calendar-input");
+    if (typed && shown(typed) && day) {
+      typed.focus();
+      nativeInputSetter.call(typed, `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`);
+      typed.dispatchEvent(new Event("input", { bubbles: true }));
+      await sleep(150);
+      typed.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true }));
+      await sleep(200);
+    } else if (box.querySelector(".ant-calendar-month-panel")) {
+      for (let step = 0; step < 90; step++) {
+        const at = Number(/\d{4}/.exec(box.querySelector(".ant-calendar-month-panel-year-select-content")?.textContent || "")?.[0]);
+        if (!at) return false;
+        if (at === year) break;
+        box.querySelector(at > year ? ".ant-calendar-month-panel-prev-year-btn" : ".ant-calendar-month-panel-next-year-btn")?.click();
+        await sleep(40);
+      }
+      const cell = box.querySelectorAll("td.ant-calendar-month-panel-cell")[month - 1];
+      const target = cell?.querySelector("a") || cell;
+      if (!target || cell.classList.contains("ant-calendar-month-panel-cell-disabled")) return false;
+      target.click();
+      await sleep(200);
+    } else {
+      document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", keyCode: 27, bubbles: true }));
+      return false;
+    }
+    for (let waited = 0; waited < 600 && !String(el.value || "").includes(String(year)); waited += 100) await sleep(100);
+    return String(el.value || "").includes(String(year));
+  }
   async function pickSdCalendar(el, value) {
     const m = /(\d{4})\D+(\d{1,2})(?:\D+(\d{1,2}))?/.exec(String(value));
     if (!m) return false;
@@ -1307,7 +1371,10 @@ async function fillCustomSelects(pairs, taskId) {
     if (exact) return exact;
     const fuzzy = options.filter((o) => optionText(o).includes(v) || (v.includes(optionText(o)) && optionText(o).length >= 2));
     // 同一个选项列了两遍（远景的「上海市」「上海市」）还是一个选项。
-    return new Set(fuzzy.map(optionText)).size === 1 ? fuzzy[0] : null;
+    if (new Set(fuzzy.map(optionText)).size === 1) return fuzzy[0];
+    // 「全日制」在「全国普通高等院校全日制 / …非全日制」里：选没有否定它的那个。
+    const plain = /^[非不]/.test(v) ? [] : fuzzy.filter((o) => !optionText(o).includes(`非${v}`) && !optionText(o).includes(`不${v}`));
+    return new Set(plain.map(optionText)).size === 1 ? plain[0] : null;
   }
   // `alternatives` carries synonyms such as 学士 → 本科 for degree dropdowns.
   function pick(options, p) {
@@ -1684,9 +1751,9 @@ async function fillCustomSelects(pairs, taskId) {
       assertActive();
       options = await waitFor(() => visibleOptions(container), 600);
       target = pick(options, p);
-      // 学校、专业的列表是联网搜的，第一眼常常还是上一次的结果。
-      if (!target && container.matches("[class*='sd-Select-container']")) {
-        await sleep(600);
+      // 学校、专业的列表是联网搜的，第一眼常常还是上一次的结果；网慢时再多等一会儿。
+      for (let waited = 0; !target && container.matches("[class*='sd-Select-container']") && waited < 2400; waited += 300) {
+        await sleep(300);
         assertActive();
         options = visibleOptions(container);
         target = pick(options, p);
@@ -2096,7 +2163,9 @@ const BASIC_FIELD_RULES = [
   { keys: ["出生日期", "出生年月", "生日", "birth", "birthday", "birthdate"], not: /地点|出生地|place|city|country|province|省份|籍贯/i, get: (p) => p.birthDate, date: true, exactDay: true },
   // School/major/degree/GPA/dates are per education row — see
   // resolveRepeatField below. Only the page-wide "最高学历" stays flat.
-  { keys: ["最高学历", "highest degree", "highest education"], get: (p) => highestEducation(p)?.degree, degree: true },
+  { keys: ["最高学历毕业院校", "最高学历毕业学校", "最高学历院校", "最高学历学校", "最高学历就读院校"], get: (p) => highestEducation(p)?.school },
+  { keys: ["最高学历专业", "最高学历所学专业"], get: (p) => highestEducation(p)?.major },
+  { keys: ["最高学历", "highest degree", "highest education"], not: /形式|方式|类型|性质|学校|院校|专业|时间|日期|证书|编号/, get: (p) => highestEducation(p)?.degree, degree: true },
   // `learn`: the 网申资料 field a hand-typed answer here fills while it is blank.
   { keys: ["英语", "外语", "cet", "english", "语言能力"], not: /姓名|名字|name/i, get: (p) => p.english, english: true, learn: "english" },
   { keys: ["政治面貌", "politic", "political", "politics"], get: (p) => p.politics, learn: "politics" },
@@ -2133,7 +2202,7 @@ const BASIC_FIELD_RULES = [
   // the applicant lives, not where they'd like to work.
   { keys: ["意向城市", "期望城市", "工作城市", "意向工作地", "期望工作地", "工作地点", "意向地点", "期望地点", "工作地区", "preferred city", "preferred location", "desired location", "work location"], not: /是否|可否|能否|接受|现工作|当前工作|目前工作/, get: (p) => p.preferredCities, cities: true },
   // English portals (Microsoft, Workday …): country of residence, before the bare "city" rule.
-  { keys: ["country/region", "country / region", "country or region", "country of residence", "country", "所在国家", "居住国家", "国家/地区", "国家或地区"], not: /code|区号|代码|phone|dial|birth|出生|citizenship|nationality|国籍|issu|签发|city|城市|state of/i, get: (p) => p.country || countryFromCity(p.currentCity), learn: "country", english: false, englishName: true },
+  { keys: ["country/region", "country / region", "country or region", "country of residence", "country", "所在国家", "居住国家", "国家/地区", "国家或地区"], not: /code|区号|代码|phone|dial|birth|出生|citizenship|nationality|国籍|issu|签发|city|城市|state of|学校|院校|school|university|college/i, get: (p) => p.country || countryFromCity(p.currentCity), learn: "country", english: false, englishName: true },
   { keys: ["现工作城市", "当前工作城市", "目前工作城市", "现居", "现住", "所在城市", "常住", "居住城市", "所在地", "居住地", "现所在地", "目前所在地", "current city", "current location", "city"], not: /工作所在地|公司所在地|单位所在地|学校所在地|户籍所在地|户口所在地|生源所在地|家庭所在地/, get: (p) => p.currentCity, learn: "currentCity", englishName: true },
   // 资料方案 fields: the direction-specific target role and self-assessment.
   // No `learn` here: which city and which job is usually picked per company.
@@ -2167,6 +2236,7 @@ const BASIC_FIELD_RULES = [
   { keys: ["是否全日制", "是否为全日制"], not: /在校/, get: (p) => studyMode(p) ? (studyMode(p) === "全日制" ? "是" : "否") : null },
   // Only as a question: 「应届生求职登录」 is a page heading, not this.
   { keys: ["是否应届", "是否为应届"], not: /往届|非应届/, get: (p) => studyingNow(p) ? "是" : null },
+  { keys: ["学习形式", "教育形式", "就读方式", "受教育类型", "教育方式"], studyForm: true, get: (p) => studyMode(p) },
   { keys: ["学习形式", "教育形式", "就读方式", "学历类型", "学历性质", "培养方式", "受教育类型", "教育方式"], get: (p) => studyMode(p) },
   // 国籍 is not the country of residence (studying in 新加坡 is still 中国): 民族 / 政治面貌 / 籍贯 say 中国.
   { keys: ["国籍"], not: /父|母|配偶|家庭|亲属|紧急/, get: (p) => p.nationality || (p.ethnicity || p.politics || p.hometown ? "中国" : null), nationality: true },
@@ -2223,6 +2293,51 @@ function studyMode(profile) {
   const latest = latestEducation(profile);
   if (!latest) return null;
   return /非全日制|在职|业余|函授|自考|成人|网络教育|part.?time/i.test(Object.values(latest).join(" ")) ? "非全日制" : "全日制";
+}
+
+// Where a school is, read from its name: 新加坡国立大学 → 新加坡, a Chinese 大学 / 学院 → 中国.
+// A name that says neither is left alone (null), never guessed.
+const SCHOOL_ABROAD = [
+  [/新加坡|南洋理工|singapore|\bnus\b|\bntu\b/i, "新加坡"],
+  [/香港|hong\s*kong|\bhku\b|\bhkust\b|\bcuhk\b/i, "香港"],
+  [/澳门|macau|macao/i, "澳门"],
+  [/台湾|台北|taiwan|taipei/i, "台湾"],
+  [/英国|伦敦|剑桥|牛津|帝国理工|曼彻斯特|爱丁堡|华威|布里斯托|london|cambridge|oxford|imperial college|manchester|edinburgh|warwick|bristol|united kingdom|\buk\b/i, "英国"],
+  [/美国|哥伦比亚大学|斯坦福|麻省|哈佛|加州|宾夕法尼亚|康奈尔|卡内基|columbia university|stanford|harvard|massachusetts|california|pennsylvania|cornell|carnegie|\busa\b|united states/i, "美国"],
+  [/澳大利亚|悉尼|墨尔本|昆士兰|莫纳什|sydney|melbourne|queensland|monash|australia/i, "澳大利亚"],
+  [/加拿大|多伦多|麦吉尔|滑铁卢|toronto|mcgill|waterloo|canada/i, "加拿大"],
+  [/日本|东京|京都|大阪|tokyo|kyoto|osaka|japan/i, "日本"],
+  [/韩国|首尔|seoul|korea|kaist/i, "韩国"],
+  [/德国|慕尼黑|亚琛|germany|munich|aachen/i, "德国"],
+  [/法国|巴黎|france|paris/i, "法国"],
+  [/马来西亚|吉隆坡|malaysia/i, "马来西亚"],
+];
+function schoolCountry(school) {
+  const text = String(school || "").trim();
+  if (!text) return null;
+  for (const [pattern, country] of SCHOOL_ABROAD) if (pattern.test(text)) return country;
+  return /[㐀-鿿]/.test(text) && /大学|学院|学校|研究院|研究所|科学院/.test(text) ? "中国" : null;
+}
+function schoolCountryValue(field, row) {
+  const country = schoolCountry(row?.school);
+  if (!country) return null;
+  if (country === "中国" && field.options) {
+    const own = field.options.find((option) => /^(?:中国|中国大陆|中华人民共和国|china|mainland china)$/i.test(String(option).trim()));
+    if (own) return own;
+  }
+  return matchFieldOption(field, placeForField(field, country));
+}
+// 学习形式 for one education row: a school abroad takes the form's 海外 / 留学 choice; else 全日制 or not.
+function studyFormValue(field, row) {
+  if (!row) return null;
+  const country = schoolCountry(row.school);
+  if (country && country !== "中国") {
+    const abroad = field.options?.find((option) => /海外|留学|境外|国外|overseas|abroad/i.test(option));
+    if (abroad) return abroad;
+    if (!field.options) return "海外留学生";
+  }
+  const mode = /非全日制|在职|业余|函授|自考|成人|网络教育|part.?time/i.test(Object.values(row).join(" ")) ? "非全日制" : "全日制";
+  return matchFieldOption(field, mode);
 }
 
 // Never sent to AI, never guessed, always left for the user — a resume
@@ -2477,6 +2592,9 @@ function educationFieldKind(haystack, inSection, bare = "") {
   if (/^(?:教育经历|教育背景|学习经历|education(?:background|experience)?)$/.test(bare)) return "summary";
   if (/英语|外语|cet|toefl|ielts|托福|雅思|语言/i.test(haystack)) return null;
   if (/最高学历|highest/i.test(haystack)) return null;
+  // 学校所在国家/地区: where that row's school is, not where the applicant lives.
+  if (/国家|国别|country/i.test(haystack) && (inSection || /学校|院校|school|university|college/i.test(haystack)) && !/城市|省份|city|province|国籍|nationality|奖|证书|项目|级|重点|计划|专项|助学|scholarship|award/i.test(haystack)) return "country";
+  if (inSection && /^(?:学习形式|就读方式|教育形式|受教育类型|教育方式)$/.test(bare)) return "mode";
   if (/学校|院校|school|university|college/i.test(haystack)) return /城市|所在地|地区|省份|类型|性质|层次|排名|city|type|rank/i.test(haystack) ? null : "school";
   if (/专业|major|field of study/i.test(haystack)) return /技能|证书|资格|排名|方向|课程|实践|能力/.test(haystack) ? null : "major";
   if (/学历|学位|degree|education.?level/i.test(haystack)) return "degree";
@@ -2593,7 +2711,7 @@ function languageFieldKind(field, haystack, bare = "", inSection = false) {
   if (!inSection && !named && !looseScore) return null;
   if (/是否|有无|证书编号|编号|准考证|number|\bid\b/i.test(haystack)) return null;
   if (/时间|日期|年月|年份|date|when|year/i.test(haystack)) return "date";
-  if (/成绩|分数|得分|总分|分值|score|marks?\b|result|grade/i.test(haystack) || (named && !field.options)) return "score";
+  if (/成绩|分数|得分|总分|分值|score|marks?\b|result|grade/i.test(haystack) || (named && (!field.options || isScoreBandChoice(field.options)))) return "score";
   // 掌握程度 / 精通程度 / 听说 / 读写 (中微、上海微电子、飞书): how well, read from the exam.
   if (/程度|熟练|精通|掌握|听说|读写|口语|书面|听力|阅读|写作|proficiency|fluency/i.test(bare) && !/考试|证书|exam|certific/i.test(haystack)) return "level";
   if (/语种|^(?:语言|外语)(?:类型|种类|类别|名称)?$|^language$|language(?:type|name)/i.test(bare)) return "language";
@@ -2920,6 +3038,8 @@ function repeatFieldValue(field, info, profile) {
   if (!row) return null;
   if (info.kind === "summary") return [row.school, row.degree, row.major, [row.start, row.end].filter(Boolean).join(" 至 "), row.gpa && `GPA ${row.gpa}`].filter(Boolean).join("；");
   if (info.kind === "years") return studyYearsOption(field, row);
+  if (info.kind === "mode") return studyFormValue(field, row);
+  if (info.kind === "country") return schoolCountryValue(field, row);
   return info.kind === "degree" ? matchDegreeOption(field, row.degree) : matchFieldOption(field, rowDateValue(field, info.kind, row));
 }
 
@@ -3502,11 +3622,36 @@ function matchFieldOption(field, value) {
   }
   const exact = field.options.find((option) => option === value);
   if (exact) return exact;
+  const band = scoreBand(field.options, value);
+  if (band) return band;
   const fuzzy = field.options.filter((option) => option.includes(value) || value.includes(option));
   if (fuzzy.length === 1) return fuzzy[0];
   // 全日制 between 全日制 / 非全日制: the option that doesn't negate it.
   const plain = /^[非不]/.test(value) ? [] : fuzzy.filter((option) => !option.includes(`非${value}`) && !option.includes(`不${value}`));
   return plain.length === 1 ? plain[0] : null;
+}
+
+// 「0-424 / 425-649 / 650-710」「550分以上」: score bands. A bare score (560, 7.0)
+// takes the band it falls in; anything else isn't a score.
+function scoreBounds(option) {
+  const text = String(option || "").replace(/\s|分/g, "");
+  let m = /^(\d+(?:\.\d+)?)[-~～—–至到](\d+(?:\.\d+)?)$/.exec(text);
+  if (m) return [Number(m[1]), Number(m[2])];
+  m = /^(?:[>≥]=?|大于等于|不低于|不少于)?(\d+(?:\.\d+)?)(?:及以上|以上|\+|或以上)?$/.exec(text);
+  if (m && /以上|\+|[>≥]|大于等于|不低于|不少于/.test(text)) return [Number(m[1]), Infinity];
+  m = /^(?:[<]|低于|小于|不足)?(\d+(?:\.\d+)?)(?:以下|及以下)?$/.exec(text);
+  if (m && /以下|[<]|低于|小于|不足/.test(text)) return [-Infinity, Number(m[1])];
+  return null;
+}
+function isScoreBandChoice(options) {
+  const real = (options || []).filter((option) => !/^(?:请选择|未参加|未考|无|没有|暂无|其他)$/.test(String(option).trim()));
+  return real.length >= 2 && real.every((option) => scoreBounds(option));
+}
+function scoreBand(options, value) {
+  const score = /^\s*(\d+(?:\.\d+)?)\s*分?\s*$/.exec(String(value || ""));
+  if (!score || !isScoreBandChoice(options)) return null;
+  const n = Number(score[1]);
+  return options.find((option) => { const b = scoreBounds(option); return b && n >= b[0] && n <= b[1]; }) || null;
 }
 
 // 是 / 否 questions. 「接受」 saved for 是否接受调剂 answers 是; a dropdown of
@@ -3527,6 +3672,17 @@ function isYesNoQuestion(field) {
 // `describing`: a saved description (an exchange) means 是, 「无」 means 否.
 function yesNoAnswer(field, value, describing = false) {
   const options = field.options?.length ? field.options : null;
+  // 「是否全日制」 offering 「全日制 / 非全日制」: 是 is the option that says it, 否 the one that negates it.
+  const asked = /^(?:是否|是不是)(?:为|是)?(.{2,8})$/.exec(String(bareLabel(field) || "").replace(/[?？]$/, ""))?.[1];
+  if (options && asked && !options.every((option) => YES_NO_OPTION.test(String(option).trim()))) {
+    const negated = (option) => new RegExp(`(?:非|不|未|无)${asked}`).test(option) || /^(?:否|no)\b/i.test(option);
+    const says = options.filter((option) => option.includes(asked) && !negated(option));
+    const denies = options.filter((option) => negated(option));
+    if (says.length === 1 && denies.length === 1) {
+      const polarity = answerPolarity(value) || (describing ? "yes" : null);
+      return polarity === "yes" ? says[0] : polarity === "no" ? denies[0] : null;
+    }
+  }
   if (options ? !options.every((option) => YES_NO_OPTION.test(String(option).trim())) : !isYesNoQuestion(field) || field.tag === "textarea" || field.tag === "richtext") return undefined;
   // A box keeps a saved description (「是否有海外经历（如有请说明）」); only a dropdown reads it as 是.
   const polarity = answerPolarity(value) || (describing && options ? "yes" : null);
@@ -3594,7 +3750,10 @@ const ENGLISH_LEVELS = [
 // (大学英语六级), the score box (560) or the language itself (英语).
 function englishValue(field, value) {
   const text = fieldHaystack(field);
-  if (/成绩|分数|得分|score|marks?\b/i.test(text)) return field.options ? null : (/\d{2,3}(?:\.\d)?/.exec(String(value)) || [null])[0];
+  if (/成绩|分数|得分|score|marks?\b/i.test(text)) {
+    const score = (/\d{2,3}(?:\.\d)?/.exec(String(value)) || [null])[0];
+    return field.options ? scoreBand(field.options, score) : score;
+  }
   if (/语种|language/i.test(text) && !/水平|等级|能力|level|proficiency|skill/i.test(text)) {
     if (field.options) return field.options.find((option) => /^(?:英语|english)$/i.test(option)) || null;
     return /[㐀-鿿]/.test(field.label || "") ? "英语" : "English";
@@ -3681,6 +3840,11 @@ function matchFlatField(field, profile) {
     if (!basicRuleMatches(rule, field)) continue;
     let value = rule.get(profile);
     if (!value) continue;
+    if (rule.studyForm) {
+      const form = studyFormValue(field, latestEducation(profile));
+      if (form) return form;
+      continue;
+    }
     if (rule.phone) value = normalizePhone(field, value);
     if (rule.english) {
       const english = englishValue(field, String(value));
@@ -4076,6 +4240,9 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     // 框选填写 fills that one block: no attachment, no pressing 添加 for more.
     if (options.region && !["x", "y", "width", "height"].every((key) => Number.isFinite(options.region[key]))) throw new Error("框选的范围不对，请重新框一次");
     if (options.region) modules.delete("resume");
+    // A follow-up round (`onlyKeys`): only the boxes an earlier choice revealed; the 简历 is already up.
+    const onlyKeys = Array.isArray(options.onlyKeys) ? new Set(options.onlyKeys) : null;
+    if (onlyKeys) modules.delete("resume");
     assertActive();
     adapter.status({ phase: "scanning", message: "正在读取页面…" });
 
@@ -4123,7 +4290,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       // Classify before skipping prefilled fields: a filled first education
       // block still occupies row one, so the next empty "学校" gets row two.
       const repeat = repeats.get(field.id);
-      if (inRegion && !inRegion.has(field.id)) {
+      if ((inRegion && !inRegion.has(field.id)) || (onlyKeys && !onlyKeys.has(field.mappingKey))) {
         outside.add(field.id);
         continue;
       }
@@ -4401,6 +4568,8 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     let priorFillsOnPage = 0;
     details.forEach((detail, index) => {
       const field = fields[index];
+      // A follow-up round leaves what the earlier rounds said about the other boxes.
+      if (onlyKeys && outside.has(field.id)) return;
       const key = field.resultKey || field.id;
       const prior = earlier.get(key);
       const wasFilled = prior && ["profile", "memory", "ai"].includes(prior.source);
@@ -4486,12 +4655,12 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       saveStop = !outcome?.found ? "" : outcome.reason === "required" ? `「${outcome.labels.join("」「")}」还空着` : outcome.reason === "invalid" ? "网页提示有内容没通过校验" : outcome.reason === "stuck" ? `点了保存但网页没收下${outcome.message ? `（${outcome.message}）` : ""}` : "没找到唯一的保存按钮";
       return null;
     };
-    if (options.saveBlocks && options.modal && options.modalGroup && !options.region && round < maxRounds && adapter.stillOnPage(initialUrl)) {
+    if (options.saveBlocks && options.modal && options.modalGroup && !options.region && !onlyKeys && round < maxRounds && adapter.stillOnPage(initialUrl)) {
       const next = await trySave(options.modalGroup.group, options.modalGroup.label, filled, options.modalGroup.shown);
       if (next) return next;
     }
     let guardStop = "";
-    if (options.expandBlocks && !options.region && (missing.length || empty.length) && round < maxRounds && !options.modal && adapter.stillOnPage(initialUrl)) {
+    if (options.expandBlocks && !options.region && !onlyKeys && (missing.length || empty.length) && round < maxRounds && !options.modal && adapter.stillOnPage(initialUrl)) {
       const clicked = [];
       let modal = false;
       let modalGroup;
@@ -4520,7 +4689,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     }
     // 没有「添加」可点：这类栏目一次只有一张空表，存了这段才出下一段。
     // 这一轮替你存过的栏目，最后一段也一并存上，不留半截。
-    if (options.saveBlocks && options.expandBlocks && !options.region && !options.modal && round < maxRounds && adapter.stillOnPage(initialUrl)) {
+    if (options.saveBlocks && options.expandBlocks && !options.region && !onlyKeys && !options.modal && round < maxRounds && adapter.stillOnPage(initialUrl)) {
       const rows = missingRepeatCounts(profile, rowIndexes, true).filter(({ group }) => modules.has(group));
       for (const { group, label, shown } of rows.filter(({ group }) => missing.some((row) => row.group === group) || group in saveGuard)) {
         const blockKeys = new Set(filled.filter((id) => repeats.get(id)?.group === group).map((id) => repeats.get(id).blockKey));
@@ -4582,6 +4751,26 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     const allShortened = [...(previous.shortened || []), ...shortened];
     if (allShortened.length) notes.push(`${allShortened.length} 项按网页字数上限截短了（${allShortened.slice(0, 2).join("、")}${allShortened.length > 2 ? "…" : ""}），核对一下`);
     if (conflicts.length) notes.push(`页面上已有的${conflicts.slice(0, 2).join("、")}和你的网申资料不一样，没改动，核对一下`);
+    const carried = options.carried;
+    if (carried) {
+      for (const note of carried.notes || []) if (!notes.includes(note)) notes.push(note);
+      for (const label of carried.expandable || []) if (!expandable.includes(label)) expandable.push(label);
+      parts.splice(1, 0, ...(carried.parts || []).filter((part) => !parts.includes(part)));
+    }
+    // 选了一项网页才长出来的框（英语水平选「大学英语六级」才出「六级成绩」）：再填一轮，只填这些新框。
+    // 这一轮要说的话（还少哪类栏目等）带到下一轮一起显示。
+    if (!options.region && !onlyKeys && filled.length && round < maxRounds && adapter.stillOnPage(initialUrl)) {
+      const known = new Set(fields.map((field) => field.mappingKey));
+      const fresh = new Set();
+      for (const frame of await adapter.frames()) {
+        const now = await adapter.run(frame, scanPageFields, ["r-", true]).catch(() => []);
+        for (const field of now || []) if (field.mappingKey && !known.has(field.mappingKey) && !field.hasValue && !field.userEdited) fresh.add(field.mappingKey);
+      }
+      if (fresh.size) {
+        adapter.status({ phase: "scanning", message: `选好的选项让网页多出 ${fresh.size} 个框，接着填…` });
+        return runAutofillCore(adapter, resumeVersionId, { ...options, round: round + 1, onlyKeys: [...fresh], added, accumulated, carried: { parts: parts.slice(0, -1), notes, expandable } });
+      }
+    }
     summary.notes = notes;
     summary.expandable = expandable;
     const result = { phase: "done", message: parts.join("；"), details: allDetails, summary };
