@@ -68,32 +68,114 @@ export async function addPostingToPool(postingId: string): Promise<ActionResult<
     const user = await requireUser();
     const posting = await db.campusPosting.findFirst({ where: { id: String(postingId ?? ""), userId: user.id } });
     if (!posting) throw new UserFacingError("没找到这条招聘信息，请刷新后重试");
-    if (posting.positionId && (await db.position.findFirst({ where: { id: posting.positionId, userId: user.id }, select: { id: true } }))) {
-      return { positionId: posting.positionId, existed: true };
-    }
-    const companyId = await resolveCompanyId(posting.company, { aiUserId: user.id, addedByUserId: user.id });
-    const title = postingTitle(posting);
-    const existing = await db.position.findFirst({ where: { userId: user.id, companyId, OR: [{ title }, ...(posting.applyUrl ? [{ jdUrl: posting.applyUrl }] : [])] }, select: { id: true } });
-    const position = existing ?? (await db.position.create({
-      data: {
-        userId: user.id,
-        companyId,
-        title,
-        track: posting.industry ?? undefined,
-        location: posting.cities ?? undefined,
-        deadline: posting.deadline ?? undefined,
-        source: "校招信息表",
-        jdUrl: posting.applyUrl ?? undefined,
-        jdText: [posting.roles ? `岗位方向：${posting.roles}` : "", posting.degree ? `学历：${posting.degree}` : "", posting.writtenTest ? `笔试：${posting.writtenTest}` : "", posting.deadlineText ? `截止：${posting.deadlineText}` : "", posting.note ?? "", posting.noticeUrl ? `公告：${posting.noticeUrl}` : ""].filter(Boolean).join("\n") || undefined,
-        status: "EVALUATING",
-        interestScore: computeInterestScore(undefined),
-      },
-      select: { id: true },
-    }));
-    await db.campusPosting.update({ where: { id: posting.id }, data: { positionId: position.id } });
+    const result = await addSinglePostingForUser(user.id, posting);
     revalidatePath("/leads");
     revalidatePath("/pool");
-    return { positionId: position.id, existed: !!existing };
+    return result;
+  });
+}
+
+async function addSinglePostingForUser(
+  userId: string,
+  posting: NonNullable<Awaited<ReturnType<typeof db.campusPosting.findFirst>>>
+): Promise<{ positionId: string; existed: boolean }> {
+  if (posting.positionId && (await db.position.findFirst({ where: { id: posting.positionId, userId }, select: { id: true } }))) {
+    return { positionId: posting.positionId, existed: true };
+  }
+  const companyId = await resolveCompanyId(posting.company, { aiUserId: userId, addedByUserId: userId });
+  const title = postingTitle(posting);
+  const existing = await db.position.findFirst({
+    where: { userId, companyId, OR: [{ title }, ...(posting.applyUrl ? [{ jdUrl: posting.applyUrl }] : [])] },
+    select: { id: true },
+  });
+  const position = existing ?? (await db.position.create({
+    data: {
+      userId,
+      companyId,
+      title,
+      track: posting.industry ?? undefined,
+      location: posting.cities ?? undefined,
+      deadline: posting.deadline ?? undefined,
+      source: "校招信息表",
+      jdUrl: posting.applyUrl ?? undefined,
+      jdText: [
+        posting.roles ? `岗位方向：${posting.roles}` : "",
+        posting.degree ? `学历：${posting.degree}` : "",
+        posting.writtenTest ? `笔试：${posting.writtenTest}` : "",
+        posting.deadlineText ? `截止：${posting.deadlineText}` : "",
+        posting.note ?? "",
+        posting.noticeUrl ? `公告：${posting.noticeUrl}` : "",
+      ].filter(Boolean).join("\n") || undefined,
+      status: "EVALUATING",
+      interestScore: computeInterestScore(undefined),
+    },
+    select: { id: true },
+  }));
+  await db.campusPosting.update({ where: { id: posting.id }, data: { positionId: position.id } });
+  return { positionId: position.id, existed: !!existing };
+}
+
+export async function addPostingsToPool(
+  postingIds: string[]
+): Promise<ActionResult<{ added: number; existed: number }>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const ids = [...new Set((postingIds ?? []).map((s) => String(s)).filter(Boolean))].slice(0, 50);
+    if (!ids.length) throw new UserFacingError("请先勾选至少一条招聘信息");
+    const postings = await db.campusPosting.findMany({ where: { id: { in: ids }, userId: user.id } });
+    let added = 0;
+    let existed = 0;
+    for (const posting of postings) {
+      const res = await addSinglePostingForUser(user.id, posting);
+      if (res.existed) existed++;
+      else added++;
+    }
+    revalidatePath("/leads");
+    revalidatePath("/pool");
+    return { added, existed };
+  });
+}
+
+export async function addDiscoveredJobsToPool(
+  jobs: { company: string; title: string; location?: string; url: string; description?: string; source?: string }[]
+): Promise<ActionResult<{ added: number; existed: number }>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const list = (jobs ?? []).filter((j) => j?.company?.trim() && j?.title?.trim() && j?.url?.trim()).slice(0, 30);
+    if (!list.length) throw new UserFacingError("没有可加入候选池的岗位");
+    let added = 0;
+    let existed = 0;
+    for (const job of list) {
+      const companyName = job.company.trim().slice(0, 100);
+      const title = job.title.trim().slice(0, 120);
+      const url = job.url.trim();
+      const companyId = await resolveCompanyId(companyName, { aiUserId: user.id, addedByUserId: user.id });
+      const dup = await db.position.findFirst({
+        where: { userId: user.id, OR: [{ jdUrl: url }, { companyId, title }] },
+        select: { id: true },
+      });
+      if (dup) {
+        existed++;
+        continue;
+      }
+      await db.position.create({
+        data: {
+          userId: user.id,
+          companyId,
+          title,
+          location: job.location?.trim().slice(0, 120) || undefined,
+          jdUrl: url,
+          jdText: job.description?.trim().slice(0, 5000) || undefined,
+          source: job.source || "全网实时搜岗",
+          status: "EVALUATING",
+          interestScore: computeInterestScore(undefined),
+        },
+      });
+      added++;
+    }
+    revalidatePath("/leads");
+    revalidatePath("/pool");
+    return { added, existed };
   });
 }
 

@@ -805,6 +805,48 @@ function markResumeFileInputs() {
   return marked;
 }
 
+function markTypedFileInputs(wantedRoles) {
+  const inputs = Array.from(document.querySelectorAll('input[type="file"]'));
+  inputs.forEach((el) => el.removeAttribute("data-cp-upload-role"));
+  const want = new Set(Array.isArray(wantedRoles) ? wantedRoles : []);
+  if (!want.size) return [];
+  const found = [];
+  for (const el of inputs) {
+    if (el.disabled || el.files?.length) continue;
+    if (el.getAttribute("data-cp-resume-upload") === "1") continue;
+    const label = el.id ? document.querySelector(`label[for="${CSS.escape(el.id)}"]`) : null;
+    const nearby = el.closest("label, .form-item, .ant-form-item, .el-form-item, [class*='upload']");
+    const uploadArea = el.closest(".ant-form-item, .el-form-item") || nearby;
+    if (uploadArea?.querySelector(".ant-upload-list-item-done, .el-upload-list__item.is-success")) continue;
+    const description = [
+      el.name, el.id, el.getAttribute("aria-label"), el.getAttribute("title"),
+      label && label.textContent, nearby && nearby.textContent,
+    ].filter(Boolean).join(" ");
+    if (/简历|履历|resume|curriculum|\bcv\b/i.test(description) && !/证件照|照片|成绩单|作品集/.test(description)) continue;
+    const accept = (el.getAttribute("accept") || "").toLowerCase();
+    let role = null;
+    if (/证件照|个人照片|一寸照|二寸照|免冠照|正面照|生活照|头像|照片|photo|avatar|headshot|portrait/i.test(description)) {
+      role = "photo";
+    } else if (/四六级|四级|六级|英语证书|外语证书|雅思|托福|\bcet\b|ielts|toefl|english\s*cert/i.test(description)) {
+      role = "language";
+    } else if (/成绩单|成绩证明|学分绩|gpa证明|transcript|academic\s*record/i.test(description)) {
+      role = "transcript";
+    } else if (/作品集|个人作品|设计作品|portfolio|work\s*sample/i.test(description)) {
+      role = "portfolio";
+    } else if (/在读证明|学籍证明|学籍认证|学生证|enrollment|student\s*status/i.test(description)) {
+      role = "enrollment";
+    } else if (/获奖|资格证|荣誉证|技能证|证明材料|补充材料|其他附件|相关证明|certificate|award|supporting/i.test(description)) {
+      role = "certificate";
+    } else if (inputs.length > 1 && /^image\//.test(accept) && !/证书|成绩|证明/.test(description)) {
+      role = "photo";
+    }
+    if (!role || !want.has(role)) continue;
+    el.setAttribute("data-cp-upload-role", role);
+    if (!found.includes(role)) found.push(role);
+  }
+  return found;
+}
+
 // AI's honest "couldn't find this in the resume" answer for a short/choice
 // field — distinct from a real value so it never gets written into the page
 // (a sentence dropped into a 性别 dropdown would be worse than leaving it
@@ -2531,7 +2573,7 @@ function sectionGroup(section) {
   return null;
 }
 
-const AUTOFILL_MODULES = ["basic", "education", "experience", "project", "award", "campus", "skill", "questions", "other", "resume"];
+const AUTOFILL_MODULES = ["basic", "education", "experience", "project", "award", "campus", "skill", "questions", "other", "resume", "attachment"];
 
 function fieldModule(field, repeat) {
   if (isThirdPartyField(field)) return "other";
@@ -3954,6 +3996,25 @@ function attachResumeFile(base64, filename, mimeType) {
   return attached;
 }
 
+function attachTypedFile(role, base64, filename, mimeType) {
+  const inputs = Array.from(document.querySelectorAll(`input[type="file"][data-cp-upload-role="${CSS.escape(role)}"]`));
+  if (!inputs.length) return 0;
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  let attached = 0;
+  for (const input of inputs) {
+    if (input.disabled || input.files?.length) continue;
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([bytes], filename, { type: mimeType || "application/octet-stream" }));
+    input.files = transfer.files;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    if (input.files && input.files.length) attached++;
+  }
+  return attached;
+}
+
 // Injected (extension only, top frame): the extension's progress/result box.
 // The popup closes as soon as the applicant clicks into the page, so the
 // outcome is shown on the page itself, in a shadow root the site's CSS can't
@@ -4529,7 +4590,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
           source: pair?.source || "manual", ref: edit?.ref || pair?.ref || "", required: field.required, maxLength: field.maxLength,
           note: field.userEdited ? "手动修改过，保持不动" : field.hasValue ? "已有内容，保持不动" : excluded.has(field.id) ? "未选择此模块" : isThirdPartyField(field) ? "家庭成员 / 联系人等他人信息，请在网页上填写" : field.readonlyPicker ? `日期需在网页上点选${field.suggestion ? `：${field.suggestion}` : ""}` : !eligible ? "需在网页上手动填写" : stored?.captured ? "来自本次申请的网页草稿，请核对后选择填写" : pair?.source === "ai" ? "AI 草稿，请核对后勾选" : pair ? "来自已保存资料或回答" : (aiError || "请选择资料或输入内容") };
       });
-      const result = { phase: "preview", message: "填写建议已准备好，勾选并核对后再写入；网页内容尚未改动", plan: { id: plan.id, url: initialUrl, proposals, choices, blocks: previewRecordBlocks(blocks, repeats, profile), resumeVersionId, positionId: options.positionId, uploadResume: modules.has("resume") && !!resumeVersionId, contextKey: pageContext, variantId: options.variantId } };
+      const result = { phase: "preview", message: "填写建议已准备好，勾选并核对后再写入；网页内容尚未改动", plan: { id: plan.id, url: initialUrl, proposals, choices, blocks: previewRecordBlocks(blocks, repeats, profile), resumeVersionId, positionId: options.positionId, uploadResume: modules.has("resume") && !!resumeVersionId, uploadAttachments: modules.has("attachment"), contextKey: pageContext, variantId: options.variantId } };
       plan.preview = result.plan; await adapter.setPlan(plan);
       adapter.status(result); return result;
     }
@@ -4587,6 +4648,8 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     for (const issue of validation) { const field = fields.find((f) => f.id === issue.id); if (field) merged.set(field.resultKey || field.id, { id: field.id, label: field.label || field.placeholder || field.name, state: issue.message, source: "manual" }); }
     const allDetails = [...merged.values()];
     let uploadedResumeCount = 0;
+    let uploadedAttachmentLabels = [];
+    let uploadedAttachmentCount = 0;
     let uploadError = null;
     if (resumeVersionId && modules.has("resume")) {
       try {
@@ -4594,6 +4657,17 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
         uploadedResumeCount = await adapter.uploadResume(resumeVersionId);
       } catch (err) {
         uploadError = err && err.message ? err.message : "简历附件上传失败";
+      }
+    }
+    if (modules.has("attachment") && typeof adapter.uploadAttachments === "function") {
+      try {
+        if (adapter.stillOnPage(initialUrl)) {
+          const attResult = await adapter.uploadAttachments();
+          uploadedAttachmentCount = attResult?.count || 0;
+          uploadedAttachmentLabels = Array.isArray(attResult?.labels) ? attResult.labels : [];
+        }
+      } catch (err) {
+        if (!uploadError) uploadError = err && err.message ? err.message : "求职证明附件上传失败";
       }
     }
     if (adapter.onFilled) await adapter.onFilled();
@@ -4613,6 +4687,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     const repeatedEmpty = fields.filter((field) => repeatsSaved.has(field.id) && !field.hasValue && !field.userEdited).length;
     if (repeatedEmpty > 0) parts.push(`${repeatedEmpty} 个字段要填的内容上面已保存过，没重复填；还有别的要加就手填这一组`);
     if (uploadedResumeCount > 0) parts.push(`已上传简历附件到 ${uploadedResumeCount} 个位置`);
+    if (uploadedAttachmentCount > 0) parts.push(`已自动附带 ${uploadedAttachmentLabels.join("、") || `${uploadedAttachmentCount} 份证明附件`}`);
     if (uploadError) parts.push(uploadError);
     // After an 添加 round the earlier rounds' own fills count as "已有内容".
     if (alreadyFilled > 0 && !options.round) parts.push(`${alreadyFilled} 个已有内容的字段没动`);
@@ -4638,7 +4713,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     // 逐段自动保存：一段填干净了就替你点它自己的「保存」，再接着加下一段。
     // 保存后页面上认不出多了一段（`saveGuard`）就停，不会把同一段存两遍。
     const maxRounds = options.saveBlocks ? 24 : 4;
-    const accumulated = { filled: previous.filled + filled.length, uploaded: previous.uploaded + uploadedResumeCount, details: allDetails, shortened: [...(previous.shortened || []), ...shortened] };
+    const accumulated = { filled: previous.filled + filled.length, uploaded: previous.uploaded + uploadedResumeCount + uploadedAttachmentCount, details: allDetails, shortened: [...(previous.shortened || []), ...shortened] };
     const shownOf = (group) => missingRepeatCounts(profile, rowIndexes, true).find((row) => row.group === group)?.shown || 0;
     const saveGuard = options.saveGuard || {};
     const stalled = (group) => group in saveGuard && shownOf(group) <= saveGuard[group];
@@ -4737,7 +4812,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     parts.push("你手填的内容：网申资料里还空着的会直接记进去（可撤销），其余的先放进待核对；提交前请核对所有填入内容");
 
     assertActive();
-    const summary = { filled: previous.filled + filled.length, manual: allDetails.filter((d) => d.source === "manual").length, deliberate: allDetails.filter((d) => d.source === "manual" && d.deliberate).length, preserved: Math.max(0, alreadyFilled - priorFillsOnPage) + skipped.length, excluded: allDetails.filter((d) => d.source === "excluded").length, uploaded: previous.uploaded + uploadedResumeCount };
+    const summary = { filled: previous.filled + filled.length, manual: allDetails.filter((d) => d.source === "manual").length, deliberate: allDetails.filter((d) => d.source === "manual" && d.deliberate).length, preserved: Math.max(0, alreadyFilled - priorFillsOnPage) + skipped.length, excluded: allDetails.filter((d) => d.source === "excluded").length, uploaded: previous.uploaded + uploadedResumeCount + uploadedAttachmentCount, uploadedAttachments: uploadedAttachmentLabels };
     if (round) parts.unshift(`本次累计填入 ${summary.filled} 个字段、上传 ${summary.uploaded} 个附件；以下为最后一轮说明`);
     const openedSection = options.openedSection;
     // What needs the applicant's next step, shown on the result bar itself (the
@@ -5123,13 +5198,21 @@ async function applyAutofillPlan(adapter, input) {
     const mappings = (input.approved || []).filter((row) => row.remember && row.ref && filledSet.has(liveByOldId.get(row.id)?.id)).map((row) => ({ fieldKey: plan.fields.find((f) => f.id === row.id).mappingKey, ref: row.ref }));
     if (mappings.length) await adapter.api("field-mapping", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contextKey: plan.options.positionId ? `job:v1:${plan.options.positionId}` : portalContext(plan.url), mappings }) }).then((r) => { if (!r.ok) throw new Error("填写已完成，但字段对应关系保存失败"); });
     let uploaded = 0;
+    let uploadedAttachments = [];
     if (input.uploadResume && plan.resumeVersionId && adapter.stillOnPage(plan.url)) uploaded = await adapter.uploadResume(plan.resumeVersionId);
+    if (plan.preview?.uploadAttachments !== false && typeof adapter.uploadAttachments === "function" && adapter.stillOnPage(plan.url)) {
+      const attResult = await adapter.uploadAttachments().catch(() => null);
+      if (attResult?.count) {
+        uploaded += attResult.count;
+        uploadedAttachments = attResult.labels || [];
+      }
+    }
     const details = plan.fields.map((field) => {
       const current = liveByOldId.get(field.id) || field;
       const issue = issues.find((i) => i.id === current.id);
       return { id: current.id, label: field.section ? `${field.section} · ${field.label || field.name}` : field.label || field.name || "字段", source: issue || result.failed.includes(current.id) ? "manual" : filledSet.has(current.id) ? "profile" : current.hasValue || current.userEdited || result.skipped.includes(current.id) ? "prefilled" : "excluded", state: issue?.message || (filledSet.has(current.id) ? "已写入；提交前核对网页" : result.failed.includes(current.id) ? "写入未通过，需要手填" : current.hasValue || current.userEdited || result.skipped.includes(current.id) ? "已有或手改内容，已保留" : "本次未选择") };
     });
-    const status = { phase: "done", message: `已写入 ${result.filled.length} 项，网页校验发现 ${issues.length} 项需处理；未替你保存或提交`, details, summary: { filled: result.filled.length, manual: details.filter((d) => d.source === "manual").length, preserved: details.filter((d) => d.source === "prefilled").length, excluded: details.filter((d) => d.source === "excluded").length, uploaded } };
+    const status = { phase: "done", message: `已写入 ${result.filled.length} 项，网页校验发现 ${issues.length} 项需处理；未替你保存或提交`, details, summary: { filled: result.filled.length, manual: details.filter((d) => d.source === "manual").length, preserved: details.filter((d) => d.source === "prefilled").length, excluded: details.filter((d) => d.source === "excluded").length, uploaded, uploadedAttachments } };
     await adapter.setPlan(null); if (adapter.onFilled) await adapter.onFilled(); adapter.status(status); return status;
   } catch (error) { const valid = plan && plan.id === input.planId && Date.now() - plan.at <= 10 * 60000 && adapter.stillOnPage(plan.url); const status = { phase: "error", message: error.message || "填写失败", ...(valid && plan.preview ? { plan: plan.preview } : {}) }; if (!valid) await adapter.setPlan(null); adapter.status(status); return status; }
 }
@@ -5150,6 +5233,8 @@ module.exports = {
   fillDetail,
   fieldModule,
   attachResumeFile,
+  attachTypedFile,
+  markTypedFileInputs,
   showPageStatus,
   fillFrames,
   frameHasUserEdits,

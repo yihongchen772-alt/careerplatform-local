@@ -136,6 +136,42 @@ async function adapterFor(tabId, task) {
         }
         return attached;
       },
+      uploadAttachments: async () => {
+        const initialUrl = liveUrl;
+        const listRes = await api("attachments", { signal: task?.controller.signal }).catch(() => null);
+        if (!listRes || !listRes.ok) return { count: 0, labels: [] };
+        const { attachments } = await listRes.json().catch(() => ({ attachments: [] }));
+        if (!Array.isArray(attachments) || !attachments.length) return { count: 0, labels: [] };
+        const byRole = new Map(attachments.map((item) => [item.role, item]));
+        const frames = await tabFrames(tabId);
+        const foundRoles = new Set();
+        for (const frameId of frames) {
+          const matched = await runInFrame(tabId, frameId, core.markTypedFileInputs, [[...byRole.keys()]]).catch(() => []);
+          if (Array.isArray(matched)) matched.forEach((role) => foundRoles.add(role));
+        }
+        if (!foundRoles.size) return { count: 0, labels: [] };
+        let count = 0;
+        const labels = [];
+        for (const role of foundRoles) {
+          const item = byRole.get(role);
+          if (!item) continue;
+          if (liveUrl !== initialUrl || task?.controller.signal.aborted) break;
+          const fileRes = await api(`attachment-file?attachmentId=${encodeURIComponent(item.id)}`, { signal: task?.controller.signal }).catch(() => null);
+          if (!fileRes || !fileRes.ok) continue;
+          const filename = decodeURIComponent(fileRes.headers.get("x-file-name") || item.uploadName || item.name);
+          const base64 = bytesToBase64(await fileRes.arrayBuffer());
+          let attached = 0;
+          for (const frameId of frames) {
+            if (liveUrl !== initialUrl || task?.controller.signal.aborted) break;
+            attached += (await runInFrame(tabId, frameId, core.attachTypedFile, [role, base64, filename, fileRes.headers.get("content-type")]).catch(() => 0)) || 0;
+          }
+          if (attached > 0) {
+            count += attached;
+            if (!labels.includes(item.category)) labels.push(item.category);
+          }
+        }
+        return { count, labels };
+      },
       jobId: () => task?.positionId ?? boundJob,
       archiveScope: () => (task?.positionId ?? boundJob) ? `job:v1:${task?.positionId ?? boundJob}` : core.portalContext(liveUrl),
       getPlan: () => plans.get(tabId),

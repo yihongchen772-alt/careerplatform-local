@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Pause, Play, SquareDashedMousePointer, ArrowRight, Bookmark, Camera, Check, ChevronDown, ChevronUp, Copy, Eraser, ExternalLink, FileCode, ListChecks, Loader2, KeyRound, LogOut, Maximize2, Minus, MoreVertical, NotebookPen, PanelRight, PanelRightClose, Plus, Radar, RotateCw, ScanSearch, Search, Send, Settings2, Sparkles, Trash2, TriangleAlert, Undo2, X, Bug, Wand2 } from "lucide-react";
+import { ArrowLeft, ClipboardCheck, Pause, Play, SquareDashedMousePointer, ArrowRight, Bookmark, Camera, Check, ChevronDown, ChevronUp, Copy, Eraser, ExternalLink, FileCode, ListChecks, Loader2, KeyRound, LogOut, Maximize2, Minus, MoreVertical, NotebookPen, PanelRight, PanelRightClose, Plus, Radar, RotateCw, ScanSearch, Search, Send, Settings2, Sparkles, Trash2, TriangleAlert, Undo2, X, Bug, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { AiProgress } from "@/components/ui/ai-progress";
@@ -41,6 +41,8 @@ import { Omnibox, type QuickLinks } from "@/components/browser/omnibox";
 import { Infobar } from "@/components/browser/infobar";
 import { LoginOfferInfobar, PasswordKeyButton, PasswordManagerDialog, useSavedLogins } from "@/components/browser/passwords";
 import { NewTabPage } from "@/components/browser/new-tab-page";
+import { PendingConfirmDialog, isConfirmCandidate } from "@/components/browser/pending-confirm-dialog";
+import { BATCH_APPLY_STORAGE_KEY } from "@/lib/batch-apply";
 import { AgentChat, type AgentPageContext } from "@/components/assistant/agent-chat";
 import type {
   DesktopBridgeAutofillModule,
@@ -114,6 +116,7 @@ const FILL_MODULES: { id: DesktopBridgeAutofillModule; label: string }[] = [
   { id: "questions", label: "开放题 / 自我评价" },
   { id: "other", label: "其他字段" },
   { id: "resume", label: "简历附件" },
+  { id: "attachment", label: "证明附件（证件照/成绩单等）" },
 ];
 const ALL_FILL_MODULES = FILL_MODULES.map(({ id }) => id);
 
@@ -189,6 +192,7 @@ export function EmbeddedBrowser({
   const [captureKey, setCaptureKey] = useState(0);
   const [portalOpen, setPortalOpen] = useState(false);
   const [markOpen, setMarkOpen] = useState(false);
+  const [pendingListOpen, setPendingListOpen] = useState(false);
   const [shotOpen, setShotOpen] = useState(false);
   const [shot, setShot] = useState<{ dataUrl: string; title: string } | null>(null);
   // App-drawn menus and the address suggestions render in the DOM, which
@@ -207,8 +211,10 @@ export function EmbeddedBrowser({
   const [variantChoice, setVariantChoice] = useState("");
   const scopePreference = useSyncExternalStore(noop, () => {
     try {
-      const saved = localStorage.getItem("careerplatform.browser.fillModules.v4");
+      const saved = localStorage.getItem("careerplatform.browser.fillModules.v5");
       if (saved !== null) return saved;
+      const v4 = localStorage.getItem("careerplatform.browser.fillModules.v4");
+      if (v4 !== null) return v4.split(",").includes("resume") ? `${v4},attachment` : v4;
       const legacy = (() => {
         const v3 = localStorage.getItem("careerplatform.browser.fillModules.v3");
         if (v3 !== null) return v3;
@@ -216,10 +222,11 @@ export function EmbeddedBrowser({
         const v2 = localStorage.getItem("careerplatform.browser.fillModules.v2");
         if (v2 !== null) return v2.split(",").includes("experience") ? `${v2},campus` : v2;
         const old = localStorage.getItem("careerplatform.browser.fillModules");
-        return old === null || ALL_FILL_MODULES.filter((id) => id !== "award" && id !== "campus" && id !== "skill").every((id) => old.split(",").includes(id)) ? ALL_FILL_MODULES.join(",") : old;
+        return old === null || ALL_FILL_MODULES.filter((id) => id !== "award" && id !== "campus" && id !== "skill" && id !== "attachment").every((id) => old.split(",").includes(id)) ? ALL_FILL_MODULES.join(",") : old;
       })();
       // v3 had no 专业技能: those boxes were filled as 其他字段.
-      return legacy.split(",").includes("other") ? `${legacy},skill` : legacy;
+      const base = legacy.split(",").includes("other") ? `${legacy},skill` : legacy;
+      return base.split(",").includes("resume") ? `${base},attachment` : base;
     }
     catch { return ALL_FILL_MODULES.join(","); }
   }, () => ALL_FILL_MODULES.join(","));
@@ -228,7 +235,7 @@ export function EmbeddedBrowser({
   function setFillModules(modules: DesktopBridgeAutofillModule[]) {
     const ordered = ALL_FILL_MODULES.filter((id) => modules.includes(id));
     setScopeOverride(ordered);
-    writePreference("careerplatform.browser.fillModules.v4", ordered.join(","));
+    writePreference("careerplatform.browser.fillModules.v5", ordered.join(","));
     // A narrowed scope belongs to the site it was chosen on (see the effect below).
     writePreference(SCOPE_HOST_KEY, ordered.length === ALL_FILL_MODULES.length ? "" : hostOf(currentUrlRef.current) ?? "");
   }
@@ -371,7 +378,7 @@ export function EmbeddedBrowser({
   // Overlays from elsewhere in the App (⌘K search, the 小欧 chat panel, any
   // dialog) would also end up hidden behind the page.
   const [appOverlay, setAppOverlay] = useState(false);
-  const overlayOpen = captureOpen || portalOpen || markOpen || shotOpen || moreOpen || fillMenuOpen || omniboxOpen || appOverlay;
+  const overlayOpen = captureOpen || portalOpen || markOpen || pendingListOpen || shotOpen || moreOpen || fillMenuOpen || omniboxOpen || appOverlay;
   const linkedVariant = profileVariants.find((v) => v.resumeVersionId && v.resumeVersionId === resumeVersionId);
   // Every company whose site is known: applied-to ones, 企业名录 careers pages
   // and candidate-pool job pages — so an address alone can name the employer.
@@ -961,9 +968,34 @@ export function EmbeddedBrowser({
   }
 
   if (!bridge) {
+    let queuedLinks: { url: string; company?: string; title?: string }[] = [];
+    if (typeof window !== "undefined") {
+      try {
+        const raw = sessionStorage.getItem(BATCH_APPLY_STORAGE_KEY);
+        if (raw) queuedLinks = JSON.parse(raw) || [];
+      } catch {
+        queuedLinks = [];
+      }
+    }
     return (
-      <div className="flex h-[calc(100dvh-6rem)] items-center justify-center rounded-xl border border-dashed text-sm text-muted-foreground">
-        网申浏览器只在桌面版里可用
+      <div className="flex min-h-[28rem] flex-col items-center justify-center gap-4 rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+        <p>内嵌批量自动预填网申浏览器只在桌面版 App 里可用（网页版可用 Chrome 浏览器插件协助填写）。</p>
+        {queuedLinks.length > 0 && (
+          <div className="w-full max-w-lg space-y-2 rounded-xl border bg-card p-4 text-left">
+            <div className="flex items-center justify-between">
+              <span className="font-medium text-foreground">待投递链接队列（{queuedLinks.length}）</span>
+              <Button size="xs" variant="ghost" onClick={() => { sessionStorage.removeItem(BATCH_APPLY_STORAGE_KEY); router.refresh(); }}>清空</Button>
+            </div>
+            <ul className="space-y-1.5 text-xs">
+              {queuedLinks.map((item, idx) => (
+                <li key={idx} className="flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5">
+                  <span className="truncate font-medium text-foreground">{item.company ? `${item.company} · ` : ""}{item.title || item.url}</span>
+                  <a href={item.url} target="_blank" rel="noreferrer" className="shrink-0 text-primary hover:underline">新窗口打开 →</a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     );
   }
@@ -972,6 +1004,8 @@ export function EmbeddedBrowser({
   const busy = autofilling;
   const fillLabel = fillModules.length === ALL_FILL_MODULES.length ? "一键填写" : "填写所选模块";
   const showFrozen = overlayOpen && !!frozen && frozen.tabId === tabsState.activeId && frozen.url === currentUrl;
+  const confirmCandidates = tabsState.tabs.filter(isConfirmCandidate);
+  const readyConfirmCount = confirmCandidates.filter((t) => t.fillState?.status === "ready").length;
 
   const settingsPanel = (
     <div className="space-y-5 text-xs">
@@ -1108,6 +1142,23 @@ export function EmbeddedBrowser({
           {pendingChangeCount > 0 && (
             <button type="button" onClick={() => router.push("/settings?tab=autofill#pending-application-changes")} title="你在网页上手填或修改的内容，确认后才会用于以后填写" className="flex h-7 shrink-0 items-center gap-1 rounded-full bg-amber-500/12 px-2.5 text-xs font-medium text-amber-700 hover:bg-amber-500/20 dark:text-amber-400">
               <NotebookPen className="size-3.5" />待核对 {pendingChangeCount}
+            </button>
+          )}
+
+          {confirmCandidates.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setPendingListOpen(true)}
+              title="查看所有打开岗位的自动填写进度与待核对提交清单"
+              className={cn(
+                "flex h-7 shrink-0 items-center gap-1 rounded-full px-2.5 text-xs font-medium transition-colors",
+                readyConfirmCount > 0
+                  ? "bg-emerald-500/14 text-emerald-700 hover:bg-emerald-500/22 dark:text-emerald-300"
+                  : "bg-muted text-foreground hover:bg-muted/80"
+              )}
+            >
+              {tabsState.batchRunning ? <Loader2 className="size-3.5 animate-spin text-primary" /> : <ClipboardCheck className="size-3.5" />}
+              待确认清单 {readyConfirmCount > 0 ? `${readyConfirmCount}/${confirmCandidates.length}` : confirmCandidates.length}
             </button>
           )}
 
@@ -1528,6 +1579,17 @@ export function EmbeddedBrowser({
       </div>
 
       <PasswordManagerDialog bridge={bridge} open={passwordsOpen} onOpenChange={setPasswordsOpen} />
+
+      <PendingConfirmDialog
+        open={pendingListOpen}
+        onOpenChange={setPendingListOpen}
+        tabs={tabsState.tabs}
+        activeId={tabsState.activeId}
+        batchRunning={!!tabsState.batchRunning}
+        bridge={bridge}
+        resumeVersionId={resumeVersionId || undefined}
+        fillOptions={{ expandBlocks, saveBlocks: expandBlocks && saveBlocks, variantId: variantChoice || undefined, modules: fillModules }}
+      />
 
       {portalOpen && (
         <PortalSyncDialog

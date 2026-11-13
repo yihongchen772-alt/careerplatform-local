@@ -7,7 +7,8 @@ import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ChevronDown, ClipboardCheck, Crosshair, FileText, Globe, ListChecks, Pencil, Sparkles, Trash2 } from "lucide-react";
+import { ChevronDown, ClipboardCheck, Crosshair, FileText, Globe, ListChecks, Pencil, Rocket, Sparkles, Trash2 } from "lucide-react";
+import { launchBatchApply } from "@/lib/batch-apply";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import {
   Table,
@@ -358,10 +359,37 @@ export function PoolTable({
       )}
 
       {selected.size > 0 && (
-        <div className="mb-3 flex items-center justify-between rounded-md border bg-muted/50 px-3 py-2 text-sm">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/50 px-3 py-2 text-sm">
           <span>已选 {selected.size} 项</span>
-          <div className="flex gap-2">
-            <Button size="sm" onClick={() => setBatchMarking(true)}>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="default"
+              onClick={async () => {
+                const chosen = sorted.filter((p) => selected.has(p.id) && !!p.jdUrl);
+                if (!chosen.length) {
+                  toast.error("选中的岗位都还没有网申/JD 链接");
+                  return;
+                }
+                const jobs = chosen.map((p) => ({
+                  url: p.jdUrl!,
+                  positionId: p.id,
+                  company: p.company.name,
+                  title: p.title,
+                  sourceLabel: "候选池",
+                }));
+                const res = await launchBatchApply(jobs, (href) => router.push(href));
+                toast.success(
+                  res.mode === "desktop"
+                    ? `已批量打开 ${res.count} 个网申页并在后台预填，在顶部「待确认清单」核对提交`
+                    : `已生成 ${res.count} 个待投递链接清单`
+                );
+              }}
+            >
+              <Rocket className="mr-1.5 size-3.5" />
+              批量打开网申并预填
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setBatchMarking(true)}>
               批量标记已投
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>

@@ -8,6 +8,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import type { ApplicationStage } from "@prisma/client";
 import { AddScheduleDialog } from "@/components/calendar/add-schedule-dialog";
 import { EditScheduleDialog } from "@/components/schedule/edit-schedule-dialog";
+import { BriefCramDialog } from "@/components/schedule/brief-cram-dialog";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -55,6 +56,7 @@ export function UpcomingSchedule({ items, now: serverNow, applications, days = 7
   const [busy, setBusy] = useState<string | null>(null);
   const [linking, setLinking] = useState<ScheduleItem | null>(null);
   const [editing, setEditing] = useState<ScheduleItem | null>(null);
+  const [cramming, setCramming] = useState<{ applicationId: string; heading: string } | null>(null);
   const visible = items.filter((item) => !hidden.includes(item.key) && urgencyOf(item, now) !== "past");
   // Two booked times on top of each other: say so on both.
   const clashes = useMemo(() => clashingKeys(visible), [visible]);
@@ -142,6 +144,7 @@ export function UpcomingSchedule({ items, now: serverNow, applications, days = 7
                     onLink={() => setLinking(item)}
                     onAccept={() => item.suggestion && run(item, () => attachEventToApplication(item.sourceId, item.suggestion!.applicationId), `已关联到 ${item.suggestion.label}`)}
                     onEdit={() => setEditing(item)}
+                    onCram={() => item.applicationId && setCramming({ applicationId: item.applicationId, heading: [item.companyName, item.title].filter(Boolean).join(" · ") })}
                     onCancelNoticeSeen={() => { if (item.cancelNotice) void dismissMailDraft(item.cancelNotice.taskId).then(() => router.refresh()); }}
                   />
                 ))}
@@ -167,11 +170,17 @@ export function UpcomingSchedule({ items, now: serverNow, applications, days = 7
           await run(item, () => attachEventToApplication(item.sourceId, app.id), `已关联到 ${app.companyName} · ${app.title}`);
         }}
       />
+      <BriefCramDialog
+        open={!!cramming}
+        onOpenChange={(open) => { if (!open) setCramming(null); }}
+        applicationId={cramming?.applicationId ?? null}
+        heading={cramming?.heading ?? ""}
+      />
     </section>
   );
 }
 
-function ScheduleRow({ item, now, busy, clash, onComplete, onWrite, onDismiss, onLink, onAccept, onEdit, onCancelNoticeSeen }: { item: ScheduleItem; now: number; busy: boolean; clash: boolean; onComplete: () => void; onWrite: () => void; onDismiss: () => void; onLink: () => void; onAccept: () => void; onEdit: () => void; onCancelNoticeSeen: () => void }) {
+function ScheduleRow({ item, now, busy, clash, onComplete, onWrite, onDismiss, onLink, onAccept, onEdit, onCram, onCancelNoticeSeen }: { item: ScheduleItem; now: number; busy: boolean; clash: boolean; onComplete: () => void; onWrite: () => void; onDismiss: () => void; onLink: () => void; onAccept: () => void; onEdit: () => void; onCram: () => void; onCancelNoticeSeen: () => void }) {
   const urgency = urgencyOf(item, now);
   const start = new Date(item.startsAt);
   const end = item.endsAt ? new Date(item.endsAt) : null;
@@ -234,6 +243,25 @@ function ScheduleRow({ item, now, busy, clash, onComplete, onWrite, onDismiss, o
         </div>
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-1.5 pl-[6.25rem] sm:pl-0">
+        {item.applicationId && (item.kind === "interview" || item.kind === "exam") && (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className={cn(
+              "h-7 gap-1 rounded-full px-2.5 text-xs",
+              item.hasBrief
+                ? "bg-emerald-500/12 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300"
+                : "text-primary hover:bg-primary/10"
+            )}
+            disabled={busy}
+            onClick={onCram}
+            title="一键查看/生成这轮面试的考前抱佛脚速览（结合简历与历史面经）"
+          >
+            <Sparkles className="size-3.5" />
+            {item.hasBrief ? "抱佛脚·已备" : "考前抱佛脚"}
+          </Button>
+        )}
         <MeetingActions info={item.meetingInfo} compact exam={item.kind === "exam"} copy={false} />
         {item.source === "mail" ? (
           <>

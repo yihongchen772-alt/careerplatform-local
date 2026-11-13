@@ -48,6 +48,7 @@ const {
   isSensitiveMemoryField,
   isSplitNameField,
   markResumeFileInputs,
+  markTypedFileInputs,
   matchBasicField,
   matchDegreeOption,
   matchFieldOption,
@@ -204,9 +205,30 @@ function fillLoginFields(username, password, overwrite) {
   return { filled: changed };
 }
 
+let batchQueueToken = null;
+let batchRunning = false;
+
 function sendLoginState(tab, state) {
-  if (state) loginStates.set(tab.id, state);
-  else loginStates.delete(tab.id);
+  if (state) {
+    loginStates.set(tab.id, state);
+    if (!tab.fillState || tab.fillState.status === "idle" || tab.fillState.status === "queued") {
+      tab.fillState = {
+        status: "needs_login",
+        filled: tab.fillState?.filled || 0,
+        manual: tab.fillState?.manual || 0,
+        uploaded: tab.fillState?.uploaded || 0,
+        message: "网页要求先登录账号",
+        updatedAt: Date.now(),
+      };
+      sendTabsState();
+    }
+  } else {
+    loginStates.delete(tab.id);
+    if (tab.fillState?.status === "needs_login") {
+      tab.fillState = { ...tab.fillState, status: "idle", message: undefined, updatedAt: Date.now() };
+      sendTabsState();
+    }
+  }
   send("browser:login-state", { tabId: tab.id, state: state || null });
 }
 
@@ -337,6 +359,8 @@ function tabState(t) {
     canGoForward: wc.navigationHistory.canGoForward(),
     zoomFactor: wc.getZoomFactor(),
     favicon: t.favicon || null,
+    fillState: t.fillState || null,
+    batchMeta: t.batchMeta || null,
   };
 }
 
@@ -380,7 +404,7 @@ function sendTabsState() {
   // others' views already gone; reading those threw, and Electron turned that
   // into a blocking error dialog on quit.
   const live = tabs.filter((t) => { const wc = t.view.webContents; return wc && !wc.isDestroyed(); });
-  send("browser:tabs", { tabs: live.map(tabState), activeId });
+  send("browser:tabs", { tabs: live.map(tabState), activeId, batchRunning });
 }
 
 function attach(t) {
@@ -731,6 +755,37 @@ async function scanAllFrames(wc) {
   return { fields, frameById };
 }
 
+async function setInputFilesByAttr(wc, attrName, attrValue, filePath, stillOnPage = () => true, cancelError = "页面已切换，已停止上传文件") {
+  const dbg = wc.debugger;
+  const ownedAttachment = !dbg.isAttached();
+  if (ownedAttachment) dbg.attach("1.3");
+  try {
+    await dbg.sendCommand("DOM.enable");
+    const { nodes } = await dbg.sendCommand("DOM.getFlattenedDocument", { depth: -1, pierce: true });
+    const targets = (nodes || []).filter((node) => {
+      if (node.nodeName !== "INPUT" || !node.backendNodeId) return false;
+      const attrs = node.attributes || [];
+      for (let i = 0; i < attrs.length; i += 2) {
+        if (attrs[i] === attrName && attrs[i + 1] === attrValue) return true;
+      }
+      return false;
+    });
+    let uploaded = 0;
+    for (const node of targets) {
+      if (!stillOnPage()) throw new Error(cancelError);
+      const { object } = await dbg.sendCommand("DOM.resolveNode", { backendNodeId: node.backendNodeId });
+      const state = await dbg.sendCommand("Runtime.callFunctionOn", { objectId: object.objectId, functionDeclaration: "function () { return this.disabled || !!(this.files && this.files.length); }", returnByValue: true });
+      if (state.result?.value !== false) continue;
+      if (!stillOnPage()) throw new Error(cancelError);
+      await dbg.sendCommand("DOM.setFileInputFiles", { files: [filePath], backendNodeId: node.backendNodeId });
+      uploaded++;
+    }
+    return uploaded;
+  } finally {
+    if (ownedAttachment && dbg.isAttached()) dbg.detach();
+  }
+}
+
 async function uploadResumeFiles(wc, filePath, stillOnPage = () => true) {
   let candidates = 0;
   for (const frame of allFrames(wc)) {
@@ -742,35 +797,11 @@ async function uploadResumeFiles(wc, filePath, stillOnPage = () => true) {
     }
   }
   if (!candidates) return 0;
+  return setInputFilesByAttr(wc, "data-cp-resume-upload", "1", filePath, stillOnPage, "页面已切换，已停止上传简历");
+}
 
-  const dbg = wc.debugger;
-  const ownedAttachment = !dbg.isAttached();
-  if (ownedAttachment) dbg.attach("1.3");
-  try {
-    await dbg.sendCommand("DOM.enable");
-    const { nodes } = await dbg.sendCommand("DOM.getFlattenedDocument", { depth: -1, pierce: true });
-    const targets = (nodes || []).filter((node) => {
-      if (node.nodeName !== "INPUT" || !node.backendNodeId) return false;
-      const attrs = node.attributes || [];
-      for (let i = 0; i < attrs.length; i += 2) {
-        if (attrs[i] === "data-cp-resume-upload" && attrs[i + 1] === "1") return true;
-      }
-      return false;
-    });
-    let uploaded = 0;
-    for (const node of targets) {
-      if (!stillOnPage()) throw new Error("页面已切换，已停止上传简历");
-      const { object } = await dbg.sendCommand("DOM.resolveNode", { backendNodeId: node.backendNodeId });
-      const state = await dbg.sendCommand("Runtime.callFunctionOn", { objectId: object.objectId, functionDeclaration: "function () { return this.disabled || !!(this.files && this.files.length); }", returnByValue: true });
-      if (state.result?.value !== false) continue;
-      if (!stillOnPage()) throw new Error("页面已切换，已停止上传简历");
-      await dbg.sendCommand("DOM.setFileInputFiles", { files: [filePath], backendNodeId: node.backendNodeId });
-      uploaded++;
-    }
-    return uploaded;
-  } finally {
-    if (ownedAttachment && dbg.isAttached()) dbg.detach();
-  }
+async function uploadTypedFiles(wc, role, filePath, stillOnPage = () => true) {
+  return setInputFilesByAttr(wc, "data-cp-upload-role", role, filePath, stillOnPage, "页面已切换，已停止上传附件");
 }
 
 // ---- multi-step form watcher ----
@@ -919,7 +950,86 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
   handle("browser:new-tab", (_e, url) => createTab(url || "about:blank").id);
   handle("browser:switch-tab", (_e, id) => switchTab(id));
   handle("browser:close-tab", (_e, id) => closeTab(id));
-  handle("browser:get-tabs", () => ({ tabs: tabs.map(tabState), activeId }));
+  handle("browser:get-tabs", () => ({ tabs: tabs.map(tabState), activeId, batchRunning }));
+  handle("browser:open-batch", async (_e, jobs, options = {}) => {
+    const list = Array.isArray(jobs)
+      ? jobs.filter((j) => j && typeof j.url === "string" && /^https?:\/\//i.test(j.url.trim())).slice(0, 20)
+      : [];
+    if (!list.length) return { opened: 0, tabIds: [] };
+    const openedIds = [];
+    const firstBlank = tabs.length === 1 && !hasPage(tabs[0]) && !tabs[0].batchMeta ? tabs[0] : null;
+    for (let i = 0; i < list.length; i++) {
+      const job = list[i];
+      const url = normalizeUrl(job.url.trim());
+      let tab;
+      if (i === 0 && firstBlank) {
+        tab = firstBlank;
+        tab.view.webContents.loadURL(url);
+        switchTab(tab.id);
+      } else {
+        tab = createTab(url, { activate: i === 0 });
+      }
+      tab.positionId = typeof job.positionId === "string" ? job.positionId : undefined;
+      tab.batchMeta = {
+        positionId: tab.positionId,
+        company: typeof job.company === "string" ? job.company.slice(0, 100) : undefined,
+        title: typeof job.title === "string" ? job.title.slice(0, 120) : undefined,
+        sourceLabel: typeof job.sourceLabel === "string" ? job.sourceLabel.slice(0, 60) : undefined,
+      };
+      tab.fillState = {
+        status: options?.autoFill ? "queued" : "idle",
+        filled: 0,
+        manual: 0,
+        uploaded: 0,
+        message: options?.autoFill ? "排队等待后台预填…" : "待填写",
+        updatedAt: Date.now(),
+      };
+      openedIds.push(tab.id);
+    }
+    sendTabsState();
+    if (options?.autoFill) {
+      void startBatchPrefill(openedIds, options.resumeVersionId, {
+        variantId: options.variantId,
+        modules: options.modules,
+      });
+    }
+    return { opened: openedIds.length, tabIds: openedIds };
+  });
+  handle("browser:fill-all-pending", async (_e, resumeVersionId, options = {}) => {
+    const candidates = tabs.filter((t) => {
+      if (!hasPage(t)) return false;
+      const st = t.fillState?.status;
+      return st !== "ready" && st !== "recorded" && st !== "filling";
+    });
+    if (!candidates.length) return { started: 0 };
+    for (const tab of candidates) {
+      tab.fillState = {
+        ...(tab.fillState || { filled: 0, manual: 0, uploaded: 0 }),
+        status: "queued",
+        message: "排队等待批量预填…",
+        updatedAt: Date.now(),
+      };
+    }
+    sendTabsState();
+    void startBatchPrefill(candidates.map((t) => t.id), resumeVersionId, options);
+    return { started: candidates.length };
+  });
+  handle("browser:stop-batch", () => {
+    batchQueueToken = null;
+    batchRunning = false;
+    for (const tab of tabs) {
+      if (tab.fillState?.status === "queued" || tab.fillState?.status === "loading") {
+        tab.fillState = { ...tab.fillState, status: "idle", message: "已暂停队列", updatedAt: Date.now() };
+      }
+      if (fillingTabs.has(tab.id)) stopFillTask(tab.id, "已暂停批量预填");
+    }
+    sendTabsState();
+  });
+  handle("browser:clear-recorded-tabs", () => {
+    const targets = tabs.filter((t) => t.fillState?.status === "recorded").map((t) => t.id);
+    for (const id of targets) closeTab(id);
+    return { closed: targets.length };
+  });
   handle("browser:navigate", (_e, url) => {
     const tab = activeTab();
     if (tab) tab.view.webContents.loadURL(normalizeUrl(url));
@@ -1064,6 +1174,8 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       if (tab.recordedState) Object.assign(tab, tab.recordedState, { lastSendAt: null });
       tab.recordedState = null;
       tab.recordedAt = null;
+      if (tab.fillState) tab.fillState = { ...tab.fillState, status: "ready", updatedAt: Date.now() };
+      sendTabsState();
       return;
     }
     tab.recordedAt = Date.now();
@@ -1075,6 +1187,8 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     tab.sentForms = [];
     tab.jdPage = null;
     tab.lastSendAt = null;
+    tab.fillState = { ...(tab.fillState || { filled: 0, manual: 0, uploaded: 0 }), status: "recorded", updatedAt: Date.now() };
+    sendTabsState();
   });
   ipcMain.on("browser-guest:login-form", async (event) => {
     const tab = tabForSender(event.sender);
@@ -1418,6 +1532,39 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
         if (uploaded) tab.resumeUploads = [{ by: "autofill", at: Date.now(), resumeVersionId, url: wc.getURL().slice(0, 2000) }, ...(tab.resumeUploads || []).filter((u) => !(u.by === "page" && Date.now() - u.at < 8000))].slice(0, 8);
         return uploaded;
       },
+      uploadAttachments: async () => {
+        const initialUrl = wc.getURL();
+        const stillOnPage = () => isActive(initialUrl);
+        const listRes = await fetch(`http://localhost:${port}/api/desktop-browser/attachments`, { signal: task?.controller.signal }).catch(() => null);
+        if (!listRes || !listRes.ok) return { count: 0, labels: [] };
+        const { attachments } = await listRes.json().catch(() => ({ attachments: [] }));
+        if (!Array.isArray(attachments) || !attachments.length) return { count: 0, labels: [] };
+        const byRole = new Map(attachments.map((item) => [item.role, item]));
+        const foundRoles = new Set();
+        for (const frame of allFrames(wc)) {
+          if (!stillOnPage()) break;
+          const matched = await frame.executeJavaScript(`(${markTypedFileInputs.toString()})(${JSON.stringify([...byRole.keys()])})`).catch(() => []);
+          if (Array.isArray(matched)) matched.forEach((role) => foundRoles.add(role));
+        }
+        if (!foundRoles.size) return { count: 0, labels: [] };
+        let count = 0;
+        const labels = [];
+        for (const role of foundRoles) {
+          const item = byRole.get(role);
+          if (!item || !stillOnPage()) continue;
+          const fileRes = await fetch(`http://localhost:${port}/api/desktop-browser/attachment-file?attachmentId=${encodeURIComponent(item.id)}`, { signal: task?.controller.signal }).catch(() => null);
+          if (!fileRes || !fileRes.ok) continue;
+          const file = await fileRes.json().catch(() => null);
+          if (!file?.path || !stillOnPage()) continue;
+          const copyPath = await friendlyUploadCopy(file.path, file.uploadName || item.uploadName);
+          const uploaded = await uploadTypedFiles(wc, role, copyPath, stillOnPage);
+          if (uploaded > 0) {
+            count += uploaded;
+            if (!labels.includes(item.category)) labels.push(item.category);
+          }
+        }
+        return { count, labels };
+      },
       jobId: () => tab.positionId,
       // Where a child frame sits in the top frame's viewport: its <iframe>, found by address, up each level.
       frameOffset: async (frame) => {
@@ -1451,24 +1598,152 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     };
   }
 
+  async function runAutofillOnTab(tab, resumeVersionId, options) {
+    if (!tab) return null;
+    const wc = tab.view.webContents;
+    if (!wc || wc.isDestroyed()) return null;
+    if (fillingTabs.has(tab.id)) return null;
+    fillingTabs.add(tab.id);
+    const task = { id: crypto.randomUUID(), controller: new AbortController(), reason: null };
+    fillTasks.set(tab.id, task);
+    tab.fillState = {
+      ...(tab.fillState || { filled: 0, manual: 0, uploaded: 0 }),
+      status: "filling",
+      message: "正在填写当前页面…",
+      updatedAt: Date.now(),
+    };
+    sendTabsState();
+    try {
+      for (const frame of allFrames(wc)) await frame.executeJavaScript(`document.documentElement.setAttribute("data-cp-task", ${JSON.stringify(task.id)})`).catch(() => {});
+      let result = null;
+      if (options?.mode === "apply") {
+        result = await applyAutofillPlan(electronAdapter(tab, task), options);
+      } else {
+        tab.archiveUrl = wc.getURL();
+        tab.positionId = options?.positionId ?? tab.positionId;
+        tab.resumeVersionId = resumeVersionId;
+        tab.variantId = options?.variantId;
+        await rememberPreFill(tab);
+        result = await runAutofillCore(electronAdapter(tab, task), resumeVersionId, options || {});
+        if (result?.phase === "done" && result.summary) {
+          tab.filledAt = Date.now();
+          tab.typedSinceFill = 0;
+          tab.typedPage = wc.getURL().split("#")[0];
+          recordFillStats(tab.archiveUrl, { fills: 1, filled: result.summary.filled || 0, manual: result.summary.manual || 0, deliberate: result.summary.deliberate || 0 });
+          noteMissedFields(tab, result);
+        } else if (result?.phase === "error" && !/已停止|已暂停/.test(result.message || "")) {
+          recordFillStats(tab.archiveUrl, { errors: 1, lastError: String(result.message || "").slice(0, 80) });
+        }
+      }
+      if (result?.phase === "done" && result.summary) {
+        const hasLoginBox = loginStates.has(tab.id);
+        const status = hasLoginBox && !result.summary.filled && !result.summary.manual ? "needs_login" : "ready";
+        tab.fillState = {
+          status,
+          filled: result.summary.filled || 0,
+          manual: result.summary.manual || 0,
+          deliberate: result.summary.deliberate || 0,
+          uploaded: result.summary.uploaded || 0,
+          uploadedNames: result.summary.uploadedAttachments || [],
+          message: status === "needs_login" ? "网页要求先登录账号" : result.message,
+          updatedAt: Date.now(),
+        };
+      } else if (result?.phase === "preview") {
+        tab.fillState = {
+          ...(tab.fillState || { filled: 0, manual: 0, uploaded: 0 }),
+          status: "idle",
+          message: "待确认填写建议",
+          updatedAt: Date.now(),
+        };
+      } else if (result?.phase === "error") {
+        const stopped = /已停止|已暂停/.test(result.message || "");
+        tab.fillState = {
+          ...(tab.fillState || { filled: 0, manual: 0, uploaded: 0 }),
+          status: stopped ? "idle" : "error",
+          message: result.message || "填写失败",
+          updatedAt: Date.now(),
+        };
+      }
+      sendTabsState();
+      return result;
+    } finally {
+      fillingTabs.delete(tab.id);
+      fillTasks.delete(tab.id);
+    }
+  }
+
+  async function waitForTabReady(tab, timeoutMs = 15000) {
+    const wc = tab.view.webContents;
+    if (!wc || wc.isDestroyed()) return false;
+    if (wc.isLoading()) {
+      await new Promise((resolve) => {
+        const done = () => {
+          clearTimeout(timer);
+          wc.removeListener("did-stop-loading", done);
+          wc.removeListener("did-fail-load", done);
+          resolve();
+        };
+        const timer = setTimeout(done, timeoutMs);
+        wc.on("did-stop-loading", done);
+        wc.on("did-fail-load", done);
+      });
+    }
+    await new Promise((resolve) => setTimeout(resolve, 900));
+    return !wc.isDestroyed();
+  }
+
+  async function startBatchPrefill(tabIds, resumeVersionId, options = {}) {
+    const token = crypto.randomUUID();
+    batchQueueToken = token;
+    batchRunning = true;
+    sendTabsState();
+    try {
+      for (const id of tabIds) {
+        if (batchQueueToken !== token) break;
+        const tab = tabs.find((t) => t.id === id);
+        if (!tab || tab.view.webContents.isDestroyed()) continue;
+        if (!hasPage(tab)) continue;
+        tab.fillState = {
+          ...(tab.fillState || { filled: 0, manual: 0, uploaded: 0 }),
+          status: "loading",
+          message: "等待页面加载完成…",
+          updatedAt: Date.now(),
+        };
+        sendTabsState();
+        const alive = await waitForTabReady(tab);
+        if (!alive || batchQueueToken !== token) break;
+        if (loginStates.has(tab.id)) {
+          tab.fillState = {
+            ...(tab.fillState || { filled: 0, manual: 0, uploaded: 0 }),
+            status: "needs_login",
+            message: "需要登录账号后才能填写",
+            updatedAt: Date.now(),
+          };
+          sendTabsState();
+          continue;
+        }
+        await runAutofillOnTab(tab, resumeVersionId, {
+          ...options,
+          mode: "fill",
+          positionId: tab.positionId ?? options.positionId,
+        }).catch(() => null);
+      }
+    } finally {
+      if (batchQueueToken === token) {
+        batchQueueToken = null;
+        batchRunning = false;
+        sendTabsState();
+      }
+    }
+  }
+
   // `options.expandBlocks`: when the profile has more 教育/实习/项目 rows than
   // the page shows, press the page's own 添加 button and fill again (see
   // runAutofillCore). `options.variantId`: 网申资料方案.
   handle("browser:autofill", async (_e, resumeVersionId, options) => {
     const tab = activeTab();
     if (!tab) return;
-    if (fillingTabs.has(tab.id)) return;
-    fillingTabs.add(tab.id);
-    const task = { id: crypto.randomUUID(), controller: new AbortController(), reason: null };
-    fillTasks.set(tab.id, task);
-    try {
-      for (const frame of allFrames(tab.view.webContents)) await frame.executeJavaScript(`document.documentElement.setAttribute("data-cp-task", ${JSON.stringify(task.id)})`).catch(() => {});
-      if (options?.mode === "apply") await applyAutofillPlan(electronAdapter(tab, task), options);
-      else { tab.archiveUrl = tab.view.webContents.getURL(); tab.positionId = options?.positionId; tab.resumeVersionId = resumeVersionId; tab.variantId = options?.variantId; await rememberPreFill(tab); const result = await runAutofillCore(electronAdapter(tab, task), resumeVersionId, options || {});
-        if (result?.phase === "done" && result.summary) { tab.filledAt = Date.now(); tab.typedSinceFill = 0; tab.typedPage = tab.view.webContents.getURL().split("#")[0]; recordFillStats(tab.archiveUrl, { fills: 1, filled: result.summary.filled || 0, manual: result.summary.manual || 0, deliberate: result.summary.deliberate || 0 }); noteMissedFields(tab, result); }
-        // A run that ended in an error used to leave no trace in 填写统计 (fills 0, typed 11 on 国机).
-        else if (result?.phase === "error" && !/已停止|已暂停/.test(result.message || "")) recordFillStats(tab.archiveUrl, { errors: 1, lastError: String(result.message || "").slice(0, 80) }); }
-    } finally { fillingTabs.delete(tab.id); fillTasks.delete(tab.id); }
+    await runAutofillOnTab(tab, resumeVersionId, options);
   });
 
   handle("browser:focus-field", async (_e, id) => {

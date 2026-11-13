@@ -74,8 +74,8 @@ export function TabStrip({
                   : "text-muted-foreground hover:bg-card/60 hover:text-foreground"
               )}
             >
-              {tab.loading ? (
-                <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" aria-label="加载中" />
+              {tab.loading || tab.fillState?.status === "filling" ? (
+                <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" aria-label={tab.fillState?.status === "filling" ? "填写中" : "加载中"} />
               ) : tab.favicon ? (
                 // A data URL fetched through the 网申 session; next/image adds nothing here.
                 // eslint-disable-next-line @next/next/no-img-element
@@ -84,6 +84,27 @@ export function TabStrip({
                 <Globe className="size-3.5 shrink-0 opacity-70" />
               )}
               <span className="min-w-0 flex-1 truncate">{tabTitle(tab)}</span>
+              {tab.fillState && tab.fillState.status !== "idle" && (
+                <span
+                  aria-label={
+                    tab.fillState.status === "ready" ? "待确认提交"
+                      : tab.fillState.status === "needs_login" ? "需登录"
+                      : tab.fillState.status === "recorded" ? "已记录"
+                      : tab.fillState.status === "queued" || tab.fillState.status === "loading" ? "排队中"
+                      : tab.fillState.status === "error" ? "填写异常"
+                      : undefined
+                  }
+                  title={tab.fillState.message || tab.fillState.status}
+                  className={cn(
+                    "size-2 shrink-0 rounded-full",
+                    tab.fillState.status === "ready" && "bg-emerald-500",
+                    tab.fillState.status === "needs_login" && "bg-amber-500",
+                    (tab.fillState.status === "queued" || tab.fillState.status === "loading" || tab.fillState.status === "filling") && "bg-sky-500",
+                    tab.fillState.status === "recorded" && "bg-muted-foreground/45",
+                    tab.fillState.status === "error" && "bg-destructive"
+                  )}
+                />
+              )}
               <button
                 type="button"
                 aria-label="关闭标签页"

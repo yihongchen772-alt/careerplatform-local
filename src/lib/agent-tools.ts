@@ -57,15 +57,29 @@ export async function executeAgentTool(userId: string, decision: AgentDecision):
     if (!query.trim()) throw new UserFacingError("要找什么岗位？说个方向或关键词，比如「产品经理」「字节 数据分析」。");
     const profile = await db.user.findUnique({ where: { id: userId }, select: { preferredCities: true } });
     const cities = (profile?.preferredCities ?? "").split(/[\s,，、/]+/).filter(Boolean);
-    const found = await findJobs(userId, query, cities);
-    const failed = found.searched.filter((board) => board.error);
+    const found = await findJobs(userId, query, cities, { includeSheets: true, includeWeb: true });
+    const failed = (found.searched ?? []).filter((board) => board.error);
+    const channelHint = found.channels
+      ? `官网直招（${found.channels.boards}）、订阅校招表（${found.channels.sheets}）与全网检索（${found.channels.web}）`
+      : `${(found.searched ?? []).length} 家公司的招聘官网`;
     return {
       data: JSON.stringify({
-        jobs: found.jobs.map((job) => ({ company: job.company, title: job.title, location: job.location, url: job.url, posted: job.postedAt ? new Date(job.postedAt).toLocaleDateString("sv-SE") : null, summary: job.description.replace(/\s+/g, " ").slice(0, 160) })),
+        jobs: found.jobs.map((job) => ({
+          company: job.company,
+          title: job.title,
+          location: job.location,
+          url: job.url,
+          source: job.sourceLabel || "官网",
+          matchScore: job.match?.score ?? null,
+          matchReasons: job.match?.reasons ?? [],
+          posted: job.postedAt ? new Date(job.postedAt).toLocaleDateString("sv-SE") : null,
+          summary: job.description.replace(/\s+/g, " ").slice(0, 160),
+        })),
+        channels: found.channels,
         searched: found.searched,
-        note: "这些是公司招聘官网上实时的在招岗位（已去掉用户候选池和投递记录里已有的）。推荐时给出公司、岗位、地点和链接；用户想要的用 add_position 加入候选池，url 填岗位链接，note 写地点和一句理由。官网上社招、校招、实习可能混在一起，注意看岗位名和要求里的工作年限。",
+        note: "这些是从企业招聘官网、已订阅校招信息表和全网招聘检索汇总的在招岗位（已去掉用户候选池和投递记录里已有的，并按用户目标方向/城市/技能打分排序）。推荐时给出公司、岗位、地点、匹配原因和链接；用户想要的用 add_position 加入候选池，url 填岗位链接，note 写地点和一句理由。",
       }),
-      summary: `查了 ${found.searched.length} 家公司的招聘官网，找到 ${found.total} 个还没记过的相关岗位${found.total > found.jobs.length ? `，先挑出最相关的 ${found.jobs.length} 个` : ""}${failed.length ? `；${failed.map((board) => `${board.name}${board.error ? `（${board.error}）` : ""}`).join("、")}没查到` : ""}。`,
+      summary: `查了${channelHint}，找到 ${found.total} 个还没记过的相关岗位${found.total > found.jobs.length ? `，先挑出最匹配的 ${found.jobs.length} 个` : ""}${failed.length ? `；${failed.map((board) => `${board.name}${board.error ? `（${board.error}）` : ""}`).join("、")}没查到` : ""}。`,
     };
   }
   if (decision.tool === "prepare_application") {

@@ -174,9 +174,22 @@ export async function loadUpcomingSchedule(userId: string, now = new Date(), day
     where: { userId, sourceMailKey: { not: null }, createdAt: { gte: new Date(nowMs - 30 * DAY) } },
     select: { id: true, title: true, note: true, applicationId: true, createdAt: true, mailEventDraft: true, done: true },
   })).map((mail) => ({ id: mail.id, title: mail.title, note: mail.note, applicationId: mail.applicationId, createdAt: mail.createdAt, done: mail.done, hasTime: !!mailTime(mail.mailEventDraft) }));
+  const appIds = [...new Set(upcoming.map((item) => item.applicationId).filter((id): id is string => !!id))];
+  const briefs = appIds.length
+    ? await db.interviewBrief.findMany({
+        where: { userId, applicationId: { in: appIds } },
+        select: { applicationId: true },
+      })
+    : [];
+  const briefSet = new Set(briefs.map((b) => b.applicationId));
   return upcoming.map((item) => {
     const cancelNotice = item.source === "mail" ? null : cancelNoticeFor(item, recent);
-    return cancelNotice ? { ...item, cancelNotice } : item;
+    const hasBrief = item.applicationId ? briefSet.has(item.applicationId) : false;
+    return {
+      ...item,
+      ...(cancelNotice ? { cancelNotice } : {}),
+      ...(hasBrief ? { hasBrief: true } : {}),
+    };
   });
 }
 

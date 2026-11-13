@@ -43,6 +43,7 @@ export type ScheduleItem = {
    */
   suggestion?: { applicationId: string; label: string } | null;
   companyApplications?: number;
+  hasBrief?: boolean;
 };
 
 const TERMINAL: ApplicationStage[] = ["REJECTED", "ACCEPTED", "DECLINED", "WITHDRAWN", "CANCELLED"];

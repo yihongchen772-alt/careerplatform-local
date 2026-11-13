@@ -1,3 +1,29 @@
+export type DesktopBridgeTabFillState = {
+  status: "idle" | "queued" | "loading" | "filling" | "ready" | "needs_login" | "recorded" | "error";
+  filled: number;
+  manual: number;
+  deliberate?: number;
+  uploaded: number;
+  uploadedNames?: string[];
+  message?: string;
+  updatedAt: number;
+};
+
+export type DesktopBridgeTabBatchMeta = {
+  positionId?: string;
+  company?: string;
+  title?: string;
+  sourceLabel?: string;
+};
+
+export type DesktopBridgeBatchJob = {
+  url: string;
+  positionId?: string;
+  company?: string;
+  title?: string;
+  sourceLabel?: string;
+};
+
 export type DesktopBridgeTab = {
   id: number;
   url: string;
@@ -8,14 +34,16 @@ export type DesktopBridgeTab = {
   zoomFactor: number;
   /** The site's icon as a data URL, once the page reports one. */
   favicon?: string | null;
+  fillState?: DesktopBridgeTabFillState | null;
+  batchMeta?: DesktopBridgeTabBatchMeta | null;
 };
 
-export type DesktopBridgeTabsState = { tabs: DesktopBridgeTab[]; activeId: number | null };
+export type DesktopBridgeTabsState = { tabs: DesktopBridgeTab[]; activeId: number | null; batchRunning?: boolean };
 
 /** Where an autofilled value came from — matches the outline colour on the page. */
 export type DesktopBridgeFillSource = "profile" | "memory" | "ai" | "manual" | "prefilled" | "excluded";
 
-export type DesktopBridgeAutofillModule = "basic" | "education" | "experience" | "project" | "award" | "campus" | "skill" | "questions" | "other" | "resume";
+export type DesktopBridgeAutofillModule = "basic" | "education" | "experience" | "project" | "award" | "campus" | "skill" | "questions" | "other" | "resume" | "attachment";
 
 export type FillProposal = { id: string; fieldKey: string; label: string; section?: string; value: string; selected: boolean; eligible: boolean; source: string; ref: string; required?: boolean; maxLength?: number | null; note: string; edited?: boolean; remember?: boolean };
 export type FillRecordBlock = { id: string; label: string; note: string; fieldIds: string[]; choices: { ref: string; label: string; values: Record<string, { value: string; ref: string }> }[] };
@@ -61,6 +89,7 @@ export type DesktopBridgeAutofillStatus = {
   plan?: FillPlan;
   summary?: {
     filled: number; manual: number; /** Of `manual`: 身份证 / 家庭成员 etc. left on purpose. */ deliberate?: number; preserved: number; excluded: number; uploaded: number;
+    uploadedAttachments?: string[];
     /** What needs a next step from the applicant (保存 an opened section, a cut-short text, a value the page had differently). */
     notes?: string[];
     /** Modules the page shows short of rows, with an 「添加」 waiting, while 自动补齐栏目 is off. */
@@ -132,6 +161,10 @@ export type DesktopBridge = {
   switchTab(id: number): Promise<void>;
   closeTab(id: number): Promise<void>;
   getTabs(): Promise<DesktopBridgeTabsState>;
+  openBatch?(jobs: DesktopBridgeBatchJob[], options?: { autoFill?: boolean; resumeVersionId?: string; variantId?: string; modules?: DesktopBridgeAutofillModule[] }): Promise<{ opened: number; tabIds: number[] }>;
+  fillAllPending?(resumeVersionId?: string, options?: DesktopBridgeAutofillOptions): Promise<{ started: number }>;
+  stopBatch?(): Promise<void>;
+  clearRecordedTabs?(): Promise<{ closed: number }>;
   openExternal(): Promise<void>;
   copyUrl(): Promise<void>;
   history(): Promise<DesktopBridgeHistoryEntry[]>;

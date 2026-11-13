@@ -191,7 +191,9 @@ test("秋招信息库 comes back to its filters, page, scroll and the row last o
   assert.match(keeper, /row\.scrollIntoView\(\{ block: "center" \}\)/);
   assert.match(keeper, /a\[href\^="\/browser"\]/);
   const panel = read("src/components/leads/postings-panel.tsx");
-  assert.match(panel, /data-posting-id=\{row\.id\}/);
+  const table = read("src/components/leads/postings-table-client.tsx");
+  assert.match(table, /data-posting-id=\{row\.id\}/);
+  assert.match(panel, /<PostingsTableClient/);
   assert.match(panel, /清除筛选/);
   assert.match(panel, /if \(filters\.page > pages\) redirect/);
   assert.match(read("src/app/(dashboard)/leads/page.tsx"), /<ListPositionKeeper \/>/);
