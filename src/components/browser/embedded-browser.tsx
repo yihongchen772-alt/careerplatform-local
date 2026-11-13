@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ClipboardCheck, Pause, Play, SquareDashedMousePointer, ArrowRight, Bookmark, Camera, Check, ChevronDown, ChevronUp, Copy, Eraser, ExternalLink, FileCode, ListChecks, Loader2, KeyRound, LogOut, Maximize2, Minus, MoreVertical, NotebookPen, PanelRight, PanelRightClose, Plus, Radar, RotateCw, ScanSearch, Search, Send, Settings2, Sparkles, Trash2, TriangleAlert, Undo2, X, Bug, Wand2 } from "lucide-react";
+import { ArrowLeft, ClipboardCheck, Download, Pause, Play, RefreshCw, SquareDashedMousePointer, ArrowRight, Bookmark, Camera, Check, ChevronDown, ChevronUp, Copy, Eraser, ExternalLink, FileCode, ListChecks, Loader2, KeyRound, LogOut, Maximize2, Minus, MoreVertical, NotebookPen, PanelRight, PanelRightClose, Plus, Radar, RotateCw, ScanSearch, Search, Send, Settings2, Sparkles, Trash2, TriangleAlert, Undo2, X, Bug, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { AiProgress } from "@/components/ui/ai-progress";
@@ -759,10 +759,59 @@ export function EmbeddedBrowser({
     if (!bridge || autofilling) return;
     if (!fillModules.length) { toast.info("请先在「填写范围」里至少勾选一个模块"); return; }
     if (extra.mode !== "preview") lastFill.current = extra;
+    const targetTabId = activeIdRef.current;
     setDetected(null);
     setAutofilling(true);
-    setStatus((old) => ({ phase: "scanning", message: "正在读取页面…", plan: old?.plan }));
-    bridge.autofill(resumeVersionId || undefined, { expandBlocks, saveBlocks: expandBlocks && saveBlocks, variantId: variantChoice || undefined, modules: fillModules, positionId: positionId || undefined, ...extra });
+    setStatus((old) => ({ phase: "scanning", message: extra.forceRefill ? "正在清空上次自动填写并重填…" : "正在读取页面…", plan: old?.plan }));
+    bridge.autofill(resumeVersionId || undefined, { expandBlocks, saveBlocks: expandBlocks && saveBlocks, variantId: variantChoice || undefined, modules: fillModules, positionId: positionId || undefined, ...extra })
+      .catch((err) => {
+        if (targetTabId !== null) busyTabsRef.current.delete(targetTabId);
+        if (targetTabId === activeIdRef.current) {
+          setAutofilling(false);
+          setStatus({ phase: "error", message: err instanceof Error ? err.message : "填写失败，请重试" });
+        }
+      });
+  }
+
+  async function handleUndoAutofill() {
+    if (!bridge) return;
+    setFillMenuOpen(false);
+    try {
+      const res = await bridge.undoAutofill();
+      if (activeIdRef.current !== null) tabStatusRef.current.delete(activeIdRef.current);
+      setStatus(null);
+      setAutofilling(false);
+      toast.info(res?.cleared ? `已撤销 ${res.cleared} 个刚自动填写的字段（手填和页面自带内容保留）` : "没有可撤销的自动填写内容");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "撤销失败");
+    }
+  }
+
+  async function handleExportApplications() {
+    setMoreOpen(false);
+    try {
+      const res = await fetch("/api/applications/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ format: "xlsx" }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "导出失败");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `已投递企业与岗位-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success("已导出已投企业与岗位统计表 (.xlsx)");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "导出失败");
+    }
   }
 
   // 框选填写: drag a box over the page, then preview just the fields in it.
@@ -1229,6 +1278,8 @@ export function EmbeddedBrowser({
                   <DropdownMenuSeparator />
                   <DropdownMenuItem disabled={!currentUrl} onClick={() => void handleRegionFill()}><SquareDashedMousePointer />框选一块区域填写…</DropdownMenuItem>
                   <DropdownMenuItem disabled={!currentUrl} onClick={() => { openPanel("preview"); handleAutofill({ mode: "preview", answerLength: 200 }); }}><ScanSearch />逐字段预览后再填…</DropdownMenuItem>
+                  <DropdownMenuItem disabled={!currentUrl} onClick={() => { setFillMenuOpen(false); handleAutofill({ forceRefill: true }); }}><RefreshCw />重填本页（覆写上次自动填）</DropdownMenuItem>
+                  <DropdownMenuItem disabled={!currentUrl} onClick={() => void handleUndoAutofill()}><Undo2 />撤销刚自动填的内容</DropdownMenuItem>
                   <DropdownMenuItem onClick={() => openPanel("settings")}><Settings2 />全部填写设置…</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -1271,6 +1322,7 @@ export function EmbeddedBrowser({
               <DropdownMenuItem disabled={startingTailor || !currentUrl} onClick={() => void handleTailor()}><Wand2 />按这个岗位定制简历…</DropdownMenuItem>
               <DropdownMenuItem disabled={!currentUrl} onClick={() => { setMarkRecognition(null); setMarkOpen(true); }}><Send />记为已投递…</DropdownMenuItem>
               <DropdownMenuItem onClick={() => setPortalOpen(true)}><Radar />设置进度同步…</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => void handleExportApplications()}><Download />导出已投企业与岗位 (.xlsx)</DropdownMenuItem>
               <DropdownMenuItem disabled={!currentUrl} onClick={handleScreenshot}><Camera />截图存到投递附件…</DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem disabled={savingCorrections || busy || !currentUrl} onClick={handleSaveCorrections}><Check />{savingCorrections ? "检测中…" : "核对本页变化"}</DropdownMenuItem>
@@ -1381,15 +1433,16 @@ export function EmbeddedBrowser({
             icon={status.phase === "error" ? <TriangleAlert /> : status.summary?.manual ? <ListChecks /> : <Check />}
             onClose={dismissStatus}
             closeLabel="收起填写结果"
-            actions={status.details?.length || status.summary?.excluded || status.summary?.expandable?.length ? <>
+            actions={status.details?.length || status.summary?.excluded || status.summary?.expandable?.length || (status.phase === "done" && (status.summary?.filled ?? 0) > 0) ? <>
               {!!status.summary?.expandable?.length && <Button size="xs" onClick={() => handleAutofill({ expandBlocks: true })} disabled={busy} title={`点页面上的「添加」补出${status.summary.expandable.join("、")}，再接着填（只这一次，不改「自动补齐栏目」设置）`}>补齐栏目再填</Button>}
               {!!status.summary?.excluded && <Button size="xs" onClick={() => { setFillModules([...ALL_FILL_MODULES]); handleAutofill({ modules: [...ALL_FILL_MODULES] }); }} disabled={busy}>全部模块再填一次</Button>}
+              {status.phase === "done" && (status.summary?.filled ?? 0) > 0 && <Button size="xs" variant="ghost" onClick={() => void handleUndoAutofill()} disabled={busy} title="撤回刚自动填写的字段，保留你手填的内容"><Undo2 />撤销刚填</Button>}
               {!!status.details?.length && <Button size="xs" variant="outline" onClick={() => openPanel("result")}>{status.summary?.manual ? "查看待手填" : "查看结果"}</Button>}
             </> : undefined}
           >
             <span title={status.message}>
               {status.summary
-                ? `已填 ${status.summary.filled} 项 · 保留原有 ${status.summary.preserved} 项 · 待手填 ${status.summary.manual} 项${status.summary.deliberate ? `（含 ${status.summary.deliberate} 项身份证/他人信息，故意不填）` : ""}${status.summary.excluded ? ` · 范围外 ${status.summary.excluded} 项` : ""}${status.summary.uploaded ? ` · 上传 ${status.summary.uploaded} 份简历` : ""}。提交前请核对网页上的紫色框。`
+                ? `已填 ${status.summary.filled} 项 · 保留原有 ${status.summary.preserved} 项 · 待手填 ${status.summary.manual} 项${status.summary.deliberate ? `（含 ${status.summary.deliberate} 项身份证/他人信息，故意不填）` : ""}${status.summary.excluded ? ` · 范围外 ${status.summary.excluded} 项` : ""}${status.summary.uploaded ? ` · 已上传 ${status.summary.uploaded} 份文件${status.summary.uploadedAttachments?.length ? `（含${status.summary.uploadedAttachments.join("、")}）` : ""}` : ""}。提交前请核对网页上的紫色框。`
                 : status.message}
             </span>
             {/* The steps left to the applicant used to sit only in the hover title. */}

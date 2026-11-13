@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>北森 zhiye 进阶兼容验证：+86 控制槽、江苏南京地区、在校职务、最高学位</title>
+  <style>
+    body { font: 14px sans-serif; max-width: 860px; margin: 20px auto; }
+    .form-item { margin: 12px 0; }
+    .form-item__label { font-weight: 600; margin-bottom: 4px; }
+    .form-item__control { display: flex; align-items: center; gap: 8px; }
+    .phoenix-select { border: 1px solid #d1d5db; padding: 6px 10px; min-width: 180px; cursor: pointer; background: #fff; }
+    .phoenix-select__placeHolder { color: #9ca3af; }
+    .area-selector-container { border: 1px solid #d1d5db; padding: 10px; margin-top: 6px; background: #fff; }
+    .area-item-name { display: inline-block; margin: 4px; padding: 4px 8px; border: 1px solid #e5e7eb; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <section>
+    <h3>基本信息</h3>
+    <div class="form-item">
+      <div class="form-item__label">手机号码</div>
+      <div class="form-item__control">
+        <div class="phoenix-button">+86</div>
+        <input id="zy-phone" placeholder="请输入" />
+      </div>
+    </div>
+    <div class="form-item">
+      <div class="form-item__label">最高学位</div>
+      <div class="form-item__control">
+        <select id="zy-top-degree">
+          <option value="">请选择</option>
+          <option value="bachelor">学士</option>
+          <option value="master">硕士</option>
+          <option value="doctor">博士</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-item">
+      <div class="form-item__label">意向工作城市</div>
+      <div class="form-item__control">
+        <div id="zy-city" class="phoenix-select" tabindex="0">
+          <span class="phoenix-select__placeHolder">请选择工作地点</span>
+          <span class="phoenix-select__tipEle" style="display:none"></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h3>在校经历</h3>
+    <div class="form-item">
+      <div class="form-item__label">在校职务名称</div>
+      <div class="form-item__control">
+        <input id="zy-campus-role" placeholder="请输入" />
+      </div>
+    </div>
+    <div class="form-item">
+      <div class="form-item__label">在校时间</div>
+      <div class="form-item__control">
+        <input id="zy-campus-start" placeholder="开始时间" />
+        <span>至</span>
+        <input id="zy-campus-end" placeholder="结束时间" />
+      </div>
+    </div>
+  </section>
+
+  <script>
+    const cityTrigger = document.getElementById("zy-city");
+    let areaOpen = false;
+    let selectedCity = "";
+    cityTrigger.addEventListener("click", () => {
+      if (areaOpen) return;
+      areaOpen = true;
+      const panel = document.createElement("div");
+      panel.className = "area-selector-container";
+      panel.innerHTML = `
+        <div>已选地区 0 / 3</div>
+        <div class="area-search-input"><input placeholder="搜索城市" /></div>
+        <div class="area-data-container"></div>
+        <div class="area-footer-button">
+          <button type="button" class="phoenix-button">取消</button>
+          <button type="button" class="phoenix-button">确定</button>
+        </div>
+      `;
+      const list = panel.querySelector(".area-data-container");
+      const search = panel.querySelector(".area-search-input input");
+      const cities = ["南京", "上海", "杭州", "深圳"];
+      const render = (q) => {
+        const filtered = q ? cities.filter((c) => c.includes(q)) : cities;
+        list.innerHTML = "";
+        filtered.forEach((c) => {
+          const item = document.createElement("div");
+          item.className = "area-item-name";
+          item.innerHTML = `<span class="area-text-label">${c}</span>`;
+          item.addEventListener("click", () => { selectedCity = c; });
+          list.appendChild(item);
+        });
+      };
+      render("");
+      search.addEventListener("input", () => render(search.value.trim()));
+      const buttons = panel.querySelectorAll(".area-footer-button .phoenix-button");
+      buttons[0].addEventListener("click", () => { panel.remove(); areaOpen = false; });
+      buttons[1].addEventListener("click", () => {
+        if (selectedCity) {
+          cityTrigger.querySelector(".phoenix-select__placeHolder").style.display = "none";
+          const tip = cityTrigger.querySelector(".phoenix-select__tipEle");
+          tip.textContent = selectedCity;
+          tip.style.display = "inline";
+        }
+        panel.remove();
+        areaOpen = false;
+      });
+      document.body.appendChild(panel);
+    });
+  </script>
+</body>
+</html>

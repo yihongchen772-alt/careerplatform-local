@@ -205,6 +205,7 @@ function PlanEditor({ plan, busy, bridge, onApply, onQuestion, onRows }: { plan:
   const [rows, setRows] = useState(plan.proposals.map((p) => ({ ...p, remember: p.remember || false })));
   useEffect(() => { onRows(rows); }, [rows, onRows]);
   const [upload, setUpload] = useState(plan.uploadResume);
+  const [uploadAttachments, setUploadAttachments] = useState(plan.uploadAttachments !== false);
   const [saveState, setSaveState] = useState("准备保存草稿…");
   useEffect(() => {
     const controller = new AbortController();
@@ -243,7 +244,8 @@ function PlanEditor({ plan, busy, bridge, onApply, onQuestion, onRows }: { plan:
     </fieldset>)}
     <div className="sticky bottom-0 -mx-3 space-y-2 border-t bg-card/95 px-3 pt-2 pb-1 backdrop-blur">
       {plan.uploadResume && <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={upload} onChange={(e) => setUpload(e.target.checked)} />上传所选简历附件</label>}
-      <Button size="sm" className="w-full" disabled={busy || rows.some((p) => p.selected && p.maxLength && p.value.length > p.maxLength) || (!upload && !rows.some((p) => p.selected && p.value))} onClick={() => onApply({ mode: "apply", planId: plan.id, approved: rows.filter((p) => p.selected && p.eligible).map(({ id, value, ref, remember }) => ({ id, value, ref, remember })), uploadResume: upload })}>确认填写所选字段（{selectedCount}）</Button>
+      {plan.uploadAttachments !== undefined && <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={uploadAttachments} onChange={(e) => setUploadAttachments(e.target.checked)} />自动附带证件照/成绩单等证明附件</label>}
+      <Button size="sm" className="w-full" disabled={busy || rows.some((p) => p.selected && p.maxLength && p.value.length > p.maxLength) || (!upload && !uploadAttachments && !rows.some((p) => p.selected && p.value))} onClick={() => onApply({ mode: "apply", planId: plan.id, approved: rows.filter((p) => p.selected && p.eligible).map(({ id, value, ref, remember }) => ({ id, value, ref, remember })), uploadResume: upload, uploadAttachments })}>确认填写所选字段（{selectedCount}）</Button>
     </div>
   </div>;
 }

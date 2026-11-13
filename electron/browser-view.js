@@ -74,6 +74,7 @@ const {
   trackUserEdits,
   insertIntoLastField, lastFieldFocusAt, pickPageRegion, iframeOffsets,
   runAutofillCore,
+  resetAutofillInFrame,
   saveCorrectionsCore,
 } = require("./autofill-core.js");
 
@@ -1507,10 +1508,10 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
 
   // The autofill flow itself lives in autofill-core.js (shared with the
   // Chrome extension); this adapter is everything Electron-specific about it.
-  function electronAdapter(tab, task) {
+  function electronAdapter(tab, task, opts = {}) {
     const wc = tab.view.webContents;
     const revision = tab.revision;
-    const isActive = (url) => !wc.isDestroyed() && wc.getURL() === url && activeId === tab.id && revision === tab.revision && !task?.controller.signal.aborted;
+    const isActive = (url) => !wc.isDestroyed() && wc.getURL() === url && (opts.allowBackground || activeId === tab.id) && revision === tab.revision && !task?.controller.signal.aborted;
     return {
       url: () => wc.getURL(),
       stillOnPage: isActive,
@@ -1519,7 +1520,9 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       frames: async () => allFrames(wc),
       run: (frame, fn, args = []) => frame.executeJavaScript(`(${fn.toString()})(${args.map((arg) => JSON.stringify(arg)).join(",")})`),
       api: (name, init) => fetch(`http://localhost:${port}/api/desktop-browser/${name}`, { ...init, signal: task?.controller.signal }),
-      status: (payload) => send("browser:autofill-status", { ...payload, tabId: tab.id }),
+      status: (payload) => {
+        if (!opts.allowBackground || activeId === tab.id) send("browser:autofill-status", { ...payload, tabId: tab.id });
+      },
       uploadResume: async (resumeVersionId) => {
         const initialUrl = wc.getURL();
         const stillOnPage = () => isActive(initialUrl);
@@ -1539,7 +1542,8 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
         if (!listRes || !listRes.ok) return { count: 0, labels: [] };
         const { attachments } = await listRes.json().catch(() => ({ attachments: [] }));
         if (!Array.isArray(attachments) || !attachments.length) return { count: 0, labels: [] };
-        const byRole = new Map(attachments.map((item) => [item.role, item]));
+        const byRole = new Map();
+        for (const item of attachments) if (item?.role && !byRole.has(item.role)) byRole.set(item.role, item);
         const foundRoles = new Set();
         for (const frame of allFrames(wc)) {
           if (!stillOnPage()) break;
@@ -1572,7 +1576,21 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
         let y = 0;
         for (let current = frame; current.parent; current = current.parent) {
           const frames = (await current.parent.executeJavaScript(`(${iframeOffsets.toString()})()`).catch(() => [])) || [];
-          const match = frames.filter((item) => item.src && item.src === current.url);
+          let match = frames.filter((item) => item.src && item.src === current.url);
+          if (!match.length && current.url) {
+            try {
+              const targetUrl = new URL(current.url);
+              match = frames.filter((item) => {
+                if (!item.src) return false;
+                try {
+                  const candidateUrl = new URL(item.src, current.parent.url);
+                  return candidateUrl.origin === targetUrl.origin && candidateUrl.pathname === targetUrl.pathname;
+                } catch {
+                  return false;
+                }
+              });
+            } catch {}
+          }
           const only = match.length === 1 ? match[0] : frames.length === 1 ? frames[0] : null;
           if (!only) return null;
           x += only.x;
@@ -1616,15 +1634,16 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     try {
       for (const frame of allFrames(wc)) await frame.executeJavaScript(`document.documentElement.setAttribute("data-cp-task", ${JSON.stringify(task.id)})`).catch(() => {});
       let result = null;
+      const adapter = electronAdapter(tab, task, { allowBackground: !!options?.allowBackground });
       if (options?.mode === "apply") {
-        result = await applyAutofillPlan(electronAdapter(tab, task), options);
+        result = await applyAutofillPlan(adapter, options);
       } else {
         tab.archiveUrl = wc.getURL();
         tab.positionId = options?.positionId ?? tab.positionId;
         tab.resumeVersionId = resumeVersionId;
         tab.variantId = options?.variantId;
         await rememberPreFill(tab);
-        result = await runAutofillCore(electronAdapter(tab, task), resumeVersionId, options || {});
+        result = await runAutofillCore(adapter, resumeVersionId, options || {});
         if (result?.phase === "done" && result.summary) {
           tab.filledAt = Date.now();
           tab.typedSinceFill = 0;
@@ -1725,6 +1744,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
         await runAutofillOnTab(tab, resumeVersionId, {
           ...options,
           mode: "fill",
+          allowBackground: true,
           positionId: tab.positionId ?? options.positionId,
         }).catch(() => null);
       }
@@ -1742,8 +1762,24 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
   // runAutofillCore). `options.variantId`: 网申资料方案.
   handle("browser:autofill", async (_e, resumeVersionId, options) => {
     const tab = activeTab();
-    if (!tab) return;
-    await runAutofillOnTab(tab, resumeVersionId, options);
+    if (!tab) return null;
+    return runAutofillOnTab(tab, resumeVersionId, options);
+  });
+
+  handle("browser:undo-autofill", async () => {
+    const tab = activeTab();
+    if (!tab || tab.view.webContents.isDestroyed()) return { cleared: 0 };
+    if (fillingTabs.has(tab.id)) stopFillTask(tab.id);
+    let cleared = 0;
+    for (const frame of allFrames(tab.view.webContents)) {
+      const res = await frame.executeJavaScript(`(${resetAutofillInFrame.toString()})(false)`).catch(() => ({ cleared: 0 }));
+      cleared += res?.cleared || 0;
+    }
+    lastAiFilled.delete(tab.id);
+    pendingPlans.delete(tab.id);
+    tab.fillState = { status: "idle", filled: 0, manual: 0, uploaded: 0, message: cleared ? `已撤销 ${cleared} 个自动填写字段` : "没有可撤销的自动填写内容", updatedAt: Date.now() };
+    sendTabsState();
+    return { cleared };
   });
 
   handle("browser:focus-field", async (_e, id) => {

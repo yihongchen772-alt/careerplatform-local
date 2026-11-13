@@ -24,6 +24,7 @@ import { ApplicationsBoard, type BoardApplication } from "@/components/applicati
 import { PortalReviewBanner } from "@/components/applications/portal-review-banner";
 import { ApplicationsOverview } from "@/components/applications/applications-overview";
 import { CityLookupBar } from "@/components/applications/city-lookup-bar";
+import { ExportApplicationsMenu } from "@/components/applications/export-applications-menu";
 import { useNow } from "@/components/schedule/use-now";
 
 /**
@@ -377,6 +378,14 @@ export function ApplicationsView({ applications, now: serverNow, funnel, cityLoo
             );
           })}
         </div>
+        {applications.length > 0 && (
+          <ExportApplicationsMenu
+            totalCount={applications.length}
+            filteredIds={narrowed ? shown.map((app) => app.id) : undefined}
+            scopeLabel={orderLabel || undefined}
+            className="h-9 shrink-0 rounded-full px-3.5"
+          />
+        )}
         </div>
       </div>
 

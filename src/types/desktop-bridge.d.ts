@@ -47,7 +47,7 @@ export type DesktopBridgeAutofillModule = "basic" | "education" | "experience" |
 
 export type FillProposal = { id: string; fieldKey: string; label: string; section?: string; value: string; selected: boolean; eligible: boolean; source: string; ref: string; required?: boolean; maxLength?: number | null; note: string; edited?: boolean; remember?: boolean };
 export type FillRecordBlock = { id: string; label: string; note: string; fieldIds: string[]; choices: { ref: string; label: string; values: Record<string, { value: string; ref: string }> }[] };
-export type FillPlan = { id: string; url: string; proposals: FillProposal[]; choices: { ref: string; label: string; value: string }[]; blocks?: FillRecordBlock[]; uploadResume: boolean; contextKey: string; positionId?: string; resumeVersionId?: string; variantId?: string };
+export type FillPlan = { id: string; url: string; proposals: FillProposal[]; choices: { ref: string; label: string; value: string }[]; blocks?: FillRecordBlock[]; uploadResume: boolean; uploadAttachments?: boolean; contextKey: string; positionId?: string; resumeVersionId?: string; variantId?: string };
 export type ApplicationSnapshot = {
   fields: { label: string; value: string }[]; url: string; positionId?: string; resumeVersionId?: string; variantId?: string; contextKey?: string;
   /** The current page's title, visible text (capped) and og:site_name, and this tab's earlier pages. */
@@ -70,6 +70,10 @@ export type DesktopBridgeAutofillOptions = {
   planId?: string;
   approved?: { id: string; value: string; ref?: string; remember?: boolean; edited?: boolean }[];
   uploadResume?: boolean;
+  uploadAttachments?: boolean;
+  /** Re-fill fields previously populated by autofill while keeping manual user edits and site defaults untouched. */
+  forceRefill?: boolean;
+  allowBackground?: boolean;
   /** Only fill these modules; omitted = all, empty = none. */
   modules?: DesktopBridgeAutofillModule[];
   /** 框选填写: only the fields inside this box (page viewport pixels). */
@@ -133,7 +137,8 @@ export type DesktopBridge = {
   /** 框选填写: the box dragged over the page, or null when cancelled. */
   pickRegion(): Promise<DesktopBridgeRegion | null>;
   applicationSnapshot(): Promise<ApplicationSnapshot | null>;
-  autofill(resumeVersionId?: string, options?: DesktopBridgeAutofillOptions): Promise<void>;
+  autofill(resumeVersionId?: string, options?: DesktopBridgeAutofillOptions): Promise<unknown>;
+  undoAutofill(): Promise<{ cleared: number }>;
   cancelAutofill(tabId?: number): Promise<void>;
   saveCorrections(resumeVersionId?: string, onlyUserEdited?: boolean, positionId?: string, variantId?: string, discover?: boolean): Promise<{ saved: number; handTyped?: number; pending?: number; pendingTotal?: number; draftSaved?: boolean; unchanged?: number; learned?: { id: string; label: string }[] }>;
   /** 「这页没填好」: saves the page's form structure (no filled-in values) as a file and shows it in Finder. */

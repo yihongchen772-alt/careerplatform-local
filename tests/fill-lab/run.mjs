@@ -787,6 +787,30 @@ Object.assign(suites, {
     const after = await page.evaluate(`(${core.countFillableFields.toString()})(${core.scanPageFields.toString()})`);
     return `第1页剩余可填 ${before.count}，翻页后检测到 ${after.count} 个可填字段，签名${before.signature === after.signature ? "未变（错误）" : "已变"}`;
   } }],
+  "zhiye-v67": [[
+    { label: "手机号(+86旁)", read: val("#zy-phone"), expect: "13812345678" },
+    { label: "最高学位(学士)", read: sel("#zy-top-degree"), expect: "硕士" },
+    { label: "意向城市(江苏南京->南京)", read: tip("#zy-city"), expect: "南京" },
+    { label: "在校职务名称", read: val("#zy-campus-role"), expect: "学术部部长" },
+    { label: "在校开始时间", read: val("#zy-campus-start"), expect: "2024-09" },
+    { label: "在校结束时间", read: val("#zy-campus-end"), expect: "2025-06" },
+  ], { profile: (p) => { p.preferredCities = "江苏南京"; } }],
+  "feishu-atsx": [[
+    { label: "学校(.atsx-select异步搜索)", read: `(document.querySelector("#fx-school-wrap .atsx-select-selection-selected-value") || {}).textContent || ""`, expect: "复旦大学" },
+    { label: "学历(.atsx-select学士学位匹配)", read: `(document.querySelector("#fx-deg-wrap .atsx-select-selection-selected-value") || {}).textContent || ""`, expect: "硕士研究生" },
+    { label: "教育开始(period-month)", read: val("#fx-start"), expect: "2024-09" },
+    { label: "教育结束(period-month)", read: val("#fx-end"), expect: "2026-06" },
+    { label: "公司名称", read: val("#fx-company"), expect: "字节跳动" },
+    { label: "工作开始(至+atsx日历)", read: val("#fx-work-start"), expect: "2025-06" },
+    { label: "工作结束(至+atsx日历)", read: val("#fx-work-end"), expect: "2025-09" },
+  ]],
+  "upload-and-inline-cards": [[
+    { label: "亲属在本公司(合规问题)", read: sel("#rel-co"), expect: "否" },
+    { label: "紧急联系人不填本人", read: val("#emg-name"), expect: "" },
+    { label: "证件照识别(跳过上传附件按钮文)", read: `(() => { (${core.markTypedFileInputs.toString()})(["photo"]); return document.getElementById("photo-file").getAttribute("data-cp-upload-role") || ""; })()`, expect: "photo" },
+    { label: "简历上传识别(主简历)", read: `(() => { (${core.markResumeFileInputs.toString()})("cp-r"); return document.getElementById("resume-file").getAttribute("data-cp-resume-upload") || ""; })()`, expect: "1" },
+    { label: "单表单卡片自动连存2段项目", read: `Array.from(document.querySelectorAll("#saved-projects .proj-card")).map((n) => n.textContent.trim()).join(" | ")`, expect: /校园二手交易推荐系统.*用户留存归因分析/ },
+  ], { options: { saveBlocks: true }, profile: (p) => { p.relativeInCompany = "无"; manyEntries(p); } }],
 });
 
 const browser = await chromium.launch({ headless: true });

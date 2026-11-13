@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>飞书 atsx 与 B 站范围日期：atsx-select、period-month、至 连接两个日历、异步搜索下拉</title>
+  <style>
+    body { font: 14px sans-serif; max-width: 860px; margin: 20px auto; }
+    .atsx-form-item { margin: 12px 0; }
+    .atsx-form-item-label { font-weight: 600; margin-bottom: 4px; display: block; }
+    .atsx-select { border: 1px solid #d1d5db; padding: 6px 10px; min-width: 220px; display: inline-block; cursor: pointer; }
+    .atsx-select-dropdown { position: relative; border: 1px solid #d1d5db; background: #fff; width: 220px; padding: 4px 0; }
+    .atsx-select-dropdown-hidden { display: none; }
+    .atsx-select-dropdown-menu-item { padding: 6px 10px; cursor: pointer; }
+    .atsx-calendar-picker-container { border: 1px solid #d1d5db; padding: 8px; background: #fff; width: 220px; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <section>
+    <h3>教育经历</h3>
+    <div class="atsx-form-item">
+      <label class="atsx-form-item-label">学校</label>
+      <div id="fx-school-wrap" class="atsx-select">
+        <input id="fx-school-search" placeholder="搜索学校" />
+        <span class="atsx-select-selection-selected-value" style="display:none"></span>
+      </div>
+    </div>
+    <div class="atsx-form-item">
+      <label class="atsx-form-item-label">学历</label>
+      <div id="fx-deg-wrap" class="atsx-select" tabindex="0">
+        <span class="atsx-select-selection__placeholder">请选择</span>
+        <span class="atsx-select-selection-selected-value" style="display:none"></span>
+      </div>
+    </div>
+    <div class="atsx-form-item">
+      <label class="atsx-form-item-label">起止时间</label>
+      <div class="atsx-date-picker-period-month">
+        <input id="fx-start" />
+        <span> ~ </span>
+        <input id="fx-end" />
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h3>实习经历</h3>
+    <div class="atsx-form-item">
+      <label class="atsx-form-item-label">公司名称</label>
+      <input id="fx-company" />
+    </div>
+    <div class="atsx-form-item">
+      <label class="atsx-form-item-label">工作时间</label>
+      <span class="atsx-calendar-picker"><input id="fx-work-start" readonly placeholder="开始年月" /></span>
+      <span>至</span>
+      <span class="atsx-calendar-picker"><input id="fx-work-end" readonly placeholder="结束年月" /></span>
+    </div>
+  </section>
+
+  <script>
+    const degWrap = document.getElementById("fx-deg-wrap");
+    const degMenu = document.createElement("div");
+    degMenu.className = "atsx-select-dropdown atsx-select-dropdown-hidden";
+    degMenu.innerHTML = `<div class="atsx-select-dropdown-menu-item">大专</div><div class="atsx-select-dropdown-menu-item">学士学位</div><div class="atsx-select-dropdown-menu-item">硕士研究生</div>`;
+    document.body.appendChild(degMenu);
+    degWrap.addEventListener("click", () => degMenu.classList.remove("atsx-select-dropdown-hidden"));
+    degMenu.querySelectorAll(".atsx-select-dropdown-menu-item").forEach((item) => {
+      item.addEventListener("click", () => {
+        degWrap.querySelector(".atsx-select-selection__placeholder").style.display = "none";
+        const val = degWrap.querySelector(".atsx-select-selection-selected-value");
+        val.textContent = item.textContent;
+        val.style.display = "inline";
+        degMenu.classList.add("atsx-select-dropdown-hidden");
+      });
+    });
+
+    // 异步延迟 800ms 才返回搜索结果的 .atsx-select
+    const schoolWrap = document.getElementById("fx-school-wrap");
+    const schoolSearch = document.getElementById("fx-school-search");
+    const schoolMenu = document.createElement("div");
+    schoolMenu.className = "atsx-select-dropdown atsx-select-dropdown-hidden";
+    document.body.appendChild(schoolMenu);
+    schoolWrap.addEventListener("click", () => schoolMenu.classList.remove("atsx-select-dropdown-hidden"));
+    schoolSearch.addEventListener("input", () => {
+      const q = schoolSearch.value.trim();
+      schoolMenu.innerHTML = "";
+      if (!q) return;
+      setTimeout(() => {
+        schoolMenu.classList.remove("atsx-select-dropdown-hidden");
+        const opt = document.createElement("div");
+        opt.className = "atsx-select-dropdown-menu-item";
+        opt.textContent = q.includes("复旦") ? "复旦大学" : q;
+        opt.addEventListener("click", () => {
+          const val = schoolWrap.querySelector(".atsx-select-selection-selected-value");
+          val.textContent = opt.textContent;
+          val.style.display = "inline";
+          schoolSearch.value = "";
+          schoolMenu.classList.add("atsx-select-dropdown-hidden");
+        });
+        schoolMenu.appendChild(opt);
+      }, 750);
+    });
+
+    function mountAtsxMonthPicker(input) {
+      input.addEventListener("click", () => {
+        document.querySelectorAll(".atsx-calendar-picker-container").forEach((n) => n.remove());
+        const pop = document.createElement("div");
+        pop.className = "atsx-calendar-picker-container";
+        let year = 2025;
+        pop.innerHTML = `<div class="atsx-calendar-month-panel"><div><button type="button" class="atsx-calendar-month-panel-prev-year-btn">&lt;</button><span class="atsx-calendar-month-panel-year-select-content">${year}年</span><button type="button" class="atsx-calendar-month-panel-next-year-btn">&gt;</button></div><table><tbody><tr>${Array.from({ length: 12 }, (_, i) => `<td class="atsx-calendar-month-panel-cell"><a>${i + 1}月</a></td>`).join("")}</tr></tbody></table></div>`;
+        pop.querySelector(".atsx-calendar-month-panel-prev-year-btn").addEventListener("click", () => { year--; pop.querySelector(".atsx-calendar-month-panel-year-select-content").textContent = year + "年"; });
+        pop.querySelector(".atsx-calendar-month-panel-next-year-btn").addEventListener("click", () => { year++; pop.querySelector(".atsx-calendar-month-panel-year-select-content").textContent = year + "年"; });
+        pop.querySelectorAll("td.atsx-calendar-month-panel-cell").forEach((cell, idx) => {
+          cell.addEventListener("click", () => {
+            input.value = `${year}-${String(idx + 1).padStart(2, "0")}`;
+            pop.remove();
+          });
+        });
+        document.body.appendChild(pop);
+      });
+    }
+    mountAtsxMonthPicker(document.getElementById("fx-work-start"));
+    mountAtsxMonthPicker(document.getElementById("fx-work-end"));
+  </script>
+</body>
+</html>

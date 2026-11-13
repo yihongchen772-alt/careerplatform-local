@@ -24,3 +24,25 @@ export function shouldForkGlobalAnswer(
 ): boolean {
   return !!(existing && existing.contextKey === null && currentContext && existing.answer !== nextAnswer);
 }
+
+/** Trims an AI essay cleanly to fit a page's maxLength when reasonable (>= 8 chars). */
+export function fitAnswerToLimit(text: string, maxLength?: number): string {
+  const clean = text.trim();
+  if (!maxLength || clean.length <= maxLength) return clean;
+  if (maxLength < 8) return "";
+  const hard = Array.from(clean).slice(0, maxLength).join("");
+  const sentence = Math.max(hard.lastIndexOf("。"), hard.lastIndexOf("！"), hard.lastIndexOf("？"), hard.lastIndexOf("\n"));
+  if (sentence >= Math.floor(maxLength * 0.6)) return hard.slice(0, sentence + 1).trim();
+  const clause = Math.max(hard.lastIndexOf("，"), hard.lastIndexOf("；"), hard.lastIndexOf(","), hard.lastIndexOf(";"), hard.lastIndexOf(" "));
+  if (clause >= Math.floor(maxLength * 0.7)) return `${hard.slice(0, clause).trim()}。`.slice(0, maxLength);
+  return hard.trim();
+}
+
+/** Matches an AI choice output against page dropdown options despite full-width/quote differences. */
+export function matchChoiceOption(raw: string, options?: string[]): string | null {
+  if (!options?.length) return null;
+  if (options.includes(raw)) return raw;
+  const norm = (s: string) => s.normalize("NFKC").replace(/^[「“"'(\[]|[」”"')\]。.]+$/g, "").trim().toLowerCase();
+  const target = norm(raw);
+  return options.find((opt) => norm(opt) === target) ?? null;
+}

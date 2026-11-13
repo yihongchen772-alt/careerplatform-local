@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>上传识别与单表单卡片列表自动连存</title>
+  <style>
+    body { font: 14px sans-serif; max-width: 860px; margin: 20px auto; }
+    .ant-form-item { margin: 10px 0; }
+    .ant-form-item-label { font-weight: 600; }
+    .proj-card { border: 1px solid #d1d5db; padding: 8px 10px; margin: 6px 0; display: flex; justify-content: space-between; }
+    .inline-form { border: 1px dashed #9ca3af; padding: 12px; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <section>
+    <h3>基本信息与合规</h3>
+    <div class="ant-form-item">
+      <label class="ant-form-item-label" for="rel-co">是否有亲属在本公司工作</label>
+      <select id="rel-co"><option value="">请选择</option><option>是</option><option>否</option></select>
+    </div>
+    <div class="ant-form-item">
+      <label class="ant-form-item-label" for="emg-name">紧急联系人姓名</label>
+      <input id="emg-name" />
+    </div>
+  </section>
+
+  <section>
+    <h3>个人附件</h3>
+    <div class="ant-form-item">
+      <label class="ant-form-item-label">个人证件照</label>
+      <div class="ant-upload">
+        <input id="photo-file" type="file" accept=".jpg,.jpeg,.png" />
+        <span>点击上传附件</span>
+      </div>
+    </div>
+    <div class="ant-form-item">
+      <label class="ant-form-item-label">个人简历（PDF）</label>
+      <div class="ant-upload">
+        <input id="resume-file" type="file" accept=".pdf" />
+        <span>点击上传简历</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="project-section">
+    <h3>项目经历</h3>
+    <div id="saved-projects"></div>
+    <div class="inline-form">
+      <div class="ant-form-item"><label>项目名称</label><input id="proj-name" /></div>
+      <div class="ant-form-item"><label>担任角色</label><input id="proj-role" /></div>
+      <div class="ant-form-item"><label>项目描述</label><textarea id="proj-desc"></textarea></div>
+      <button type="button" id="save-proj">保存</button>
+    </div>
+  </section>
+
+  <script>
+    const list = document.getElementById("saved-projects");
+    const n = document.getElementById("proj-name");
+    const r = document.getElementById("proj-role");
+    const d = document.getElementById("proj-desc");
+    document.getElementById("save-proj").addEventListener("click", () => {
+      if (!n.value.trim()) return;
+      const card = document.createElement("div");
+      card.className = "proj-card";
+      card.innerHTML = `<span>${n.value.trim()} · ${r.value.trim()}</span><button type="button">编辑</button>`;
+      list.appendChild(card);
+      n.value = "";
+      r.value = "";
+      d.value = "";
+    });
+  </script>
+</body>
+</html>

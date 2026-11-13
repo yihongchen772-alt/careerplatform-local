@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   applicationSnapshot: () => ipcRenderer.invoke("browser:application-snapshot"),
   applicationRecorded: (undone) => ipcRenderer.invoke("browser:application-recorded", !!undone),
   autofill: (resumeVersionId, options) => ipcRenderer.invoke("browser:autofill", resumeVersionId, options),
+  undoAutofill: () => ipcRenderer.invoke("browser:undo-autofill"),
   cancelAutofill: (tabId) => ipcRenderer.invoke("browser:cancel-autofill", tabId),
   saveCorrections: (resumeVersionId, onlyUserEdited, positionId, variantId, discover) => ipcRenderer.invoke("browser:save-corrections", resumeVersionId, onlyUserEdited, positionId, variantId, discover),
   captureSample: (note) => ipcRenderer.invoke("browser:capture-sample", note),
