@@ -906,6 +906,8 @@ export function EmbeddedBrowser({
         return;
       }
       void bridge.applicationRecorded?.();
+      // That job is done in this tab; the next 网申 here is another one.
+      setJobBindings((bindings) => { const next = { ...bindings }; delete next[announced.tabId]; return next; });
       setRecordedPages((list) => [...list, snapshot.url]);
       const resumeName = resumeVersions.find((r) => r.id === resumeId)?.name;
       const kept = [body.jdSaved ? "JD" : "", snapshot.fields.length ? `${snapshot.fields.length} 项填写内容` : ""].filter(Boolean).join(" 和 ");
@@ -1548,7 +1550,7 @@ export function EmbeddedBrowser({
           initialRecognition={markRecognition}
           initialResumeId={resumeVersionId || undefined}
           resumeVersions={resumeVersions}
-          onRecorded={() => { if (currentUrl) setRecordedPages((list) => [...list, currentUrl]); }}
+          onRecorded={() => { if (currentUrl) setRecordedPages((list) => [...list, currentUrl]); if (activeTab) setJobBindings((bindings) => { const next = { ...bindings }; delete next[activeTab.id]; return next; }); }}
         />
       )}
 

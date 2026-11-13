@@ -63,12 +63,12 @@ const EXPERIENCE_FIELD = /公司|单位|雇主|企业|company|employer|organi[sz
 const normalize = (value: string) => String(value || "").normalize("NFKC").replace(/\s+/g, "").toLowerCase();
 const includes = (haystack: string, needle: string) => needle.length >= 2 && normalize(haystack).includes(normalize(needle));
 /** "星海科技" and "星海科技有限公司" are one employer. */
-function sameCompany(a: string, b: string) {
+export function sameCompany(a: string, b: string) {
   const [x, y] = [normalize(a), normalize(b)];
   return x.length >= 2 && y.length >= 2 && (x.includes(y) || y.includes(x));
 }
 /** "数据分析师" and "数据分析师（北京）" are one job; "分析" and "数据分析师" are not. */
-function sameJob(a: string, b: string) {
+export function sameJob(a: string, b: string) {
   const [x, y] = [normalize(a), normalize(b)];
   const [short, long] = x.length <= y.length ? [x, y] : [y, x];
   return short.length >= 2 && long.includes(short) && short.length / long.length >= 0.5;
@@ -79,7 +79,16 @@ const segmentsOf = (title: string) => title.replace(/[（(][^（()）]*[）)]/g,
 /** A page's address, for "was this the saved job page": a hash route (#/job/12) is part of it. */
 function address(raw: string) {
   const [base, hash = ""] = raw.split("#");
-  return base.replace(/\/+$/, "") + (/^[!/]/.test(hash) ? `#${hash}` : "");
+  const page = base.replace(/\/+$/, "") + (/^[!/]/.test(hash) ? `#${hash}` : "");
+  // One job, its detail page and its 申请 page: 飞书 /resume/ID/apply ↔ /position/ID/detail,
+  // Moka #/job/ID/apply ↔ #/job/ID, 北森 any page carrying jobAdId=ID.
+  const feishu = /^(https?:\/\/[^/]+\.jobs\.feishu\.cn(?:\/[^/?#]+)*?)\/(?:resume|position)\/(\d{10,})(?:\/(?:apply|detail))?(?:[?#]|$)/i.exec(page);
+  if (feishu) return `feishu:${new URL(feishu[1]).hostname}:${feishu[2]}`;
+  const moka = /#\/job\/([0-9a-f-]{16,})/i.exec(page);
+  if (moka) return `moka:${base.replace(/[?#].*$/, "").replace(/\/+$/, "")}:${moka[1]}`;
+  const zhiye = /^https?:\/\/([^/]+\.zhiye\.com)\/.*[?&]jobAdId=([0-9a-f-]{8,})/i.exec(page);
+  if (zhiye) return `zhiye:${zhiye[1]}:${zhiye[2]}`;
+  return page;
 }
 
 function cleanCompany(raw: string) {

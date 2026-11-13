@@ -3,6 +3,7 @@ const { ipcMain, WebContentsView, BrowserWindow, Menu, session, shell, app, clip
 const fs = require("fs");
 const path = require("path");
 const { createLoginStore, loginRealm, realmLabel, noteLanding, inheritedJdFits } = require("./saved-logins");
+const { historyMarkAt, historySinceMark } = require("./history-mark");
 
 // The page-injected helpers and field matchers live in autofill-core.js so
 // the Chrome extension can reuse them unchanged.
@@ -809,6 +810,11 @@ function justRecorded(tab) {
   return !!tab.recordedAt && Date.now() - tab.recordedAt < 3 * 60000 && !(tab.lastSendAt > tab.recordedAt);
 }
 
+function markHistory(tab, recorded) {
+  const nav = tab.view.webContents.navigationHistory;
+  tab.historyMark = historyMarkAt(nav.getAllEntries(), nav.getActiveIndex(), recorded);
+}
+
 async function checkApplicationSubmitted() {
   const tab = activeTab();
   if (!tab || tab.view.webContents.isLoading() || justRecorded(tab)) return;
@@ -826,6 +832,7 @@ async function checkApplicationSubmitted() {
   const signature = `${result.url}|${result.evidence}`;
   if (submittedSignatures.get(tab.id) === signature) return;
   submittedSignatures.set(tab.id, signature);
+  if (!tab.historyMark?.recorded || tab.lastSendAt > tab.historyMark.at) markHistory(tab, false);
   send("browser:application-submitted", { tabId: tab.id, ...result });
 }
 
@@ -1060,7 +1067,10 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       return;
     }
     tab.recordedAt = Date.now();
-    tab.recordedState = { sentForms: tab.sentForms, jdPage: tab.jdPage };
+    tab.recordedState = { sentForms: tab.sentForms, jdPage: tab.jdPage, historyMark: tab.historyMark, positionId: tab.positionId };
+    markHistory(tab, true);
+    // The job linked for that 网申 is done; the next one in this tab is another job.
+    tab.positionId = undefined;
     tab.sentForms = [];
     tab.jdPage = null;
     tab.lastSendAt = null;
@@ -1501,7 +1511,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     // What the tab went through before the success page — the job page's
     // title usually names both the role and the employer — for working out
     // which application this was.
-    const history = wc.navigationHistory.getAllEntries().slice(0, wc.navigationHistory.getActiveIndex() + 1)
+    const history = historySinceMark(tab.historyMark, tab.lastSendAt, wc.navigationHistory.getAllEntries().slice(0, wc.navigationHistory.getActiveIndex() + 1))
       .filter((entry) => /^https?:/i.test(entry.url)).slice(-15).map((entry) => ({ url: entry.url.slice(0, 2000), title: String(entry.title || "").slice(0, 300) }));
     const page = await wc.executeJavaScript(`(() => ({ text: (${capturePageText.toString()})().slice(0, 4000), siteName: (document.querySelector('meta[property="og:site_name"], meta[name="application-name"]') || {}).content || "" }))()`).catch(() => ({ text: "", siteName: "" }));
     // The JD only if this tab went through it on the way here (or was opened from it),

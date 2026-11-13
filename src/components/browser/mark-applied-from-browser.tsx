@@ -69,12 +69,14 @@ export function MarkAppliedFromBrowserDialog({
   onRecorded?: () => void;
 }) {
   const router = useRouter();
-  const [positionId, setPositionId] = useState(initialPositionId || initialRecognition?.positionId || NEW);
+  // What the pages were recognised as wins over the job linked in the tab: that link can be
+  // left over from the 网申 before this one (recognizeApplication keeps it when nothing contradicts it).
+  const [positionId, setPositionId] = useState(initialRecognition ? initialRecognition.positionId || NEW : initialPositionId || NEW);
   // Kept behind a matched pool job too, so 「新建一条」 starts from the recognised names.
   const [companyName, setCompanyName] = useState(initialRecognition?.companyName || "");
   const [title, setTitle] = useState(initialRecognition?.title || "");
   const [recognition, setRecognition] = useState<Recognition | null>(initialPositionId ? null : initialRecognition ?? null);
-  const [recognizing, setRecognizing] = useState(!initialPositionId && !initialRecognition);
+  const [recognizing, setRecognizing] = useState(!initialRecognition);
   const touched = useRef({ position: false, company: false, title: false, city: false, resume: false });
   // Where the job is, read from the form (应聘城市) or the page (工作地点); editable.
   const [city, setCity] = useState("");
@@ -150,17 +152,17 @@ export function MarkAppliedFromBrowserDialog({
   }, [open, recognizing, jobCompany, jobTitle]);
 
   useEffect(() => {
-    if (!open || initialPositionId || initialRecognition) return;
+    if (!open || initialRecognition) return;
     const controller = new AbortController();
     void (async () => {
       try {
         const snapshot = await window.desktopBridge?.applicationSnapshot();
         if (!snapshot || controller.signal.aborted) return;
-        const found = await recognizeApplication(snapshot, positions, sites, controller.signal);
+        const found = await recognizeApplication({ ...snapshot, positionId: snapshot.positionId || initialPositionId }, positions, sites, controller.signal);
         if (controller.signal.aborted) return;
         setRecognition(found);
         // Late results never undo what the applicant has already chosen or typed.
-        if (found.positionId && positions.some((p) => p.id === found.positionId) && !touched.current.position) setPositionId(found.positionId);
+        if (!touched.current.position) setPositionId(found.positionId && positions.some((p) => p.id === found.positionId) ? found.positionId : NEW);
         if (!touched.current.company && found.companyName) setCompanyName(found.companyName);
         if (!touched.current.title && found.title) setTitle(found.title);
       } catch {

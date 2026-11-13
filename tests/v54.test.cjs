@@ -60,7 +60,7 @@ test("on the 投递成功 page the sent steps are merged into the snapshot, and 
   assert.match(view, /if \(!fields\.length\) \{\r?\n\s+const steps = \[\];/);
   assert.match(view, /hostOf\(step\.url\) === hostOf\(newer\.url\) && newer\.at - step\.at < 3600_000/, "only this application's steps");
   assert.match(view, /handle\("browser:application-recorded", \(_e, undone\) => \{/);
-  assert.match(view, /tab\.recordedState = \{ sentForms: tab\.sentForms, jdPage: tab\.jdPage \};/);
+  assert.match(view, /tab\.recordedState = \{ sentForms: tab\.sentForms, jdPage: tab\.jdPage, historyMark: tab\.historyMark, positionId: tab\.positionId \};/);
   assert.match(read("electron/preload.js"), /applicationRecorded: \(undone\) => ipcRenderer\.invoke\("browser:application-recorded", !!undone\)/);
   for (const file of ["src/components/browser/mark-applied-from-browser.tsx", "src/components/browser/embedded-browser.tsx"]) assert.match(read(file), /applicationRecorded\?\.\(\)/);
   assert.match(read("src/components/browser/recognize-application.ts"), /jdText: \(snapshot\.jdPage\?\.text \|\| ""\)\.slice\(0, 4000\)/);
