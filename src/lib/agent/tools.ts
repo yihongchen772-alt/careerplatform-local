@@ -12,6 +12,7 @@ import { applicationStageValues } from "@/lib/validation";
 import { assistantActionSchema, type AssistantAction } from "@/lib/assistant-shared";
 import type { ToolCall, ToolSpec } from "@/lib/agent/llm";
 import type { ToolOutcome } from "@/lib/agent/run";
+import { orderStageHistory } from "@/lib/stage-order";
 
 // 小欧's tools. Reading anything is free; its own memory and plan it keeps by
 // itself (both are shown to the user and can be edited there); every change
@@ -142,7 +143,7 @@ export async function executeTool(userId: string, call: ToolCall, proposed: Assi
       const data = {
         company: app.company.name, title: app.title, stage: STAGE_LABELS[app.currentStage], appliedDate: ymd(app.appliedDate), source: app.source, referrer: app.referrer,
         salary: app.salaryMin || app.salaryMax ? `${app.salaryMin ?? "?"}-${app.salaryMax ?? "?"}K` : null, offerNote: app.offerNote, growthNote: app.growthNote, overtimeNote: app.overtimeNote, commuteMinutes: app.commuteMinutes,
-        rounds: app.stageHistory.map((row) => ({ 进度ID: row.id, stage: row.stageLabel || STAGE_LABELS[row.stage], enteredAt: ymd(row.enteredAt), time: row.nextDeadline ? (row.nextHasTime ? row.nextDeadline.toLocaleString("zh-CN") : ymd(row.nextDeadline)) : null, until: row.nextDeadlineEnd?.toLocaleString("zh-CN") ?? null, meeting: row.meetingInfo, format: row.interviewFormat, interviewer: row.interviewer, done: !!row.completedAt, followedUp: ymd(row.followedUpAt), notes: row.note?.slice(0, 3000) ?? null, endedAt: row.terminatedAtStageLabel })),
+        rounds: orderStageHistory(app.stageHistory, app.appliedDate).map((row) => ({ 进度ID: row.id, stage: row.stageLabel || STAGE_LABELS[row.stage], enteredAt: ymd(row.enteredAt), time: row.nextDeadline ? (row.nextHasTime ? row.nextDeadline.toLocaleString("zh-CN") : ymd(row.nextDeadline)) : null, until: row.nextDeadlineEnd?.toLocaleString("zh-CN") ?? null, meeting: row.meetingInfo, format: row.interviewFormat, interviewer: row.interviewer, done: !!row.completedAt, followedUp: ymd(row.followedUpAt), notes: row.note?.slice(0, 3000) ?? null, endedAt: row.terminatedAtStageLabel })),
         position: app.position ? { 岗位ID: app.position.id, location: app.position.location, deadline: ymd(app.position.deadline), jdUrl: app.position.jdUrl, jd: app.position.jdText?.slice(0, 5000) ?? null } : null,
       };
       return { content: JSON.stringify(data), label: `看投递详情：${app.company.name} · ${app.title}`, summary: `${STAGE_LABELS[app.currentStage]}，共 ${app.stageHistory.length} 轮记录${app.position?.jdText ? "，含 JD" : ""}`, href: `/applications/${app.id}` };

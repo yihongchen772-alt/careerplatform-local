@@ -114,10 +114,11 @@ export default async function DashboardPage() {
   // Mail with a time shows in 接下来 with its own 写入 button; only those with no
   // time need the calendar, so only those are pointed at.
   const mailNeedingTime = (await loadPendingMail(user.id, now)).filter((row) => !row.time);
-  // A mail taken back (撤销) whose time has passed has nothing left to do.
+  // A mail whose time has passed has nothing left to do — taken back (撤销) or never
+  // acted on: once older than the pending window it would otherwise sit here for good.
   const ownTasks = personalTasks.filter((task) => {
     if (isCalendarMailTask(task, now)) return false;
-    const time = task.mailUndoneAt ? mailTime(task.mailEventDraft) : null;
+    const time = task.sourceMailKey && !task.done ? mailTime(task.mailEventDraft) : null;
     return !(time && mailTimeOver(time) <= now);
   });
   // A task may still name a calendar item that has since gone: no 「导出 ICS」 for that.

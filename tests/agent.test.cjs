@@ -257,6 +257,7 @@ function agentTools(db, cityTools = { MAX_RESEARCH: 4, listCityGaps: async () =>
     "@/lib/stage-labels": stageLabels,
     "@/lib/validation": { applicationStageValues: ["APPLIED"] },
     "@/lib/assistant-shared": loadTs("src/lib/assistant-shared.ts"),
+    "@/lib/stage-order": loadTs("src/lib/stage-order.ts"),
   });
 }
 test("tools: a city button needs that city in this turn's research; a miscopied ID is fixed", async () => {

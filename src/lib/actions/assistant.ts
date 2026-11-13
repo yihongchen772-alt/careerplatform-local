@@ -19,6 +19,7 @@ import { assistantActionSchema, type AssistantAction } from "@/lib/assistant-sha
 import { parseCities } from "@/lib/application-city";
 import { closestId } from "@/lib/closest-id";
 import { currentStageRow, isTerminalStage } from "@/lib/interview-schedule";
+import { orderStageHistory } from "@/lib/stage-order";
 
 /**
  * Resolves a 投递 for an action: exact ID, then a 1-2 char miscopied ID
@@ -78,7 +79,7 @@ async function stepRow(userId: string, id: string | null | undefined, companyNam
   // Model passed [投递ID] or companyName instead of [进度ID]: resolve to that 投递's current step.
   const app = await findApplicationForAction(userId, rawId, companyName);
   if (app) {
-    const rows = await db.stageHistory.findMany({ where: { applicationId: app.id }, orderBy: { enteredAt: "asc" }, select });
+    const rows = orderStageHistory(await db.stageHistory.findMany({ where: { applicationId: app.id }, orderBy: { enteredAt: "asc" }, select }), app.appliedDate);
     const byStage = stage ? [...rows].reverse().find((r) => r.stage === stage) : null;
     const picked = byStage ?? currentStageRow(app, rows);
     if (picked) return picked;

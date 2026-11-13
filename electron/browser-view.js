@@ -3,7 +3,7 @@ const { ipcMain, WebContentsView, BrowserWindow, Menu, session, shell, app, clip
 const fs = require("fs");
 const path = require("path");
 const { createLoginStore, loginRealm, realmLabel, noteLanding, inheritedJdFits } = require("./saved-logins");
-const { historyMarkAt, historySinceMark } = require("./history-mark");
+const { historyMarkAt, historySinceMark, recordedMark } = require("./history-mark");
 
 // The page-injected helpers and field matchers live in autofill-core.js so
 // the Chrome extension can reuse them unchanged.
@@ -1068,7 +1068,8 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     }
     tab.recordedAt = Date.now();
     tab.recordedState = { sentForms: tab.sentForms, jdPage: tab.jdPage, historyMark: tab.historyMark, positionId: tab.positionId };
-    markHistory(tab, true);
+    const nav = tab.view.webContents.navigationHistory;
+    tab.historyMark = recordedMark(tab.historyMark, tab.lastSendAt, nav.getAllEntries(), nav.getActiveIndex());
     // The job linked for that 网申 is done; the next one in this tab is another job.
     tab.positionId = undefined;
     tab.sentForms = [];

@@ -20,4 +20,13 @@ function historySinceMark(mark, lastSendAt, entries) {
   return entries.slice(at + 1);
 }
 
-module.exports = { historyMarkAt, historySinceMark };
+/**
+ * The mark when a 网申 is recorded: where its success page was seen, if nothing
+ * was sent since (recorded later, from a page the tab has moved on to); else here.
+ */
+function recordedMark(seen, lastSendAt, entries, index, now = Date.now()) {
+  if (seen && !seen.recorded && !(lastSendAt > seen.at)) return { ...seen, recorded: true };
+  return historyMarkAt(entries, index, true, now);
+}
+
+module.exports = { historyMarkAt, historySinceMark, recordedMark };

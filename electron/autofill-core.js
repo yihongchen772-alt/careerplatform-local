@@ -671,6 +671,11 @@ function scanPageFields(prefix, readOnly = false) {
     const entries = [...new Set(savedEntriesFor(el, captions))].slice(0, 8).map((text) => text.slice(0, 200));
     if (entries.length) field.savedEntries = entries;
   }
+  // A read-only look still says which boxes an earlier scan already saw.
+  if (readOnly) for (const field of results) {
+    const key = nodes.get(field.id)?.getAttribute("data-cp-result-key");
+    if (key) field.resultKey = key;
+  }
   if (!readOnly) for (const field of results) {
     const el = nodes.get(field.id);
     if (el) {
@@ -4764,7 +4769,8 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       const fresh = new Set();
       for (const frame of await adapter.frames()) {
         const now = await adapter.run(frame, scanPageFields, ["r-", true]).catch(() => []);
-        for (const field of now || []) if (field.mappingKey && !known.has(field.mappingKey) && !field.hasValue && !field.userEdited) fresh.add(field.mappingKey);
+        // New = a box no scan has marked yet, under a name not seen before (a renamed heading alone is not new).
+        for (const field of now || []) if (field.mappingKey && !field.resultKey && !known.has(field.mappingKey) && !field.hasValue && !field.userEdited) fresh.add(field.mappingKey);
       }
       if (fresh.size) {
         adapter.status({ phase: "scanning", message: `选好的选项让网页多出 ${fresh.size} 个框，接着填…` });

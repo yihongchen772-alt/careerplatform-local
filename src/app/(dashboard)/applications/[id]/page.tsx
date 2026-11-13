@@ -31,6 +31,7 @@ import { currentTimeMs } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import type { InterviewQa } from "@/lib/validation";
 import type { StagePostmortem } from "@/lib/actions/stage-postmortem";
+import { orderStageHistory } from "@/lib/stage-order";
 
 const SECTIONS = [
   { href: "#interview", label: "面试与准备" },
@@ -76,6 +77,7 @@ export default async function ApplicationDetailPage({
   ]);
 
   if (!application) notFound();
+  application.stageHistory = orderStageHistory(application.stageHistory, application.appliedDate);
   const [portals, autoUpdates, autoSchedules, schedule, notesCount, order] = await Promise.all([
     db.applicationPortal.findMany({
       where: { companyId: application.companyId },

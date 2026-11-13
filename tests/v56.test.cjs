@@ -113,7 +113,7 @@ test("the numbers agree between pages; a date-only stage shows no clock; calenda
   const dash = read("src/app/(dashboard)/dashboard/page.tsx");
   assert.match(dash, /\["OFFER", "ACCEPTED", "DECLINED"\]\.includes\(a\.currentStage\)/);
   assert.match(dash, /const inProgress = total - closed;/);
-  assert.match(dash, /task\.mailUndoneAt \? mailTime/);
+  assert.match(dash, /task\.sourceMailKey && !task\.done \? mailTime/);
   assert.match(read("src/components/applications/stage-timeline.tsx"), /% 86_400_000 === 0/);
   assert.doesNotMatch(read("src/app/(dashboard)/calendar/page.tsx"), /title\} 下一步/);
   assert.doesNotMatch(read("src/app/api/calendar-export/route.ts"), /title\} 下一步/);

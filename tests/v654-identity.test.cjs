@@ -16,7 +16,7 @@ function loadTs(relative) {
 }
 const { identifyApplication } = loadTs("src/lib/application-identity.ts");
 const { recognizeApplication } = loadTs("src/components/browser/recognize-application.ts");
-const { historyMarkAt, historySinceMark } = require("../electron/history-mark.js");
+const { historyMarkAt, historySinceMark, recordedMark } = require("../electron/history-mark.js");
 
 const page = (url, title) => ({ url, title });
 // One tab: a Moka job applied to and recorded, then on to another company's 飞书 site.
@@ -69,8 +69,34 @@ test("the job linked while filling gives way when the pages name another company
 
 test("recording clears the tab's linked job, and the dialog follows the pages over a stale link", () => {
   const view = fs.readFileSync(path.join(__dirname, "../electron/browser-view.js"), "utf8");
-  assert.match(view, /markHistory\(tab, true\);\s*\/\/[^\n]*\s*tab\.positionId = undefined;/);
+  assert.match(view, /tab\.historyMark = recordedMark\(tab\.historyMark, tab\.lastSendAt, nav\.getAllEntries\(\), nav\.getActiveIndex\(\)\);\s*\/\/[^\n]*\s*tab\.positionId = undefined;/);
   const dialog = fs.readFileSync(path.join(__dirname, "../src/components/browser/mark-applied-from-browser.tsx"), "utf8");
   assert.match(dialog, /useState\(initialRecognition \? initialRecognition\.positionId \|\| NEW : initialPositionId \|\| NEW\)/);
   assert.match(dialog, /if \(!open \|\| initialRecognition\) return;/);
+});
+
+test("recorded after the tab moved on: the mark stays at that 网申's success page", () => {
+  const seen = historyMarkAt(tab, 1, false, 1000);
+  // Now on the next job's page (index 3), nothing sent yet: recording keeps the success page as the end.
+  const mark = recordedMark(seen, 900, tab, 3, 3000);
+  assert.equal(mark.index, 1);
+  assert.equal(mark.recorded, true);
+  assert.equal(historySinceMark(mark, null, tab).length, 3, "the next job's own pages stay");
+  // A new form was sent after that success: this is where it ends.
+  assert.equal(recordedMark(seen, 2000, tab, 3, 3000).index, 3);
+  assert.equal(recordedMark(null, null, tab, 4, 3000).index, 4);
+});
+
+test("a 投递 recorded before 08:00: its date-only 已投递 still comes first in the timeline", () => {
+  const { orderStageHistory } = loadTs("src/lib/stage-order.ts");
+  const applied = new Date("2027-03-03T00:00:00.000Z"); // date-only = 08:00 in UTC+8
+  const rows = [
+    { id: "b", stage: "ASSESSMENT", enteredAt: new Date("2027-03-02T21:18:00.000Z") }, // 05:18 local, same day
+    { id: "a", stage: "APPLIED", enteredAt: applied },
+    { id: "c", stage: "OA", enteredAt: new Date("2027-03-05T02:00:00.000Z") },
+  ];
+  assert.equal(orderStageHistory(rows, applied).map((row) => row.stage).join(","), "APPLIED,ASSESSMENT,OA");
+  // A later 已投递 written by hand at a real time is not the baseline: it sorts by time.
+  const again = [...rows, { id: "d", stage: "APPLIED", enteredAt: new Date("2027-03-04T03:00:00.000Z") }];
+  assert.equal(orderStageHistory(again, applied).map((row) => row.id).join(","), "a,b,d,c");
 });
