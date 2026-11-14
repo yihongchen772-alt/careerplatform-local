@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
 import { checkPostingSources, syncSource, type SyncSummary } from "@/lib/campus-sync";
+import { BUILTIN_FEED_NAME, BUILTIN_FEED_URL } from "@/lib/builtin-feed";
 import { resolveCompanyId } from "@/lib/company-resolver";
 import { computeInterestScore } from "@/lib/scoring";
 
@@ -28,6 +29,20 @@ export async function savePostingSource(rawUrl: string): Promise<ActionResult<Sy
     const url = cleanLink(String(rawUrl ?? ""));
     const existing = await db.postingSource.findFirst({ where: { userId: user.id, url } });
     const source = existing ?? (await db.postingSource.create({ data: { userId: user.id, url } }));
+    return syncSource(user.id, source.id);
+  });
+}
+
+/** Enables the built-in daily official boards feed (cloud mirror + local career-ops fallback) with zero config. */
+export async function enableBuiltinPostingFeed(): Promise<ActionResult<SyncSummary>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const existing = await db.postingSource.findFirst({ where: { userId: user.id, url: BUILTIN_FEED_URL } });
+    const source =
+      existing ??
+      (await db.postingSource.create({
+        data: { userId: user.id, url: BUILTIN_FEED_URL, name: BUILTIN_FEED_NAME },
+      }));
     return syncSource(user.id, source.id);
   });
 }

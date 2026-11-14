@@ -13,7 +13,7 @@ export type PostingFilters = { q: string; chip: "" | "today" | "recent" | "closi
 export const FRESH_DAYS = 3;
 
 export const PAGE_SIZE = 50;
-export const KIND_OPTIONS = ["秋招", "秋招提前批", "秋招补录", "春招", "暑期实习", "实习", "人才计划"];
+export const KIND_OPTIONS = ["秋招", "秋招提前批", "秋招补录", "春招", "暑期实习", "实习", "人才计划", "社招"];
 
 export function readPostingFilters(params: Record<string, string | string[] | undefined>): PostingFilters {
   const one = (key: string) => { const value = params[key]; return (Array.isArray(value) ? value[0] : value ?? "").trim().slice(0, 60); };

@@ -7,6 +7,8 @@
  * tests) leaves those unset, so this always throws there.
  */
 
+import { builtinFeedRevision, isBuiltinFeedUrl } from "@/lib/builtin-feed";
+
 const RENDER_TIMEOUT_MS = 25000;
 
 /**
@@ -75,6 +77,7 @@ export async function readFeishuBase(url: string): Promise<SheetRows> {
 
 /** The sheet's revision from one small request, or null when it can't be told that way (read the whole sheet then). */
 export async function feishuBaseRevision(url: string): Promise<number | null> {
+  if (isBuiltinFeedUrl(url)) return builtinFeedRevision();
   const bridgeUrl = process.env.CAREERPLATFORM_RENDER_BRIDGE_URL;
   const token = process.env.CAREERPLATFORM_RENDER_BRIDGE_TOKEN;
   if (!bridgeUrl || !token) return null;

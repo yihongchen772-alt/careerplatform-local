@@ -18,9 +18,10 @@ import smartrecruiters from './providers/smartrecruiters.mjs';
 import greenhouse from './providers/greenhouse.mjs';
 import lever from './providers/lever.mjs';
 import ashby from './providers/ashby.mjs';
+import zhiye from './providers/zhiye.mjs';
 import { makeHttpCtx } from './providers/_http.mjs';
 
-export const PROVIDERS = [feishuJobs, mokahr, tencent, alibaba, meituan, workday, successfactors, smartrecruiters, greenhouse, lever, ashby];
+export const PROVIDERS = [feishuJobs, mokahr, zhiye, tencent, alibaba, meituan, workday, successfactors, smartrecruiters, greenhouse, lever, ashby];
 
 export function providerFor(entry) {
   for (const provider of PROVIDERS) {

@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { UserFacingError } from "@/lib/action-result";
 import { feishuBaseRevision, readFeishuBase } from "@/lib/render-bridge-client";
+import { isBuiltinFeedUrl, readBuiltinFeed } from "@/lib/builtin-feed";
 import { cohortLabel, mapSheetRow, samePosting, type PostingFields } from "@/lib/campus-sheet";
 
 /**
@@ -35,22 +36,42 @@ export async function syncSource(userId: string, sourceId: string): Promise<Sync
   if (running.has(source.id)) throw new UserFacingError("正在同步，请稍候");
   running.add(source.id);
   try {
-    let sheet;
-    try {
-      sheet = await readFeishuBase(source.url);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "读取失败";
-      await db.postingSource.update({ where: { id: source.id }, data: { lastError: message.slice(0, 300) } });
-      throw new UserFacingError(`飞书表格没读到：${message}`);
-    }
     const now = new Date();
     const graduationYear = (await db.user.findUnique({ where: { id: userId }, select: { graduationYear: true } }))?.graduationYear ?? null;
     const rows = new Map<string, PostingFields>();
-    for (const row of sheet.rows) {
-      const fields = mapSheetRow(row, now);
-      if (fields) rows.set(fields.externalId, fields);
+    let sourceName: string | null = null;
+    let sourceRev: number | null = null;
+
+    if (isBuiltinFeedUrl(source.url)) {
+      try {
+        const feed = await readBuiltinFeed(now);
+        sourceName = feed.name;
+        sourceRev = feed.rev;
+        for (const fields of feed.postings) {
+          rows.set(fields.externalId, fields);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "读取失败";
+        await db.postingSource.update({ where: { id: source.id }, data: { lastError: message.slice(0, 300) } });
+        throw new UserFacingError(`名企直招池没读到：${message}`);
+      }
+    } else {
+      let sheet;
+      try {
+        sheet = await readFeishuBase(source.url);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "读取失败";
+        await db.postingSource.update({ where: { id: source.id }, data: { lastError: message.slice(0, 300) } });
+        throw new UserFacingError(`飞书表格没读到：${message}`);
+      }
+      sourceName = sheet.name || null;
+      sourceRev = typeof sheet.rev === "number" ? sheet.rev : null;
+      for (const row of sheet.rows) {
+        const fields = mapSheetRow(row, now);
+        if (fields) rows.set(fields.externalId, fields);
+      }
+      if (!rows.size) throw new UserFacingError("这个表格里没认出公司列，确认是校招信息表的链接");
     }
-    if (!rows.size) throw new UserFacingError("这个表格里没认出公司列，确认是校招信息表的链接");
 
     const stored = await db.campusPosting.findMany({ where: { sourceId: source.id } });
     const byExternal = new Map(stored.map((row) => [row.externalId, row]));
@@ -75,14 +96,14 @@ export async function syncSource(userId: string, sourceId: string): Promise<Sync
       await db.campusPosting.deleteMany({ where: { id: { in: gone.slice(at, at + 500) } } });
     }
     const total = await db.campusPosting.count({ where: { sourceId: source.id } });
-    await db.postingSource.update({ where: { id: source.id }, data: { lastSyncedAt: now, lastCheckedAt: now, firstSyncedAt: source.firstSyncedAt ?? now, rev: typeof sheet.rev === "number" ? sheet.rev : null, lastError: null, total, name: sheet.name?.slice(0, 120) || source.name } });
+    await db.postingSource.update({ where: { id: source.id }, data: { lastSyncedAt: now, lastCheckedAt: now, firstSyncedAt: source.firstSyncedAt ?? now, rev: sourceRev, lastError: null, total, name: sourceName?.slice(0, 120) || source.name } });
     revalidatePath("/leads");
     // What the owner added since the first sync, as a notification would put it.
     const fresh = source.firstSyncedAt ? toCreate : [];
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const mine = fresh.filter((row) => forCohort(row.cohort, graduationYear) && (!row.deadline || row.deadline >= today));
     const closing = mine.filter((row) => row.deadline && row.deadline.getTime() < today.getTime() + 8 * 86400_000).length;
-    return { added: toCreate.length, updated: toUpdate.length, removed: gone.length, total, name: sheet.name || null, fresh: fresh.length, freshMine: mine.length, freshClosing: closing };
+    return { added: toCreate.length, updated: toUpdate.length, removed: gone.length, total, name: sourceName, fresh: fresh.length, freshMine: mine.length, freshClosing: closing };
   } finally {
     running.delete(source.id);
   }

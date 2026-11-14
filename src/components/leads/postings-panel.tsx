@@ -9,6 +9,7 @@ import { PostingSearch, SubscribeCard, SyncControls } from "@/components/leads/p
 import { PostingsTableClient, type PostingTableRow } from "@/components/leads/postings-table-client";
 import type { BatchVariantOption } from "@/components/leads/batch-profile-select";
 import { extractProfileSignal, scorePostingMatch } from "@/lib/posting-match";
+import { isBuiltinFeedUrl } from "@/lib/builtin-feed";
 
 const STALE_MS = 12 * 3600_000;
 
@@ -44,8 +45,8 @@ export async function PostingsPanel({
   filters: PostingFilters;
   profileVariants?: BatchVariantOption[];
 }) {
-  const [source, profile, allResumes] = await Promise.all([
-    db.postingSource.findFirst({ where: { userId }, orderBy: { createdAt: "asc" } }),
+  const [sources, profile, allResumes] = await Promise.all([
+    db.postingSource.findMany({ where: { userId }, orderBy: { createdAt: "asc" } }),
     db.user.findUnique({ where: { id: userId }, select: { graduationYear: true, targetTrack: true, preferredCities: true, skills: true } }),
     db.resumeVersion.findMany({
       where: { userId },
@@ -53,7 +54,12 @@ export async function PostingsPanel({
       select: { id: true, name: true, isDefault: true, extractedText: true, structured: true },
     }),
   ]);
+  const source = sources[0] ?? null;
   if (!source) return <SubscribeCard />;
+  const hasBuiltinFeed = sources.some((s) => isBuiltinFeedUrl(s.url));
+  const hasFeishuSheet = sources.some((s) => !isBuiltinFeedUrl(s.url));
+  const combinedTotal = sources.reduce((sum, s) => sum + (s.total || 0), 0);
+  const displayTitle = sources.map((s) => s.name || (isBuiltinFeedUrl(s.url) ? "内置名企官网每日直招池" : "校招信息表")).join(" + ");
 
   const activeResume = (filters.resumeId ? allResumes.find((r) => r.id === filters.resumeId) : null) ?? allResumes[0] ?? null;
   const signal = extractProfileSignal(profile, activeResume?.extractedText, activeResume?.structured);
@@ -167,10 +173,15 @@ export async function PostingsPanel({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate font-medium" title={source.url}>{source.name || "校招信息表"}</p>
-          <p className="text-xs text-muted-foreground">共 {source.total} 条 · {syncedText(source.lastSyncedAt)}{source.lastCheckedAt && source.lastSyncedAt && source.lastCheckedAt > source.lastSyncedAt ? `，${syncedText(source.lastCheckedAt).replace("同步", "检查过、没有改动")}` : ""}{source.lastError ? <span className="text-destructive"> · 上次同步失败：{source.lastError}</span> : null}</p>
+          <p className="truncate font-medium" title={sources.map((s) => s.url).join(" , ")}>{displayTitle}</p>
+          <p className="text-xs text-muted-foreground">共 {combinedTotal} 条 · {syncedText(source.lastSyncedAt)}{source.lastCheckedAt && source.lastSyncedAt && source.lastCheckedAt > source.lastSyncedAt ? `，${syncedText(source.lastCheckedAt).replace("同步", "检查过、没有改动")}` : ""}{source.lastError ? <span className="text-destructive"> · 上次同步失败：{source.lastError}</span> : null}</p>
         </div>
-        <SyncControls sourceId={source.id} stale={!source.lastSyncedAt || now.getTime() - (source.lastCheckedAt ?? source.lastSyncedAt).getTime() > STALE_MS} />
+        <SyncControls
+          sourceId={source.id}
+          stale={sources.some((s) => !s.lastSyncedAt || now.getTime() - (s.lastCheckedAt ?? s.lastSyncedAt).getTime() > STALE_MS)}
+          hasBuiltinFeed={hasBuiltinFeed}
+          hasFeishuSheet={hasFeishuSheet}
+        />
       </div>
 
       <div className="grid grid-cols-3 gap-2">

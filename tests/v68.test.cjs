@@ -287,3 +287,128 @@ test("electron render-bridge and browser-view ignore non-mainframe or -3 aborted
   assert.match(renderBridge, /if\s*\(!isMainFrame\s*\|\|\s*code\s*===\s*-3\)\s*return;/);
   assert.match(browserView, /if\s*\(!isMainFrame\s*\|\|\s*code\s*===\s*-3\)\s*return;/);
 });
+
+test("zhiye provider parses Beisen JSON and SSR HTML job links cleanly", async () => {
+  const zhiye = await import("../electron/career-ops/providers/zhiye.mjs");
+  assert.equal(zhiye.resolveZhiyeOrigin("https://campus.zhiye.com/jobs"), "https://campus.zhiye.com");
+  assert.equal(zhiye.resolveZhiyeOrigin("https://www.zhiye.com"), null);
+  assert.equal(zhiye.resolveZhiyeOrigin("http://campus.zhiye.com"), null);
+
+  const parsed = zhiye.parseZhiyeResponse(
+    {
+      Data: {
+        TotalCount: 2,
+        List: [
+          {
+            Id: "99001",
+            JobAdName: "2027届C++服务端研发实习生",
+            LocNames: ["上海市", "北京市"],
+            CategoryName: "研发类",
+            Duty: "<p>负责核心网关高性能改造</p>",
+          },
+        ],
+      },
+    },
+    "示例科技",
+    "https://campus.zhiye.com",
+  );
+  assert.equal(parsed.jobs.length, 1);
+  assert.equal(parsed.jobs[0].title, "2027届C++服务端研发实习生");
+  assert.equal(parsed.jobs[0].url, "https://campus.zhiye.com/jobs/detail/99001");
+  assert.equal(parsed.jobs[0].location, "上海市/北京市");
+  assert.match(parsed.jobs[0].description, /负责核心网关高性能改造/);
+
+  const htmlJobs = zhiye.parseZhiyeHtml(
+    '<div><a href="/jobs/detail/202788">大模型推理优化工程师</a></div>',
+    "示例科技",
+    "https://campus.zhiye.com",
+  );
+  assert.equal(htmlJobs.length, 1);
+  assert.equal(htmlJobs[0].url, "https://campus.zhiye.com/jobs/detail/202788");
+});
+
+test("builtin-feed reads gzipped cloud mirror and falls back to local career-ops boards", async () => {
+  const zlib = require("node:zlib");
+  const samplePayload = {
+    version: 1,
+    rev: 1763150000,
+    generatedAt: "2026-11-15T00:00:00.000Z",
+    total: 1,
+    items: [
+      {
+        externalId: "feed:12345",
+        company: "字节跳动",
+        roles: "2027届大模型算法实习生",
+        cohort: "2027届",
+        kind: "实习",
+        cities: "北京、上海",
+        industry: "互联网/AI",
+        degree: "硕士及以上",
+        writtenTest: null,
+        applyUrl: "https://jobs.bytedance.com/experienced/position/12345/detail",
+        noticeUrl: null,
+        startDate: "2026-11-14",
+        deadline: null,
+        deadlineText: "招满即止",
+        note: "负责大模型 RLHF 与 Agent 训练",
+        salary: null,
+      },
+    ],
+  };
+  const gzBytes = zlib.gzipSync(Buffer.from(JSON.stringify(samplePayload), "utf8"));
+
+  let failCloud = false;
+  const feedLib = loadTs("src/lib/builtin-feed.ts", {
+    "@/lib/proxy-agent": { applyProxy: async () => {} },
+    "@/lib/career-ops": {
+      BUILT_IN_BOARDS: [{ name: "DeepSeek校招", careers_url: "https://app.mokahr.com/campus-recruitment/high-flyer/140575", industry: "AI大模型/量化" }],
+      runBoards: async () => [
+        {
+          name: "DeepSeek校招",
+          provider: "mokahr",
+          jobs: [
+            {
+              title: "2027届深度学习研究员（校招）",
+              url: "https://app.mokahr.com/campus-recruitment/high-flyer/140575#/job/abc",
+              location: "中国-北京市/杭州市",
+              company: "DeepSeek校招",
+              postedAt: Date.parse("2026-11-10T00:00:00Z"),
+              description: "要求硕士及以上学历，研究大模型架构",
+            },
+          ],
+        },
+      ],
+    },
+    __fetch: async (url) => {
+      if (failCloud) throw new Error("network down");
+      if (String(url).endsWith("postings-feed-meta.json")) {
+        return { ok: true, json: async () => ({ rev: 1763150000 }) };
+      }
+      return {
+        ok: true,
+        arrayBuffer: async () => gzBytes.buffer.slice(gzBytes.byteOffset, gzBytes.byteOffset + gzBytes.byteLength),
+      };
+    },
+  });
+
+  assert.equal(feedLib.isBuiltinFeedUrl("builtin://official-feed"), true);
+  assert.equal(feedLib.isBuiltinFeedUrl("https://xxx.feishu.cn/base/abc"), false);
+  assert.equal(await feedLib.builtinFeedRevision(), 1763150000);
+
+  const cloudResult = await feedLib.readBuiltinFeed(new Date("2026-11-15T00:00:00Z"));
+  assert.equal(cloudResult.mode, "cloud");
+  assert.equal(cloudResult.rev, 1763150000);
+  assert.equal(cloudResult.postings.length, 1);
+  assert.equal(cloudResult.postings[0].company, "字节跳动");
+  assert.equal(cloudResult.postings[0].kind, "实习");
+
+  failCloud = true;
+  const localResult = await feedLib.readBuiltinFeed(new Date("2026-11-15T00:00:00Z"));
+  assert.equal(localResult.mode, "local");
+  assert.equal(localResult.postings.length, 1);
+  assert.equal(localResult.postings[0].company, "DeepSeek");
+  assert.equal(localResult.postings[0].cohort, "2027届");
+  assert.equal(localResult.postings[0].kind, "秋招");
+  assert.equal(localResult.postings[0].cities, "北京、杭州");
+  assert.equal(localResult.postings[0].degree, "硕士及以上");
+});

@@ -24,19 +24,27 @@ export type BoardJob = {
 type BoardResult = { name: string; provider: string | null; jobs: BoardJob[]; error?: string };
 
 /** Big boards & live verified AI/tech tenants that need no setup; 企业名录 adds more. */
-export const BUILT_IN_BOARDS: { name: string; careers_url: string }[] = [
-  { name: "字节跳动", careers_url: "https://jobs.bytedance.com" },
-  { name: "腾讯", careers_url: "https://careers.tencent.com/search.html" },
-  { name: "阿里巴巴", careers_url: "https://talent.alibaba.com/off-campus/position-list" },
-  { name: "美团", careers_url: "https://zhaopin.meituan.com/web/social" },
-  { name: "DeepSeek", careers_url: "https://app.mokahr.com/social-recruitment/high-flyer/140576" },
-  { name: "月之暗面", careers_url: "https://app.mokahr.com/apply/moonshot/148506" },
-  { name: "智谱AI", careers_url: "https://app.mokahr.com/social-recruitment/zphz/148983" },
-  { name: "MiniMax", careers_url: "https://vrfi1sk8a0.jobs.feishu.cn" },
+export const BUILT_IN_BOARDS: { name: string; careers_url: string; industry?: string }[] = [
+  { name: "字节跳动", careers_url: "https://jobs.bytedance.com", industry: "互联网/AI" },
+  { name: "腾讯", careers_url: "https://careers.tencent.com/search.html", industry: "互联网/游戏/AI" },
+  { name: "阿里巴巴", careers_url: "https://talent.alibaba.com/off-campus/position-list", industry: "互联网/电商/云" },
+  { name: "美团", careers_url: "https://zhaopin.meituan.com/web/social", industry: "互联网/本地生活" },
+  { name: "DeepSeek", careers_url: "https://app.mokahr.com/social-recruitment/high-flyer/140576", industry: "AI大模型/量化" },
+  { name: "DeepSeek校招", careers_url: "https://app.mokahr.com/campus-recruitment/high-flyer/140575", industry: "AI大模型/量化" },
+  { name: "月之暗面", careers_url: "https://app.mokahr.com/apply/moonshot/148506", industry: "AI大模型" },
+  { name: "智谱AI", careers_url: "https://app.mokahr.com/social-recruitment/zphz/148983", industry: "AI大模型" },
+  { name: "MiniMax", careers_url: "https://vrfi1sk8a0.jobs.feishu.cn", industry: "AI大模型" },
+  { name: "博世中国", careers_url: "https://jobs.smartrecruiters.com/BoschGroup", industry: "汽车/智能制造/外企" },
+  { name: "Databricks", careers_url: "https://boards.greenhouse.io/databricks", industry: "云计算/大数据/AI" },
+  { name: "Cloudflare", careers_url: "https://boards.greenhouse.io/cloudflare", industry: "云计算/基础架构" },
+  { name: "Stripe", careers_url: "https://boards.greenhouse.io/stripe", industry: "金融科技/外企" },
+  { name: "Figma", careers_url: "https://boards.greenhouse.io/figma", industry: "设计/研发工具" },
+  { name: "Airbnb", careers_url: "https://boards.greenhouse.io/airbnb", industry: "互联网/外企" },
+  { name: "Linear", careers_url: "https://jobs.ashbyhq.com/linear", industry: "研发工具/外企" },
 ];
 
 /** Hosts the vendored fetchers can read (what each provider's detect() claims). */
-const SUPPORTED_HOST = /(^|\.)(jobs\.bytedance\.com|jobs\.feishu\.cn|careers\.tencent\.com|talent\.alibaba\.com|zhaopin\.meituan\.com|mokahr\.com|myworkdayjobs\.com|successfactors\.(com|eu)|jobs2web\.com|smartrecruiters\.com|greenhouse\.io|lever\.co|ashbyhq\.com)$/i;
+const SUPPORTED_HOST = /(^|\.)(jobs\.bytedance\.com|jobs\.feishu\.cn|careers\.tencent\.com|talent\.alibaba\.com|zhaopin\.meituan\.com|mokahr\.com|zhiye\.com|myworkdayjobs\.com|successfactors\.(com|eu)|jobs2web\.com|smartrecruiters\.com|greenhouse\.io|lever\.co|ashbyhq\.com)$/i;
 
 export function supportedBoard(url: string | null | undefined): boolean {
   if (!url) return false;
@@ -52,7 +60,7 @@ function runnerPath(): string {
   return path.join(process.env.CAREERPLATFORM_CAREER_OPS_DIR || path.join(process.cwd(), "electron", "career-ops"), "run.mjs");
 }
 
-async function runBoards(boards: { name: string; careers_url: string; keywords: string[] }[], timeoutMs = 40000): Promise<BoardResult[]> {
+export async function runBoards(boards: { name: string; careers_url: string; keywords: string[] }[], timeoutMs = 40000): Promise<BoardResult[]> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [runnerPath()], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" }, stdio: ["pipe", "pipe", "ignore"] });
     let out = "";
@@ -212,7 +220,7 @@ export async function findJobs(
     const all = [...directory, ...BUILT_IN_BOARDS.filter((board) => !directory.some((entry) => new URL(entry.careers_url.startsWith("http") ? entry.careers_url : `https://${entry.careers_url}`).hostname === new URL(board.careers_url).hostname)).map((board) => ({ ...board, aliases: [] as string[] }))];
     const named = all.filter((board) => terms.some((term) => [board.name, ...board.aliases].some((name) => normal(name).includes(normal(term)) || normal(term).includes(normal(name)))));
     keywords = named.length ? terms.filter((term) => !named.some((board) => [board.name, ...board.aliases].some((name) => normal(name).includes(normal(term)) || normal(term).includes(normal(name))))) : terms;
-    const boards = (named.length ? named : all).slice(0, 12).map((board) => ({ name: board.name, careers_url: board.careers_url, keywords: keywords.length ? [keywords.join(" ")] : [] }));
+    const boards = (named.length ? named : all).slice(0, 18).map((board) => ({ name: board.name, careers_url: board.careers_url, keywords: keywords.length ? [keywords.join(" ")] : [] }));
     try {
       boardResults = await runBoards(boards);
     } catch (err) {
@@ -227,7 +235,7 @@ export async function findJobs(
           sourceLabel: `${result.name}官网`,
         }))
       )
-      .filter((job) => !keywords.length || keywords.some((term) => normal(job.title + job.description).includes(normal(term))))
+      .filter((job) => !keywords.length || keywords.some((term) => normal(`${job.title} ${job.location} ${job.description}`).includes(normal(term))))
       .filter((job) => {
         if (jobKind === "intern") return /实习|intern/i.test(`${job.title} ${job.description}`);
         if (jobKind === "campus") return !/社会招聘|社招|only senior/i.test(job.title);
