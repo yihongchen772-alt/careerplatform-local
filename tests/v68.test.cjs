@@ -486,3 +486,20 @@ test("v1.69.2: Apple/iOS UI styles, distinct light/dark palettes, and sidebar Qu
   assert.match(navSrc, /QuickThemeSwitcher/);
   assert.match(navSrc, /nav-item-chip/);
 });
+
+test("v1.69.3: BUILT_IN_BOARDS focuses exclusively on Moka, Beisen (zhiye.com), and Feishu ATS boards", () => {
+  const careerOps = loadTs("src/lib/career-ops.ts", {
+    "@/lib/db": { prisma: {} },
+    "@/lib/proxy-agent": { applyProxy: async () => {} },
+  });
+  assert.ok(careerOps.BUILT_IN_BOARDS.length >= 20);
+  for (const board of careerOps.BUILT_IN_BOARDS) {
+    const host = new URL(board.careers_url).hostname.toLowerCase();
+    const isStandardThree =
+      host === "app.mokahr.com" ||
+      host.endsWith(".zhiye.com") ||
+      host.endsWith(".jobs.feishu.cn") ||
+      host === "jobs.bytedance.com";
+    assert.equal(isStandardThree, true, `Unexpected host ${host} in BUILT_IN_BOARDS for ${board.name}`);
+  }
+});

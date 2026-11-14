@@ -180,6 +180,20 @@ export default {
             body: JSON.stringify(keyword ? { limit: PAGE_SIZE, offset, keyword } : { limit: PAGE_SIZE, offset }),
             redirect: 'error',
           }));
+          if (json?.code !== 0 && isCampusBoard && page === 1) {
+            isCampusBoard = false;
+            json = /** @type {any} */ (await ctx.fetchJson(api, {
+              method: 'POST',
+              headers: {
+                'content-type': 'application/json',
+                'accept': 'application/json',
+                'user-agent': MACOS_BROWSER_LIKE_USER_AGENT,
+                'referer': `${origin}/`,
+              },
+              body: JSON.stringify(keyword ? { limit: PAGE_SIZE, offset, keyword } : { limit: PAGE_SIZE, offset }),
+              redirect: 'error',
+            }));
+          }
           if (json?.code !== 0) {
             throw new Error(`API error: code=${json?.code}`);
           }

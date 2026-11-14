@@ -44,10 +44,10 @@ export function SubscribeCard() {
         <div className="space-y-1">
           <p className="inline-flex items-center gap-1.5 font-medium">
             <Sparkles className="size-4 text-primary" />
-            内置名企官网每日直招池（免配置 · 开箱即用）
+            Moka · 北森 · 飞书 每日官网直招池（免配置 · 一键填表直达）
           </p>
           <p className="text-sm text-muted-foreground">
-            无需寻找外部表格链接，一键接入 GitHub 云端每日自动聚合的名企官网直招池（涵盖字节、腾讯、阿里、美团、DeepSeek、月之暗面、智谱、MiniMax、博世、Databricks 等官方在招校招/实习/社招岗位），自动按你的简历计算匹配度排序。
+            精选接入 <strong>Moka（mokahr.com）</strong>、<strong>北森（zhiye.com）</strong> 与 <strong>飞书招聘（jobs.feishu.cn / 字节）</strong> 三大标准网申系统的名企直招池（涵盖字节、蔚来、智元机器人、非夕、光轮、DeepSeek、月之暗面、智谱、MiniMax、远景、思谋、讯飞、越疆、石头、海柔、埃夫特、中科曙光、迈瑞等），点「投递」直接进入标准网申页并支持一键自动填表。
           </p>
         </div>
         <Button type="button" onClick={enableBuiltin} disabled={enablingFeed || pending} className="shrink-0">

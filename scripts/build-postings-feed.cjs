@@ -5,25 +5,33 @@ const crypto = require("node:crypto");
 const { spawn } = require("node:child_process");
 
 const BOARDS = [
+  // 飞书招聘 (Feishu ATSX: jobs.bytedance.com / *.jobs.feishu.cn)
   { name: "字节跳动校招", careers_url: "https://jobs.bytedance.com/campus/position", industry: "互联网/AI" },
-  { name: "腾讯校招", careers_url: "https://join.qq.com/post.html", industry: "互联网/游戏/AI" },
-  { name: "美团校招", careers_url: "https://zhaopin.meituan.com/web/campus", industry: "互联网/本地生活" },
   { name: "字节跳动", careers_url: "https://jobs.bytedance.com", industry: "互联网/AI" },
-  { name: "腾讯", careers_url: "https://careers.tencent.com/search.html", industry: "互联网/游戏/AI" },
-  { name: "阿里巴巴", careers_url: "https://talent.alibaba.com/off-campus/position-list", industry: "互联网/电商/云" },
-  { name: "阿里云", careers_url: "https://careers.aliyun.com/off-campus/position-list", industry: "云计算/AI大模型" },
-  { name: "淘天集团", careers_url: "https://talent.taotian.com/off-campus/position-list", industry: "互联网/电商" },
-  { name: "美团", careers_url: "https://zhaopin.meituan.com/web/social", industry: "互联网/本地生活" },
+  { name: "蔚来校招", careers_url: "https://nio.jobs.feishu.cn/campus/position", industry: "智能汽车/智驾/具身" },
+  { name: "蔚来汽车", careers_url: "https://nio.jobs.feishu.cn", industry: "智能汽车/智驾" },
+  { name: "MiniMax", careers_url: "https://vrfi1sk8a0.jobs.feishu.cn", industry: "AI大模型" },
+  { name: "智元机器人", careers_url: "https://agirobot.jobs.feishu.cn", industry: "具身智能/机器人" },
+  { name: "非夕机器人", careers_url: "https://flexivrobotics.jobs.feishu.cn", industry: "具身智能/机器人" },
+  { name: "光轮智能", careers_url: "https://lightwheel.jobs.feishu.cn", industry: "具身智能/仿真合成数据" },
+  // Moka (app.mokahr.com)
   { name: "DeepSeek", careers_url: "https://app.mokahr.com/social-recruitment/high-flyer/140576", industry: "AI大模型/量化" },
   { name: "月之暗面", careers_url: "https://app.mokahr.com/apply/moonshot/148506", industry: "AI大模型" },
   { name: "智谱AI", careers_url: "https://app.mokahr.com/social-recruitment/zphz/148983", industry: "AI大模型" },
-  { name: "MiniMax", careers_url: "https://vrfi1sk8a0.jobs.feishu.cn", industry: "AI大模型" },
+  { name: "远景科技校招", careers_url: "https://app.mokahr.com/campus-recruitment/envisiongroup/43123", industry: "新能源/智能控制/AI" },
+  { name: "思谋科技校招", careers_url: "https://app.mokahr.com/campus-recruitment/smartmore/40506", industry: "视觉AI/智能制造" },
+  // 北森 Beisen (*.zhiye.com)
   { name: "科大讯飞", careers_url: "https://iflytek.zhiye.com/campus", industry: "AI大模型/语音" },
-  { name: "vivo", careers_url: "https://vivo.zhiye.com/campus", industry: "智能终端/硬件/AI" },
+  { name: "越疆机器人", careers_url: "https://dobot.zhiye.com/campus", industry: "具身智能/机器人" },
+  { name: "石头科技", careers_url: "https://roborock.zhiye.com/campus", industry: "智能硬件/机器人" },
+  { name: "海柔创新", careers_url: "https://hairobotics.zhiye.com/campus", industry: "物流机器人/运控" },
+  { name: "埃夫特机器人", careers_url: "https://efort.zhiye.com/campus", industry: "工业/人形机器人" },
+  { name: "中科曙光", careers_url: "https://sugon.zhiye.com/campus", industry: "算力基础设施/芯片/系统" },
   { name: "京东方BOE", careers_url: "https://boe.zhiye.com/campus", industry: "半导体/显示/硬件" },
   { name: "大华股份", careers_url: "https://dahua.zhiye.com/campus", industry: "智能物联/视觉AI" },
   { name: "迈瑞医疗", careers_url: "https://mindray.zhiye.com/campus", industry: "医疗器械/研发" },
   { name: "奇瑞汽车", careers_url: "https://chery.zhiye.com/campus", industry: "智能汽车/智驾" },
+  { name: "信捷电气", careers_url: "https://xinje.zhiye.com/campus", industry: "工业自动化/运动控制" },
 ];
 
 const OVERSEAS_LOCATION_RE =
