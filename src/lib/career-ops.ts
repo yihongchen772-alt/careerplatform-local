@@ -134,7 +134,6 @@ export async function discoverWebCampusJobs(
   cities: string[] = [],
   jobKind: JobDiscoveryKind = "all"
 ): Promise<BoardJob[]> {
-  const cityHint = cities[0] ? ` ${cities[0]}` : "";
   const kindSuffix =
     jobKind === "social"
       ? "社招 招聘"
@@ -144,52 +143,59 @@ export async function discoverWebCampusJobs(
           ? "校招 校园招聘"
           : "招聘";
   const atsFilter = "(site:app.mokahr.com OR site:zhiye.com OR site:jobs.feishu.cn OR site:jobs.bytedance.com)";
-  const searchTerms = `${query}${cityHint} ${kindSuffix} ${atsFilter}`.trim();
-  const endpoint = `https://cn.bing.com/search?q=${encodeURIComponent(searchTerms)}&count=15`;
-  try {
-    const res = await fetch(endpoint, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-        "Accept-Language": "zh-CN,zh;q=0.9",
-      },
-      signal: AbortSignal.timeout(7000),
-    });
-    if (!res.ok) return [];
-    const html = await res.text();
-    const out: BoardJob[] = [];
-    const blocks = html.split(/<li[^>]+class=["'][^"']*b_algo[^"']*["'][^>]*>/i).slice(1, 16);
-    for (const block of blocks) {
-      const linkMatch = /<h2[^>]*>[\s\S]*?<a[^>]+href=["'](https?:\/\/[^"']+)["'][^>]*>([\s\S]*?)<\/a>/i.exec(block);
-      if (!linkMatch) continue;
-      const url = linkMatch[1].replace(/&amp;/g, "&");
-      const title = decodeHtml(linkMatch[2]);
-      if (!title || /baidu\.com\/s\?|bing\.com\/ck\/|zhihu\.com\/question/i.test(url)) continue;
-      const snippetMatch = /<p[^>]*>([\s\S]*?)<\/p>/i.exec(block);
-      const description = snippetMatch ? decodeHtml(snippetMatch[1]) : "";
-      const company = inferCompanyFromTitle(title, url);
-      const hitCity = cities.find((c) => `${title} ${description}`.includes(c.replace(/市$/, ""))) || "";
-      const sourceLabel = /mokahr\.com/i.test(url)
-        ? "Moka直招"
-        : /zhiye\.com/i.test(url)
-          ? "北森直招"
-          : /feishu\.cn|bytedance\.com/i.test(url)
-            ? "飞书直招"
-            : "全网检索";
-      out.push({
-        company,
-        title: title.slice(0, 120),
-        url,
-        location: hitCity,
-        postedAt: null,
-        description: description.slice(0, 260),
-        sourceType: "web",
-        sourceLabel,
+  const searchBing = async (searchTerms: string): Promise<BoardJob[]> => {
+    const endpoint = `https://cn.bing.com/search?q=${encodeURIComponent(searchTerms)}&count=15`;
+    try {
+      const res = await fetch(endpoint, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+          "Accept-Language": "zh-CN,zh;q=0.9",
+        },
+        signal: AbortSignal.timeout(7000),
       });
+      if (!res.ok) return [];
+      const html = await res.text();
+      const out: BoardJob[] = [];
+      const blocks = html.split(/<li[^>]+class=["'][^"']*b_algo[^"']*["'][^>]*>/i).slice(1, 16);
+      for (const block of blocks) {
+        const linkMatch = /<h2[^>]*>[\s\S]*?<a[^>]+href=["'](https?:\/\/[^"']+)["'][^>]*>([\s\S]*?)<\/a>/i.exec(block);
+        if (!linkMatch) continue;
+        const url = linkMatch[1].replace(/&amp;/g, "&");
+        const title = decodeHtml(linkMatch[2]);
+        if (!title || /baidu\.com\/s\?|bing\.com\/ck\/|zhihu\.com\/question/i.test(url)) continue;
+        const snippetMatch = /<p[^>]*>([\s\S]*?)<\/p>/i.exec(block);
+        const description = snippetMatch ? decodeHtml(snippetMatch[1]) : "";
+        const company = inferCompanyFromTitle(title, url);
+        const hitCity = cities.find((c) => `${title} ${description}`.includes(c.replace(/市$/, ""))) || "";
+        const sourceLabel = /mokahr\.com/i.test(url)
+          ? "Moka直招"
+          : /zhiye\.com/i.test(url)
+            ? "北森直招"
+            : /feishu\.cn|bytedance\.com/i.test(url)
+              ? "飞书直招"
+              : "全网检索";
+        out.push({
+          company,
+          title: title.slice(0, 120),
+          url,
+          location: hitCity,
+          postedAt: null,
+          description: description.slice(0, 260),
+          sourceType: "web",
+          sourceLabel,
+        });
+      }
+      return out;
+    } catch {
+      return [];
     }
-    return out;
-  } catch {
-    return [];
-  }
+  };
+  const cityHint = cities[0] ? ` ${cities[0]}` : "";
+  const primary = await searchBing(`${query}${cityHint} ${kindSuffix} ${atsFilter}`.trim());
+  if (primary.length >= 4 || !cityHint) return primary;
+  const fallback = await searchBing(`${query} ${kindSuffix} ${atsFilter}`.trim());
+  const seen = new Set(primary.map((item) => item.url));
+  return [...primary, ...fallback.filter((item) => !seen.has(item.url))];
 }
 
 const normal = (text: string) => text.toLowerCase().replace(/[\s（）()【】\[\]·\-—_/|,，、]/g, "");
@@ -253,7 +259,7 @@ export async function findJobs(
     const all = [...directory, ...BUILT_IN_BOARDS.filter((board) => !directory.some((entry) => boardKey(entry.careers_url) === boardKey(board.careers_url))).map((board) => ({ ...board, aliases: [] as string[] }))];
     const named = all.filter((board) => terms.some((term) => [board.name, ...board.aliases].some((name) => normal(name).includes(normal(term)) || normal(term).includes(normal(name)))));
     keywords = named.length ? terms.filter((term) => !named.some((board) => [board.name, ...board.aliases].some((name) => normal(name).includes(normal(term)) || normal(term).includes(normal(name))))) : terms;
-    const boards = (named.length ? named : all).slice(0, 20).map((board) => ({ name: board.name, careers_url: board.careers_url, keywords: keywords.length ? [keywords.join(" ")] : [] }));
+    const boards = (named.length ? named : all).slice(0, 32).map((board) => ({ name: board.name, careers_url: board.careers_url, keywords: keywords.slice(0, 3) }));
     try {
       boardResults = await runBoards(boards);
     } catch (err) {

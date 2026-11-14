@@ -452,7 +452,7 @@ function savePreviewDraft() {
         label: String(label || "").slice(0, 500),
         fieldKey: String(fieldKey || "").slice(0, 1000),
         ...(section ? { section: String(section).slice(0, 200) } : {}),
-        value: String(value || ""),
+        value: String(value || "").slice(0, 20000),
         ref,
         selected,
         remember,
@@ -671,9 +671,11 @@ const selectedBatchTabIds = new Set();
 
 function renderBatchQueue(queue = []) {
   const pending = queue.filter((item) => item.status !== "confirmed").length;
+  const active = queue.some((item) => item.status === "queued" || item.status === "filling");
   $("batch-badge").hidden = queue.length === 0;
   $("batch-badge").textContent = pending ? `${pending} 待处理` : `${queue.length}`;
   $("batch-queue-wrap").hidden = queue.length === 0;
+  if ($("batch-stop")) $("batch-stop").hidden = !active;
   const list = $("batch-queue");
   list.textContent = "";
   for (const item of queue) {
@@ -692,7 +694,8 @@ function renderBatchQueue(queue = []) {
     meta.append(title, pill);
     const msg = document.createElement("div");
     msg.className = "hint";
-    msg.textContent = item.message || `已填 ${item.filled || 0} 项 / 需手填 ${item.manual || 0} 项`;
+    const attachNote = item.uploaded > 0 ? ` · 附件 ${item.uploaded} 份` : "";
+    msg.textContent = item.message || `已填 ${item.filled || 0} 项 / 需手填 ${item.manual || 0} 项${attachNote}`;
     const actions = document.createElement("div");
     actions.className = "batch-actions";
     const openBtn = document.createElement("button");
@@ -823,6 +826,10 @@ $("batch-run").addEventListener("click", async () => {
   message(`已将 ${ids.length} 个标签页加入批量填写队列`);
 });
 $("batch-clear-done").addEventListener("click", () => send("batchClearDone").then((res) => renderBatchQueue(res.queue || [])).catch(() => {}));
+$("batch-stop")?.addEventListener("click", () => send("batchStop").then((res) => {
+  renderBatchQueue(res.queue || []);
+  message("已暂停批量队列");
+}).catch((e) => message(e.message, "error")));
 
 async function exportRecords(format, button) {
   const original = button.textContent;

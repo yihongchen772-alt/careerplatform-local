@@ -1549,7 +1549,7 @@ async function fillCustomSelects(pairs, taskId) {
   // without its province ("深圳") is found by looking one level down.
   async function fillCascader(container, value) {
     const ant = !container.classList.contains("el-cascader");
-    const columns = () => Array.from(document.querySelectorAll(ant ? ".ant-cascader-dropdown:not(.ant-select-dropdown-hidden) .ant-cascader-menu" : ".el-cascader__dropdown .el-cascader-menu")).filter(visible);
+    const columns = () => qAll(ant ? ".ant-cascader-dropdown:not(.ant-select-dropdown-hidden) .ant-cascader-menu" : ".el-cascader__dropdown .el-cascader-menu").filter(visible);
     const items = (column) => Array.from(column.querySelectorAll(ant ? ".ant-cascader-menu-item" : ".el-cascader-node")).filter((item) => visible(item) && !/disabled/.test(item.className));
     const text = (item) => clean((item.querySelector(".ant-cascader-menu-item-content, .el-cascader-node__label") || item).textContent);
     const SUFFIX = /(?:特别行政区|维吾尔自治区|壮族自治区|回族自治区|自治区|自治州|地区|省|市|盟|区|县)$/;
@@ -1599,7 +1599,7 @@ async function fillCustomSelects(pairs, taskId) {
   // is searchable, else expand collapsed nodes a few at a time until a leaf
   // that reads like the wanted text shows up.
   const TREE_NODES = ".ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-tree-treenode, .el-select-dropdown:not([style*='display: none']) .el-tree-node, [role='tree'] [role='treeitem'], .ud__select__dropdown .ud__tree__node";
-  const treeNodes = () => Array.from(document.querySelectorAll(TREE_NODES)).filter((node) => visible(node) && !node.closest(".ant-select-dropdown-hidden"));
+  const treeNodes = () => qAll(TREE_NODES).filter((node) => visible(node) && !node.closest(".ant-select-dropdown-hidden"));
   const treeRow = (node) => node.querySelector(":scope > .el-tree-node__content") || node.querySelector(".ant-select-tree-node-content-wrapper, .ud__tree__node__label") || node;
   const treeText = (node) => clean((node.querySelector(".ant-select-tree-title, .el-tree-node__label, .ud__tree__node__label") || treeRow(node)).textContent);
   const treeCollapsed = (node) => node.querySelector(".ant-select-tree-switcher_close") || node.querySelector(":scope > .el-tree-node__content > .el-tree-node__expand-icon:not(.is-leaf):not(.expanded)") || (node.getAttribute("aria-expanded") === "false" ? treeRow(node) : null);
@@ -2118,10 +2118,10 @@ function trackUserEdits() {
     if (event.isTrusted) document.__cpLastPointer = { el: origin(event), at: Date.now() };
   }, true);
   let selected = null;
-  const shownValue = (el) => (el.querySelector(".ant-select-selection-item, .ud__select__selector__selectItem, .phoenix-select__tipEle, [class*='sd-Input-display-value'], .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent)")?.textContent || el.value || (el.matches("button, [role='combobox']") ? el.textContent : "") || "").trim();
+  const shownValue = (el) => (el.querySelector(".ant-select-selection-item, .n-base-selection-input__content, .n-base-selection-tag-wrapper, .ud__select__selector__selectItem, .phoenix-select__tipEle, [class*='sd-Input-display-value'], .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent)")?.textContent || el.value || (el.matches("button, [role='combobox']") ? el.textContent : "") || "").trim();
   document.addEventListener("pointerdown", (event) => {
     if (!event.isTrusted) return;
-    const el = origin(event)?.closest?.(".ant-select, .el-select, .el-cascader, .ud__select__selector, .phoenix-select, [class*='sd-Select-container'], [data-cp-generic-select], [role='combobox'], button[aria-haspopup='listbox']");
+    const el = origin(event)?.closest?.(".ant-select, .el-select, .el-cascader, .n-select, .ud__select__selector, .phoenix-select, [class*='sd-Select-container'], [data-cp-generic-select], [role='combobox'], button[aria-haspopup='listbox']");
     if (el) selected = { el, at: Date.now(), value: shownValue(el) };
   }, true);
   document.addEventListener("click", (event) => {
@@ -2307,7 +2307,7 @@ function readFieldValues(ids) {
     if (el.getAttribute("role") === "radiogroup") return clean(el.querySelector("[role='radio'][aria-checked='true']")?.textContent);
     if (el.isContentEditable && tag !== "input" && tag !== "textarea") return String(el.innerText || "").trim();
     if (tag === "input" || tag === "textarea") return String(el.value || "").trim();
-    const shown = el.querySelector(".ant-select-selection-item, .ant-select-selection-selected-value, .atsx-select-selection-selected-value, .ud__select__selector__selectItem, .phoenix-select__tipEle, .semi-select-selection-text, .arco-select-view-value, .t-select__single, [class*='sd-Input-display-value'], .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text");
+    const shown = el.querySelector(".ant-select-selection-item, .ant-select-selection-selected-value, .n-base-selection-input__content, .n-base-selection-tag-wrapper, .atsx-select-selection-selected-value, .ud__select__selector__selectItem, .phoenix-select__tipEle, .semi-select-selection-text, .arco-select-view-value, .t-select__single, [class*='sd-Input-display-value'], .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text");
     if (shown && clean(shown.textContent) && !PLACEHOLDER_TEXT.test(clean(shown.textContent))) return clean(shown.textContent);
     const input = el.querySelector("input:not([type='hidden'])");
     if (input && clean(input.value) && !PLACEHOLDER_TEXT.test(clean(input.value))) return clean(input.value);
@@ -2366,7 +2366,7 @@ function clearSavedUserEdits(saved) {
     if (el.getAttribute("role") === "radiogroup") return clean(el.querySelector("[role='radio'][aria-checked='true']")?.textContent);
     if (el.isContentEditable && tag !== "input" && tag !== "textarea") return String(el.innerText || "").trim();
     if (tag === "input" || tag === "textarea") return String(el.value || "").trim();
-    const shown = el.querySelector(".ant-select-selection-item, .ant-select-selection-selected-value, .atsx-select-selection-selected-value, .ud__select__selector__selectItem, .phoenix-select__tipEle, .semi-select-selection-text, .arco-select-view-value, .t-select__single, [class*='sd-Input-display-value'], .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text");
+    const shown = el.querySelector(".ant-select-selection-item, .ant-select-selection-selected-value, .n-base-selection-input__content, .n-base-selection-tag-wrapper, .atsx-select-selection-selected-value, .ud__select__selector__selectItem, .phoenix-select__tipEle, .semi-select-selection-text, .arco-select-view-value, .t-select__single, [class*='sd-Input-display-value'], .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text");
     if (shown && clean(shown.textContent) && !PLACEHOLDER_TEXT.test(clean(shown.textContent))) return clean(shown.textContent);
     const input = el.querySelector("input:not([type='hidden'])");
     if (input && clean(input.value) && !PLACEHOLDER_TEXT.test(clean(input.value))) return clean(input.value);
@@ -4302,7 +4302,7 @@ function showPageStatus(payload) {
   const root = host.shadowRoot;
   root.textContent = "";
   const style = document.createElement("style");
-  style.textContent = ".box{box-sizing:border-box;width:340px;max-height:60vh;overflow:auto;padding:12px 14px;border-radius:12px;background:#fff;color:#1f2328;border:1px solid #d0d7de;box-shadow:0 8px 24px rgba(0,0,0,.18);font:13px/1.55 -apple-system,'PingFang SC','Microsoft YaHei',sans-serif}.error{border-color:#f5a3a3;background:#fff5f5}.head{display:flex;justify-content:space-between;gap:8px;font-weight:600;margin-bottom:4px}.close{cursor:pointer;border:0;background:none;font-size:16px;line-height:1;color:#57606a}ul{margin:6px 0 0;padding-left:18px}li{margin:1px 0}.manual{margin-top:6px;color:#b42318}";
+  style.textContent = ".box{box-sizing:border-box;width:340px;max-height:60vh;overflow:auto;padding:12px 14px;border-radius:12px;background:#fff;color:#1f2328;border:1px solid #d0d7de;box-shadow:0 8px 24px rgba(0,0,0,.18);font:13px/1.55 -apple-system,'PingFang SC','Microsoft YaHei',sans-serif}.error{border-color:#f5a3a3;background:#fff5f5}.head{display:flex;justify-content:space-between;gap:8px;font-weight:600;margin-bottom:4px}.close{cursor:pointer;border:0;background:none;font-size:16px;line-height:1;color:#57606a}ul{margin:6px 0 0;padding-left:18px}li{margin:1px 0}.manual{margin-top:6px;color:#b42318}@media(prefers-color-scheme:dark){.box{background:#1c1c1e;color:#f5f5f7;border-color:rgba(255,255,255,.16);box-shadow:0 12px 32px rgba(0,0,0,.45)}.error{border-color:#8b2c2c;background:#2c181a}.close{color:#a1a1aa}.manual{color:#ff8080}}";
   const box = document.createElement("div");
   box.className = "box" + (payload.phase === "error" ? " error" : "");
   const head = document.createElement("div");
@@ -4487,8 +4487,9 @@ function readBackFilled(ids) {
     if (el.matches("input, textarea")) { if (!String(el.value || "").trim()) lost.push(id); continue; }
     if (el.matches("select")) continue;
     if (el.isContentEditable) { if (!String(el.innerText || "").trim()) lost.push(id); continue; }
-    const input = el.querySelector("input:not([type='hidden']):not([type='checkbox']):not([type='radio'])");
-    const shown = clean(el.innerText);
+    const rootScope = el.shadowRoot || el;
+    const input = rootScope.querySelector("input:not([type='hidden']):not([type='checkbox']):not([type='radio'])");
+    const shown = clean(el.innerText || (el.shadowRoot ? el.shadowRoot.textContent : ""));
     const val = clean(input?.value);
     if ((!shown || PLACEHOLDER_TEXT.test(shown)) && (!val || PLACEHOLDER_TEXT.test(val))) lost.push(id);
   }
@@ -4840,6 +4841,8 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
           major: profile.major, degree: profile.degree, gpa: profile.gpa, educationStart: profile.educationStart, educationEnd: profile.educationEnd,
           latestCompany: profile.latestCompany, latestRole: profile.latestRole, politics: profile.politics, hometown: profile.hometown,
           ethnicity: profile.ethnicity, english: profile.english, currentCity: profile.currentCity, targetRole: profile.targetRole,
+          expectedSalary: profile.expectedSalary, availableFrom: profile.availableFrom, researchDirection: profile.researchDirection, researchTopic: profile.researchTopic,
+          employmentStatus: profile.employmentStatus, workYears: profile.workYears, noticePeriod: profile.noticePeriod, leaveReason: profile.leaveReason, managementScale: profile.managementScale,
           selfIntro: profile.selfIntro, extra: profile.extra,
         };
         const answerRes = await adapter.api("answer-questions", {

@@ -875,12 +875,15 @@ export function EmbeddedBrowser({
     const targetTabId = targetId ?? activeIdRef.current;
     if (targetTabId !== null && busyTabsRef.current.has(targetTabId)) return;
     if (!fillModules.length) { toast.info("请先在「填写范围」里至少勾选一个模块"); return; }
+    const boundTab = targetTabId !== null ? tabsState.tabs.find((t) => t.id === targetTabId) : null;
+    const chosenResumeId = extra.resumeVersionId ?? boundTab?.resumeVersionId ?? (resumeVersionId || undefined);
+    const chosenVariantId = extra.variantId ?? boundTab?.variantId ?? (variantChoice || undefined);
     if (extra.mode !== "preview") lastFill.current = extra;
     if (targetTabId !== null) busyTabsRef.current.add(targetTabId);
     setDetected(null);
     setAutofilling(true);
     setStatus((old) => ({ phase: "scanning", message: extra.forceRefill ? "正在清空上次自动填写并重填…" : "正在读取页面…", plan: old?.plan }));
-    bridge.autofill(resumeVersionId || undefined, { expandBlocks, saveBlocks: expandBlocks && saveBlocks, variantId: variantChoice || undefined, modules: fillModules, positionId: positionId || undefined, ...extra })
+    bridge.autofill(chosenResumeId, { expandBlocks, saveBlocks: expandBlocks && saveBlocks, variantId: chosenVariantId, modules: fillModules, positionId: positionId || undefined, ...extra })
       .then((res) => {
         if (res === null && targetTabId !== null) {
           busyTabsRef.current.delete(targetTabId);
@@ -1777,6 +1780,8 @@ export function EmbeddedBrowser({
           setPendingListOpen(false);
           handleAutofill({
             forceRefill: true,
+            resumeVersionId: tab.resumeVersionId || undefined,
+            variantId: tab.variantId || undefined,
             positionId: tab.positionId || tab.batchMeta?.positionId || jobBindings[tab.id] || undefined,
           }, tab.id);
         }}

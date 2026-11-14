@@ -93,7 +93,10 @@
       <div id="batch-queue-wrap" hidden>
         <div class="batch-head">
           <strong>待确认清单</strong>
-          <button id="batch-clear-done" type="button">清理已确认</button>
+          <div class="row">
+            <button id="batch-stop" type="button" hidden>暂停队列</button>
+            <button id="batch-clear-done" type="button">清理已确认</button>
+          </div>
         </div>
         <div id="batch-queue"></div>
       </div>

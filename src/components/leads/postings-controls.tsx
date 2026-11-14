@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Check, Loader2, Plus, RefreshCw, Search, Sparkles, Unlink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { addPostingToPool, enableBuiltinPostingFeed, removePostingSource, savePostingSource, syncPostingSource, syncStalePostingSources, type SyncSummary } from "@/lib/actions/campus-postings";
+import { addPostingToPool, enableBuiltinPostingFeed, removePostingSource, savePostingSource, syncAllPostingSources, syncPostingSource, syncStalePostingSources, type SyncSummary } from "@/lib/actions/campus-postings";
 
 function summaryText(result: SyncSummary) {
   const parts = [`共 ${result.total} 条`];
@@ -73,11 +73,13 @@ export function SubscribeCard() {
 /** 立即同步 / 取消订阅, plus a quiet sync when the last one is over 12 hours old. */
 export function SyncControls({
   sourceId,
+  sources,
   stale,
   hasBuiltinFeed = false,
   hasFeishuSheet = true,
 }: {
   sourceId: string;
+  sources?: { id: string; name: string }[];
   stale: boolean;
   hasBuiltinFeed?: boolean;
   hasFeishuSheet?: boolean;
@@ -89,10 +91,15 @@ export function SyncControls({
   const [sheetLink, setSheetLink] = useState("");
   const [savingSheet, startSaveSheet] = useTransition();
   const autoRan = useRef(false);
+  const sourceList = sources && sources.length > 0 ? sources : [{ id: sourceId, name: "当前数据源" }];
   async function sync(auto: boolean) {
     setSyncing(true);
     try {
-      const result = auto ? await syncStalePostingSources() : await syncPostingSource(sourceId);
+      const result = auto
+        ? await syncStalePostingSources()
+        : sourceList.length > 1
+          ? await syncAllPostingSources()
+          : await syncPostingSource(sourceId);
       if (!result.ok) { if (!auto) toast.error(result.message); return; }
       if (result.data && (!auto || result.data.added || result.data.updated)) toast.success(`招聘信息池已同步：${summaryText(result.data)}`);
       router.refresh();
@@ -162,12 +169,31 @@ export function SyncControls({
           </Button>
         </form>
       )}
-      <Button size="sm" variant="outline" disabled={syncing} onClick={() => void sync(false)}>{syncing ? <Loader2 className="animate-spin" /> : <RefreshCw />}{syncing ? "同步中…" : "立即同步"}</Button>
-      <Button size="sm" variant="ghost" disabled={syncing} title="取消订阅并清掉该源同步来的信息（已加入候选池的岗位保留）" onClick={async () => {
-        if (!window.confirm("取消订阅这个数据源？同步来的招聘信息会清掉，已加入候选岗位池的不受影响。")) return;
-        const result = await removePostingSource(sourceId);
-        if (!result.ok) toast.error(result.message); else router.refresh();
-      }}><Unlink />取消订阅</Button>
+      <Button size="sm" variant="outline" disabled={syncing} onClick={() => void sync(false)}>{syncing ? <Loader2 className="animate-spin" /> : <RefreshCw />}{syncing ? "同步中…" : sourceList.length > 1 ? "全部同步" : "立即同步"}</Button>
+      {sourceList.length === 1 ? (
+        <Button size="sm" variant="ghost" disabled={syncing} title="取消订阅并清掉该源同步来的信息（已加入候选池的岗位保留）" onClick={async () => {
+          if (!window.confirm("取消订阅这个数据源？同步来的招聘信息会清掉，已加入候选岗位池的不受影响。")) return;
+          const result = await removePostingSource(sourceId);
+          if (!result.ok) toast.error(result.message); else router.refresh();
+        }}><Unlink />取消订阅</Button>
+      ) : (
+        sourceList.map((s) => (
+          <Button
+            key={s.id}
+            size="sm"
+            variant="ghost"
+            disabled={syncing}
+            title={`移除数据源「${s.name}」`}
+            onClick={async () => {
+              if (!window.confirm(`移除数据源「${s.name}」？它同步来的信息会清掉，已加入候选池的保留。`)) return;
+              const result = await removePostingSource(s.id);
+              if (!result.ok) toast.error(result.message); else router.refresh();
+            }}
+          >
+            <Unlink />移除{s.name.slice(0, 6)}
+          </Button>
+        ))
+      )}
     </div>
   );
 }

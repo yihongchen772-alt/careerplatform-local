@@ -626,6 +626,7 @@ async function runAgentTurn(tabId, text) {
 
 const BATCH_KEY = "batch-queue";
 let batchDraining = false;
+let batchStopRequested = false;
 
 async function readBatchQueue() {
   return (await chrome.storage.session.get(BATCH_KEY))[BATCH_KEY] || [];
@@ -642,16 +643,18 @@ async function updateBatchItem(tabId, patch) {
   await writeBatchQueue(next);
 }
 
-async function drainBatchQueue(options) {
+async function drainBatchQueue(fallbackOptions = {}) {
   if (batchDraining) return;
   batchDraining = true;
+  batchStopRequested = false;
   const stop = keepAlive();
   try {
     const worker = async () => {
-      while (true) {
+      while (!batchStopRequested) {
         const list = await readBatchQueue();
         const nextItem = list.find((item) => item.status === "queued");
         if (!nextItem) return;
+        const itemOptions = nextItem.options ? { ...fallbackOptions, ...nextItem.options } : fallbackOptions;
         await updateBatchItem(nextItem.tabId, { status: "filling", message: "正在自动填写…" });
         try {
           const tab = await chrome.tabs.get(nextItem.tabId);
@@ -659,22 +662,29 @@ async function drainBatchQueue(options) {
             await updateBatchItem(nextItem.tabId, { status: "error", message: "非网页标签页，已跳过" });
             continue;
           }
-          const result = await fillTab(nextItem.tabId, options);
+          const result = await fillTab(nextItem.tabId, itemOptions);
+          if (batchStopRequested) break;
           const filled = result?.summary?.filled || 0;
           const manual = result?.summary?.manual || 0;
+          const uploaded = result?.summary?.uploaded || 0;
+          const uploadedNames = Array.isArray(result?.summary?.uploadedAttachments) ? result.summary.uploadedAttachments : [];
           const page = filled === 0 ? await pageInfo(nextItem.tabId).catch(() => ({ text: "" })) : null;
           const needsLogin = result?.phase === "error"
             ? false
             : filled === 0 && /登录|注册|请先登录|扫码登录|sign in|log in|verify|验证码/i.test((page?.text || "").slice(0, 1500));
+          const attachNote = uploaded > 0 ? `，附传 ${uploaded} 份附件` : "";
           await updateBatchItem(nextItem.tabId, {
             title: tab.title || nextItem.title,
             url: tab.url || nextItem.url,
             status: needsLogin ? "needs_login" : result?.phase === "error" ? "error" : "ready",
             filled,
             manual,
-            message: needsLogin ? "可能需要登录或验证，完成后点「重填」" : (result?.message || `已填 ${filled} 项，待确认提交`),
+            uploaded,
+            uploadedNames,
+            message: needsLogin ? "可能需要登录或验证，完成后点「重填」" : (result?.message || `已填 ${filled} 项${attachNote}，待确认提交`),
           });
         } catch (err) {
+          if (batchStopRequested) break;
           await updateBatchItem(nextItem.tabId, { status: "error", message: err?.message || "标签页已关闭或无法访问" });
         }
       }
@@ -834,6 +844,9 @@ const handlers = {
         status: "queued",
         filled: 0,
         manual: 0,
+        uploaded: 0,
+        uploadedNames: [],
+        options,
         message: "排队等待自动填写…",
         updatedAt: Date.now(),
       });
@@ -844,9 +857,25 @@ const handlers = {
     return { started: true, queue };
   },
   async batchRefill({ tabId, ...options }) {
-    await updateBatchItem(tabId, { status: "queued", message: "重新排队填写…" });
-    drainBatchQueue({ ...options, forceRefill: true });
+    const list = await readBatchQueue();
+    const existing = list.find((item) => item.tabId === tabId);
+    const mergedOptions = { ...(existing?.options || {}), ...options, forceRefill: true };
+    await updateBatchItem(tabId, { status: "queued", options: mergedOptions, message: "重新排队填写…" });
+    drainBatchQueue(mergedOptions);
     return { started: true };
+  },
+  async batchStop() {
+    batchStopRequested = true;
+    const list = await readBatchQueue();
+    const next = list.map((item) => {
+      if (item.status === "filling") cancelFill(item.tabId);
+      if (item.status === "queued" || item.status === "filling") {
+        return { ...item, status: "error", message: "已暂停批量填写", updatedAt: Date.now() };
+      }
+      return item;
+    });
+    await writeBatchQueue(next);
+    return { stopped: true, queue: next };
   },
   async batchRemove({ tabId }) {
     const next = (await readBatchQueue()).filter((item) => item.tabId !== tabId);

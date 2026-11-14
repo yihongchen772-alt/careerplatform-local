@@ -54,6 +54,35 @@ export async function syncPostingSource(sourceId: string): Promise<ActionResult<
   });
 }
 
+/** Manual sync of all subscribed posting sources (built-in Moka/Beisen/Feishu feed + any Feishu sheets). */
+export async function syncAllPostingSources(): Promise<ActionResult<SyncSummary>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const sources = await db.postingSource.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } });
+    if (!sources.length) throw new UserFacingError("还没有开启直招池或订阅招聘表");
+    const results: SyncSummary[] = [];
+    const errors: string[] = [];
+    for (const src of sources) {
+      try {
+        results.push(await syncSource(user.id, src.id));
+      } catch (err) {
+        errors.push(`${src.name || "数据源"}：${err instanceof Error ? err.message : "同步失败"}`);
+      }
+    }
+    if (!results.length && errors.length) throw new UserFacingError(errors[0]);
+    return {
+      name: results.map((r) => r.name).filter(Boolean).join(" + ") || "招聘信息池",
+      total: results.reduce((sum, r) => sum + r.total, 0),
+      added: results.reduce((sum, r) => sum + r.added, 0),
+      updated: results.reduce((sum, r) => sum + r.updated, 0),
+      removed: results.reduce((sum, r) => sum + r.removed, 0),
+      fresh: results.reduce((sum, r) => sum + r.fresh, 0),
+      freshMine: results.reduce((sum, r) => sum + r.freshMine, 0),
+      freshClosing: results.reduce((sum, r) => sum + r.freshClosing, 0),
+    };
+  });
+}
+
 /** Opening the page: a sheet not looked at in the last 12 hours is checked (and synced if it changed). */
 export async function syncStalePostingSources(): Promise<ActionResult<SyncSummary | null>> {
   return toActionResult(async () => {

@@ -356,10 +356,7 @@ export function ApplicationProfileCard({
               <Button size="sm" variant="outline" disabled={awardsView.rows.length >= 30 || (!!activeVariant && !awardsView.custom)} onClick={() => updateSection("awards", (rows) => [...rows, { ...emptyAward }])}><Plus className="size-4" />添加奖项</Button>
             </div>
           </div>
-          {awardsView.rows.map((award, i) => <RecordShell key={i} className="sm:grid-cols-2" startOpen={!award.name} summary={[award.name, award.level, award.date].filter(Boolean).join(" · ")} onDelete={() => {
-            if (activeVariant && !awardsView.custom) setVariant({ awards: profile.awards.filter((_, j) => j !== i).map((item) => ({ ...item })) });
-            else updateSection("awards", (rows) => rows.filter((_, j) => j !== i));
-          }}>
+          {awardsView.rows.map((award, i) => <RecordShell key={i} className="sm:grid-cols-2" startOpen={!award.name} summary={[award.name, award.level, award.date].filter(Boolean).join(" · ")} onDelete={activeVariant && !awardsView.custom ? undefined : () => updateSection("awards", (rows) => rows.filter((_, j) => j !== i))}>
             {([["name", "奖项名称"], ["issuer", "颁发单位"], ["level", "等级"], ["date", "获奖时间"]] as const).map(([key, label]) => <Field key={key} label={label}><Input value={award[key]} disabled={!!activeVariant && !awardsView.custom} onChange={(event) => updateSection("awards", (rows) => rows.map((item, j) => j === i ? { ...item, [key]: event.target.value } : item))} /></Field>)}
             <Field label="补充说明" className="sm:col-span-2"><Textarea value={award.description} disabled={!!activeVariant && !awardsView.custom} onChange={(event) => updateSection("awards", (rows) => rows.map((item, j) => j === i ? { ...item, description: event.target.value } : item))} /></Field>
           </RecordShell>)}
@@ -387,10 +384,7 @@ export function ApplicationProfileCard({
             </div>
           </div>
           {!campusView.rows.length && <p className="text-xs text-muted-foreground">学生会、社团、班级职务等。很多网申有「校内任职 / 学生干部」一栏，填了就能自动填。</p>}
-          {campusView.rows.map((row, i) => <RecordShell key={i} className="sm:grid-cols-2" startOpen={!row.name} summary={[row.name, row.role, row.level, [row.start, row.end].filter(Boolean).join(" – ")].filter(Boolean).join(" · ")} onDelete={() => {
-            if (activeVariant && !campusView.custom) setVariant({ campus: (profile.campus ?? []).filter((_, j) => j !== i).map((item) => ({ ...item })) });
-            else updateSection("campus", (rows) => rows.filter((_, j) => j !== i));
-          }}>
+          {campusView.rows.map((row, i) => <RecordShell key={i} className="sm:grid-cols-2" startOpen={!row.name} summary={[row.name, row.role, row.level, [row.start, row.end].filter(Boolean).join(" – ")].filter(Boolean).join(" · ")} onDelete={activeVariant && !campusView.custom ? undefined : () => updateSection("campus", (rows) => rows.filter((_, j) => j !== i))}>
             {([["name", "组织 / 社团", "东南大学学生会"], ["role", "担任职务", "外联部部长"], ["level", "级别", "校级 / 院级 / 班级"], ["start", "开始", "2021-09"], ["end", "结束", "2022-06"]] as const).map(([key, label, hint]) => <Field key={key} label={label}><Input value={row[key]} disabled={!!activeVariant && !campusView.custom} placeholder={hint} onChange={(event) => updateSection("campus", (rows) => rows.map((item, j) => j === i ? { ...item, [key]: event.target.value } : item))} /></Field>)}
             <Field label="做了什么" className="sm:col-span-2"><Textarea rows={2} value={row.description} disabled={!!activeVariant && !campusView.custom} onChange={(event) => updateSection("campus", (rows) => rows.map((item, j) => j === i ? { ...item, description: event.target.value } : item))} /></Field>
           </RecordShell>)}
@@ -418,10 +412,7 @@ export function ApplicationProfileCard({
             </div>
           </div>
           {!skillsView.rows.length && <p className="text-xs text-muted-foreground">Python、MATLAB、SolidWorks 等，一项一条。Moka、网易、中国移动等网申的「技能名称 / 掌握程度」一栏会按这里填。</p>}
-          {skillsView.rows.map((row, i) => <RecordShell key={i} className="sm:grid-cols-3" startOpen={!row.name} summary={[row.name, row.level, row.category].filter(Boolean).join(" · ")} onDelete={() => {
-            if (activeVariant && !skillsView.custom) setVariant({ skills: (profile.skills ?? []).filter((_, j) => j !== i).map((item) => ({ ...item })) });
-            else updateSection("skills", (rows) => rows.filter((_, j) => j !== i));
-          }}>
+          {skillsView.rows.map((row, i) => <RecordShell key={i} className="sm:grid-cols-3" startOpen={!row.name} summary={[row.name, row.level, row.category].filter(Boolean).join(" · ")} onDelete={activeVariant && !skillsView.custom ? undefined : () => updateSection("skills", (rows) => rows.filter((_, j) => j !== i))}>
             {([["name", "技能名称", "Python"], ["level", "掌握程度", "了解 / 熟悉 / 熟练 / 精通"], ["category", "类别", "编程语言 / 软件工具"]] as const).map(([key, label, hint]) => <Field key={key} label={label}><Input value={row[key]} disabled={!!activeVariant && !skillsView.custom} placeholder={hint} onChange={(event) => updateSection("skills", (rows) => rows.map((item, j) => j === i ? { ...item, [key]: event.target.value } : item))} /></Field>)}
             <Field label="补充说明（可选）" className="sm:col-span-3"><Input value={row.description} disabled={!!activeVariant && !skillsView.custom} placeholder="用它做过什么" onChange={(event) => updateSection("skills", (rows) => rows.map((item, j) => j === i ? { ...item, description: event.target.value } : item))} /></Field>
           </RecordShell>)}
@@ -449,10 +440,7 @@ export function ApplicationProfileCard({
             </div>
           </div>
           {!languagesView.rows.length && <p className="text-xs text-muted-foreground">四六级、雅思、托福等，一门考试一条。网申里的「语言分数 / 雅思成绩 / 考试类型」会按这里填；下面「英语水平」空着时也用它。</p>}
-          {languagesView.rows.map((row, i) => <RecordShell key={i} className="sm:grid-cols-4" startOpen={!row.name} summary={[row.language, row.name, row.score, row.date].filter(Boolean).join(" · ")} onDelete={() => {
-            if (activeVariant && !languagesView.custom) setVariant({ languages: (profile.languages ?? []).filter((_, j) => j !== i).map((item) => ({ ...item })) });
-            else updateSection("languages", (rows) => rows.filter((_, j) => j !== i));
-          }}>
+          {languagesView.rows.map((row, i) => <RecordShell key={i} className="sm:grid-cols-4" startOpen={!row.name} summary={[row.language, row.name, row.score, row.date].filter(Boolean).join(" · ")} onDelete={activeVariant && !languagesView.custom ? undefined : () => updateSection("languages", (rows) => rows.filter((_, j) => j !== i))}>
             {([["name", "考试 / 证书", "CET-6 / 雅思"], ["score", "分数", "580 / 7.0"], ["language", "语种", "英语（可不填）"], ["date", "考试时间", "2023-06"]] as const).map(([key, label, hint]) => <Field key={key} label={label}><Input value={row[key]} disabled={!!activeVariant && !languagesView.custom} placeholder={hint} onChange={(event) => updateSection("languages", (rows) => rows.map((item, j) => j === i ? { ...item, [key]: event.target.value } : item))} /></Field>)}
           </RecordShell>)}
         </section>
@@ -466,7 +454,7 @@ export function ApplicationProfileCard({
                 <Input
                   value={view.extras[f.key] ?? ""}
                   onChange={(ev) => setView((v) => ({ ...v, extras: { ...v.extras, [f.key]: ev.target.value } }))}
-                  placeholder={f.hint}
+                  placeholder={activeVariant && profile.extras[f.key] ? `默认：${profile.extras[f.key]}` : f.hint}
                 />
               </Field>
             ))}
@@ -479,7 +467,7 @@ export function ApplicationProfileCard({
           <div className="grid gap-2 sm:grid-cols-3">
             {PERSONAL_FIELDS.map((f) => (
               <Field key={f.key} label={f.label}>
-                <Input value={view.extras[f.key] ?? ""} onChange={(ev) => setView((v) => ({ ...v, extras: { ...v.extras, [f.key]: ev.target.value } }))} placeholder={f.hint} />
+                <Input value={view.extras[f.key] ?? ""} onChange={(ev) => setView((v) => ({ ...v, extras: { ...v.extras, [f.key]: ev.target.value } }))} placeholder={activeVariant && profile.extras[f.key] ? `默认：${profile.extras[f.key]}` : f.hint} />
               </Field>
             ))}
           </div>
@@ -538,7 +526,7 @@ function Field({ label, className, children }: { label: string; className?: stri
  * One saved 经历 / 奖项 as a single summary line that opens to edit; a new,
  * still-empty one starts open. Keeps a dozen awards from filling the page.
  */
-function RecordShell({ summary, startOpen, onDelete, className, children }: { summary: string; startOpen: boolean; onDelete: () => void; className: string; children: React.ReactNode }) {
+function RecordShell({ summary, startOpen, onDelete, className, children }: { summary: string; startOpen: boolean; onDelete?: () => void; className: string; children: React.ReactNode }) {
   const [open, setOpen] = useState(startOpen);
   return (
     <div className="rounded-xl border bg-background/40">
@@ -547,7 +535,7 @@ function RecordShell({ summary, startOpen, onDelete, className, children }: { su
           <ChevronRight className={`size-3.5 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`} />
           <span className={`truncate ${summary ? "" : "text-muted-foreground"}`}>{summary || "（新的一条，展开填写）"}</span>
         </button>
-        <Button type="button" size="icon-sm" variant="ghost" aria-label="删除" title="删除" onClick={onDelete}><Trash2 className="size-3.5" /></Button>
+        {onDelete && <Button type="button" size="icon-sm" variant="ghost" aria-label="删除" title="删除" onClick={onDelete}><Trash2 className="size-3.5" /></Button>}
       </div>
       {open && <div className={`grid gap-2 border-t px-3 pb-3 pt-3 ${className}`}>{children}</div>}
     </div>

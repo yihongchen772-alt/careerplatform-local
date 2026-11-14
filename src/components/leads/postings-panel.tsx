@@ -31,6 +31,22 @@ function syncedText(at: Date | null) {
   return `${at.getMonth() + 1} 月 ${at.getDate()} 日同步`;
 }
 
+function atsLabelForUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  if (/mokahr\.com/i.test(url)) return "Moka";
+  if (/zhiye\.com/i.test(url)) return "北森";
+  if (/jobs\.feishu\.cn|jobs\.bytedance\.com/i.test(url)) return "飞书";
+  return null;
+}
+
+function profileHighestDegree(applicationProfile: unknown): string | null {
+  if (!applicationProfile || typeof applicationProfile !== "object") return null;
+  const edu = (applicationProfile as { education?: Array<{ degree?: unknown }> }).education;
+  if (!Array.isArray(edu) || !edu.length) return null;
+  const first = edu[0]?.degree;
+  return typeof first === "string" && first.trim() ? first.trim() : null;
+}
+
 /**
  * 订阅的招聘信息: a subscribed 校招信息表, filtered on the server (a sheet can
  * hold 10k+ rows). Chips with counts on top like the sheets' own 今日新增 /
@@ -47,7 +63,7 @@ export async function PostingsPanel({
 }) {
   const [sources, profile, allResumes] = await Promise.all([
     db.postingSource.findMany({ where: { userId }, orderBy: { createdAt: "asc" } }),
-    db.user.findUnique({ where: { id: userId }, select: { graduationYear: true, targetTrack: true, preferredCities: true, skills: true } }),
+    db.user.findUnique({ where: { id: userId }, select: { graduationYear: true, targetTrack: true, preferredCities: true, skills: true, applicationProfile: true } }),
     db.resumeVersion.findMany({
       where: { userId },
       orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }],
@@ -60,14 +76,26 @@ export async function PostingsPanel({
   const hasFeishuSheet = sources.some((s) => !isBuiltinFeedUrl(s.url));
   const combinedTotal = sources.reduce((sum, s) => sum + (s.total || 0), 0);
   const displayTitle = sources.map((s) => s.name || (isBuiltinFeedUrl(s.url) ? "内置名企官网每日直招池" : "校招信息表")).join(" + ");
+  const earliestFirstSynced = sources.reduce<Date | null>((min, s) => {
+    if (!s.firstSyncedAt) return min;
+    return !min || s.firstSyncedAt < min ? s.firstSyncedAt : min;
+  }, null);
+  const latestSyncedAt = sources.reduce<Date | null>((max, s) => (s.lastSyncedAt && (!max || s.lastSyncedAt > max) ? s.lastSyncedAt : max), null);
+  const latestCheckedAt = sources.reduce<Date | null>((max, s) => (s.lastCheckedAt && (!max || s.lastCheckedAt > max) ? s.lastCheckedAt : max), null);
+  const syncErrors = sources.map((s) => s.lastError).filter((e): e is string => !!e);
 
   const activeResume = (filters.resumeId ? allResumes.find((r) => r.id === filters.resumeId) : null) ?? allResumes[0] ?? null;
-  const signal = extractProfileSignal(profile, activeResume?.extractedText, activeResume?.structured);
+  const userDegree = profileHighestDegree(profile?.applicationProfile);
+  const signal = extractProfileSignal(
+    profile ? { ...profile, degree: userDegree } : null,
+    activeResume?.extractedText,
+    activeResume?.structured
+  );
   const now = new Date();
   const today = startOfDay(now);
   const graduationYear = profile?.graduationYear ?? null;
   const base = baseWhere(userId, filters, graduationYear, now);
-  const since = freshSince(source.firstSyncedAt, now);
+  const since = freshSince(earliestFirstSynced, now);
   const freshWhere = since ? { firstSeenAt: { gt: since } } : { id: "" };
   const where = { AND: [base, ...(filters.chip ? [chipWhere(filters.chip, now)] : []), ...(filters.fresh ? [freshWhere] : [])] };
   const matchSorting = (filters.sort === "match" && signal.hasSignal) || (hasBuiltinFeed && !filters.chip);
@@ -85,13 +113,13 @@ export async function PostingsPanel({
   if (matchSorting) {
     const candidates = await db.campusPosting.findMany({
       where,
-      select: { id: true, company: true, roles: true, cities: true, industry: true, cohort: true, kind: true, note: true, startDate: true },
+      select: { id: true, company: true, roles: true, cities: true, industry: true, cohort: true, degree: true, kind: true, note: true, startDate: true },
     });
     const rawRanked = candidates
       .map((item) => {
         const match = signal.hasSignal
           ? scorePostingMatch(
-              { companyName: item.company, tracks: item.roles, cities: item.cities, industry: item.industry, graduation: item.cohort, description: item.note },
+              { companyName: item.company, tracks: item.roles, cities: item.cities, industry: item.industry, graduation: item.cohort, degree: item.degree, description: item.note },
               signal
             )
           : null;
@@ -153,7 +181,7 @@ export async function PostingsPanel({
     const match = signal.hasSignal
       ? scoreMap.get(row.id) ??
         scorePostingMatch(
-          { companyName: row.company, tracks: row.roles, cities: row.cities, industry: row.industry, graduation: row.cohort, description: row.note },
+          { companyName: row.company, tracks: row.roles, cities: row.cities, industry: row.industry, graduation: row.cohort, degree: row.degree, description: row.note },
           signal
         )
       : undefined;
@@ -161,6 +189,7 @@ export async function PostingsPanel({
       id: row.id,
       company: row.company,
       isNew: !!(since && row.firstSeenAt > since),
+      atsLabel: atsLabelForUrl(row.applyUrl),
       metaText: [row.industry, row.degree, row.writtenTest].filter(Boolean).join(" · "),
       roles: row.roles,
       note: row.note,
@@ -187,10 +216,14 @@ export async function PostingsPanel({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate font-medium" title={sources.map((s) => s.url).join(" , ")}>{displayTitle}</p>
-          <p className="text-xs text-muted-foreground">共 {combinedTotal} 条 · {syncedText(source.lastSyncedAt)}{source.lastCheckedAt && source.lastSyncedAt && source.lastCheckedAt > source.lastSyncedAt ? `，${syncedText(source.lastCheckedAt).replace("同步", "检查过、没有改动")}` : ""}{source.lastError ? <span className="text-destructive"> · 上次同步失败：{source.lastError}</span> : null}</p>
+          <p className="text-xs text-muted-foreground">共 {combinedTotal} 条 · {syncedText(latestSyncedAt)}{latestCheckedAt && latestSyncedAt && latestCheckedAt > latestSyncedAt ? `，${syncedText(latestCheckedAt).replace("同步", "检查过、没有改动")}` : ""}{syncErrors.length ? <span className="text-destructive"> · 上次同步失败：{syncErrors[0]}</span> : null}</p>
         </div>
         <SyncControls
           sourceId={source.id}
+          sources={sources.map((s) => ({
+            id: s.id,
+            name: s.name || (isBuiltinFeedUrl(s.url) ? "内置直招池" : "校招信息表"),
+          }))}
           stale={sources.some((s) => !s.lastSyncedAt || now.getTime() - (s.lastCheckedAt ?? s.lastSyncedAt).getTime() > STALE_MS)}
           hasBuiltinFeed={hasBuiltinFeed}
           hasFeishuSheet={hasFeishuSheet}
@@ -253,7 +286,7 @@ export async function PostingsPanel({
         {(filters.q || filters.page > 1 || Object.keys(hidden).length > 0) && <Link href="/leads?view=postings" className="text-primary hover:underline">清除筛选</Link>}
       </p>
       {rows.length === 0 ? (
-        <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">没有符合条件的招聘信息{source.lastSyncedAt ? "，换个筛选试试" : "，正在同步…"}</p>
+        <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">没有符合条件的招聘信息{latestSyncedAt ? "，换个筛选试试" : "，正在同步…"}</p>
       ) : (
         <PostingsTableClient
           rows={tableRows}

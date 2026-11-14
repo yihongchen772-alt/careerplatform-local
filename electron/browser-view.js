@@ -280,9 +280,10 @@ const fillingTabs = new Set();
 const fillTasks = new Map();
 // The applicant pressed 暂停: what is filled stays, and 继续填写 runs the fill again for the rest.
 const PAUSED = "已暂停填写，已填入的内容保留";
-function stopFillTask(tabId, reason = PAUSED) {
+function stopFillTask(tabId, reason = PAUSED, { force = false } = {}) {
   const task = fillTasks.get(tabId);
   if (!task || task.controller.signal.aborted) return;
+  if (!force && task.allowBackground) return;
   task.reason = reason;
   task.controller.abort();
   const tab = tabs.find((t) => t.id === tabId);
@@ -555,7 +556,7 @@ function createTab(url, { activate = true } = {}) {
   wc.on("did-start-navigation", () => {
     tab.revision++;
     pendingPlans.delete(tab.id);
-    stopFillTask(tab.id, "页面已变化，已停止填写；请在当前页面重新填写");
+    stopFillTask(tab.id, "页面已变化，已停止填写；请在当前页面重新填写", { force: true });
   });
   wc.on("did-navigate", (_event, url) => {
     tab.landing = noteLanding(tab.landing, url);
@@ -572,7 +573,7 @@ function createTab(url, { activate = true } = {}) {
   wc.on("did-navigate-in-page", () => {
     tab.revision++;
     pendingPlans.delete(tab.id);
-    stopFillTask(tab.id, "页面已变化，已停止填写；请在当前页面重新填写");
+    stopFillTask(tab.id, "页面已变化，已停止填写；请在当前页面重新填写", { force: true });
     sendTabsState();
     scheduleJobPageCapture(tab);
   });
@@ -698,7 +699,7 @@ function createTab(url, { activate = true } = {}) {
 function closeTab(id) {
   const index = tabs.findIndex((t) => t.id === id);
   if (index === -1) return;
-  stopFillTask(id, "标签页已关闭，填写已停止");
+  stopFillTask(id, "标签页已关闭，填写已停止", { force: true });
   const [tab] = tabs.splice(index, 1);
   if (attachedView === tab.view) detach();
   lastAiFilled.delete(id);
@@ -1045,7 +1046,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       if (tab.fillState?.status === "queued" || tab.fillState?.status === "loading") {
         tab.fillState = { ...tab.fillState, status: "idle", message: "已暂停队列", updatedAt: Date.now() };
       }
-      if (fillingTabs.has(tab.id)) stopFillTask(tab.id, "已暂停批量预填");
+      if (fillingTabs.has(tab.id)) stopFillTask(tab.id, "已暂停批量预填", { force: true });
     }
     sendTabsState();
   });
@@ -1688,7 +1689,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     if (!wc || wc.isDestroyed()) return null;
     if (fillingTabs.has(tab.id)) return null;
     fillingTabs.add(tab.id);
-    const task = { id: crypto.randomUUID(), controller: new AbortController(), reason: null };
+    const task = { id: crypto.randomUUID(), controller: new AbortController(), reason: null, allowBackground: !!options?.allowBackground };
     fillTasks.set(tab.id, task);
     tab.fillState = {
       ...(tab.fillState || { filled: 0, manual: 0, uploaded: 0 }),
@@ -1706,10 +1707,12 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       } else {
         tab.archiveUrl = wc.getURL();
         tab.positionId = options?.positionId ?? tab.positionId;
-        tab.resumeVersionId = resumeVersionId;
-        tab.variantId = options?.variantId;
+        const resolvedResumeId = resumeVersionId !== undefined ? resumeVersionId : tab.resumeVersionId;
+        const resolvedVariantId = options?.variantId !== undefined ? options.variantId : tab.variantId;
+        tab.resumeVersionId = resolvedResumeId;
+        tab.variantId = resolvedVariantId;
         await rememberPreFill(tab);
-        result = await runAutofillCore(adapter, resumeVersionId, options || {});
+        result = await runAutofillCore(adapter, resolvedResumeId, { ...(options || {}), variantId: resolvedVariantId });
         if (result?.phase === "done" && result.summary) {
           tab.filledAt = Date.now();
           tab.typedSinceFill = 0;
@@ -1859,7 +1862,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
   handle("browser:undo-autofill", async () => {
     const tab = activeTab();
     if (!tab || tab.view.webContents.isDestroyed()) return { cleared: 0 };
-    if (fillingTabs.has(tab.id)) stopFillTask(tab.id);
+    if (fillingTabs.has(tab.id)) stopFillTask(tab.id, PAUSED, { force: true });
     let cleared = 0;
     for (const frame of allFrames(tab.view.webContents)) {
       const res = await frame.executeJavaScript(`(${resetAutofillInFrame.toString()})(false)`).catch(() => ({ cleared: 0 }));
@@ -1947,7 +1950,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     }
     return { fields, url: wc.getURL(), title: wc.getTitle(), text: page.text, siteName: String(page.siteName || "").slice(0, 100), history, positionId: tab.positionId, resumeVersionId: tab.resumeVersionId, variantId: tab.variantId, uploads: tab.resumeUploads || [], jdPage, lastSendAt: tab.lastSendAt || null };
   });
-  handle("browser:cancel-autofill", (_e, tabId) => stopFillTask(tabId ?? activeId));
+  handle("browser:cancel-autofill", (_e, tabId) => stopFillTask(tabId ?? activeId, PAUSED, { force: true }));
 
   // Remember manually entered facts and essays; never save untouched drafts.
   // 「这页没填好」: the current page's form structure, what the applicant wrote

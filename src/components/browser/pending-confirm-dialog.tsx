@@ -104,8 +104,9 @@ export function PendingConfirmDialog({
     }
     await bridge.switchTab(tab.id);
     onOpenChange(false);
-    await bridge.autofill(resumeVersionId || undefined, {
+    await bridge.autofill(tab.resumeVersionId || resumeVersionId || undefined, {
       ...fillOptions,
+      variantId: tab.variantId || fillOptions.variantId,
       forceRefill: true,
       positionId: tab.positionId || tab.batchMeta?.positionId || undefined,
     });

@@ -335,9 +335,9 @@ function setupUpdater({ app, ipcMain, getMainWindow, beforeInstall, getProxyUrl 
       publish({ status: "installing", errorStage: null, message: "正在备份本地数据，然后打开安装包并退出…" });
       try {
         if (typeof beforeInstall !== "function") throw new Error("Missing data backup hook");
+        await beforeInstall();
         const error = await openPath(dmgFile);
         if (error) throw new Error(error);
-        await beforeInstall();
         if (!disposed) quitApp();
       } catch {
         fail("install");

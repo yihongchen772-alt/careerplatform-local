@@ -174,9 +174,9 @@ export function DiscoverJobsPanel({
       <div className="space-y-3 rounded-xl border bg-muted/25 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <p className="text-sm font-medium">全网校招与企业直招实时检索</p>
+            <p className="text-sm font-medium">全网 Moka · 北森 · 飞书 官网直招实时检索</p>
             <p className="text-xs text-muted-foreground">
-              一次穿透企业直招官网（字节 / 腾讯 / 阿里 / 美团及名录官网）、已订阅校招表与全网招聘公告，自动过滤你已投过的岗位并按个人匹配度排序
+              一次穿透 24 家精选名企官网（Moka / 北森 / 飞书招聘：字节、蔚来、智元、非夕、光轮、DeepSeek、智谱、越疆、石头等）、已订阅招聘表与全网 ATS 直招链接，自动过滤已投岗位并按匹配度排序
             </p>
           </div>
           {defaultTrack && (
@@ -204,7 +204,7 @@ export function DiscoverJobsPanel({
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="输入岗位方向或公司名，如：嵌入式、字节 产品经理、Java 后端"
+              placeholder="输入岗位方向或公司名，如：具身智能、运动控制、智元、嵌入式"
               className="pl-8"
             />
           </div>

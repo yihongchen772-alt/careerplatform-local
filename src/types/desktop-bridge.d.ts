@@ -87,6 +87,8 @@ export type DesktopBridgeAutofillOptions = {
   expandBlocks?: boolean;
   /** After an added entry is filled cleanly, press its own 保存 and go on to the next one. Never a 提交. */
   saveBlocks?: boolean;
+  /** 简历版本 id; omitted = the active tab's bound resume or the UI dropdown choice. */
+  resumeVersionId?: string;
   /** 网申资料方案 id; omitted = the default profile. */
   variantId?: string;
 };

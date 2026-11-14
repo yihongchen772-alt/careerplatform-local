@@ -90,7 +90,7 @@ function inferKind(title: string, description: string, careersUrl = ""): string 
 }
 
 function inferCohort(title: string, description: string): string | null {
-  const text = `${title} ${description.slice(0, 400)}`;
+  const text = `${title} ${description.slice(0, 2000)}`;
   const matches = text.match(/202[5-9]\s*届|\b2[5-9]\s*届/g);
   if (!matches || !matches.length) return null;
   const normalized = [
@@ -105,11 +105,17 @@ function inferCohort(title: string, description: string): string | null {
 }
 
 function inferDegree(description: string): string | null {
-  const head = description.slice(0, 600);
+  const head = description.slice(0, 2000);
   if (/博士及以上|博士学历/.test(head)) return "博士";
   if (/硕士及以上|研究生及以上|硕士学历/.test(head)) return "硕士及以上";
   if (/本科及以上|本科学历|统招本科|bachelor/i.test(head)) return "本科及以上";
   return null;
+}
+
+function inferSalary(title: string, description: string): string | null {
+  const text = `${title} ${description.slice(0, 1200)}`;
+  const m = text.match(/(?:\d{1,3}(?:\.\d+)?\s*[-~～至]\s*\d{1,3}(?:\.\d+)?\s*(?:[kKwW万]|元\s*\/\s*[天月年]|\/\s*[天月]))/);
+  return m ? m[0].replace(/\s+/g, "").slice(0, 40) : null;
 }
 
 export function boardJobToPostingFields(
@@ -153,7 +159,7 @@ export function boardJobToPostingFields(
     deadline: null,
     deadlineText: "招满即止",
     note: desc ? desc.replace(/\s+/g, " ").slice(0, 500) : null,
-    salary: null,
+    salary: inferSalary(title, desc),
   };
 }
 

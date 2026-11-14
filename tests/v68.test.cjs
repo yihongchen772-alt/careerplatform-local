@@ -503,3 +503,38 @@ test("v1.69.3: BUILT_IN_BOARDS focuses exclusively on Moka, Beisen (zhiye.com), 
     assert.equal(isStandardThree, true, `Unexpected host ${host} in BUILT_IN_BOARDS for ${board.name}`);
   }
 });
+
+test("v1.69.4: background batch prefill survives tab switch, extension per-item queue options & stop, DMG backup order, and robotics/degree match scoring", () => {
+  const bvSrc = fs.readFileSync(path.resolve(__dirname, "../electron/browser-view.js"), "utf8");
+  assert.match(bvSrc, /if \(!force && task\.allowBackground\) return;/);
+  assert.match(bvSrc, /tab\.resumeVersionId\s*:\s*resolvedResumeId|const resolvedResumeId/);
+
+  const extBg = fs.readFileSync(path.resolve(__dirname, "../extension/background.js"), "utf8");
+  assert.match(extBg, /nextItem\.options\s*\?/);
+  assert.match(extBg, /async batchStop\(\)/);
+
+  const updaterSrc = fs.readFileSync(path.resolve(__dirname, "../electron/updater.js"), "utf8");
+  const installSection = updaterSrc.slice(updaterSrc.indexOf("async function install()"));
+  assert.ok(installSection.indexOf("await beforeInstall()") < installSection.indexOf("await openPath(dmgFile)"));
+
+  const coreSrc = fs.readFileSync(path.resolve(__dirname, "../electron/autofill-core.js"), "utf8");
+  assert.match(coreSrc, /\.n-base-selection-input__content/);
+  assert.match(coreSrc, /prefers-color-scheme:\s*dark/);
+  assert.match(coreSrc, /el\.shadowRoot \|\| el/);
+
+  const postingMatch = loadTs("src/lib/posting-match.ts");
+  const sig = postingMatch.extractProfileSignal(
+    { targetTrack: "具身智能 运动控制", preferredCities: "上海", graduationYear: 2027, degree: "硕士" },
+    "熟练使用 C++ / ROS2 / Simulink / MPC 算法"
+  );
+  assert.ok(sig.skillTerms.includes("ros2") || sig.trackTerms.includes("ros2"));
+  const masterMatch = postingMatch.scorePostingMatch(
+    { companyName: "智元机器人", title: "运动控制算法工程师", cities: "上海", graduation: "2027届", degree: "硕士及以上" },
+    sig
+  );
+  const phdOnly = postingMatch.scorePostingMatch(
+    { companyName: "某研究院", title: "运动控制算法工程师", cities: "上海", graduation: "2027届", degree: "博士" },
+    sig
+  );
+  assert.ok(masterMatch.score > phdOnly.score, `Expected master match (${masterMatch.score}) > phd-only (${phdOnly.score})`);
+});

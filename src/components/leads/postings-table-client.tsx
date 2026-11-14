@@ -24,6 +24,7 @@ export type PostingTableRow = {
   id: string;
   company: string;
   isNew: boolean;
+  atsLabel?: string | null;
   metaText: string;
   roles: string | null;
   note: string | null;
@@ -185,10 +186,25 @@ export function PostingsTableClient({
                   />
                 </td>
                 <td className="max-w-48 px-3 py-2">
-                  <p className="font-medium">
-                    {row.company}
+                  <p className="flex flex-wrap items-center gap-1 font-medium">
+                    <span>{row.company}</span>
+                    {row.atsLabel && (
+                      <span
+                        className={cn(
+                          "rounded px-1 py-px text-[10px] font-medium",
+                          row.atsLabel === "飞书"
+                            ? "bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                            : row.atsLabel === "Moka"
+                              ? "bg-violet-500/10 text-violet-600 dark:text-violet-400"
+                              : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                        )}
+                        title={`${row.atsLabel}标准化网申系统 · 支持内置浏览器一键填表`}
+                      >
+                        {row.atsLabel}
+                      </span>
+                    )}
                     {row.isNew && (
-                      <span className="ml-1.5 rounded bg-red-500/10 px-1 py-px align-middle text-[10px] font-medium text-red-600">
+                      <span className="rounded bg-red-500/10 px-1 py-px text-[10px] font-medium text-red-600">
                         新
                       </span>
                     )}

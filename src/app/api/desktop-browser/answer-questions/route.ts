@@ -38,6 +38,15 @@ const profileSchema = z
     english: z.string().nullish(),
     currentCity: z.string().nullish(),
     targetRole: z.string().nullish(),
+    expectedSalary: z.string().nullish(),
+    availableFrom: z.string().nullish(),
+    researchDirection: z.string().nullish(),
+    researchTopic: z.string().nullish(),
+    employmentStatus: z.string().nullish(),
+    workYears: z.string().nullish(),
+    noticePeriod: z.string().nullish(),
+    leaveReason: z.string().nullish(),
+    managementScale: z.string().nullish(),
     selfIntro: z.string().nullish(),
     /** Readable digest of the structured 网申资料 (education/experience/project rows). */
     extra: z.string().nullish(),
@@ -286,13 +295,15 @@ export async function POST(request: Request) {
         };
 
         const thinkingBudget = essays.length > 0 ? 1024 : 128;
+        const thinkingLevel: "minimal" | "low" = essays.length > 0 ? "low" : "minimal";
         const raw = usingCachedText
-          ? await callTextAi({ config: textConfig, prompt, schema, thinkingBudget, timeoutMs: 90000 })
+          ? await callTextAi({ config: textConfig, prompt, schema, thinkingBudget, thinkingLevel, timeoutMs: 90000 })
           : await generateStructuredWithFile({
               config: fileKey!,
               prompt,
               file: await fetchFileAsInlinePart(resume.fileUrl),
               thinkingBudget,
+              thinkingLevel,
               timeoutMs: 90000,
               schema,
             });

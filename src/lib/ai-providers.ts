@@ -254,6 +254,7 @@ export async function callTextAi({
   prompt,
   schema,
   thinkingBudget = 1024,
+  thinkingLevel,
   timeoutMs = 60000,
 }: {
   config: UserAiConfig | null;
@@ -261,10 +262,11 @@ export async function callTextAi({
   /** Only enforced when falling back to shared Gemini (schema-constrained). */
   schema: GeminiSchema;
   thinkingBudget?: number;
+  thinkingLevel?: "minimal" | "low";
   timeoutMs?: number;
 }): Promise<unknown> {
   if (!config) {
-    return generateStructured({ prompt, schema, thinkingBudget, timeoutMs });
+    return generateStructured({ prompt, schema, thinkingBudget, thinkingLevel, timeoutMs });
   }
 
   switch (config.provider) {
@@ -273,6 +275,7 @@ export async function callTextAi({
         prompt,
         schema,
         thinkingBudget,
+        thinkingLevel,
         timeoutMs,
         apiKey: config.apiKey,
         model: config.model,

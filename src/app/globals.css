@@ -976,13 +976,13 @@ main h1 {
 
 /* Form fields: iOS filled inputs, no hard outline, brand halo on focus. */
 :is([data-style="soft"], [data-style="glass"]) :is([data-slot="input"], [data-slot="textarea"], [data-slot="select-trigger"], [data-slot="native-select"], [data-slot="input-group"]),
-:is([data-style="soft"], [data-style="glass"]) :is(main, [role="dialog"]) :is(input[type="text"], input[type="search"], input[type="number"], input[type="date"], input[type="month"], input[type="time"], input[type="datetime-local"], input:not([type]), select, textarea):not([data-slot]) {
+:is([data-style="soft"], [data-style="glass"]) :is(main, [role="dialog"], [data-slot="sheet-content"], [data-slot="popover-content"]) :is(input[type="text"], input[type="search"], input[type="number"], input[type="date"], input[type="month"], input[type="time"], input[type="datetime-local"], input:not([type]), select, textarea):not([data-slot]) {
   background-color: var(--soft-field);
   border-color: transparent;
   border-radius: 0.85rem;
 }
 :is([data-style="soft"], [data-style="glass"]) :is([data-slot="input"], [data-slot="textarea"], [data-slot="select-trigger"], [data-slot="native-select"]):focus-visible,
-:is([data-style="soft"], [data-style="glass"]) :is(main, [role="dialog"]) :is(input, select, textarea):not([data-slot]):focus-visible {
+:is([data-style="soft"], [data-style="glass"]) :is(main, [role="dialog"], [data-slot="sheet-content"], [data-slot="popover-content"]) :is(input, select, textarea):not([data-slot]):focus-visible {
   border-color: color-mix(in oklch, var(--primary) 50%, transparent);
   box-shadow: 0 0 0 3.5px color-mix(in oklch, var(--primary) 18%, transparent);
 }

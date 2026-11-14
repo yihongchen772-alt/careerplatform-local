@@ -69,6 +69,11 @@ export function BriefCramDialog({
   useEffect(() => {
     if (!open || !applicationId) return;
     let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) {
+        setErrorMsg((prev) => (prev?.id === applicationId ? null : prev));
+      }
+    });
     fetch(`/api/applications/${encodeURIComponent(applicationId)}/brief`)
       .then((res) => res.json().then((json) => ({ ok: res.ok, json })))
       .then(({ ok, json }) => {
