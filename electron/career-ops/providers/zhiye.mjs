@@ -55,24 +55,35 @@ export function parseZhiyeResponse(json, companyName, origin) {
           ? `${origin}/jobs/detail/${encodedId}`
           : '';
     if (!url) continue;
-    const location = Array.isArray(item?.LocNames)
+    let location = Array.isArray(item?.LocNames)
       ? item.LocNames.filter(Boolean).join('/')
       : String(item?.LocNames || item?.CityName || item?.Location || item?.WorkPlace || item?.city || '').trim();
+    if (!location) {
+      const cityInTitle = title.match(/[（(](北京|上海|深圳|广州|杭州|成都|武汉|南京|苏州|西安|合肥|重庆|长沙|郑州|天津|青岛|厦门|无锡|宁波|珠海|东莞|佛山|福州|济南|大连|沈阳|哈尔滨|长春|南昌|石家庄|太原|昆明|贵阳|南宁|海口|兰州)[市）)]/);
+      if (cityInTitle) location = cityInTitle[1];
+    }
     const rawDesc = [
       item?.CategoryName && `类别: ${item.CategoryName}`,
       item?.KindName && `类型: ${item.KindName}`,
       item?.Duty || item?.Description || item?.JobDuty,
-      item?.Requirement || item?.Demand || item?.JobRequirement,
+      item?.Require || item?.Requirement || item?.Demand || item?.JobRequirement,
     ].filter(Boolean).join('\n');
-    const postedRaw = item?.PostDate || item?.PublishTime || item?.ModifyTime || item?.CreateTime;
-    const postedMs = postedRaw ? Date.parse(String(postedRaw)) : NaN;
+    let postedAt;
+    for (const candidate of [item?.ChangeDate, item?.ModifyTime, item?.PublishTime, item?.PostDate, item?.CreateTime]) {
+      if (!candidate) continue;
+      const ms = Date.parse(String(candidate));
+      if (Number.isFinite(ms) && ms >= 946684800000) {
+        postedAt = ms;
+        break;
+      }
+    }
     jobs.push({
       title,
       url,
       company: companyName,
       location,
       description: htmlToText(rawDesc).slice(0, 3000),
-      postedAt: Number.isFinite(postedMs) ? postedMs : undefined,
+      postedAt,
     });
   }
   return { jobs, total: Math.max(total, jobs.length) };

@@ -27,6 +27,7 @@ export type DesktopBridgeBatchJob = {
 export type DesktopBridgeTab = {
   id: number;
   url: string;
+  initialUrl?: string | null;
   title: string;
   loading: boolean;
   canGoBack: boolean;
@@ -130,6 +131,7 @@ export type LoginOffer = { tabId: number; site: string; username: string; update
 
 export type DesktopBridge = {
   navigate(url: string): Promise<void>;
+  openUrl?(url: string, options?: { positionId?: string; resumeVersionId?: string; variantId?: string }): Promise<{ tabId: number; reused: boolean }>;
   back(): Promise<void>;
   forward(): Promise<void>;
   reload(): Promise<void>;

@@ -50,12 +50,12 @@ function names(arr) {
   return arr.map(x => (typeof x === 'string' ? x : x?.name)).filter(Boolean).join('/');
 }
 
-function buildBody(keywords, pageNo) {
+function buildBody(keywords, pageNo, jobTypeCode = '3') {
   return JSON.stringify({
     page: { pageNo, pageSize: PAGE_SIZE },
     keywords,
     jobShareType: '1',
-    jobType: [{ code: '3', subCode: [] }],
+    jobType: [{ code: jobTypeCode, subCode: [] }],
     cityList: [], department: [], jfJgList: [], typeCode: [], specialCode: [],
   });
 }
@@ -65,9 +65,10 @@ function buildBody(keywords, pageNo) {
  * Exported for tests.
  * @param {any} json
  * @param {string} companyName
+ * @param {string} [jobTypeCode]
  * @returns {{ jobs: import('./_types.js').Job[], total: number }}
  */
-export function parseMeituanResponse(json, companyName) {
+export function parseMeituanResponse(json, companyName, jobTypeCode = '3') {
   const list = json?.data?.list;
   const total = Number(json?.data?.page?.totalCount) || 0;
   if (!Array.isArray(list)) return { jobs: [], total };
@@ -81,6 +82,12 @@ export function parseMeituanResponse(json, companyName) {
     // aborts this loop, losing every job on the page. Drop just this one.
     const encodedId = safeEncodeURIComponent(id);
     if (encodedId === null) continue;
+    const itemType = String(p.jobType || jobTypeCode);
+    const kindTag = itemType === '1'
+      ? '类型: 校园招聘（应届毕业生）'
+      : itemType === '2'
+        ? '类型: 校园招聘（实习生）'
+        : '';
     jobs.push({
       title,
       url: DETAIL + encodedId,
@@ -89,6 +96,7 @@ export function parseMeituanResponse(json, companyName) {
       // Meituan posts carry full-text JDs (duty + requirements), much longer
       // than other boards' summaries — cap to keep scan payloads sane.
       description: [
+        kindTag,
         names(p.department) && `部门: ${names(p.department)}`,
         p.jobFamily && `序列: ${p.jobFamily}`,
         p.workYear && `经验: ${p.workYear}`,
@@ -116,6 +124,9 @@ export default {
   },
 
   async fetch(entry, ctx) {
+    let isCampus = false;
+    try { isCampus = /\/campus\b/i.test(new URL(entry.careers_url).pathname); } catch { /* ignore */ }
+    const jobTypeCodes = isCampus ? ['1', '2'] : ['3'];
     const keywords = Array.isArray(entry.keywords) && entry.keywords.length
       ? entry.keywords
       : DEFAULT_KEYWORDS;
@@ -128,53 +139,51 @@ export default {
     let firstRequest = true;
     let succeededOnce = false;
 
-    for (const keyword of keywords) {
-      let total = 0;
+    for (const jobTypeCode of jobTypeCodes) {
+      for (const keyword of keywords) {
+        let total = 0;
 
-      for (let pageNo = 1; pageNo <= maxPages; pageNo++) {
-        /** @type {import('./_types.js').Job[]|null} */
-        let jobs = null;
+        for (let pageNo = 1; pageNo <= maxPages; pageNo++) {
+          /** @type {import('./_types.js').Job[]|null} */
+          let jobs = null;
 
-        for (let attempt = 0; attempt <= EMPTY_RETRIES; attempt++) {
-          if (firstRequest) firstRequest = false;
-          else await sleep(attempt > 0 ? RETRY_BACKOFF_MS * attempt : INTER_PAGE_DELAY_MS, ctx);
+          for (let attempt = 0; attempt <= EMPTY_RETRIES; attempt++) {
+            if (firstRequest) firstRequest = false;
+            else await sleep(attempt > 0 ? RETRY_BACKOFF_MS * attempt : INTER_PAGE_DELAY_MS, ctx);
 
-          let json;
-          try {
-            json = await ctx.fetchJson(API, {
-              method: 'POST',
-              headers: { 'content-type': 'application/json' },
-              body: buildBody(keyword, pageNo),
-              redirect: 'error',
-            });
-          } catch (err) {
-            // A dead board should still read as a failure, but a mid-run blip
-            // must not discard what's already collected (same idiom as
-            // workday/jobstreet/glints). Track successes directly — a keyword
-            // can legitimately match 0 jobs, so seen.size is not the signal.
-            if (!succeededOnce) throw err;
-            console.error(`  ⚠ meituan: keyword "${keyword}" page ${pageNo} failed (${err.message}) — keeping the ${seen.size} jobs collected so far`);
-            return [...seen.values()];
+            let json;
+            try {
+              json = await ctx.fetchJson(API, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: buildBody(keyword, pageNo, jobTypeCode),
+                redirect: 'error',
+              });
+            } catch (err) {
+              if (!succeededOnce) throw err;
+              console.error(`  ⚠ meituan: keyword "${keyword}" page ${pageNo} failed (${err.message}) — keeping the ${seen.size} jobs collected so far`);
+              return [...seen.values()];
+            }
+            const parsed = parseMeituanResponse(json, entry.name || '美团', jobTypeCode);
+            succeededOnce = true;
+            if (parsed.total) total = parsed.total;
+            if (parsed.jobs.length > 0) { jobs = parsed.jobs; break; }
+            if (total && (pageNo - 1) * PAGE_SIZE >= total) break; // legitimately past the end
           }
-          const parsed = parseMeituanResponse(json, entry.name || '美团');
-          succeededOnce = true;
-          if (parsed.total) total = parsed.total;
-          if (parsed.jobs.length > 0) { jobs = parsed.jobs; break; }
-          if (total && (pageNo - 1) * PAGE_SIZE >= total) break; // legitimately past the end
-        }
 
-        if (!jobs) {
-          if (total && (pageNo - 1) * PAGE_SIZE < total) {
-            console.error(`  ⚠ meituan: keyword "${keyword}" page ${pageNo} still empty after ${EMPTY_RETRIES} retries — keeping the ${seen.size} jobs collected so far`);
+          if (!jobs) {
+            if (total && (pageNo - 1) * PAGE_SIZE < total) {
+              console.error(`  ⚠ meituan: keyword "${keyword}" page ${pageNo} still empty after ${EMPTY_RETRIES} retries — keeping the ${seen.size} jobs collected so far`);
+            }
+            break;
           }
-          break;
-        }
 
-        for (const job of jobs) {
-          if (!seen.has(job.url)) seen.set(job.url, job);
-        }
+          for (const job of jobs) {
+            if (!seen.has(job.url)) seen.set(job.url, job);
+          }
 
-        if (total && pageNo * PAGE_SIZE >= total) break;
+          if (total && pageNo * PAGE_SIZE >= total) break;
+        }
       }
     }
 

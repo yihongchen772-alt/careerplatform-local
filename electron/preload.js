@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld("desktopMic", {
 // but no reason to widen the surface beyond what's used).
 contextBridge.exposeInMainWorld("desktopBridge", {
   navigate: (url) => ipcRenderer.invoke("browser:navigate", url),
+  openUrl: (url, options) => ipcRenderer.invoke("browser:open-url", url, options),
   back: () => ipcRenderer.invoke("browser:back"),
   forward: () => ipcRenderer.invoke("browser:forward"),
   reload: () => ipcRenderer.invoke("browser:reload"),

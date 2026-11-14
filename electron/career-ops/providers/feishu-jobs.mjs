@@ -99,16 +99,21 @@ export function parseFeishuJobsResponse(json, companyName, origin) {
       : '';
     const category = p?.job_category?.name || '';
     const recruitType = p?.recruit_type?.name || '';
+    const parentType = p?.recruit_type?.parent?.name || '';
+    const isCampus = parentType === '校招' || /校招|应届|实习/i.test(recruitType);
+    const fullRecruitType = parentType && recruitType && parentType !== recruitType
+      ? `${parentType}-${recruitType}`
+      : (recruitType || parentType);
     jobs.push({
       title,
       url: origin === 'https://jobs.bytedance.com'
-        ? `${origin}/experienced/position/${encodedId}/detail`
+        ? `${origin}/${isCampus ? 'campus' : 'experienced'}/position/${encodedId}/detail`
         : `${origin}/index/position/${encodedId}/detail`,
       company: companyName,
       location: cities,
       description: [
         category && `类别: ${category}`,
-        recruitType && `类型: ${recruitType}`,
+        fullRecruitType && `类型: ${fullRecruitType}`,
         p.description,
         p.requirement,
       ].filter(Boolean).join('\n').slice(0, 4000),
@@ -132,6 +137,11 @@ export default {
     if (!origin) {
       throw new Error('feishu-jobs: careers_url must use HTTPS on jobs.bytedance.com or a *.jobs.feishu.cn tenant');
     }
+    let isCampusBoard = false;
+    try {
+      const parsedUrl = new URL(entry.careers_url);
+      isCampusBoard = /^\/(?:campus|school)\b/i.test(parsedUrl.pathname);
+    } catch { /* ignore */ }
     const api = `${origin}/api/v1/search/job/posts`;
 
     const keywords = Array.isArray(entry.keywords) && entry.keywords.length
@@ -164,7 +174,8 @@ export default {
               'content-type': 'application/json',
               'accept': 'application/json',
               'user-agent': MACOS_BROWSER_LIKE_USER_AGENT,
-              'referer': `${origin}/`,
+              'referer': isCampusBoard ? `${origin}/campus/position` : `${origin}/`,
+              ...(isCampusBoard ? { 'website-path': 'campus' } : {}),
             },
             body: JSON.stringify(keyword ? { limit: PAGE_SIZE, offset, keyword } : { limit: PAGE_SIZE, offset }),
             redirect: 'error',

@@ -70,7 +70,7 @@ export async function PostingsPanel({
   const since = freshSince(source.firstSyncedAt, now);
   const freshWhere = since ? { firstSeenAt: { gt: since } } : { id: "" };
   const where = { AND: [base, ...(filters.chip ? [chipWhere(filters.chip, now)] : []), ...(filters.fresh ? [freshWhere] : [])] };
-  const matchSorting = filters.sort === "match" && signal.hasSignal;
+  const matchSorting = (filters.sort === "match" && signal.hasSignal) || (hasBuiltinFeed && !filters.chip);
 
   const [total, todayCount, recentCount, closingCount, industryRows] = await Promise.all([
     db.campusPosting.count({ where }),
@@ -85,18 +85,31 @@ export async function PostingsPanel({
   if (matchSorting) {
     const candidates = await db.campusPosting.findMany({
       where,
-      select: { id: true, company: true, roles: true, cities: true, industry: true, cohort: true, note: true, startDate: true },
+      select: { id: true, company: true, roles: true, cities: true, industry: true, cohort: true, kind: true, note: true, startDate: true },
     });
-    const ranked = candidates
+    const rawRanked = candidates
       .map((item) => {
-        const match = scorePostingMatch(
-          { companyName: item.company, tracks: item.roles, cities: item.cities, industry: item.industry, graduation: item.cohort, description: item.note },
-          signal
-        );
-        scoreMap.set(item.id, match);
-        return { id: item.id, score: match.score, startMs: item.startDate?.getTime() ?? 0 };
+        const match = signal.hasSignal
+          ? scorePostingMatch(
+              { companyName: item.company, tracks: item.roles, cities: item.cities, industry: item.industry, graduation: item.cohort, description: item.note },
+              signal
+            )
+          : null;
+        if (match) scoreMap.set(item.id, match);
+        const campusBonus = item.kind && item.kind !== "社招" ? (signal.hasSignal ? 6 : 20) : 0;
+        return { id: item.id, company: item.company, score: (match?.score ?? 50) + campusBonus, startMs: item.startDate?.getTime() ?? 0 };
       })
       .sort((a, b) => b.score - a.score || b.startMs - a.startMs);
+    // Diversify same-tier companies so no single company floods page 1
+    const byCompanyCount = new Map<string, number>();
+    const ranked = rawRanked
+      .map((item) => {
+        const seenCount = byCompanyCount.get(item.company) ?? 0;
+        byCompanyCount.set(item.company, seenCount + 1);
+        const diversityPenalty = Math.floor(seenCount / 2) * 3;
+        return { ...item, effectiveScore: item.score - diversityPenalty };
+      })
+      .sort((a, b) => b.effectiveScore - a.effectiveScore || b.score - a.score || b.startMs - a.startMs);
     const pageIds = ranked.slice((filters.page - 1) * PAGE_SIZE, filters.page * PAGE_SIZE).map((r) => r.id);
     if (pageIds.length > 0) {
       const fetched = await db.campusPosting.findMany({ where: { id: { in: pageIds } } });

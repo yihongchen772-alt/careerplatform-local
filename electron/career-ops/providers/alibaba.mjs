@@ -28,6 +28,12 @@ import { sleep } from './_http.mjs';
 import { safeEncodeURIComponent } from './_safe-url.mjs';
 
 const API_HOST = 'talent.alibaba.com';
+const ALLOWED_HOSTS = new Set([
+  'talent.alibaba.com',
+  'careers.aliyun.com',
+  'talent.taotian.com',
+  'talent-holding.alibaba.com',
+]);
 const API = `https://${API_HOST}/position/search`;
 // Detail URL built from the numeric position id. The API's own positionUrl
 // field is NOT used: it embeds a per-request track_id, which would make the
@@ -76,10 +82,11 @@ function buildBody(key, pageIndex) {
  * @param {string} companyName
  * @returns {{ jobs: import('./_types.js').Job[], total: number }}
  */
-export function parseAlibabaResponse(json, companyName) {
+export function parseAlibabaResponse(json, companyName, host = API_HOST) {
   const list = json?.content?.datas;
   const total = Number(json?.content?.totalCount) || 0;
   if (!Array.isArray(list)) return { jobs: [], total };
+  const detailBase = `https://${host}/off-campus/position-detail?positionId=`;
 
   const jobs = [];
   for (const p of list) {
@@ -93,7 +100,7 @@ export function parseAlibabaResponse(json, companyName) {
     const experience = formatExperience(p.experience);
     jobs.push({
       title,
-      url: DETAIL + encodedId,
+      url: detailBase + encodedId,
       company: companyName,
       location: Array.isArray(p.workLocations) ? p.workLocations.filter(Boolean).join('/') : '',
       // Alibaba posts carry full-text JDs (description + requirement), much
@@ -120,11 +127,17 @@ export default {
     if (typeof url !== 'string') return null;
     let u;
     try { u = new URL(url); } catch { return null; }
-    if (u.protocol !== 'https:' || u.hostname !== API_HOST) return null;
+    if (u.protocol !== 'https:' || !ALLOWED_HOSTS.has(u.hostname)) return null;
     return { url };
   },
 
   async fetch(entry, ctx) {
+    let host = API_HOST;
+    try {
+      const parsed = new URL(entry.careers_url);
+      if (ALLOWED_HOSTS.has(parsed.hostname)) host = parsed.hostname;
+    } catch { /* ignore */ }
+    const apiUrl = `https://${host}/position/search`;
     const keywords = Array.isArray(entry.keywords) && entry.keywords.length
       ? entry.keywords
       : DEFAULT_KEYWORDS;
@@ -146,7 +159,7 @@ export default {
         else await sleep(INTER_PAGE_DELAY_MS, ctx);
         let json;
         try {
-          json = /** @type {any} */ (await ctx.fetchJson(API, {
+          json = /** @type {any} */ (await ctx.fetchJson(apiUrl, {
             method: 'POST',
             headers: {
               'content-type': 'application/json',
@@ -171,7 +184,7 @@ export default {
           return [...seen.values()];
         }
         succeededOnce = true;
-        const { jobs, total } = parseAlibabaResponse(json, entry.name || '阿里巴巴');
+        const { jobs, total } = parseAlibabaResponse(json, entry.name || '阿里巴巴', host);
         if (jobs.length === 0) break;
 
         for (const job of jobs) {

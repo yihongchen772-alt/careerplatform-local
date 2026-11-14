@@ -5,44 +5,63 @@ const crypto = require("node:crypto");
 const { spawn } = require("node:child_process");
 
 const BOARDS = [
+  { name: "字节跳动校招", careers_url: "https://jobs.bytedance.com/campus/position", industry: "互联网/AI" },
+  { name: "腾讯校招", careers_url: "https://join.qq.com/post.html", industry: "互联网/游戏/AI" },
+  { name: "美团校招", careers_url: "https://zhaopin.meituan.com/web/campus", industry: "互联网/本地生活" },
   { name: "字节跳动", careers_url: "https://jobs.bytedance.com", industry: "互联网/AI" },
   { name: "腾讯", careers_url: "https://careers.tencent.com/search.html", industry: "互联网/游戏/AI" },
   { name: "阿里巴巴", careers_url: "https://talent.alibaba.com/off-campus/position-list", industry: "互联网/电商/云" },
+  { name: "阿里云", careers_url: "https://careers.aliyun.com/off-campus/position-list", industry: "云计算/AI大模型" },
+  { name: "淘天集团", careers_url: "https://talent.taotian.com/off-campus/position-list", industry: "互联网/电商" },
   { name: "美团", careers_url: "https://zhaopin.meituan.com/web/social", industry: "互联网/本地生活" },
   { name: "DeepSeek", careers_url: "https://app.mokahr.com/social-recruitment/high-flyer/140576", industry: "AI大模型/量化" },
-  { name: "DeepSeek校招", careers_url: "https://app.mokahr.com/campus-recruitment/high-flyer/140575", industry: "AI大模型/量化" },
   { name: "月之暗面", careers_url: "https://app.mokahr.com/apply/moonshot/148506", industry: "AI大模型" },
   { name: "智谱AI", careers_url: "https://app.mokahr.com/social-recruitment/zphz/148983", industry: "AI大模型" },
   { name: "MiniMax", careers_url: "https://vrfi1sk8a0.jobs.feishu.cn", industry: "AI大模型" },
-  { name: "博世中国", careers_url: "https://jobs.smartrecruiters.com/BoschGroup", industry: "汽车/智能制造/外企" },
-  { name: "Databricks", careers_url: "https://boards.greenhouse.io/databricks", industry: "云计算/大数据/AI" },
-  { name: "Cloudflare", careers_url: "https://boards.greenhouse.io/cloudflare", industry: "云计算/基础架构" },
-  { name: "Stripe", careers_url: "https://boards.greenhouse.io/stripe", industry: "金融科技/外企" },
-  { name: "Figma", careers_url: "https://boards.greenhouse.io/figma", industry: "设计/研发工具" },
-  { name: "Airbnb", careers_url: "https://boards.greenhouse.io/airbnb", industry: "互联网/外企" },
-  { name: "Linear", careers_url: "https://jobs.ashbyhq.com/linear", industry: "研发工具/外企" },
+  { name: "科大讯飞", careers_url: "https://iflytek.zhiye.com/campus", industry: "AI大模型/语音" },
+  { name: "vivo", careers_url: "https://vivo.zhiye.com/campus", industry: "智能终端/硬件/AI" },
+  { name: "京东方BOE", careers_url: "https://boe.zhiye.com/campus", industry: "半导体/显示/硬件" },
+  { name: "大华股份", careers_url: "https://dahua.zhiye.com/campus", industry: "智能物联/视觉AI" },
+  { name: "迈瑞医疗", careers_url: "https://mindray.zhiye.com/campus", industry: "医疗器械/研发" },
+  { name: "奇瑞汽车", careers_url: "https://chery.zhiye.com/campus", industry: "智能汽车/智驾" },
 ];
 
-function cleanCities(location) {
-  if (!location) return null;
-  const parts = String(location)
+const OVERSEAS_LOCATION_RE =
+  /^(?:新加坡|东京|大阪|首尔|西雅图|圣何塞|山景城|旧金山|纽约|洛杉矶|奥斯汀|波士顿|芝加哥|多伦多|温哥华|伦敦|都柏林|阿姆斯特丹|慕尼黑|柏林|法兰克福|巴黎|苏黎世|华沙|斯德哥尔摩|马德里|米兰|迪拜|利雅得|开罗|雅加达|吉隆坡|曼谷|胡志明市?|河内|马尼拉|悉尼|墨尔本|孟买|班加罗尔|新德里|墨西哥城?|圣保罗|布宜诺斯艾利斯|圣地亚哥|Singapore|Tokyo|Osaka|Seoul|Seattle|San\s*Jose|Mountain\s*View|San\s*Francisco|New\s*York|Los\s*Angeles|Austin|Boston|Toronto|Vancouver|London|Dublin|Amsterdam|Munich|Berlin|Paris|Warsaw|Dubai|Jakarta|Kuala\s*Lumpur|Bangkok|Ho\s*Chi\s*Minh|Manila|Sydney|Melbourne|Mumbai|Bangalore|Bengaluru|Mexico|Sao\s*Paulo|US|USA|UK|Germany|Japan|Korea|India|Indonesia|Thailand|Vietnam|Malaysia|Philippines|Australia|Brazil|Canada|France)$/i;
+
+const DOMESTIC_CITY_IN_TITLE_RE =
+  /(?:[（(【\-\s·/]|^)(北京|上海|深圳|广州|杭州|成都|武汉|南京|苏州|西安|合肥|重庆|长沙|郑州|天津|青岛|厦门|无锡|宁波|珠海|东莞|佛山|福州|济南|大连|沈阳|哈尔滨|长春|南昌|石家庄|太原|昆明|贵阳|南宁|海口|兰州|香港|澳门)(?:市|[）)】\-\s·/]|$)/;
+
+function cleanCities(location, title = "") {
+  const rawParts = String(location || "")
     .replace(/中国[-/·]?/g, "")
     .split(/[/,，、;|]+/)
-    .map((s) => s.trim().replace(/^(?:中国|大陆)[-·\s]*/, "").replace(/市$/, ""))
+    .map((s) => s.trim().replace(/^(?:中国|大陆)[-·\s]*/, "").replace(/市$/, "").replace(/总部$/, ""))
     .filter((s) => s && s.length <= 24 && !/^(远程|不限|全國|全国)$/i.test(s));
-  const unique = [...new Set(parts)].slice(0, 8);
-  return unique.length ? unique.join("、") : null;
+  const domesticParts = rawParts.filter((s) => !OVERSEAS_LOCATION_RE.test(s));
+  if (rawParts.length > 0 && domesticParts.length === 0) {
+    return { cities: null, overseasOnly: true };
+  }
+  if (domesticParts.length === 0 && title) {
+    const m = DOMESTIC_CITY_IN_TITLE_RE.exec(String(title));
+    if (m && m[1]) domesticParts.push(m[1]);
+  }
+  const unique = [...new Set(domesticParts)].slice(0, 8);
+  return { cities: unique.length ? unique.join("、") : null, overseasOnly: false };
 }
 
 function inferKind(title, description, careersUrl = "") {
-  const text = `${title} ${String(description || "").slice(0, 300)}`;
+  const text = `${title} ${String(description || "").slice(0, 400)}`;
   if (/暑期实习|summer\s*intern/i.test(text)) return "暑期实习";
   if (/实习|intern/i.test(text)) return "实习";
   if (/提前批/.test(text)) return "秋招提前批";
   if (/补录/.test(text)) return "秋招补录";
   if (/春招|春季校园/.test(text)) return "春招";
   if (/人才计划|天才少年|青云|筋斗云|北斗|星火|未来星|管培生/.test(text)) return "人才计划";
-  if (/校招|校园招聘|应届|毕业生|campus|\d{2,4}\s*届/i.test(text) || /campus-recruitment/i.test(careersUrl)) {
+  if (
+    /校招|校园招聘|应届|毕业生|campus|\d{2,4}\s*届/i.test(text) ||
+    /(?:\/campus\b|campus-recruitment|join\.qq\.com)/i.test(careersUrl)
+  ) {
     return "秋招";
   }
   return "社招";
@@ -142,6 +161,10 @@ async function buildFeed() {
       if (seen.has(externalId)) continue;
 
       const desc = String(job.description || "").trim();
+      if (/第三方派遣|Third-party Associate/i.test(`${title} ${desc}`)) continue;
+      const { cities, overseasOnly } = cleanCities(job.location, title);
+      if (overseasOnly) continue;
+
       let startDate = todayIso;
       if (typeof job.postedAt === "number" && Number.isFinite(job.postedAt) && job.postedAt > 0) {
         const d = new Date(job.postedAt);
@@ -156,7 +179,7 @@ async function buildFeed() {
         roles: title,
         cohort: inferCohort(title, desc),
         kind: inferKind(title, desc, meta?.careers_url),
-        cities: cleanCities(job.location),
+        cities,
         industry: meta?.industry || "互联网/科技",
         degree: inferDegree(desc),
         writtenTest: null,

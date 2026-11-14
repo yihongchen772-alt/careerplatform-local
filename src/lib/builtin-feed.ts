@@ -47,26 +47,43 @@ export function isBuiltinFeedUrl(url: string | null | undefined): boolean {
   return url === BUILTIN_FEED_URL;
 }
 
-function cleanCities(location: string | null | undefined): string | null {
-  if (!location) return null;
-  const parts = location
+const OVERSEAS_LOCATION_RE =
+  /^(?:新加坡|东京|大阪|首尔|西雅图|圣何塞|山景城|旧金山|纽约|洛杉矶|奥斯汀|波士顿|芝加哥|多伦多|温哥华|伦敦|都柏林|阿姆斯特丹|慕尼黑|柏林|法兰克福|巴黎|苏黎世|华沙|斯德哥尔摩|马德里|米兰|迪拜|利雅得|开罗|雅加达|吉隆坡|曼谷|胡志明市?|河内|马尼拉|悉尼|墨尔本|孟买|班加罗尔|新德里|墨西哥城?|圣保罗|布宜诺斯艾利斯|圣地亚哥|Singapore|Tokyo|Osaka|Seoul|Seattle|San\s*Jose|Mountain\s*View|San\s*Francisco|New\s*York|Los\s*Angeles|Austin|Boston|Toronto|Vancouver|London|Dublin|Amsterdam|Munich|Berlin|Paris|Warsaw|Dubai|Jakarta|Kuala\s*Lumpur|Bangkok|Ho\s*Chi\s*Minh|Manila|Sydney|Melbourne|Mumbai|Bangalore|Bengaluru|Mexico|Sao\s*Paulo|US|USA|UK|Germany|Japan|Korea|India|Indonesia|Thailand|Vietnam|Malaysia|Philippines|Australia|Brazil|Canada|France)$/i;
+
+const DOMESTIC_CITY_IN_TITLE_RE =
+  /(?:[（(【\-\s·/]|^)(北京|上海|深圳|广州|杭州|成都|武汉|南京|苏州|西安|合肥|重庆|长沙|郑州|天津|青岛|厦门|无锡|宁波|珠海|东莞|佛山|福州|济南|大连|沈阳|哈尔滨|长春|南昌|石家庄|太原|昆明|贵阳|南宁|海口|兰州|香港|澳门)(?:市|[）)】\-\s·/]|$)/;
+
+function cleanCities(location: string | null | undefined, title = ""): { cities: string | null; overseasOnly: boolean } {
+  const rawParts = (location || "")
     .replace(/中国[-/·]?/g, "")
     .split(/[/,，、;|]+/)
-    .map((s) => s.trim().replace(/^(?:中国|大陆)[-·\s]*/, "").replace(/市$/, ""))
+    .map((s) => s.trim().replace(/^(?:中国|大陆)[-·\s]*/, "").replace(/市$/, "").replace(/总部$/, ""))
     .filter((s) => s && s.length <= 24 && !/^(远程|不限|全國|全国)$/i.test(s));
-  const unique = [...new Set(parts)].slice(0, 8);
-  return unique.length ? unique.join("、") : null;
+
+  const domesticParts = rawParts.filter((s) => !OVERSEAS_LOCATION_RE.test(s));
+  if (rawParts.length > 0 && domesticParts.length === 0) {
+    return { cities: null, overseasOnly: true };
+  }
+  if (domesticParts.length === 0 && title) {
+    const m = DOMESTIC_CITY_IN_TITLE_RE.exec(title);
+    if (m?.[1]) domesticParts.push(m[1]);
+  }
+  const unique = [...new Set(domesticParts)].slice(0, 8);
+  return { cities: unique.length ? unique.join("、") : null, overseasOnly: false };
 }
 
 function inferKind(title: string, description: string, careersUrl = ""): string {
-  const text = `${title} ${description.slice(0, 300)}`;
+  const text = `${title} ${description.slice(0, 400)}`;
   if (/暑期实习|summer\s*intern/i.test(text)) return "暑期实习";
   if (/实习|intern/i.test(text)) return "实习";
   if (/提前批/.test(text)) return "秋招提前批";
   if (/补录/.test(text)) return "秋招补录";
   if (/春招|春季校园/.test(text)) return "春招";
   if (/人才计划|天才少年|青云|筋斗云|北斗|星火|未来星|管培生/.test(text)) return "人才计划";
-  if (/校招|校园招聘|应届|毕业生|campus|\d{2,4}\s*届/i.test(text) || /campus-recruitment/i.test(careersUrl)) {
+  if (
+    /校招|校园招聘|应届|毕业生|campus|\d{2,4}\s*届/i.test(text) ||
+    /(?:\/campus\b|campus-recruitment|join\.qq\.com)/i.test(careersUrl)
+  ) {
     return "秋招";
   }
   return "社招";
@@ -107,6 +124,10 @@ export function boardJobToPostingFields(
 
   const hash = createHash("sha1").update(url).digest("hex").slice(0, 20);
   const desc = (job.description || "").trim();
+  if (/第三方派遣|Third-party Associate/i.test(`${title} ${desc}`)) return null;
+  const { cities, overseasOnly } = cleanCities(job.location, title);
+  if (overseasOnly) return null;
+
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   let startDate = today;
   if (typeof job.postedAt === "number" && Number.isFinite(job.postedAt) && job.postedAt > 0) {
@@ -122,7 +143,7 @@ export function boardJobToPostingFields(
     roles: title,
     cohort: inferCohort(title, desc),
     kind: inferKind(title, desc, meta?.careers_url),
-    cities: cleanCities(job.location),
+    cities,
     industry: meta?.industry ?? "互联网/科技",
     degree: inferDegree(desc),
     writtenTest: null,

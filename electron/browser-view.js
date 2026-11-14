@@ -127,6 +127,12 @@ function normalizeUrl(input) {
   return `https://${trimmed}`;
 }
 
+function comparableUrl(input) {
+  const norm = normalizeUrl(input);
+  if (!norm || norm === "about:blank") return "";
+  return norm.replace(/\/$/, "");
+}
+
 const ZOOM_STEP = 0.1;
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 2;
@@ -354,6 +360,7 @@ function tabState(t) {
   return {
     id: t.id,
     url: wc.getURL(),
+    initialUrl: t.initialUrl || null,
     title: wc.getTitle(),
     loading: wc.isLoading(),
     canGoBack: wc.navigationHistory.canGoBack(),
@@ -539,8 +546,9 @@ function createTab(url, { activate = true } = {}) {
     },
   });
   view.setBackgroundColor("#ffffff");
+  const initialTarget = normalizeUrl(url || "about:blank");
   // resumeUploads / jdPage: what 记为已投递 needs to know about this application (see below).
-  const tab = { id: nextTabId++, view, revision: 0, resumeUploads: [], jdPage: null, sentForms: [] };
+  const tab = { id: nextTabId++, view, revision: 0, resumeUploads: [], jdPage: null, sentForms: [], initialUrl: initialTarget !== "about:blank" ? initialTarget : null };
   tabs.push(tab);
   const wc = view.webContents;
 
@@ -1047,9 +1055,46 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     return { closed: targets.length };
   });
   handle("browser:navigate", (_e, url) => {
+    const target = normalizeUrl(url);
     const tab = activeTab();
-    if (tab) tab.view.webContents.loadURL(normalizeUrl(url));
-    else createTab(url);
+    if (tab) {
+      if (!hasPage(tab) && target !== "about:blank") tab.initialUrl = target;
+      tab.view.webContents.loadURL(target);
+    } else {
+      createTab(url);
+    }
+  });
+  handle("browser:open-url", (_e, url, options = {}) => {
+    const target = normalizeUrl(url);
+    const targetKey = comparableUrl(target);
+    const live = tabs.filter((t) => t.view.webContents && !t.view.webContents.isDestroyed());
+    const existing = targetKey
+      ? live.find((t) => comparableUrl(t.view.webContents.getURL()) === targetKey || comparableUrl(t.initialUrl) === targetKey)
+      : null;
+    if (existing) {
+      if (typeof options?.positionId === "string" && options.positionId) existing.positionId = options.positionId;
+      if (typeof options?.resumeVersionId === "string" && options.resumeVersionId) existing.resumeVersionId = options.resumeVersionId;
+      if (typeof options?.variantId === "string" && options.variantId) existing.variantId = options.variantId;
+      if (activeId !== existing.id) switchTab(existing.id);
+      else sendTabsState();
+      return { tabId: existing.id, reused: true };
+    }
+    const cur = activeTab();
+    const blank = cur && !hasPage(cur) && !cur.batchMeta ? cur : (live.length === 1 && !hasPage(live[0]) && !live[0].batchMeta ? live[0] : null);
+    let tab;
+    if (blank) {
+      tab = blank;
+      tab.initialUrl = target !== "about:blank" ? target : null;
+      tab.view.webContents.loadURL(target);
+      if (activeId !== tab.id) switchTab(tab.id);
+    } else {
+      tab = createTab(target, { activate: true });
+    }
+    if (typeof options?.positionId === "string" && options.positionId) tab.positionId = options.positionId;
+    if (typeof options?.resumeVersionId === "string" && options.resumeVersionId) tab.resumeVersionId = options.resumeVersionId;
+    if (typeof options?.variantId === "string" && options.variantId) tab.variantId = options.variantId;
+    sendTabsState();
+    return { tabId: tab.id, reused: false };
   });
   handle("browser:back", () => withActive((wc) => wc.navigationHistory.canGoBack() && wc.navigationHistory.goBack()));
   handle("browser:forward", () => withActive((wc) => wc.navigationHistory.canGoForward() && wc.navigationHistory.goForward()));

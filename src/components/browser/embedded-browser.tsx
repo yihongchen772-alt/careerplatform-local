@@ -556,19 +556,57 @@ export function EmbeddedBrowser({
       setSubmittedDuplicate(false);
       setSubmittedRecognition({ tabId: payload.tabId, url: payload.url, result: null });
     });
-    bridge.getTabs().then((state) => {
+    bridge.getTabs().then(async (state) => {
       activeIdRef.current = state.activeId;
       syncBindings(state.tabs);
       setTabsState(state);
       const restored = restoreTabStatus(state);
       if (restored) setStatus(restored);
+      if (initialUrl) {
+        if (bridge.openUrl) {
+          const opened = await bridge.openUrl(initialUrl, {
+            positionId: initialPositionId || undefined,
+            resumeVersionId: initialResumeVersionId || undefined,
+            variantId: initialVariantId || undefined,
+          });
+          if (opened?.tabId && initialPositionId) {
+            setJobBindings((bindings) => ({ ...bindings, [opened.tabId]: initialPositionId }));
+          }
+          return;
+        }
+        const norm = (u: string | null | undefined) => (u || "").trim().replace(/\/$/, "");
+        const target = norm(initialUrl);
+        const existing = state.tabs.find((t) => norm(t.url) === target || norm(t.initialUrl) === target);
+        if (existing) {
+          if (existing.id !== state.activeId) await bridge.switchTab(existing.id);
+          if (initialPositionId) {
+            setJobBindings((bindings) => ({ ...bindings, [existing.id]: initialPositionId }));
+            void bridge.bindPosition?.(initialPositionId, existing.id);
+          }
+          return;
+        }
+        const active = state.tabs.find((t) => t.id === state.activeId);
+        if (!active || !active.url || active.url === "about:blank") {
+          await bridge.navigate(initialUrl);
+          if (state.activeId !== null && initialPositionId) {
+            setJobBindings((bindings) => ({ ...bindings, [state.activeId!]: initialPositionId }));
+            void bridge.bindPosition?.(initialPositionId, state.activeId);
+          }
+        } else {
+          const newId = await bridge.newTab(initialUrl);
+          if (newId && initialPositionId) {
+            setJobBindings((bindings) => ({ ...bindings, [newId]: initialPositionId }));
+            void bridge.bindPosition?.(initialPositionId, newId);
+          }
+        }
+        return;
+      }
       if (state.activeId !== null && initialPositionId) {
         setJobBindings((bindings) => ({ ...bindings, [state.activeId!]: initialPositionId }));
         void bridge.bindPosition?.(initialPositionId, state.activeId);
       }
     }).catch(() => {});
     bridge.history().then(setHistory).catch(() => {});
-    if (initialUrl) bridge.navigate(initialUrl);
     return () => {
       offTabs();
       offStatus();
@@ -583,6 +621,23 @@ export function EmbeddedBrowser({
     // change would re-navigate away from wherever the user has since clicked.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bridge]);
+
+  const lastInitialUrlRef = useRef<string | undefined>(initialUrl);
+  useEffect(() => {
+    if (!bridge || !initialUrl || initialUrl === lastInitialUrlRef.current) return;
+    lastInitialUrlRef.current = initialUrl;
+    if (bridge.openUrl) {
+      void bridge.openUrl(initialUrl, {
+        positionId: initialPositionId || undefined,
+        resumeVersionId: initialResumeVersionId || undefined,
+        variantId: initialVariantId || undefined,
+      }).then((opened) => {
+        if (opened?.tabId && initialPositionId) {
+          setJobBindings((bindings) => ({ ...bindings, [opened.tabId]: initialPositionId }));
+        }
+      }).catch(() => {});
+    }
+  }, [bridge, initialUrl, initialPositionId, initialResumeVersionId, initialVariantId]);
 
   useEffect(() => {
     let frame = 0;

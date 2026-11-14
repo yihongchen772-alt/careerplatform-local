@@ -411,4 +411,60 @@ test("builtin-feed reads gzipped cloud mirror and falls back to local career-ops
   assert.equal(localResult.postings[0].kind, "秋招");
   assert.equal(localResult.postings[0].cities, "北京、杭州");
   assert.equal(localResult.postings[0].degree, "硕士及以上");
+
+  // Overseas-only and third-party outsourcing jobs are filtered out
+  assert.equal(
+    feedLib.boardJobToPostingFields({
+      title: "Backend Engineer",
+      url: "https://jobs.bytedance.com/experienced/position/999/detail",
+      location: "新加坡/东京",
+      company: "字节跳动",
+      postedAt: null,
+      description: "Overseas role",
+    }),
+    null
+  );
+  assert.equal(
+    feedLib.boardJobToPostingFields({
+      title: "Sourcer (Third-party Associate)",
+      url: "https://jobs.bytedance.com/experienced/position/998/detail",
+      location: "上海",
+      company: "字节跳动",
+      postedAt: null,
+      description: "类型: 第三方派遣",
+    }),
+    null
+  );
+});
+
+test("v1.69.1: browser:open-url reuses existing tab without refreshing and opens new tab when another page is open", async () => {
+  const { pathToFileURL } = require("node:url");
+  const bvSrc = fs.readFileSync(path.resolve(__dirname, "../electron/browser-view.js"), "utf8");
+  const ebSrc = fs.readFileSync(path.resolve(__dirname, "../src/components/browser/embedded-browser.tsx"), "utf8");
+  assert.match(bvSrc, /handle\("browser:open-url"/);
+  assert.match(bvSrc, /return \{ tabId: existing\.id, reused: true \}/);
+  assert.match(ebSrc, /bridge\.openUrl\(initialUrl/);
+
+  const tencentMod = await import(pathToFileURL(path.resolve(__dirname, "../electron/career-ops/providers/tencent.mjs")).href);
+  const qqParsed = tencentMod.parseTencentCampusResponse(
+    {
+      data: {
+        count: 1,
+        positionList: [
+          {
+            postId: "1282707398326592512",
+            positionTitle: "AI全栈工程师",
+            workCities: "深圳总部 北京 上海 ",
+            bgs: "TEG WXG",
+            recruitLabelName: "应届毕业生",
+          },
+        ],
+      },
+    },
+    "腾讯校招"
+  );
+  assert.equal(qqParsed.jobs.length, 1);
+  assert.equal(qqParsed.jobs[0].url, "https://join.qq.com/post_detail.html?postid=1282707398326592512");
+  assert.equal(qqParsed.jobs[0].location, "深圳/北京/上海");
+  assert.match(qqParsed.jobs[0].description, /校园招聘（应届毕业生）/);
 });
