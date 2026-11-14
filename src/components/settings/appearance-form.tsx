@@ -12,26 +12,89 @@ const MODES: { id: ThemeMode; label: string; icon: typeof Sun }[] = [
   { id: "system", label: "跟随系统", icon: Laptop },
 ];
 
-/** A tiny window drawn the way each style draws surfaces. */
+/** A realistic mini-desktop drawn the way each style actually renders surfaces. */
 function StylePreview({ style }: { style: ThemeStyle }) {
-  const card = style === "soft" ? "rounded-lg bg-white shadow-[0_4px_12px_-6px_rgba(15,23,42,0.25)]" : style === "minimal" ? "rounded-[3px] border border-black/10 bg-white" : style === "glass" ? "rounded-md border border-white/70 bg-white/55 shadow-[0_4px_10px_-6px_rgba(0,0,0,0.25)] backdrop-blur" : "rounded-md bg-white shadow-[0_3px_8px_-4px_rgba(0,0,0,0.25)]";
-  const button = style === "minimal" ? "rounded-[3px] bg-[var(--primary)]" : style === "soft" ? "rounded-full bg-[var(--primary)]" : "rounded-full bg-[var(--primary)]";
-  return (
-    <span className={cn("relative block h-20 overflow-hidden rounded-lg border border-black/5 p-2", style === "minimal" ? "bg-[#fafafa]" : style === "soft" ? "bg-[#f2f3f7]" : "bg-[#f3f3f7]")}>
-      {style === "glass" && <span className="absolute -right-3 -top-4 size-14 rounded-full bg-[var(--glow-1)] opacity-50 blur-xl" />}
-      {style === "glass" && <span className="absolute -bottom-6 left-2 size-12 rounded-full bg-[var(--glow-2)] opacity-40 blur-xl" />}
-      <span className="relative flex h-full gap-1.5">
-        <span className={cn("w-6 space-y-1 p-1", style === "minimal" ? "border-r border-black/10" : style === "glass" ? "rounded-md bg-white/40" : style === "soft" ? "" : "rounded-md bg-white/70")}>
-          <span className="block h-1 w-3 rounded-full bg-[var(--primary)] opacity-70" />
-          <span className="block h-1 w-4 rounded-full bg-black/10" />
-          <span className="block h-1 w-3 rounded-full bg-black/10" />
-        </span>
-        <span className="flex flex-1 flex-col gap-1.5">
-          <span className={cn("block flex-1 p-1.5", card)}>
-            <span className="block h-1.5 w-10 rounded-full bg-black/20" />
-            <span className="mt-1 block h-1 w-14 rounded-full bg-black/10" />
+  if (style === "soft") {
+    return (
+      <span className="relative block h-24 overflow-hidden rounded-xl border border-black/5 bg-gradient-to-br from-[#eef0fa] via-[#f5f6fc] to-[#eaeefb] p-2">
+        <span className="absolute -right-4 -top-4 size-16 rounded-full bg-[var(--glow-1)] opacity-25 blur-xl" />
+        <span className="relative flex h-full gap-2">
+          <span className="w-7 space-y-1 rounded-xl bg-white/85 p-1.5 shadow-[0_4px_12px_-4px_rgba(15,23,42,0.12)] ring-1 ring-black/[0.04]">
+            <span className="block h-1.5 w-4 rounded-full bg-[var(--primary)]" />
+            <span className="block h-1 w-3.5 rounded-full bg-black/12" />
+            <span className="block h-1 w-3 rounded-full bg-black/10" />
           </span>
-          <span className={cn("block h-2.5 w-8 self-end", button)} />
+          <span className="flex flex-1 flex-col gap-1.5">
+            <span className="block flex-1 rounded-xl bg-white p-2 shadow-[0_6px_16px_-6px_rgba(15,23,42,0.14)] ring-1 ring-black/[0.03]">
+              <span className="block h-1.5 w-11 rounded-full bg-black/25" />
+              <span className="mt-1.5 flex gap-1">
+                <span className="h-3 flex-1 rounded-lg bg-[var(--primary)]/10" />
+                <span className="h-3 flex-1 rounded-lg bg-amber-500/12" />
+              </span>
+            </span>
+            <span className="block h-3 w-10 self-end rounded-full bg-[var(--primary)] shadow-xs" />
+          </span>
+        </span>
+      </span>
+    );
+  }
+  if (style === "glass") {
+    return (
+      <span className="relative block h-24 overflow-hidden rounded-xl border border-white/40 bg-[#0f172a] p-2">
+        <span className="absolute -right-2 -top-4 size-18 rounded-full bg-[var(--glow-1)] opacity-75 blur-xl" />
+        <span className="absolute -bottom-5 left-1 size-16 rounded-full bg-[var(--glow-2)] opacity-65 blur-xl" />
+        <span className="relative flex h-full gap-2">
+          <span className="w-7 space-y-1 rounded-xl border border-white/30 bg-white/18 p-1.5 backdrop-blur-md">
+            <span className="block h-1.5 w-4 rounded-full bg-white/90" />
+            <span className="block h-1 w-3.5 rounded-full bg-white/35" />
+            <span className="block h-1 w-3 rounded-full bg-white/25" />
+          </span>
+          <span className="flex flex-1 flex-col gap-1.5">
+            <span className="block flex-1 rounded-xl border border-white/35 bg-white/20 p-2 shadow-lg backdrop-blur-md">
+              <span className="block h-1.5 w-12 rounded-full bg-white/85" />
+              <span className="mt-1.5 block h-1 w-16 rounded-full bg-white/45" />
+            </span>
+            <span className="block h-3 w-10 self-end rounded-full border border-white/40 bg-[var(--primary)] shadow-[0_0_12px_var(--primary)]" />
+          </span>
+        </span>
+      </span>
+    );
+  }
+  if (style === "classic") {
+    return (
+      <span className="relative block h-24 overflow-hidden rounded-xl border border-black/8 bg-[#f1f3f9] p-0">
+        <span className="relative flex h-full">
+          <span className="w-8 space-y-1.5 border-r border-black/8 bg-white/80 p-1.5">
+            <span className="block h-2 w-full rounded-md bg-[var(--primary)] shadow-2xs" />
+            <span className="block h-1 w-4 rounded-full bg-black/15" />
+            <span className="block h-1 w-3.5 rounded-full bg-black/12" />
+          </span>
+          <span className="flex flex-1 flex-col gap-1.5 p-2">
+            <span className="block h-5 rounded-lg bg-[var(--primary)] p-1.5">
+              <span className="block h-1.5 w-10 rounded-full bg-white/90" />
+            </span>
+            <span className="block flex-1 rounded-lg border border-black/6 bg-white p-1.5 shadow-xs">
+              <span className="block h-1 w-12 rounded-full bg-black/20" />
+            </span>
+          </span>
+        </span>
+      </span>
+    );
+  }
+  return (
+    <span className="relative block h-24 overflow-hidden rounded-xl border border-black/12 bg-[#fafafa] p-0">
+      <span className="relative flex h-full">
+        <span className="w-8 space-y-1.5 border-r border-black/12 bg-[#f5f5f5] p-1.5">
+          <span className="block h-1.5 w-4 border-l-2 border-[var(--primary)] bg-black/8 pl-1" />
+          <span className="block h-1 w-3.5 bg-black/15" />
+          <span className="block h-1 w-3 bg-black/12" />
+        </span>
+        <span className="flex flex-1 flex-col justify-between p-2">
+          <span className="block rounded-[3px] border border-black/12 bg-white p-1.5">
+            <span className="block h-1.5 w-11 bg-black/30" />
+            <span className="mt-1 block h-1 w-14 bg-black/12" />
+          </span>
+          <span className="block h-2.5 w-9 self-end rounded-[3px] bg-black/85" />
         </span>
       </span>
     </span>

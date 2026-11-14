@@ -61,422 +61,396 @@
   --ease-apple: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-:root {
-  /* Content sits on a soft off-white (macOS-style), cards are pure white —
-     that split is what makes a card read as a floating panel instead of a
-     border-only box. Previously background and card were both pure white,
-     so the only thing separating a card from the page was a 1px ring. */
-  --background: oklch(0.976 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: #4f46e5;
+/* ---------- Palette 1: 星云紫蓝 (indigo, default) ---------- */
+:root,
+[data-palette="indigo"] {
+  --background: #f3f3fb;
+  --foreground: #14141f;
+  --card: #ffffff;
+  --card-foreground: #14141f;
+  --popover: #ffffff;
+  --popover-foreground: #14141f;
+  --primary: #5147e5;
   --primary-foreground: #ffffff;
-  --secondary: oklch(0.955 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.955 0 0);
-  --muted-foreground: oklch(0.53 0 0);
-  --accent: #eef2ff;
-  --accent-foreground: #4338ca;
+  --secondary: #e9e9f7;
+  --secondary-foreground: #222238;
+  --muted: #ececf7;
+  --muted-foreground: #66667e;
+  --accent: #e6e7ff;
+  --accent-foreground: #3f35c9;
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.906 0 0);
-  --input: oklch(0.906 0 0);
+  --border: #e1e1f0;
+  --input: #e1e1f0;
   --ring: #6366f1;
-  /* Two-stop brand gradient (indigo → violet) — the signature color move
-     that makes primary buttons, stat icons and the ambient page glow read
-     as "one product" instead of flat single-hue fills. */
-  --gradient-accent: linear-gradient(135deg, #5666da, #8b8fe8);
-  --glow-1: #6d80d7;
-  --glow-2: #9b96d7;
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.75rem;
-  --sidebar: oklch(0.976 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.94 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.906 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --gradient-accent: linear-gradient(135deg, #4f46e5 0%, #6d5ce8 52%, #9366f5 100%);
+  --glow-1: #6366f1;
+  --glow-2: #a855f7;
+  --chart-1: #4f46e5;
+  --chart-2: #7c3aed;
+  --chart-3: #a855f7;
+  --chart-4: #6366f1;
+  --chart-5: #4338ca;
+  --radius: 0.875rem;
+  --sidebar: #efeef9;
+  --sidebar-foreground: #14141f;
+  --sidebar-primary: #5147e5;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e3e3f5;
+  --sidebar-accent-foreground: #222238;
+  --sidebar-border: #e1e1f0;
+  --sidebar-ring: #6366f1;
 }
 
-/* ---------- Palette: 靛蓝 (indigo, default) ---------- */
-/* :root above is this palette's light mode. Dark mode below — a floating-
-   panel dark UI mirrors the light mode's card/background split: background
-   is the darkest surface, cards sit one step lighter so they still read as
-   panels instead of flattening into the page like the original shadcn
-   boilerplate dark values did. */
-.dark {
-  --background: oklch(0.16 0.004 285);
-  --foreground: oklch(0.96 0 0);
-  --card: oklch(0.21 0.006 285);
-  --card-foreground: oklch(0.96 0 0);
-  --popover: oklch(0.21 0.006 285);
-  --popover-foreground: oklch(0.96 0 0);
+.dark,
+.dark[data-palette="indigo"] {
+  --background: #10111c;
+  --foreground: #f4f4fa;
+  --card: #191b2b;
+  --card-foreground: #f4f4fa;
+  --popover: #1e2033;
+  --popover-foreground: #f4f4fa;
   --primary: #818cf8;
-  --primary-foreground: oklch(0.15 0 0);
-  --secondary: oklch(0.26 0.006 285);
-  --secondary-foreground: oklch(0.96 0 0);
-  --muted: oklch(0.26 0.006 285);
-  --muted-foreground: oklch(0.68 0 0);
-  --accent: oklch(0.27 0.03 280);
-  --accent-foreground: oklch(0.85 0.06 280);
+  --primary-foreground: #10111c;
+  --secondary: #24273d;
+  --secondary-foreground: #f4f4fa;
+  --muted: #23263b;
+  --muted-foreground: #9ca0ba;
+  --accent: #292d4a;
+  --accent-foreground: #c7d2fe;
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 12%);
+  --border: rgba(165, 180, 252, 0.13);
+  --input: rgba(165, 180, 252, 0.16);
   --ring: #818cf8;
-  --gradient-accent: linear-gradient(135deg, #8798f0, #aea7ef);
-  --glow-1: #7285cf;
-  --glow-2: #a296ce;
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.16 0.004 285);
-  --sidebar-foreground: oklch(0.96 0 0);
+  --gradient-accent: linear-gradient(135deg, #6366f1 0%, #818cf8 52%, #c084fc 100%);
+  --glow-1: #6366f1;
+  --glow-2: #9333ea;
+  --sidebar: #141625;
+  --sidebar-foreground: #f4f4fa;
   --sidebar-primary: #818cf8;
-  --sidebar-primary-foreground: oklch(0.15 0 0);
-  --sidebar-accent: oklch(0.26 0.006 285);
-  --sidebar-accent-foreground: oklch(0.96 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-primary-foreground: #10111c;
+  --sidebar-accent: rgba(129, 140, 248, 0.14);
+  --sidebar-accent-foreground: #f4f4fa;
+  --sidebar-border: rgba(165, 180, 252, 0.12);
   --sidebar-ring: #818cf8;
 }
 
-/* ---------- Palette: 科技蓝·深空 (tech blue / deep space) ---------- */
-/* Cooler blue-tinted neutrals instead of true gray, plus a more saturated
-   blue accent — the light mode is a subtler version of the same idea, the
-   dark mode (deep navy, not black, with a bright cyan-blue primary) is
-   where this palette actually earns the "深空" name. */
+/* ---------- Palette 2: 天峰冰蓝 (tech / Apple #0071e3 blue) ---------- */
 [data-palette="tech"] {
-  --background: oklch(0.974 0.004 250);
-  --foreground: oklch(0.16 0.014 255);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.16 0.014 255);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.16 0.014 255);
-  --primary: #2563eb;
+  --background: #edf4fc;
+  --foreground: #0f1c2e;
+  --card: #ffffff;
+  --card-foreground: #0f1c2e;
+  --popover: #ffffff;
+  --popover-foreground: #0f1c2e;
+  --primary: #0071e3;
   --primary-foreground: #ffffff;
-  --secondary: oklch(0.95 0.008 250);
-  --secondary-foreground: oklch(0.22 0.014 255);
-  --muted: oklch(0.95 0.008 250);
-  --muted-foreground: oklch(0.5 0.014 255);
-  --accent: oklch(0.94 0.03 235);
-  --accent-foreground: #1d4ed8;
+  --secondary: #dfeaf7;
+  --secondary-foreground: #142c4c;
+  --muted: #e3edf9;
+  --muted-foreground: #546b88;
+  --accent: #d8ebff;
+  --accent-foreground: #005bb5;
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.9 0.008 250);
-  --input: oklch(0.9 0.008 250);
-  --ring: #3b82f6;
-  --gradient-accent: linear-gradient(135deg, #2563eb 0%, #0ea5e9 55%, #06b6d4 100%);
-  --glow-1: #2563eb;
+  --border: #d2e2f4;
+  --input: #d2e2f4;
+  --ring: #0071e3;
+  --gradient-accent: linear-gradient(135deg, #0066cc 0%, #0077ed 48%, #00a8e8 100%);
+  --glow-1: #0071e3;
   --glow-2: #06b6d4;
-  --sidebar: oklch(0.974 0.004 250);
-  --sidebar-foreground: oklch(0.16 0.014 255);
-  --sidebar-primary: #2563eb;
+  --sidebar: #e7f0fb;
+  --sidebar-foreground: #0f1c2e;
+  --sidebar-primary: #0071e3;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: oklch(0.94 0.03 235);
-  --sidebar-accent-foreground: #1d4ed8;
-  --sidebar-border: oklch(0.9 0.008 250);
-  --sidebar-ring: #3b82f6;
+  --sidebar-accent: #d6e7fa;
+  --sidebar-accent-foreground: #005bb5;
+  --sidebar-border: #d2e2f4;
+  --sidebar-ring: #0071e3;
 }
 
 .dark[data-palette="tech"] {
-  --background: oklch(0.15 0.024 260);
-  --foreground: oklch(0.96 0.006 240);
-  --card: oklch(0.2 0.026 260);
-  --card-foreground: oklch(0.96 0.006 240);
-  --popover: oklch(0.2 0.026 260);
-  --popover-foreground: oklch(0.96 0.006 240);
-  --primary: #38bdf8;
-  --primary-foreground: oklch(0.14 0.03 260);
-  --secondary: oklch(0.25 0.024 260);
-  --secondary-foreground: oklch(0.96 0.006 240);
-  --muted: oklch(0.25 0.024 260);
-  --muted-foreground: oklch(0.66 0.014 250);
-  --accent: oklch(0.28 0.055 240);
-  --accent-foreground: oklch(0.85 0.09 220);
+  --background: #0b1422;
+  --foreground: #f0f6fc;
+  --card: #132135;
+  --card-foreground: #f0f6fc;
+  --popover: #17273f;
+  --popover-foreground: #f0f6fc;
+  --primary: #47a8ff;
+  --primary-foreground: #081321;
+  --secondary: #1c2f4a;
+  --secondary-foreground: #f0f6fc;
+  --muted: #1b2d47;
+  --muted-foreground: #8fa9c7;
+  --accent: #1d395c;
+  --accent-foreground: #9ed2ff;
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 12%);
-  --input: oklch(1 0 0 / 14%);
-  --ring: #38bdf8;
-  --gradient-accent: linear-gradient(135deg, #38bdf8 0%, #22d3ee 55%, #2dd4bf 100%);
-  --glow-1: #38bdf8;
-  --glow-2: #2dd4bf;
-  --sidebar: oklch(0.15 0.024 260);
-  --sidebar-foreground: oklch(0.96 0.006 240);
-  --sidebar-primary: #38bdf8;
-  --sidebar-primary-foreground: oklch(0.14 0.03 260);
-  --sidebar-accent: oklch(0.28 0.055 240);
-  --sidebar-accent-foreground: oklch(0.85 0.09 220);
-  --sidebar-border: oklch(1 0 0 / 12%);
-  --sidebar-ring: #38bdf8;
+  --border: rgba(125, 211, 252, 0.14);
+  --input: rgba(125, 211, 252, 0.16);
+  --ring: #47a8ff;
+  --gradient-accent: linear-gradient(135deg, #0284c7 0%, #38bdf8 52%, #2dd4bf 100%);
+  --glow-1: #0284c7;
+  --glow-2: #06b6d4;
+  --sidebar: #0e1a2c;
+  --sidebar-foreground: #f0f6fc;
+  --sidebar-primary: #47a8ff;
+  --sidebar-primary-foreground: #081321;
+  --sidebar-accent: rgba(56, 189, 248, 0.15);
+  --sidebar-accent-foreground: #e0f2fe;
+  --sidebar-border: rgba(125, 211, 252, 0.12);
+  --sidebar-ring: #47a8ff;
 }
 
-/* ---------- Palette: 灰调极简 (grayscale minimal) ---------- */
-/* No hue at all outside destructive red — the "accent color" is ink itself
-   (near-black button in light mode, near-white in dark), the way a lot of
-   minimal productivity apps signal the primary action through weight and
-   contrast rather than color. */
+/* ---------- Palette 3: 曜石黑白 (mono / Apple Studio Monochrome) ---------- */
 [data-palette="mono"] {
-  --background: oklch(0.98 0 0);
-  --foreground: oklch(0.14 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.14 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.14 0 0);
-  --primary: oklch(0.18 0 0);
-  --primary-foreground: oklch(0.98 0 0);
-  --secondary: oklch(0.95 0 0);
-  --secondary-foreground: oklch(0.2 0 0);
-  --muted: oklch(0.95 0 0);
-  --muted-foreground: oklch(0.48 0 0);
-  --accent: oklch(0.93 0 0);
-  --accent-foreground: oklch(0.18 0 0);
+  --background: #f5f5f7;
+  --foreground: #1d1d1f;
+  --card: #ffffff;
+  --card-foreground: #1d1d1f;
+  --popover: #ffffff;
+  --popover-foreground: #1d1d1f;
+  --primary: #1d1d1f;
+  --primary-foreground: #ffffff;
+  --secondary: #e8e8ed;
+  --secondary-foreground: #1d1d1f;
+  --muted: #ebebef;
+  --muted-foreground: #6e6e73;
+  --accent: #e5e5ea;
+  --accent-foreground: #1d1d1f;
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.89 0 0);
-  --input: oklch(0.89 0 0);
-  --ring: oklch(0.4 0 0);
-  /* Stays true to "no hue" — a graphite sheen (near-black to mid-gray)
-     rather than an actual color gradient, so this palette still reads as
-     the deliberately monochrome option next to the other two. */
-  --gradient-accent: linear-gradient(135deg, oklch(0.12 0 0) 0%, oklch(0.32 0 0) 100%);
-  --glow-1: oklch(0.3 0 0);
-  --glow-2: oklch(0.5 0 0);
-  --sidebar: oklch(0.98 0 0);
-  --sidebar-foreground: oklch(0.14 0 0);
-  --sidebar-primary: oklch(0.18 0 0);
-  --sidebar-primary-foreground: oklch(0.98 0 0);
-  --sidebar-accent: oklch(0.93 0 0);
-  --sidebar-accent-foreground: oklch(0.18 0 0);
-  --sidebar-border: oklch(0.89 0 0);
-  --sidebar-ring: oklch(0.4 0 0);
+  --border: #d2d2d7;
+  --input: #d2d2d7;
+  --ring: #424245;
+  --gradient-accent: linear-gradient(135deg, #1d1d1f 0%, #3a3a3c 55%, #515154 100%);
+  --glow-1: #6e6e73;
+  --glow-2: #a1a1a6;
+  --sidebar: #f0f0f3;
+  --sidebar-foreground: #1d1d1f;
+  --sidebar-primary: #1d1d1f;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e2e2e7;
+  --sidebar-accent-foreground: #1d1d1f;
+  --sidebar-border: #d2d2d7;
+  --sidebar-ring: #424245;
 }
 
 .dark[data-palette="mono"] {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.98 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.98 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.98 0 0);
-  --primary: oklch(0.92 0 0);
-  --primary-foreground: oklch(0.18 0 0);
-  --secondary: oklch(0.27 0 0);
-  --secondary-foreground: oklch(0.98 0 0);
-  --muted: oklch(0.27 0 0);
-  --muted-foreground: oklch(0.7 0 0);
-  --accent: oklch(0.27 0 0);
-  --accent-foreground: oklch(0.95 0 0);
+  --background: #09090b;
+  --foreground: #f5f5f7;
+  --card: #141417;
+  --card-foreground: #f5f5f7;
+  --popover: #1c1c1f;
+  --popover-foreground: #f5f5f7;
+  --primary: #f5f5f7;
+  --primary-foreground: #111113;
+  --secondary: #232326;
+  --secondary-foreground: #f5f5f7;
+  --muted: #202023;
+  --muted-foreground: #98989d;
+  --accent: #27272a;
+  --accent-foreground: #ffffff;
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 12%);
-  --ring: oklch(0.6 0 0);
-  --gradient-accent: linear-gradient(135deg, oklch(0.98 0 0) 0%, oklch(0.72 0 0) 100%);
-  --glow-1: oklch(0.75 0 0);
-  --glow-2: oklch(0.5 0 0);
-  --sidebar: oklch(0.145 0 0);
-  --sidebar-foreground: oklch(0.98 0 0);
-  --sidebar-primary: oklch(0.92 0 0);
-  --sidebar-primary-foreground: oklch(0.18 0 0);
-  --sidebar-accent: oklch(0.27 0 0);
-  --sidebar-accent-foreground: oklch(0.95 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.6 0 0);
+  --border: rgba(255, 255, 255, 0.11);
+  --input: rgba(255, 255, 255, 0.14);
+  --ring: #a1a1aa;
+  --gradient-accent: linear-gradient(135deg, #ffffff 0%, #d4d4d8 60%, #a1a1aa 100%);
+  --glow-1: #71717a;
+  --glow-2: #3f3f46;
+  --sidebar: #0e0e11;
+  --sidebar-foreground: #f5f5f7;
+  --sidebar-primary: #f5f5f7;
+  --sidebar-primary-foreground: #111113;
+  --sidebar-accent: rgba(255, 255, 255, 0.1);
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: rgba(255, 255, 255, 0.1);
+  --sidebar-ring: #a1a1aa;
 }
 
-/* Quiet metallic neutrals with a blue-gray accent. */
+/* ---------- Palette 4: 原色钛金属 (titanium / Apple Watch Ultra) ---------- */
 [data-palette="titanium"] {
-  --background: #f3f5f7;
-  --foreground: #202a35;
-  --card: #ffffff;
-  --card-foreground: #202a35;
-  --popover: #ffffff;
-  --popover-foreground: #202a35;
-  --primary: #526a86;
+  --background: #ecf0f5;
+  --foreground: #1b2530;
+  --card: #fbfcfe;
+  --card-foreground: #1b2530;
+  --popover: #fbfcfe;
+  --popover-foreground: #1b2530;
+  --primary: #445d7a;
   --primary-foreground: #ffffff;
-  --secondary: #e8edf2;
-  --secondary-foreground: #2b3948;
-  --muted: #e9eef3;
-  --muted-foreground: #667382;
-  --accent: #e7edf4;
-  --accent-foreground: #405b78;
-  --border: #dbe2e9;
-  --input: #dbe2e9;
-  --ring: #6d88a5;
-  --gradient-accent: linear-gradient(135deg, #526a86, #7893ac);
-  --glow-1: #9db3ca;
-  --glow-2: #d8e2ec;
-  --sidebar: #f5f7f9;
-  --sidebar-foreground: #202a35;
-  --sidebar-primary: #526a86;
+  --secondary: #dfe6ef;
+  --secondary-foreground: #253342;
+  --muted: #e3e9f1;
+  --muted-foreground: #5e6d7e;
+  --accent: #dce6f2;
+  --accent-foreground: #324a66;
+  --border: #cfd8e3;
+  --input: #cfd8e3;
+  --ring: #5a7696;
+  --gradient-accent: linear-gradient(135deg, #3b526b 0%, #526a86 52%, #748da6 100%);
+  --glow-1: #6482a3;
+  --glow-2: #94adc7;
+  --sidebar: #e6ecf2;
+  --sidebar-foreground: #1b2530;
+  --sidebar-primary: #445d7a;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #e5ebf1;
-  --sidebar-accent-foreground: #2b3948;
-  --sidebar-border: #dbe2e9;
-  --sidebar-ring: #6d88a5;
+  --sidebar-accent: #d8e1ec;
+  --sidebar-accent-foreground: #1b2530;
+  --sidebar-border: #cfd8e3;
+  --sidebar-ring: #5a7696;
 }
 
 .dark[data-palette="titanium"] {
-  --background: #161c24;
-  --foreground: #edf2f6;
-  --card: #202832;
-  --card-foreground: #edf2f6;
-  --popover: #202832;
-  --popover-foreground: #edf2f6;
-  --primary: #a3bed8;
-  --primary-foreground: #14202b;
-  --secondary: #2c3641;
-  --secondary-foreground: #edf2f6;
-  --muted: #2c3641;
-  --muted-foreground: #a9b5c1;
-  --accent: #2f4052;
-  --accent-foreground: #d2e4f4;
-  --border: #36414d;
-  --input: #36414d;
-  --ring: #9bb8d2;
-  --gradient-accent: linear-gradient(135deg, #a3bed8, #7899b8);
-  --glow-1: #5d7b9d;
-  --glow-2: #31495d;
-  --sidebar: #19212a;
-  --sidebar-foreground: #edf2f6;
-  --sidebar-primary: #a3bed8;
-  --sidebar-primary-foreground: #14202b;
-  --sidebar-accent: #2d3c4b;
-  --sidebar-accent-foreground: #e4f1fc;
-  --sidebar-border: #36414d;
-  --sidebar-ring: #9bb8d2;
+  --background: #11161d;
+  --foreground: #edf2f7;
+  --card: #1a222c;
+  --card-foreground: #edf2f7;
+  --popover: #202a36;
+  --popover-foreground: #edf2f7;
+  --primary: #9cb9d6;
+  --primary-foreground: #101923;
+  --secondary: #26313f;
+  --secondary-foreground: #edf2f7;
+  --muted: #242f3d;
+  --muted-foreground: #9aa8b8;
+  --accent: #2b3a4c;
+  --accent-foreground: #d5e6f7;
+  --border: rgba(176, 196, 222, 0.14);
+  --input: rgba(176, 196, 222, 0.16);
+  --ring: #9cb9d6;
+  --gradient-accent: linear-gradient(135deg, #7494b5 0%, #9cb9d6 55%, #bfd4e8 100%);
+  --glow-1: #527191;
+  --glow-2: #334b63;
+  --sidebar: #151c25;
+  --sidebar-foreground: #edf2f7;
+  --sidebar-primary: #9cb9d6;
+  --sidebar-primary-foreground: #101923;
+  --sidebar-accent: rgba(156, 185, 214, 0.14);
+  --sidebar-accent-foreground: #edf2f7;
+  --sidebar-border: rgba(176, 196, 222, 0.12);
+  --sidebar-ring: #9cb9d6;
 }
 
-/* Cool aurora: color lives in highlights while the working surfaces stay calm. */
+/* ---------- Palette 5: 翡翠极光 (aurora / Glacial Emerald) ---------- */
 [data-palette="aurora"] {
-  --background: #f1f8f7;
-  --foreground: #17312f;
+  --background: #e9f6f3;
+  --foreground: #112a27;
   --card: #ffffff;
-  --card-foreground: #17312f;
+  --card-foreground: #112a27;
   --popover: #ffffff;
-  --popover-foreground: #17312f;
-  --primary: #087f78;
+  --popover-foreground: #112a27;
+  --primary: #0b8a82;
   --primary-foreground: #ffffff;
-  --secondary: #e2f0ed;
-  --secondary-foreground: #1c4d49;
-  --muted: #e7f1ef;
-  --muted-foreground: #59716e;
-  --accent: #d9f0eb;
-  --accent-foreground: #076e68;
-  --border: #d3e6e1;
-  --input: #d3e6e1;
-  --ring: #13a69b;
-  --gradient-accent: linear-gradient(135deg, #087f78, #27afa4);
-  --glow-1: #6bc9bd;
-  --glow-2: #c4e9d9;
-  --sidebar: #f1f8f7;
-  --sidebar-foreground: #17312f;
-  --sidebar-primary: #087f78;
+  --secondary: #d8eee9;
+  --secondary-foreground: #15423e;
+  --muted: #def1ed;
+  --muted-foreground: #4e6e6a;
+  --accent: #cef0e8;
+  --accent-foreground: #066963;
+  --border: #c6e3dc;
+  --input: #c6e3dc;
+  --ring: #0d9488;
+  --gradient-accent: linear-gradient(135deg, #059669 0%, #0d9488 50%, #06b6d4 100%);
+  --glow-1: #10b981;
+  --glow-2: #06b6d4;
+  --sidebar: #e2f2ee;
+  --sidebar-foreground: #112a27;
+  --sidebar-primary: #0b8a82;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #dceee9;
-  --sidebar-accent-foreground: #076e68;
-  --sidebar-border: #d3e6e1;
-  --sidebar-ring: #13a69b;
+  --sidebar-accent: #d1ebe5;
+  --sidebar-accent-foreground: #066963;
+  --sidebar-border: #c6e3dc;
+  --sidebar-ring: #0d9488;
 }
 
 .dark[data-palette="aurora"] {
-  --background: #0d2022;
-  --foreground: #e9f7f3;
-  --card: #183034;
-  --card-foreground: #e9f7f3;
-  --popover: #183034;
-  --popover-foreground: #e9f7f3;
-  --primary: #57dac7;
-  --primary-foreground: #0b2928;
-  --secondary: #234247;
-  --secondary-foreground: #e9f7f3;
-  --muted: #234247;
-  --muted-foreground: #a5c7c0;
-  --accent: #245653;
-  --accent-foreground: #b4f5e9;
-  --border: #315055;
-  --input: #315055;
-  --ring: #57dac7;
-  --gradient-accent: linear-gradient(135deg, #57dac7, #8be7d2);
-  --glow-1: #1b9088;
-  --glow-2: #277b72;
-  --sidebar: #11282b;
-  --sidebar-foreground: #e9f7f3;
-  --sidebar-primary: #57dac7;
-  --sidebar-primary-foreground: #0b2928;
-  --sidebar-accent: #24504f;
+  --background: #09191a;
+  --foreground: #ebfaf6;
+  --card: #11282a;
+  --card-foreground: #ebfaf6;
+  --popover: #153133;
+  --popover-foreground: #ebfaf6;
+  --primary: #4fdac7;
+  --primary-foreground: #072220;
+  --secondary: #1b3b3e;
+  --secondary-foreground: #ebfaf6;
+  --muted: #19383b;
+  --muted-foreground: #92bab3;
+  --accent: #1d4748;
+  --accent-foreground: #a7f3d0;
+  --border: rgba(94, 234, 212, 0.14);
+  --input: rgba(94, 234, 212, 0.16);
+  --ring: #4fdac7;
+  --gradient-accent: linear-gradient(135deg, #10b981 0%, #2dd4bf 52%, #38bdf8 100%);
+  --glow-1: #0d9488;
+  --glow-2: #059669;
+  --sidebar: #0c2022;
+  --sidebar-foreground: #ebfaf6;
+  --sidebar-primary: #4fdac7;
+  --sidebar-primary-foreground: #072220;
+  --sidebar-accent: rgba(79, 218, 199, 0.15);
   --sidebar-accent-foreground: #b4f5e9;
-  --sidebar-border: #315055;
-  --sidebar-ring: #57dac7;
+  --sidebar-border: rgba(94, 234, 212, 0.12);
+  --sidebar-ring: #4fdac7;
 }
 
-/* Warm paper and restrained champagne metal. */
+/* ---------- Palette 6: 沙漠钛金 (champagne / Desert Titanium Warm Gold) ---------- */
 [data-palette="champagne"] {
-  --background: #faf7f2;
-  --foreground: #302820;
-  --card: #fffdfa;
-  --card-foreground: #302820;
-  --popover: #fffdfa;
-  --popover-foreground: #302820;
-  --primary: #956942;
+  --background: #f8f2ea;
+  --foreground: #2b2118;
+  --card: #fffcf8;
+  --card-foreground: #2b2118;
+  --popover: #fffcf8;
+  --popover-foreground: #2b2118;
+  --primary: #a36635;
   --primary-foreground: #ffffff;
-  --secondary: #f1e9df;
-  --secondary-foreground: #513d2d;
-  --muted: #f3ece3;
-  --muted-foreground: #786b5f;
-  --accent: #f3e5d3;
-  --accent-foreground: #815937;
-  --border: #e9ded1;
-  --input: #e9ded1;
-  --ring: #af8058;
-  --gradient-accent: linear-gradient(135deg, #956942, #bd9067);
-  --glow-1: #e2bc8f;
-  --glow-2: #f1dfc5;
-  --sidebar: #faf7f2;
-  --sidebar-foreground: #302820;
-  --sidebar-primary: #956942;
+  --secondary: #efe4d6;
+  --secondary-foreground: #463322;
+  --muted: #f2e8dc;
+  --muted-foreground: #786655;
+  --accent: #f2dfc8;
+  --accent-foreground: #804d23;
+  --border: #e5d6c5;
+  --input: #e5d6c5;
+  --ring: #b87642;
+  --gradient-accent: linear-gradient(135deg, #9a5b29 0%, #bd7d48 52%, #d89f6c 100%);
+  --glow-1: #d4955e;
+  --glow-2: #ebd0b0;
+  --sidebar: #f4ece1;
+  --sidebar-foreground: #2b2118;
+  --sidebar-primary: #a36635;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #f0e5d8;
-  --sidebar-accent-foreground: #815937;
-  --sidebar-border: #e9ded1;
-  --sidebar-ring: #af8058;
+  --sidebar-accent: #eadbc9;
+  --sidebar-accent-foreground: #75451e;
+  --sidebar-border: #e5d6c5;
+  --sidebar-ring: #b87642;
 }
 
 .dark[data-palette="champagne"] {
-  --background: #211b18;
-  --foreground: #f6eee5;
-  --card: #2d2520;
-  --card-foreground: #f6eee5;
-  --popover: #2d2520;
-  --popover-foreground: #f6eee5;
-  --primary: #e2b68e;
-  --primary-foreground: #261b14;
-  --secondary: #3c312a;
-  --secondary-foreground: #f6eee5;
-  --muted: #3c312a;
-  --muted-foreground: #c4ad99;
-  --accent: #533d2c;
-  --accent-foreground: #f2d3b0;
-  --border: #4c3c31;
-  --input: #4c3c31;
-  --ring: #e2b68e;
-  --gradient-accent: linear-gradient(135deg, #e2b68e, #c99169);
-  --glow-1: #a76e48;
-  --glow-2: #6f5038;
-  --sidebar: #251e19;
-  --sidebar-foreground: #f6eee5;
-  --sidebar-primary: #e2b68e;
-  --sidebar-primary-foreground: #261b14;
-  --sidebar-accent: #48372b;
-  --sidebar-accent-foreground: #f2d3b0;
-  --sidebar-border: #4c3c31;
-  --sidebar-ring: #e2b68e;
+  --background: #19130f;
+  --foreground: #f7efe6;
+  --card: #251d17;
+  --card-foreground: #f7efe6;
+  --popover: #2d231c;
+  --popover-foreground: #f7efe6;
+  --primary: #e4b68a;
+  --primary-foreground: #24170e;
+  --secondary: #352921;
+  --secondary-foreground: #f7efe6;
+  --muted: #32271f;
+  --muted-foreground: #bfa792;
+  --accent: #453325;
+  --accent-foreground: #f5d6b5;
+  --border: rgba(235, 195, 155, 0.14);
+  --input: rgba(235, 195, 155, 0.16);
+  --ring: #e4b68a;
+  --gradient-accent: linear-gradient(135deg, #c88d58 0%, #e4b68a 55%, #f3d2b0 100%);
+  --glow-1: #b07242;
+  --glow-2: #754d2d;
+  --sidebar: #1e1712;
+  --sidebar-foreground: #f7efe6;
+  --sidebar-primary: #e4b68a;
+  --sidebar-primary-foreground: #24170e;
+  --sidebar-accent: rgba(228, 182, 138, 0.15);
+  --sidebar-accent-foreground: #f5d6b5;
+  --sidebar-border: rgba(235, 195, 155, 0.12);
+  --sidebar-ring: #e4b68a;
 }
 
 @layer base {
@@ -485,117 +459,273 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
+    transition: background-color 0.35s var(--ease-apple), color 0.25s var(--ease-apple);
   }
   html {
     @apply font-sans;
     text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
   }
-  /* Apple's own type sets tighter as it gets bigger — a display-size
-     heading at the default 0 tracking looks loose next to body text, while
-     the same negative tracking on a small label would collide letters. */
   h1,
   h2,
   h3 {
     @apply tracking-tight;
   }
   h1 {
-    letter-spacing: -0.025em;
+    letter-spacing: -0.028em;
   }
 }
 
-/* ---------- 界面风格 (data-style on <html>) ----------
-   Independent of the palette: how surfaces look. Cards, the primary button,
-   the sidebar and the ambient glow read these, so a style is only a set of
-   values here and every page follows. :root holds 简约 (the default). */
+/* ==========================================================================
+   四大界面风格 (data-style on <html>)
+   每一套风格在空间构图、侧边栏形态、卡片材质、圆角曲率、光晕景深上完全区分：
+   1. minimal（纯粹极简）：0 光晕、0 模糊、锐利小圆角、1px 细线、左侧强调竖条
+   2. glass（液态毛玻璃）：visionOS 高通透磨砂玻璃、全屏双极光底幕、高光镜面边、流光按钮
+   3. classic（macOS 炫彩）：原生通高材质侧栏、流光渐变选中胶囊、大横幅渐变顶卡
+   4. soft（iOS 柔光岛，默认）：Apple Bento 悬浮岛侧栏、大圆角悬浮白卡、柔光内高光与微抬升
+   ========================================================================== */
+
+/* ---------- Style 1: 纯粹极简 (minimal) ---------- */
 :root,
 [data-style="minimal"] {
-  --radius: 0.5rem;
+  --radius: 0.45rem;
   --surface-card: var(--card);
-  --card-edge: color-mix(in oklch, var(--foreground) 9%, transparent);
+  --card-edge: color-mix(in oklch, var(--foreground) 12%, transparent);
   --card-shadow: 0 0 0 0 transparent;
-  --card-shadow-hover: 0 0 0 0 transparent;
+  --card-shadow-hover: 0 2px 8px -4px rgba(0, 0, 0, 0.06);
   --card-blur: 0px;
-  --btn-primary-bg: var(--primary);
+  --btn-primary-bg: var(--foreground);
   --btn-primary-shadow: 0 0 0 0 transparent;
-  --btn-radius: 0.5rem;
+  --btn-radius: 0.4rem;
   --sidebar-surface: var(--background);
-  --sidebar-edge: color-mix(in oklch, var(--foreground) 8%, transparent);
+  --sidebar-edge: color-mix(in oklch, var(--foreground) 11%, transparent);
   --glow-opacity: 0;
-  --page-heading: 1.5rem;
+  --page-heading: 1.55rem;
   --nav-active-bg: color-mix(in oklch, var(--foreground) 7%, transparent);
-  --nav-active-shadow: 0 0 0 0 transparent;
+  --nav-active-shadow: inset 3px 0 0 0 var(--primary);
   --nav-active-fg: var(--foreground);
   --nav-active-icon: var(--primary);
 }
+[data-style="minimal"] .btn-primary {
+  color: var(--background);
+}
+[data-style="minimal"] .page-hero,
+[data-style="minimal"] .hero-card {
+  padding-bottom: 1rem;
+  border-bottom: 1px solid color-mix(in oklch, var(--foreground) 10%, transparent);
+}
+[data-style="minimal"] .nav-item-chip {
+  background: transparent !important;
+  box-shadow: none !important;
+}
 
+/* ---------- Style 2: 液态毛玻璃 (glass / visionOS Liquid Glass) ---------- */
 [data-style="glass"] {
-  --radius: 0.875rem;
-  --surface-card: color-mix(in oklch, var(--card) 58%, transparent);
-  --card-edge: color-mix(in oklch, var(--card) 70%, var(--foreground) 6%);
-  --card-shadow: 0 1px 1px rgba(0, 0, 0, 0.02), 0 12px 32px -16px rgba(0, 0, 0, 0.18);
-  --card-shadow-hover: 0 1px 2px rgba(0, 0, 0, 0.03), 0 18px 40px -16px rgba(0, 0, 0, 0.22);
-  --card-blur: 28px;
-  --btn-primary-bg: var(--primary);
-  --btn-primary-shadow: 0 6px 18px -8px rgba(0, 0, 0, 0.256);
+  --radius: 1.15rem;
+  --surface-card: color-mix(in oklch, var(--card) 52%, transparent);
+  --card-edge: color-mix(in oklch, white 65%, var(--primary) 18%);
+  --card-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.65),
+    0 16px 40px -16px color-mix(in oklch, var(--primary) 18%, rgba(0, 0, 0, 0.16));
+  --card-shadow-hover:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.85),
+    0 22px 48px -14px color-mix(in oklch, var(--primary) 26%, rgba(0, 0, 0, 0.22));
+  --card-blur: 36px;
+  --btn-primary-bg: var(--gradient-accent);
+  --btn-primary-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.35),
+    0 10px 24px -6px color-mix(in oklch, var(--primary) 50%, transparent);
   --btn-radius: 9999px;
-  --sidebar-surface: color-mix(in oklch, var(--card) 45%, transparent);
-  --sidebar-edge: color-mix(in oklch, var(--foreground) 6%, transparent);
-  --glow-opacity: 1.6;
-  --page-heading: 1.75rem;
+  --sidebar-surface: color-mix(in oklch, var(--card) 42%, transparent);
+  --sidebar-edge: color-mix(in oklch, white 55%, var(--primary) 15%);
+  --glow-opacity: 2.35;
+  --page-heading: 1.8rem;
+  --nav-active-bg: color-mix(in oklch, var(--primary) 15%, rgba(255, 255, 255, 0.55));
+  --nav-active-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.7),
+    0 6px 18px -6px color-mix(in oklch, var(--primary) 30%, transparent);
+  --nav-active-fg: var(--foreground);
+  --nav-active-icon: var(--primary);
+}
+.dark[data-style="glass"] {
+  --surface-card: color-mix(in oklch, var(--card) 54%, transparent);
+  --card-edge: color-mix(in oklch, white 18%, var(--primary) 24%);
+  --card-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.14),
+    0 20px 46px -18px rgba(0, 0, 0, 0.72);
+  --card-shadow-hover:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.22),
+    0 26px 56px -16px rgba(0, 0, 0, 0.82);
+  --sidebar-surface: color-mix(in oklch, var(--card) 46%, transparent);
+  --sidebar-edge: rgba(255, 255, 255, 0.14);
+  --nav-active-bg: color-mix(in oklch, var(--primary) 24%, rgba(255, 255, 255, 0.06));
+  --nav-active-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.18),
+    0 8px 20px -6px rgba(0, 0, 0, 0.55);
+}
+html[data-style="glass"] body {
+  background:
+    radial-gradient(1200px 680px at 95% -5%, color-mix(in oklch, var(--glow-1) 30%, transparent), transparent 65%),
+    radial-gradient(1000px 640px at 0% 35%, color-mix(in oklch, var(--glow-2) 24%, transparent), transparent 62%),
+    radial-gradient(900px 520px at 75% 100%, color-mix(in oklch, var(--primary) 16%, transparent), transparent 65%),
+    var(--background);
+  background-attachment: fixed;
+}
+[data-style="glass"] .app-sidebar {
+  position: sticky;
+  top: 14px;
+  align-self: flex-start;
+  height: calc(100vh - 28px);
+  margin: 14px 0 14px 14px;
+  border-radius: 1.65rem;
+  border: none;
+  background: var(--sidebar-surface);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.6),
+    0 0 0 1px var(--sidebar-edge),
+    0 24px 54px -20px color-mix(in oklch, var(--primary) 22%, rgba(0, 0, 0, 0.2));
+  backdrop-filter: blur(40px) saturate(200%);
+}
+.dark[data-style="glass"] .app-sidebar {
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.14),
+    0 0 0 1px var(--sidebar-edge),
+    0 24px 54px -20px rgba(0, 0, 0, 0.78);
+}
+[data-style="glass"] .app-sidebar > div {
+  position: static;
+  height: 100%;
+}
+[data-style="glass"] :is(.hero-card, .page-hero) {
+  padding: 1.4rem 1.75rem;
+  border-radius: 1.6rem;
+  background:
+    radial-gradient(90% 180% at 0% 0%, color-mix(in oklch, var(--primary) 18%, transparent) 0%, transparent 65%),
+    radial-gradient(70% 150% at 100% 100%, color-mix(in oklch, var(--glow-2) 18%, transparent) 0%, transparent 60%),
+    var(--surface-card);
+  box-shadow: var(--card-shadow);
+  backdrop-filter: blur(36px) saturate(190%);
+}
+[data-style="glass"] :is(.hero-card .hero-decor, .page-hero .page-hero-decor) {
+  display: block;
 }
 
+/* ---------- Style 3: macOS 炫彩 (classic) ---------- */
 [data-style="classic"] {
-  --radius: 0.75rem;
-  --surface-card: color-mix(in oklch, var(--card) 75%, transparent);
-  --card-edge: color-mix(in oklch, var(--foreground) 6%, transparent);
-  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.03), 0 10px 24px -12px rgba(0, 0, 0, 0.12);
-  --card-shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.04), 0 16px 32px -14px rgba(0, 0, 0, 0.16);
+  --radius: 0.9rem;
+  --surface-card: var(--card);
+  --card-edge: color-mix(in oklch, var(--primary) 14%, var(--border));
+  --card-shadow: 0 2px 4px rgba(0, 0, 0, 0.04), 0 12px 28px -12px rgba(0, 0, 0, 0.12);
+  --card-shadow-hover: 0 4px 8px rgba(0, 0, 0, 0.06), 0 20px 38px -12px rgba(0, 0, 0, 0.18);
   --card-blur: 24px;
-  --btn-primary-bg: var(--primary);
-  --btn-primary-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 8px 20px -6px rgba(0, 0, 0, 0.24);
-  --btn-radius: 9999px;
-  --sidebar-surface: color-mix(in oklch, var(--sidebar) 80%, transparent);
-  --sidebar-edge: color-mix(in oklch, var(--border) 60%, transparent);
-  --glow-opacity: 1;
-  --page-heading: 1.875rem;
+  --btn-primary-bg: var(--gradient-accent);
+  --btn-primary-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.3),
+    0 8px 20px -6px color-mix(in oklch, var(--primary) 45%, rgba(0, 0, 0, 0.25));
+  --btn-radius: 0.75rem;
+  --sidebar-surface: color-mix(in oklch, var(--sidebar) 88%, transparent);
+  --sidebar-edge: color-mix(in oklch, var(--primary) 14%, var(--border));
+  --glow-opacity: 1.15;
+  --page-heading: 1.85rem;
+  --nav-active-bg: var(--gradient-accent);
+  --nav-active-shadow: 0 6px 16px -6px color-mix(in oklch, var(--primary) 55%, rgba(0, 0, 0, 0.3));
+  --nav-active-fg: #ffffff;
+  --nav-active-icon: #ffffff;
+}
+[data-style="classic"] .nav-active .nav-item-chip {
+  background: rgba(255, 255, 255, 0.22) !important;
+  color: #ffffff !important;
+}
+[data-style="classic"] .hero-card {
+  border-radius: 1.35rem;
+  padding: 1.6rem 1.85rem;
+  background: var(--gradient-accent);
+  color: #ffffff;
+  box-shadow: 0 18px 42px -16px color-mix(in oklch, var(--primary) 52%, rgba(0, 0, 0, 0.32));
+}
+[data-style="classic"] .hero-card .hero-decor {
+  display: block;
+}
+[data-style="classic"] .hero-card .hero-sub {
+  color: rgba(255, 255, 255, 0.82);
+}
+[data-style="classic"] .hero-card .hero-pill {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  backdrop-filter: blur(12px);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+[data-style="classic"] .hero-card .hero-action {
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28);
+}
+[data-style="classic"] .page-hero {
+  padding: 1.25rem 1.6rem;
+  border-radius: 1.25rem;
+  background:
+    linear-gradient(90deg, color-mix(in oklch, var(--primary) 12%, var(--card)) 0%, var(--card) 65%);
+  box-shadow: inset 4px 0 0 0 var(--primary), 0 0 0 1px var(--card-edge), var(--card-shadow);
+}
+[data-style="classic"] .page-hero-chip {
+  background: var(--gradient-accent);
+  color: #ffffff;
+  box-shadow: 0 6px 14px -4px color-mix(in oklch, var(--primary) 45%, transparent);
 }
 
-/* 柔光 (the default): white cards that float on soft shadows instead of
-   borders, generous rounding, pill buttons, the system font — the way Apple's
-   own apps and the reference dashboards look. */
+/* ---------- Style 4: iOS 柔光岛 (soft / Apple Bento & iOS 18, default) ---------- */
 [data-style="soft"] {
-  --radius: 1rem;
+  --radius: 1.1rem;
   --surface-card: var(--card);
-  --card-edge: color-mix(in oklch, var(--foreground) 4%, transparent);
-  /* Shadows carry a little of the brand color, the way the reference cards glow. */
-  --card-shadow: 0 1px 2px rgba(15, 23, 42, 0.03), 0 14px 34px -16px rgba(0, 0, 0, 0.09);
-  --card-shadow-hover: 0 2px 4px rgba(15, 23, 42, 0.04), 0 20px 44px -16px rgba(0, 0, 0, 0.122);
+  --card-edge: color-mix(in oklch, var(--foreground) 5%, transparent);
+  --card-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.8),
+    0 1px 2px rgba(15, 23, 42, 0.03),
+    0 14px 36px -16px color-mix(in oklch, var(--primary) 10%, rgba(15, 23, 42, 0.08));
+  --card-shadow-hover:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.9),
+    0 3px 6px rgba(15, 23, 42, 0.04),
+    0 22px 48px -16px color-mix(in oklch, var(--primary) 16%, rgba(15, 23, 42, 0.12));
   --card-blur: 0px;
-  --btn-primary-bg: var(--primary);
-  --btn-primary-shadow: 0 8px 20px -8px rgba(0, 0, 0, 0.208);
+  --btn-primary-bg: var(--gradient-accent);
+  --btn-primary-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.28),
+    0 8px 20px -6px color-mix(in oklch, var(--primary) 42%, rgba(0, 0, 0, 0.18));
   --btn-radius: 9999px;
   --sidebar-surface: transparent;
   --sidebar-edge: transparent;
-  /* The sidebar selects the way a Mac sidebar does: a grey row, the icon in the accent. */
-  --nav-active-bg: color-mix(in oklch, var(--foreground) 8%, transparent);
-  --nav-active-shadow: 0 0 0 0 transparent;
+  --nav-active-bg: color-mix(in oklch, var(--primary) 11%, var(--card));
+  --nav-active-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--primary) 18%, transparent),
+    0 4px 12px -4px color-mix(in oklch, var(--primary) 16%, rgba(0, 0, 0, 0.06));
   --nav-active-fg: var(--foreground);
   --nav-active-icon: var(--primary);
   --hero-bg: radial-gradient(120% 140% at 100% 0%, color-mix(in oklch, var(--glow-2), white 10%) 0%, transparent 55%), var(--gradient-accent);
   --page-bg:
-    radial-gradient(1100px 620px at 100% -8%, color-mix(in oklch, var(--glow-1), transparent 91%), transparent 62%),
+    radial-gradient(1150px 640px at 100% -8%, color-mix(in oklch, var(--glow-1), transparent 86%), transparent 64%),
+    radial-gradient(900px 540px at 0% 100%, color-mix(in oklch, var(--glow-2), transparent 90%), transparent 62%),
     var(--background);
-  --glow-opacity: 0;
-  --page-heading: 1.875rem;
+  --glow-opacity: 0.75;
+  --page-heading: 1.85rem;
 }
 
 .dark[data-style="soft"] {
-  --card-edge: color-mix(in oklch, var(--foreground) 7%, transparent);
-  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px -14px rgba(0, 0, 0, 0.55);
-  --card-shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.35), 0 18px 40px -14px rgba(0, 0, 0, 0.6);
-  --nav-active-shadow: 0 8px 18px -10px rgba(0, 0, 0, 0.6);
+  --card-edge: rgba(255, 255, 255, 0.08);
+  --card-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.06),
+    0 2px 4px rgba(0, 0, 0, 0.35),
+    0 14px 36px -14px rgba(0, 0, 0, 0.62);
+  --card-shadow-hover:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.09),
+    0 4px 8px rgba(0, 0, 0, 0.42),
+    0 20px 44px -14px rgba(0, 0, 0, 0.72);
+  --nav-active-bg: color-mix(in oklch, var(--primary) 18%, var(--card));
+  --nav-active-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--primary) 26%, transparent),
+    0 8px 18px -8px rgba(0, 0, 0, 0.6);
   --page-bg:
-    radial-gradient(1100px 620px at 100% -8%, color-mix(in oklch, var(--glow-1), transparent 92%), transparent 62%),
+    radial-gradient(1150px 640px at 100% -8%, color-mix(in oklch, var(--glow-1), transparent 87%), transparent 64%),
+    radial-gradient(900px 540px at 0% 100%, color-mix(in oklch, var(--glow-2), transparent 90%), transparent 62%),
     var(--background);
 }
 
@@ -612,17 +742,27 @@ html[data-style="soft"] body {
   height: calc(100vh - 24px);
   margin: 12px 0 12px 12px;
   border-radius: 1.5rem;
-  background: color-mix(in oklch, var(--card) 72%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in oklch, var(--foreground) 5%, transparent), 0 16px 40px -20px rgba(0, 0, 0, 0.096);
-  backdrop-filter: blur(24px);
+  border: none;
+  background: color-mix(in oklch, var(--card) 78%, transparent);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.75),
+    0 0 0 1px color-mix(in oklch, var(--foreground) 6%, transparent),
+    0 18px 42px -18px color-mix(in oklch, var(--primary) 12%, rgba(0, 0, 0, 0.1));
+  backdrop-filter: blur(28px) saturate(180%);
+}
+.dark[data-style="soft"] .app-sidebar {
+  background: color-mix(in oklch, var(--card) 80%, transparent);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.08),
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 20px 44px -18px rgba(0, 0, 0, 0.72);
 }
 [data-style="soft"] .app-sidebar > div {
   position: static;
   height: 100%;
 }
 
-/* 总览's opening card: in 柔光 the same light, brand-tinted card as every
-   other page's (page-hero), so the app reads as one; a plain heading elsewhere. */
+/* 总览's opening card & inner PageHero */
 .hero-card {
   position: relative;
   overflow: hidden;
@@ -632,28 +772,32 @@ html[data-style="soft"] body {
 }
 [data-style="soft"] .hero-card {
   border-radius: 1.5rem;
-  padding: 1.5rem 1.75rem;
+  padding: 1.55rem 1.85rem;
   background:
-    radial-gradient(70% 160% at 0% 0%, color-mix(in oklch, var(--primary) 8%, transparent) 0%, transparent 62%),
+    radial-gradient(80% 170% at 0% 0%, color-mix(in oklch, var(--primary) 13%, transparent) 0%, transparent 62%),
+    radial-gradient(65% 140% at 100% 0%, color-mix(in oklch, var(--glow-2) 12%, transparent) 0%, transparent 58%),
     var(--card);
   box-shadow: inset 0 0 0 1px var(--card-edge), var(--card-shadow);
 }
+[data-style="soft"] .hero-card .hero-decor {
+  display: block;
+}
 .dark[data-style="soft"] .hero-card {
   background:
-    radial-gradient(70% 160% at 0% 0%, color-mix(in oklch, var(--primary) 18%, transparent) 0%, transparent 62%),
+    radial-gradient(80% 170% at 0% 0%, color-mix(in oklch, var(--primary) 22%, transparent) 0%, transparent 62%),
+    radial-gradient(65% 140% at 100% 0%, color-mix(in oklch, var(--glow-2) 16%, transparent) 0%, transparent 58%),
     var(--card);
 }
 [data-style="soft"] .hero-card .hero-pill {
-  background: color-mix(in oklch, var(--primary) 9%, var(--card));
+  background: color-mix(in oklch, var(--primary) 10%, var(--card));
   color: var(--foreground);
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--primary) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--primary) 18%, transparent);
 }
 [data-style="soft"] .hero-card .hero-action {
-  box-shadow: inset 0 0 0 1px var(--border);
+  background: color-mix(in oklch, var(--card) 85%, transparent);
+  box-shadow: inset 0 0 0 1px var(--border), 0 2px 6px rgba(0, 0, 0, 0.04);
 }
-/* Inner pages open with a light card: brand-tinted at the left, white at the
-   right, a gradient icon tile — the same family as 总览's card, quieter, so
-   the pages read as one app and 总览 keeps its welcome. */
+
 .page-hero {
   position: relative;
   overflow: hidden;
@@ -662,80 +806,107 @@ html[data-style="soft"] body {
   display: none;
 }
 [data-style="soft"] .page-hero {
-  padding: 1.25rem 1.6rem;
+  padding: 1.3rem 1.65rem;
   border-radius: 1.5rem;
   background:
-    radial-gradient(70% 160% at 0% 0%, color-mix(in oklch, var(--primary) 7%, transparent) 0%, transparent 62%),
+    radial-gradient(75% 165% at 0% 0%, color-mix(in oklch, var(--primary) 11%, transparent) 0%, transparent 62%),
+    radial-gradient(60% 130% at 100% 0%, color-mix(in oklch, var(--glow-2) 10%, transparent) 0%, transparent 55%),
     var(--card);
   box-shadow: inset 0 0 0 1px var(--card-edge), var(--card-shadow);
 }
+[data-style="soft"] .page-hero .page-hero-decor {
+  display: block;
+}
 [data-style="soft"] .page-hero h1 {
-  font-size: 1.45rem;
-  letter-spacing: -0.02em;
+  font-size: 1.5rem;
+  letter-spacing: -0.025em;
 }
 [data-style="soft"] .page-hero-chip {
-  background: var(--primary);
+  background: var(--gradient-accent);
   color: var(--primary-foreground);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.35),
+    0 8px 18px -6px color-mix(in oklch, var(--primary) 48%, transparent);
 }
 .dark[data-style="soft"] .page-hero {
   background:
-    radial-gradient(70% 160% at 0% 0%, color-mix(in oklch, var(--primary) 16%, transparent) 0%, transparent 62%),
+    radial-gradient(75% 165% at 0% 0%, color-mix(in oklch, var(--primary) 20%, transparent) 0%, transparent 62%),
+    radial-gradient(60% 130% at 100% 0%, color-mix(in oklch, var(--glow-2) 14%, transparent) 0%, transparent 55%),
     var(--card);
 }
-/* Calendars in 柔光: round days, the chosen one a gradient dot, days with something on them tinted. */
-[data-style="soft"] [data-slot="calendar"] {
+
+/* Calendars in 柔光 / 通透 */
+:is([data-style="soft"], [data-style="glass"]) [data-slot="calendar"] {
   --cell-radius: 9999px;
 }
-[data-style="soft"] [data-slot="calendar"] .has-event button {
-  background: color-mix(in oklch, var(--primary), transparent 88%);
+:is([data-style="soft"], [data-style="glass"]) [data-slot="calendar"] .has-event button {
+  background: color-mix(in oklch, var(--primary), transparent 86%);
   border-radius: 9999px;
 }
-[data-style="soft"] [data-slot="calendar"] button[data-selected-single="true"] {
-  background: var(--primary);
+:is([data-style="soft"], [data-style="glass"]) [data-slot="calendar"] button[data-selected-single="true"] {
+  background: var(--gradient-accent);
   color: var(--primary-foreground);
   border-radius: 9999px;
 }
 
-/* A section's icon tile: the brand gradient in 柔光, a tint elsewhere. */
-[data-style="soft"] .section-chip {
-  background: var(--primary);
+/* Section icon chip */
+:is([data-style="soft"], [data-style="glass"], [data-style="classic"]) .section-chip {
+  background: var(--gradient-accent);
   color: var(--primary-foreground);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.3),
+    0 6px 14px -4px color-mix(in oklch, var(--primary) 42%, transparent);
 }
-/* 总览's one-line facts, as pills: muted elsewhere, frosted on the gradient. */
 .hero-pill {
   background: var(--muted);
   color: var(--foreground);
 }
 
-/* The system font: SF Pro + 苹方 on a Mac, Segoe UI + 微软雅黑 on Windows. */
-html[data-style="soft"] {
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", "Segoe UI", "Microsoft YaHei", sans-serif;
+/* Apple SF Pro + PingFang SC typography */
+html:is([data-style="soft"], [data-style="glass"]) {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "PingFang SC", "Helvetica Neue", "Segoe UI", "Microsoft YaHei", sans-serif;
 }
 
-[data-style="soft"] [data-slot="card-title"] {
+:is([data-style="soft"], [data-style="glass"]) [data-slot="card-title"] {
   font-weight: 600;
+  letter-spacing: -0.015em;
 }
 
-/* Dashboard number tiles: a white card faintly tinted with its own color — one
-   family with the rest of the app rather than four gradients. */
-[data-style="soft"] .stat-tile[data-tone="brand"] { background: color-mix(in oklch, var(--primary) 7%, var(--card)); }
-[data-style="soft"] .stat-tile[data-tone="amber"] { background: color-mix(in oklch, #f59e0b 8%, var(--card)); }
-[data-style="soft"] .stat-tile[data-tone="emerald"] { background: color-mix(in oklch, #10b981 8%, var(--card)); }
-[data-style="soft"] .stat-tile[data-tone="slate"] { background: var(--card); }
-[data-style="soft"] .stat-tile .stat-icon { background: var(--card); color: var(--foreground); box-shadow: inset 0 0 0 1px var(--border); }
-
-/* Dark surfaces carry depth by lightness, not shadow. */
-.dark[data-style="glass"] {
-  --surface-card: color-mix(in oklch, var(--card) 62%, transparent);
-  --card-edge: color-mix(in oklch, var(--foreground) 10%, transparent);
+/* Dashboard Bento stat tiles */
+:is([data-style="soft"], [data-style="glass"]) .stat-tile[data-tone="brand"] {
+  background:
+    radial-gradient(120% 120% at 100% 0%, color-mix(in oklch, var(--primary) 14%, transparent) 0%, transparent 65%),
+    var(--surface-card);
+}
+:is([data-style="soft"], [data-style="glass"]) .stat-tile[data-tone="amber"] {
+  background:
+    radial-gradient(120% 120% at 100% 0%, rgba(245, 158, 11, 0.13) 0%, transparent 65%),
+    var(--surface-card);
+}
+:is([data-style="soft"], [data-style="glass"]) .stat-tile[data-tone="emerald"] {
+  background:
+    radial-gradient(120% 120% at 100% 0%, rgba(16, 185, 129, 0.13) 0%, transparent 65%),
+    var(--surface-card);
+}
+:is([data-style="soft"], [data-style="glass"]) .stat-tile[data-tone="slate"] {
+  background:
+    radial-gradient(120% 120% at 100% 0%, color-mix(in oklch, var(--foreground) 5%, transparent) 0%, transparent 65%),
+    var(--surface-card);
+}
+:is([data-style="soft"], [data-style="glass"]) .stat-tile .stat-icon {
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.6), 0 4px 10px -3px rgba(0, 0, 0, 0.06);
 }
 
 @layer components {
   .surface-card {
     background-color: var(--surface-card);
     box-shadow: 0 0 0 1px var(--card-edge), var(--card-shadow);
-    backdrop-filter: blur(var(--card-blur));
-    transition: box-shadow 0.3s var(--ease-apple);
+    backdrop-filter: blur(var(--card-blur)) saturate(180%);
+    transition:
+      box-shadow 0.3s var(--ease-apple),
+      transform 0.3s var(--ease-apple),
+      border-color 0.25s var(--ease-apple),
+      background-color 0.3s var(--ease-apple);
   }
   .surface-card:hover {
     box-shadow: 0 0 0 1px var(--card-edge), var(--card-shadow-hover);
@@ -745,7 +916,7 @@ html[data-style="soft"] {
     box-shadow: var(--btn-primary-shadow);
   }
   .btn-primary:hover {
-    filter: brightness(1.07);
+    filter: brightness(1.06);
   }
   .nav-active {
     background: var(--nav-active-bg);
@@ -756,16 +927,13 @@ html[data-style="soft"] {
     color: var(--nav-active-icon);
   }
   .ambient-glow {
-    opacity: calc(var(--glow-opacity) * 0.2);
+    opacity: calc(var(--glow-opacity) * 0.22);
   }
   .ambient-glow-soft {
-    opacity: calc(var(--glow-opacity) * 0.1);
+    opacity: calc(var(--glow-opacity) * 0.14);
   }
 }
 
-/* Page titles: one size per style instead of each page's own text-3xl
-   (unlayered on purpose, so it wins over those utilities). */
-/* Long unbroken strings (emails, links) wrap instead of widening the page. */
 main {
   overflow-wrap: break-word;
 }
@@ -775,186 +943,138 @@ main h1 {
   line-height: 1.2;
 }
 
-/* ---------- 柔光 for everything inside the pages ----------
-   Hand-written boxes, form fields, tables, tabs and pop-ups follow the style
-   too, so no page keeps the old hairline-and-square look. Coloured boxes
-   (warnings, highlights) keep their own colours; only plain ones change. */
-[data-style="soft"] {
-  /* System greys, not brand tints: colour is kept for what can be pressed. */
-  --soft-tile: color-mix(in oklch, var(--foreground) 3%, var(--card));
-  --soft-tile-strong: color-mix(in oklch, var(--foreground) 5.5%, var(--card));
-  --soft-line: color-mix(in oklch, var(--foreground) 9%, transparent);
-  --soft-field: color-mix(in oklch, var(--foreground) 5%, var(--card));
+/* ---------- iOS / Apple Surfaces Inside Pages (soft & glass) ---------- */
+:is([data-style="soft"], [data-style="glass"]) {
+  --soft-tile: color-mix(in oklch, var(--foreground) 3.2%, var(--card));
+  --soft-tile-strong: color-mix(in oklch, var(--foreground) 5.8%, var(--card));
+  --soft-line: color-mix(in oklch, var(--foreground) 8.5%, transparent);
+  --soft-field: color-mix(in oklch, var(--foreground) 4.8%, var(--card));
 }
-.dark[data-style="soft"] {
-  --soft-tile: color-mix(in oklch, white 4%, var(--card));
-  --soft-tile-strong: color-mix(in oklch, white 7%, var(--card));
-  --soft-line: color-mix(in oklch, white 9%, transparent);
-  --soft-field: color-mix(in oklch, white 6%, var(--card));
+.dark:is([data-style="soft"], [data-style="glass"]) {
+  --soft-tile: rgba(255, 255, 255, 0.04);
+  --soft-tile-strong: rgba(255, 255, 255, 0.07);
+  --soft-line: rgba(255, 255, 255, 0.09);
+  --soft-field: rgba(255, 255, 255, 0.065);
 }
 
 /* Plain bordered boxes → soft rounded tiles. */
-[data-style="soft"] :is(main, [role="dialog"], [data-slot="sheet-content"]) :is([class~="rounded"], [class~="rounded-sm"], [class~="rounded-md"], [class~="rounded-lg"], [class~="rounded-xl"], [class~="rounded-2xl"])[class~="border"]:not([data-slot]):not(.surface-card):not([class*=" border-"]):not([class^="border-"]) {
+:is([data-style="soft"], [data-style="glass"]) :is(main, [role="dialog"], [data-slot="sheet-content"]) :is([class~="rounded"], [class~="rounded-sm"], [class~="rounded-md"], [class~="rounded-lg"], [class~="rounded-xl"], [class~="rounded-2xl"])[class~="border"]:not([data-slot]):not(.surface-card):not([class*=" border-"]):not([class^="border-"]) {
   border-color: var(--soft-line);
   border-radius: 1rem;
 }
-[data-style="soft"] :is(main, [role="dialog"], [data-slot="sheet-content"]) :is([class~="rounded"], [class~="rounded-sm"], [class~="rounded-md"], [class~="rounded-lg"], [class~="rounded-xl"], [class~="rounded-2xl"])[class~="border"]:not([data-slot]):not(.surface-card):not([class*="bg-"]):not(input):not(select):not(textarea):not(a):not(button) {
+:is([data-style="soft"], [data-style="glass"]) :is(main, [role="dialog"], [data-slot="sheet-content"]) :is([class~="rounded"], [class~="rounded-sm"], [class~="rounded-md"], [class~="rounded-lg"], [class~="rounded-xl"], [class~="rounded-2xl"])[class~="border"]:not([data-slot]):not(.surface-card):not([class*="bg-"]):not(input):not(select):not(textarea):not(a):not(button) {
   border-color: transparent;
   background-color: var(--soft-tile);
 }
-[data-style="soft"] main [class~="border-dashed"] {
-  border-color: color-mix(in oklch, var(--primary) 28%, transparent);
-  border-radius: 1rem;
+:is([data-style="soft"], [data-style="glass"]) main [class~="border-dashed"] {
+  border-color: color-mix(in oklch, var(--primary) 30%, transparent);
+  border-radius: 1.1rem;
 }
-[data-style="soft"] main :is([class~="bg-muted"], [class~="bg-muted/20"], [class~="bg-muted/30"], [class~="bg-muted/40"], [class~="bg-muted/50"], [class~="bg-muted/60"], [class~="bg-muted/70"], [class~="bg-background/50"], [class~="bg-background/60"]) {
+:is([data-style="soft"], [data-style="glass"]) main :is([class~="bg-muted"], [class~="bg-muted/20"], [class~="bg-muted/30"], [class~="bg-muted/40"], [class~="bg-muted/50"], [class~="bg-muted/60"], [class~="bg-muted/70"], [class~="bg-background/50"], [class~="bg-background/60"]) {
   background-color: var(--soft-tile-strong);
 }
 
-/* Form fields: filled, no hard outline, a brand ring on focus. */
-[data-style="soft"] :is([data-slot="input"], [data-slot="textarea"], [data-slot="select-trigger"], [data-slot="native-select"], [data-slot="input-group"]),
-[data-style="soft"] :is(main, [role="dialog"]) :is(input[type="text"], input[type="search"], input[type="number"], input[type="date"], input[type="month"], input[type="time"], input[type="datetime-local"], input:not([type]), select, textarea):not([data-slot]) {
+/* Form fields: iOS filled inputs, no hard outline, brand halo on focus. */
+:is([data-style="soft"], [data-style="glass"]) :is([data-slot="input"], [data-slot="textarea"], [data-slot="select-trigger"], [data-slot="native-select"], [data-slot="input-group"]),
+:is([data-style="soft"], [data-style="glass"]) :is(main, [role="dialog"]) :is(input[type="text"], input[type="search"], input[type="number"], input[type="date"], input[type="month"], input[type="time"], input[type="datetime-local"], input:not([type]), select, textarea):not([data-slot]) {
   background-color: var(--soft-field);
   border-color: transparent;
   border-radius: 0.85rem;
 }
-[data-style="soft"] :is([data-slot="input"], [data-slot="textarea"], [data-slot="select-trigger"], [data-slot="native-select"]):focus-visible,
-[data-style="soft"] :is(main, [role="dialog"]) :is(input, select, textarea):not([data-slot]):focus-visible {
-  border-color: color-mix(in oklch, var(--primary) 45%, transparent);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 18%, transparent);
+:is([data-style="soft"], [data-style="glass"]) :is([data-slot="input"], [data-slot="textarea"], [data-slot="select-trigger"], [data-slot="native-select"]):focus-visible,
+:is([data-style="soft"], [data-style="glass"]) :is(main, [role="dialog"]) :is(input, select, textarea):not([data-slot]):focus-visible {
+  border-color: color-mix(in oklch, var(--primary) 50%, transparent);
+  box-shadow: 0 0 0 3.5px color-mix(in oklch, var(--primary) 18%, transparent);
 }
 
-/* Tables: a tinted header row, soft row hover, no grid lines. */
-[data-style="soft"] [data-slot="table-header"] [data-slot="table-row"] {
+/* Tables: tinted pill header row, smooth hover, clean dividers. */
+:is([data-style="soft"], [data-style="glass"]) [data-slot="table-header"] [data-slot="table-row"] {
   background: var(--soft-tile-strong);
   border-bottom-color: transparent;
 }
-/* A sticky 操作 column keeps the tint (over an opaque card, for rows scrolling beneath). */
-[data-style="soft"] [data-slot="table-header"] [data-slot="table-head"].sticky { background: linear-gradient(var(--soft-tile-strong), var(--soft-tile-strong)), var(--card); }
-[data-style="soft"] [data-slot="table-header"] [data-slot="table-head"]:first-child { border-top-left-radius: 0.85rem; border-bottom-left-radius: 0.85rem; }
-[data-style="soft"] [data-slot="table-header"] [data-slot="table-head"]:last-child { border-top-right-radius: 0.85rem; border-bottom-right-radius: 0.85rem; }
-[data-style="soft"] [data-slot="table-body"] [data-slot="table-row"] {
+:is([data-style="soft"], [data-style="glass"]) [data-slot="table-header"] [data-slot="table-head"].sticky {
+  background: linear-gradient(var(--soft-tile-strong), var(--soft-tile-strong)), var(--card);
+}
+:is([data-style="soft"], [data-style="glass"]) [data-slot="table-header"] [data-slot="table-head"]:first-child {
+  border-top-left-radius: 0.85rem;
+  border-bottom-left-radius: 0.85rem;
+}
+:is([data-style="soft"], [data-style="glass"]) [data-slot="table-header"] [data-slot="table-head"]:last-child {
+  border-top-right-radius: 0.85rem;
+  border-bottom-right-radius: 0.85rem;
+}
+:is([data-style="soft"], [data-style="glass"]) [data-slot="table-body"] [data-slot="table-row"] {
   border-bottom-color: var(--soft-line);
 }
-[data-style="soft"] [data-slot="table-body"] [data-slot="table-row"]:hover {
+:is([data-style="soft"], [data-style="glass"]) [data-slot="table-body"] [data-slot="table-row"]:hover {
   background: var(--soft-tile);
 }
 
-/* Tabs: a pill track, the active one a white chip. */
-[data-style="soft"] [data-slot="tabs-list"] {
+/* Tabs: iOS Segmented Control pill track, floating active chip. */
+:is([data-style="soft"], [data-style="glass"]) [data-slot="tabs-list"] {
   background: var(--soft-tile-strong);
   border-radius: 9999px;
   padding: 4px;
 }
-[data-style="soft"] [data-slot="tabs-trigger"] {
+:is([data-style="soft"], [data-style="glass"]) [data-slot="tabs-trigger"] {
   border-radius: 9999px;
 }
-[data-style="soft"] [data-slot="tabs-trigger"][data-active],
-[data-style="soft"] [data-slot="tabs-trigger"][aria-selected="true"] {
+:is([data-style="soft"], [data-style="glass"]) [data-slot="tabs-trigger"][data-active],
+:is([data-style="soft"], [data-style="glass"]) [data-slot="tabs-trigger"][aria-selected="true"] {
   background: var(--card);
-  box-shadow: 0 2px 8px -3px rgba(0, 0, 0, 0.112);
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.12), inset 0 1px 0 0 rgba(255, 255, 255, 0.6);
 }
 
-/* Pop-ups and menus float like the cards. */
-[data-style="soft"] :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"]) {
-  border-radius: 1.25rem;
+/* Pop-ups and menus float with Apple continuous corners and deep diffused shadow. */
+:is([data-style="soft"], [data-style="glass"]) :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"]) {
+  border-radius: 1.4rem;
   border: none;
-  box-shadow: 0 0 0 1px var(--soft-line), 0 30px 70px -24px rgba(0, 0, 0, 0.144);
+  box-shadow: 0 0 0 1px var(--soft-line), 0 32px 72px -20px rgba(0, 0, 0, 0.22);
 }
-[data-style="soft"] :is([data-slot="dropdown-menu-content"], [data-slot="select-content"], [data-slot="dropdown-menu-sub-content"]) {
-  border-radius: 1.1rem;
-  box-shadow: 0 0 0 1px var(--soft-line), 0 18px 40px -16px rgba(0, 0, 0, 0.144);
+:is([data-style="soft"], [data-style="glass"]) :is([data-slot="dropdown-menu-content"], [data-slot="select-content"], [data-slot="dropdown-menu-sub-content"]) {
+  border-radius: 1.15rem;
+  box-shadow: 0 0 0 1px var(--soft-line), 0 20px 44px -16px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(28px) saturate(180%);
 }
-[data-style="soft"] :is([data-slot="dropdown-menu-item"], [data-slot="select-item"]) {
-  border-radius: 0.7rem;
+:is([data-style="soft"], [data-style="glass"]) :is([data-slot="dropdown-menu-item"], [data-slot="select-item"]) {
+  border-radius: 0.75rem;
 }
-[data-style="soft"] [data-slot="sheet-content"] {
+:is([data-style="soft"], [data-style="glass"]) [data-slot="sheet-content"] {
   border-top-right-radius: 1.5rem;
   border-bottom-right-radius: 1.5rem;
 }
-[data-style="soft"] [data-sonner-toast] {
-  border-radius: 1rem !important;
-  box-shadow: 0 0 0 1px var(--soft-line), 0 14px 34px -14px rgba(0, 0, 0, 0.144) !important;
+:is([data-style="soft"], [data-style="glass"]) [data-sonner-toast] {
+  border-radius: 1.1rem !important;
+  box-shadow: 0 0 0 1px var(--soft-line), 0 16px 38px -14px rgba(0, 0, 0, 0.18) !important;
 }
 
-/* 小欧's window in 柔光: a floating panel with a gradient band on top. */
-[data-style="soft"] .assistant-panel {
+/* 小欧's window */
+:is([data-style="soft"], [data-style="glass"]) .assistant-panel {
   border: none;
-  border-radius: 1.25rem;
-  box-shadow: 0 0 0 1px var(--soft-line), 0 30px 70px -24px rgba(0, 0, 0, 0.16);
+  border-radius: 1.4rem;
+  box-shadow: 0 0 0 1px var(--soft-line), 0 32px 72px -22px rgba(0, 0, 0, 0.22);
 }
-[data-style="soft"] .assistant-head {
-  background: color-mix(in oklch, var(--card) 80%, transparent);
-  backdrop-filter: blur(20px);
+:is([data-style="soft"], [data-style="glass"]) .assistant-head {
+  background: color-mix(in oklch, var(--card) 82%, transparent);
+  backdrop-filter: blur(24px) saturate(180%);
   border-bottom: 1px solid var(--soft-line);
 }
-[data-style="soft"] .bubble-user {
-  background: var(--primary);
-  color: var(--primary-foreground);
-  border-radius: 1.1rem 1.1rem 0.35rem 1.1rem;
+:is([data-style="soft"], [data-style="glass"]) .bubble-user {
+  background: var(--gradient-accent);
+  color: #ffffff;
+  border-radius: 1.15rem 1.15rem 0.35rem 1.15rem;
   margin-left: 2.5rem;
 }
-.dark[data-style="soft"] .bubble-user {
-  color: oklch(0.15 0 0);
+.dark[data-palette="mono"]:is([data-style="soft"], [data-style="glass"]) .bubble-user {
+  color: #111113;
 }
-[data-style="soft"] .bubble-ai {
+:is([data-style="soft"], [data-style="glass"]) .bubble-ai {
   background: var(--soft-tile-strong);
-  border-radius: 1.1rem 1.1rem 1.1rem 0.35rem;
+  border-radius: 1.15rem 1.15rem 1.15rem 0.35rem;
   margin-right: 1.5rem;
 }
 
-/* ---------- 深色：苹果式中性灰层次 ----------
-   Every palette's dark mode shares the system greys Apple uses (page #161618,
-   raised cards #232325, controls #2c2c2e, hairlines of white). A palette only
-   colours what can be pressed (primary, accent, ring), so teal / champagne /
-   titanium no longer tint the whole window. Later in the file and more
-   specific than each `.dark[data-palette=…]`, so it applies to all of them. */
-:root.dark,
-:root.dark[data-palette] {
-  --background: #161618;
-  --foreground: #f5f5f7;
-  --card: #232325;
-  --card-foreground: #f5f5f7;
-  --popover: #2a2a2d;
-  --popover-foreground: #f5f5f7;
-  --secondary: #2c2c2e;
-  --secondary-foreground: #f5f5f7;
-  --muted: #2c2c2e;
-  --muted-foreground: #98989f;
-  --border: rgb(255 255 255 / 0.09);
-  --input: rgb(255 255 255 / 0.12);
-  --sidebar: #1c1c1e;
-  --sidebar-foreground: #f5f5f7;
-  --sidebar-accent: rgb(255 255 255 / 0.08);
-  --sidebar-accent-foreground: #f5f5f7;
-  --sidebar-border: rgb(255 255 255 / 0.08);
-}
-/* Raised surfaces show a faint light edge on top instead of a shadow you can't see. */
-:root.dark {
-  --card-edge: rgb(255 255 255 / 0.07);
-  --card-shadow: 0 1px 0 0 rgb(255 255 255 / 0.04) inset, 0 10px 30px -12px rgb(0 0 0 / 0.6);
-  --card-shadow-hover: 0 1px 0 0 rgb(255 255 255 / 0.05) inset, 0 16px 38px -12px rgb(0 0 0 / 0.7);
-  --nav-active-bg: rgb(255 255 255 / 0.09);
-}
-:root.dark[data-style="soft"] {
-  --soft-tile: rgb(255 255 255 / 0.035);
-  --soft-tile-strong: rgb(255 255 255 / 0.06);
-  --soft-line: rgb(255 255 255 / 0.08);
-  --soft-field: rgb(255 255 255 / 0.06);
-  --page-bg: radial-gradient(1100px 620px at 100% -8%, color-mix(in oklch, var(--primary), transparent 93%), transparent 62%), var(--background);
-}
-:root.dark[data-style="soft"] :is(.hero-card, .page-hero) {
-  background: radial-gradient(70% 160% at 0% 0%, color-mix(in oklch, var(--primary) 9%, transparent) 0%, transparent 62%), var(--card);
-}
-:root.dark[data-style="soft"] .app-sidebar {
-  background: rgb(36 36 38 / 0.72);
-  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.07), 0 16px 40px -20px rgb(0 0 0 / 0.7);
-}
-:root.dark[data-style="soft"] .assistant-head {
-  background: rgb(36 36 38 / 0.8);
-}
-
-/* <NativeSelect>: an Apple-style chevron in place of the OS arrow. Mid grey
-   reads on both light and dark fields. */
+/* <NativeSelect>: an Apple-style chevron in place of the OS arrow. */
 .native-select {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%238e8e93' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.5 6.5 8 10l3.5-3.5'/%3E%3C/svg%3E");
   background-repeat: no-repeat;

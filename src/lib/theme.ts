@@ -9,19 +9,19 @@ export const THEME_PALETTE_KEY = "careerplatform:theme-palette";
 export const THEME_STYLE_KEY = "careerplatform:theme-style";
 
 export const STYLES: { id: ThemeStyle; label: string; description: string }[] = [
-  { id: "soft", label: "柔光", description: "白色悬浮卡片、柔和阴影和渐变，系统字体" },
-  { id: "minimal", label: "简约", description: "平整留白，细线分隔，没有阴影和光晕" },
-  { id: "glass", label: "通透", description: "磨砂玻璃卡片，柔和的彩色光晕" },
-  { id: "classic", label: "经典", description: "原来的圆润卡片和渐变按钮" },
+  { id: "soft", label: "iOS 柔光岛", description: "Apple Bento 悬浮岛、大圆角卡片与柔光阴影" },
+  { id: "glass", label: "液态毛玻璃", description: "visionOS 高通透磨砂玻璃与浓郁极光景深" },
+  { id: "classic", label: "macOS 炫彩", description: "原生桌面侧栏、流光渐变横幅与立体按钮" },
+  { id: "minimal", label: "纯粹极简", description: "Apple 编辑室留白、1px 锐利线条与零光晕" },
 ];
 
 export const PALETTES: { id: ThemePalette; label: string; description: string; swatch: string; surface: string }[] = [
-  { id: "indigo", label: "星云靛蓝", description: "柔和紫蓝 · 默认", swatch: "#5b5ce6", surface: "#f6f6fb" },
-  { id: "tech", label: "深空蓝", description: "冷调蓝光 · 科技", swatch: "#2871df", surface: "#f3f7fc" },
-  { id: "mono", label: "石墨黑白", description: "纯粹中性 · 极简", swatch: "#272a30", surface: "#f8f8f8" },
-  { id: "titanium", label: "钛金银", description: "银灰材质 · 克制", swatch: "#64748b", surface: "#f4f6f8" },
-  { id: "aurora", label: "极光青", description: "冰川青绿 · 未来", swatch: "#0b9f98", surface: "#f0f8f7" },
-  { id: "champagne", label: "香槟白", description: "温润暖金 · 优雅", swatch: "#aa7954", surface: "#faf7f3" },
+  { id: "indigo", label: "星云紫蓝", description: "iPhone Pro 靛紫 · 默认", swatch: "#5b5ce6", surface: "#f2f2fc" },
+  { id: "tech", label: "天峰冰蓝", description: "Apple 官网蓝 · 清冽科技", swatch: "#0071e3", surface: "#edf5ff" },
+  { id: "aurora", label: "翡翠极光", description: "冰川薄荷 · 灵动青绿", swatch: "#0d9488", surface: "#eaf8f5" },
+  { id: "champagne", label: "沙漠钛金", description: "温润暖金 · 羊皮纸感", swatch: "#b87333", surface: "#fbf5ec" },
+  { id: "titanium", label: "原色钛金属", description: "冷冽银灰蓝 · 精密工业", swatch: "#4b6584", surface: "#eef3f8" },
+  { id: "mono", label: "曜石黑白", description: "Studio 纯粹高对比", swatch: "#1d1d1f", surface: "#f5f5f7" },
 ];
 
 export function resolveIsDark(mode: ThemeMode): boolean {

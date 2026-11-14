@@ -52,19 +52,22 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
     <div className="mx-auto max-w-5xl">
       <SettingsHashRedirect />
       <PageHero title="设置" icon={Settings} description="资料、AI、提醒和外观，一组一组来" />
-      <div className="mt-6 flex flex-col gap-6 md:flex-row md:gap-10">
-        <nav aria-label="设置分组" className="-mx-1 flex shrink-0 gap-1 overflow-x-auto md:mx-0 md:w-40 md:flex-col md:overflow-visible">
+      <div className="mt-6 flex flex-col gap-6 md:flex-row md:gap-8">
+        <nav aria-label="设置分组" className="surface-card -mx-1 flex shrink-0 gap-1 overflow-x-auto rounded-2xl p-1.5 md:mx-0 md:w-44 md:flex-col md:self-start md:overflow-visible">
           {SETTINGS_TABS.map((item) => (
             <Link
               key={item.id}
               href={`/settings?tab=${item.id}`}
               aria-current={item.id === tab ? "page" : undefined}
               className={cn(
-                "shrink-0 rounded-lg px-3 py-1.5 text-sm transition-colors",
-                item.id === tab ? "bg-foreground/[0.06] font-medium text-foreground" : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
+                "flex shrink-0 items-center justify-between rounded-xl px-3 py-2 text-[13px] transition-all duration-200 ease-(--ease-apple)",
+                item.id === tab
+                  ? "nav-active font-semibold"
+                  : "text-muted-foreground hover:bg-foreground/[0.045] hover:text-foreground"
               )}
             >
-              {item.label}
+              <span>{item.label}</span>
+              {item.id === tab && <span className="hidden size-1.5 rounded-full bg-primary md:inline-block" />}
             </Link>
           ))}
         </nav>

@@ -236,11 +236,11 @@ export default async function DashboardPage() {
 
       <AgentBriefCard {...briefs} />
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
-        <StatCard label="总投递数" value={total} icon={Send} tone="brand" />
-        <StatCard label="进行中" value={inProgress} icon={Clock} tone="amber" />
-        <StatCard label="Offer" value={offers} icon={Trophy} tone="emerald" />
-        <StatCard label="已结束" value={closed} icon={XCircle} tone="slate" />
+      <div className="grid grid-cols-2 gap-3.5 md:grid-cols-4 md:gap-4">
+        <StatCard label="总投递数" sub="累计全部网申记录" value={total} href="/applications?f=all" icon={Send} tone="brand" />
+        <StatCard label="进行中" sub="简历筛选 · 笔试 · 面试" value={inProgress} href="/applications?f=active" icon={Clock} tone="amber" />
+        <StatCard label="Offer" sub="已收获录用意向" value={offers} href="/applications?f=offer" icon={Trophy} tone="emerald" />
+        <StatCard label="已结束" sub="已归档或流程结束" value={closed} href="/applications?f=closed" icon={XCircle} tone="slate" />
       </div>
 
       {mailNeedingTime.length > 0 && (
@@ -313,49 +313,60 @@ export default async function DashboardPage() {
 /** Semantic status colors remain stable across theme palettes. */
 const STAT_TONES = {
   brand: {
-    badge: "bg-primary/10 text-primary",
-    value: "",
+    badge: "bg-primary/12 text-primary",
+    value: "text-foreground",
   },
   amber: {
-    badge: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-    value: "",
+    badge: "bg-amber-500/14 text-amber-600 dark:text-amber-400",
+    value: "text-amber-600 dark:text-amber-400",
   },
   emerald: {
-    badge: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+    badge: "bg-emerald-500/14 text-emerald-600 dark:text-emerald-400",
     value: "text-emerald-600 dark:text-emerald-400",
   },
   slate: {
-    badge: "bg-slate-500/10 text-slate-500 dark:text-slate-400",
+    badge: "bg-slate-500/12 text-slate-500 dark:text-slate-400",
     value: "text-muted-foreground",
   },
 } as const;
 
 function StatCard({
   label,
+  sub,
   value,
+  href,
   icon: Icon,
   tone,
 }: {
   label: string;
+  sub?: string;
   value: number;
+  href: string;
   icon: LucideIcon;
   tone: keyof typeof STAT_TONES;
 }) {
   const t = STAT_TONES[tone];
   return (
-    // stat-tile + data-tone: a pastel gradient in the 柔光 style (globals.css).
-    <Card className="stat-tile overflow-hidden rounded-xl" data-tone={tone}>
-      <CardContent className="flex min-h-28 flex-col justify-between gap-4 py-1">
-        <div className="flex items-start justify-between gap-2">
-          <p className="truncate text-sm font-medium text-muted-foreground">{label}</p>
-          <div className={`stat-icon flex size-9 shrink-0 items-center justify-center rounded-xl ${t.badge}`}>
-            <Icon className="size-4" />
+    <Link href={href} className="group block outline-none">
+      <Card className="stat-tile relative overflow-hidden rounded-2xl transition-transform duration-300 ease-(--ease-apple) group-hover:-translate-y-0.5" data-tone={tone}>
+        <CardContent className="flex min-h-30 flex-col justify-between gap-3 py-1">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="truncate text-[13px] font-semibold tracking-tight text-foreground/85">{label}</p>
+              {sub && <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{sub}</p>}
+            </div>
+            <div className={`stat-icon flex size-9 shrink-0 items-center justify-center rounded-[11px] transition-transform duration-300 ease-(--ease-apple) group-hover:scale-105 ${t.badge}`}>
+              <Icon className="size-4" strokeWidth={2} />
+            </div>
           </div>
-        </div>
-        <p className={`text-4xl font-semibold tracking-tight tabular-nums ${t.value}`}>
-          {value}
-        </p>
-      </CardContent>
-    </Card>
+          <div className="flex items-baseline justify-between gap-2">
+            <p className={`text-4xl font-semibold tracking-tight tabular-nums ${t.value}`}>
+              {value}
+            </p>
+            <ArrowUpRight className="size-3.5 text-muted-foreground/50 opacity-0 transition-all duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100" />
+          </div>
+        </CardContent>
+      </Card>
+    </Link>
   );
 }

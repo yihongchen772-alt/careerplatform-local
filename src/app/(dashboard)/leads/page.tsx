@@ -43,9 +43,22 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   // With neither, the place to paste the link comes first, not an empty list hiding it behind a tab.
   const view = params.view === "discover" ? "discover" : params.view === "mine" || params.view === "postings" ? params.view : sources > 0 || ownLeads === 0 ? "postings" : "mine";
   const tabs = (
-    <div role="tablist" aria-label="秋招信息库" className="inline-flex rounded-lg bg-muted p-0.5 text-sm">
+    <div role="tablist" aria-label="秋招信息库" className="inline-flex flex-wrap items-center gap-1 rounded-full bg-foreground/[0.05] p-1 text-sm shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)] dark:bg-white/[0.06]">
       {([["postings", "订阅的招聘信息"], ["discover", "全网实时搜岗"], ["mine", "我整理的"]] as const).map(([id, label]) => (
-        <Link key={id} role="tab" aria-selected={view === id} href={`/leads?view=${id}`} className={cn("rounded-md px-3 py-1.5 transition-colors", view === id ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>{label}</Link>
+        <Link
+          key={id}
+          role="tab"
+          aria-selected={view === id}
+          href={`/leads?view=${id}`}
+          className={cn(
+            "rounded-full px-4 py-1.5 text-[13px] font-medium transition-all duration-200 ease-(--ease-apple)",
+            view === id
+              ? "bg-card text-foreground shadow-[0_2px_8px_-2px_rgba(0,0,0,0.12)] ring-1 ring-black/[0.04] dark:ring-white/[0.08]"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          {label}
+        </Link>
       ))}
     </div>
   );

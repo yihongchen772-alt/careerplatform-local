@@ -72,10 +72,10 @@ export function ApplicationsOverview({ applications, now, filter, selectedRound 
           <ChevronDown className={cn("size-3.5 transition-transform", open === "open" && "rotate-180")} />
         </button>
       </div>
-      <div className="flex flex-wrap gap-2">
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
           <Tile label="总投递" value={total} icon={Send} tone="brand" selected={filter === "all"} onClick={() => onFilter("all")} />
           <Tile label="进行中" value={active.length} icon={Clock} tone="amber" selected={filter === "active"} onClick={() => onFilter("active")} />
-          <Tile label="进过面试" value={interviews.total} note={interviewing ? `现在在面 ${interviewing}` : undefined} icon={Video} tone="brand" selected={filter === "interviewed"} onClick={() => onFilter("interviewed")} />
+          <Tile label="进过面试" value={interviews.total} note={interviewing ? `在面 ${interviewing}` : undefined} icon={Video} tone="brand" selected={filter === "interviewed"} onClick={() => onFilter("interviewed")} />
           <Tile label="Offer" value={offers} icon={Trophy} tone="emerald" selected={filter === "offer"} onClick={() => onFilter("offer")} />
           <Tile label="已结束" value={closed} icon={XCircle} tone="slate" selected={filter === "closed"} onClick={() => onFilter("closed")} />
       </div>
@@ -169,14 +169,34 @@ function InterviewTable({ breakdown, total, selected, selectedRound, onOpen }: {
 }
 
 function Tile({ label, value, note, icon: Icon, tone, selected, onClick }: { label: string; value: number; note?: string; icon: LucideIcon; tone: "brand" | "amber" | "emerald" | "slate"; selected: boolean; onClick: () => void }) {
-  const color = { brand: "text-primary", amber: "text-amber-600 dark:text-amber-400", emerald: "text-emerald-600 dark:text-emerald-400", slate: "text-muted-foreground" }[tone];
+  const chip = {
+    brand: "bg-primary/12 text-primary",
+    amber: "bg-amber-500/14 text-amber-600 dark:text-amber-400",
+    emerald: "bg-emerald-500/14 text-emerald-600 dark:text-emerald-400",
+    slate: "bg-slate-500/12 text-slate-500 dark:text-slate-400",
+  }[tone];
   return (
-    // One compact row of numbers, each a filter: the list stays on the first screen.
-    <button type="button" onClick={onClick} aria-pressed={selected} className={cn("inline-flex h-10 items-center gap-2 rounded-xl border bg-card px-3 text-left text-sm transition-colors hover:border-primary/40", selected && "border-primary/60 bg-primary/5")}>
-      <Icon className={cn("size-4", color)} />
-      <span className="text-muted-foreground">{label}</span>
-      <span className="text-base font-semibold tabular-nums">{value}</span>
-      {note && <span className="text-xs text-muted-foreground">{note}</span>}
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={selected}
+      className={cn(
+        "surface-card group flex items-center justify-between gap-3 rounded-2xl px-4 py-3 text-left transition-all duration-200 ease-(--ease-apple) hover:-translate-y-0.5",
+        selected
+          ? "ring-2 ring-primary/60 bg-primary/[0.06] dark:bg-primary/[0.12]"
+          : "hover:ring-1 hover:ring-primary/25"
+      )}
+    >
+      <div className="min-w-0">
+        <div className="flex items-center gap-1.5">
+          <span className="truncate text-xs font-medium text-muted-foreground">{label}</span>
+          {note && <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">{note}</span>}
+        </div>
+        <span className="mt-0.5 block text-2xl font-semibold tracking-tight tabular-nums">{value}</span>
+      </div>
+      <span className={cn("grid size-9 shrink-0 place-items-center rounded-[11px] transition-transform duration-200 group-hover:scale-105", selected ? "bg-primary text-primary-foreground shadow-xs" : chip)}>
+        <Icon className="size-4" strokeWidth={2} />
+      </span>
     </button>
   );
 }
