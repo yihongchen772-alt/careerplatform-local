@@ -50,6 +50,7 @@ import type {
   DesktopBridgeAutofillStatus,
   DesktopBridgeHistoryEntry,
   DesktopBridgePageProblem,
+  DesktopBridgeTab,
   DesktopBridgeTabsState,
 } from "@/types/desktop-bridge";
 
@@ -142,7 +143,7 @@ function ToolbarIcon({ label, shortcut, className, ...props }: React.ComponentPr
 }
 
 export function EmbeddedBrowser({
-  initialUrl, initialPositionId,
+  initialUrl, initialPositionId, initialResumeVersionId, initialVariantId,
   knownSites,
   profileVariants,
   resumeVersions,
@@ -152,7 +153,7 @@ export function EmbeddedBrowser({
   poolPositions,
   applications,
 }: {
-  initialUrl?: string; initialPositionId?: string;
+  initialUrl?: string; initialPositionId?: string; initialResumeVersionId?: string; initialVariantId?: string;
   knownSites: KnownSite[];
   profileVariants: { id: string; name: string; resumeVersionId: string | null }[];
   resumeVersions: ResumeOption[];
@@ -208,7 +209,11 @@ export function EmbeddedBrowser({
   const [pageProblem, setPageProblem] = useState<DesktopBridgePageProblem | null>(null);
   // 资料方案: "" = 跟随简历 (the variant bound to the chosen resume, else the
   // default profile), "default" = always the default, otherwise a variant id.
-  const [variantChoice, setVariantChoice] = useState("");
+  const [variantChoice, setVariantChoice] = useState(
+    initialVariantId && (initialVariantId === "default" || profileVariants.some((v) => v.id === initialVariantId))
+      ? initialVariantId
+      : ""
+  );
   const scopePreference = useSyncExternalStore(noop, () => {
     try {
       const saved = localStorage.getItem("careerplatform.browser.fillModules.v5");
@@ -240,7 +245,10 @@ export function EmbeddedBrowser({
     writePreference(SCOPE_HOST_KEY, ordered.length === ALL_FILL_MODULES.length ? "" : hostOf(currentUrlRef.current) ?? "");
   }
   const [resumeVersionId, setResumeVersionId] = useState(
-    resumeVersions.find((r) => r.isDefault)?.id ?? resumeVersions[0]?.id ?? ""
+    (initialResumeVersionId && resumeVersions.some((r) => r.id === initialResumeVersionId) ? initialResumeVersionId : null) ??
+      resumeVersions.find((r) => r.isDefault)?.id ??
+      resumeVersions[0]?.id ??
+      ""
   );
   // Multi-step wizard support: the main process reports "a form with N
   // empty fields just appeared" for the active tab; either show a one-line
@@ -442,11 +450,53 @@ export function EmbeddedBrowser({
 
   useEffect(() => {
     if (!bridge) return;
+    const syncBindings = (tabs: DesktopBridgeTab[]) => {
+      setJobBindings((prev) => {
+        let next: Record<number, string> | null = null;
+        for (const t of tabs) {
+          const bound = t.positionId || t.batchMeta?.positionId;
+          if (bound && prev[t.id] !== bound) {
+            if (!next) next = { ...prev };
+            next[t.id] = bound;
+          }
+        }
+        return next ?? prev;
+      });
+    };
+    const restoreTabStatus = (state: DesktopBridgeTabsState): DesktopBridgeAutofillStatus | null => {
+      if (state.activeId === null) return null;
+      const cached = tabStatusRef.current.get(state.activeId);
+      if (cached) return cached;
+      const active = state.tabs.find((t) => t.id === state.activeId);
+      if (active?.lastStatus) {
+        tabStatusRef.current.set(state.activeId, active.lastStatus);
+        return active.lastStatus;
+      }
+      const fs = active?.fillState;
+      if (fs && fs.status !== "idle" && fs.message) {
+        return {
+          tabId: active.id,
+          phase: fs.status === "error" ? "error" : ["queued", "loading", "filling"].includes(fs.status) ? "scanning" : "done",
+          message: fs.message,
+          summary: fs.status === "ready" || fs.status === "recorded"
+            ? { filled: fs.filled, manual: fs.manual, deliberate: fs.deliberate, preserved: 0, excluded: 0, uploaded: fs.uploaded, uploadedAttachments: fs.uploadedNames }
+            : undefined,
+        };
+      }
+      return null;
+    };
     const offTabs = bridge.onTabs((state) => {
+      syncBindings(state.tabs);
       if (state.activeId !== activeIdRef.current) {
         activeIdRef.current = state.activeId;
-        setStatus(state.activeId === null ? null : tabStatusRef.current.get(state.activeId) ?? null);
+        setStatus(restoreTabStatus(state));
         setAutofilling(state.activeId !== null && busyTabsRef.current.has(state.activeId));
+      } else if (state.activeId !== null && !busyTabsRef.current.has(state.activeId)) {
+        const cur = state.tabs.find((t) => t.id === state.activeId);
+        if (cur?.lastStatus && (!tabStatusRef.current.has(state.activeId))) {
+          tabStatusRef.current.set(state.activeId, cur.lastStatus);
+          setStatus(cur.lastStatus);
+        }
       }
       setTabsState(state);
     });
@@ -506,7 +556,17 @@ export function EmbeddedBrowser({
       setSubmittedDuplicate(false);
       setSubmittedRecognition({ tabId: payload.tabId, url: payload.url, result: null });
     });
-    bridge.getTabs().then((state) => { activeIdRef.current = state.activeId; setTabsState(state); if (state.activeId !== null && initialPositionId) setJobBindings((bindings) => ({ ...bindings, [state.activeId!]: initialPositionId })); }).catch(() => {});
+    bridge.getTabs().then((state) => {
+      activeIdRef.current = state.activeId;
+      syncBindings(state.tabs);
+      setTabsState(state);
+      const restored = restoreTabStatus(state);
+      if (restored) setStatus(restored);
+      if (state.activeId !== null && initialPositionId) {
+        setJobBindings((bindings) => ({ ...bindings, [state.activeId!]: initialPositionId }));
+        void bridge.bindPosition?.(initialPositionId, state.activeId);
+      }
+    }).catch(() => {});
     bridge.history().then(setHistory).catch(() => {});
     if (initialUrl) bridge.navigate(initialUrl);
     return () => {
@@ -686,7 +746,7 @@ export function EmbeddedBrowser({
       if (autoSavingRef.current) return;
       autoSavingRef.current = true;
       try {
-        const { pendingTotal, draftSaved, learned } = await bridge.saveCorrections(resumeVersionId || undefined, true, positionId || "", variantChoice, autoRemember);
+        const { pendingTotal, draftSaved, learned } = await bridge.saveCorrections(resumeVersionId || undefined, true, positionId || undefined, variantChoice, autoRemember);
         if (pendingTotal !== undefined) setPendingChangeCount(pendingTotal);
         if (learned?.length) announceLearned(learned, currentUrl);
         if (draftSaved) setPageDraftStatus({ context: draftContext, message: `${new Date().toLocaleTimeString("zh-CN")} 扫描的网页内容已保存到 App` });
@@ -755,15 +815,23 @@ export function EmbeddedBrowser({
     else void bridge.navigate(url);
   }
 
-  function handleAutofill(extra: DesktopBridgeAutofillOptions = {}) {
-    if (!bridge || autofilling) return;
+  function handleAutofill(extra: DesktopBridgeAutofillOptions = {}, targetId?: number) {
+    if (!bridge) return;
+    const targetTabId = targetId ?? activeIdRef.current;
+    if (targetTabId !== null && busyTabsRef.current.has(targetTabId)) return;
     if (!fillModules.length) { toast.info("请先在「填写范围」里至少勾选一个模块"); return; }
     if (extra.mode !== "preview") lastFill.current = extra;
-    const targetTabId = activeIdRef.current;
+    if (targetTabId !== null) busyTabsRef.current.add(targetTabId);
     setDetected(null);
     setAutofilling(true);
     setStatus((old) => ({ phase: "scanning", message: extra.forceRefill ? "正在清空上次自动填写并重填…" : "正在读取页面…", plan: old?.plan }));
     bridge.autofill(resumeVersionId || undefined, { expandBlocks, saveBlocks: expandBlocks && saveBlocks, variantId: variantChoice || undefined, modules: fillModules, positionId: positionId || undefined, ...extra })
+      .then((res) => {
+        if (res === null && targetTabId !== null) {
+          busyTabsRef.current.delete(targetTabId);
+          if (targetTabId === activeIdRef.current) setAutofilling(false);
+        }
+      })
       .catch((err) => {
         if (targetTabId !== null) busyTabsRef.current.delete(targetTabId);
         if (targetTabId === activeIdRef.current) {
@@ -1578,7 +1646,7 @@ export function EmbeddedBrowser({
           {showFrozen && (
             // The page's own pixels, a moment old, while App menus cover it.
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={frozen.src} alt="" aria-hidden="true" className="absolute inset-0 size-full object-cover object-left-top" />
+            <img src={frozen.src} alt="" aria-hidden="true" className="absolute inset-0 size-full bg-card object-contain object-left-top" />
           )}
           {overlayOpen && currentUrl && !showFrozen && (
             <p className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">关掉菜单或弹窗后网页就会回来</p>
@@ -1620,7 +1688,13 @@ export function EmbeddedBrowser({
               tab={assistantTab}
               onTab={setAssistantTab}
               onClose={closePanel}
-              onPosition={(id) => { if (activeTab) setJobBindings((bindings) => ({ ...bindings, [activeTab.id]: id })); setStatus(null); }}
+              onPosition={(id) => {
+                if (activeTab) {
+                  setJobBindings((bindings) => ({ ...bindings, [activeTab.id]: id }));
+                  void bridge.bindPosition?.(id || null, activeTab.id);
+                }
+                setStatus(null);
+              }}
               onPreview={(extra) => handleAutofill({ mode: "preview", ...extra })}
               onRegion={() => void handleRegionFill()}
               onApply={(options) => handleAutofill(options)}
@@ -1642,6 +1716,15 @@ export function EmbeddedBrowser({
         bridge={bridge}
         resumeVersionId={resumeVersionId || undefined}
         fillOptions={{ expandBlocks, saveBlocks: expandBlocks && saveBlocks, variantId: variantChoice || undefined, modules: fillModules }}
+        onRefillTab={async (tab) => {
+          await bridge.switchTab(tab.id);
+          activeIdRef.current = tab.id;
+          setPendingListOpen(false);
+          handleAutofill({
+            forceRefill: true,
+            positionId: tab.positionId || tab.batchMeta?.positionId || jobBindings[tab.id] || undefined,
+          }, tab.id);
+        }}
       />
 
       {portalOpen && (

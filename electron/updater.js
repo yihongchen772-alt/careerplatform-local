@@ -147,7 +147,12 @@ function setupUpdater({ app, ipcMain, getMainWindow, beforeInstall, getProxyUrl 
       if (!response.ok) throw new Error("Release lookup failed");
       const release = await response.json();
       const version = typeof release?.tag_name === "string" ? release.tag_name.replace(/^v/, "") : "";
-      const asset = Array.isArray(release?.assets) ? release.assets.find((item) => item?.name === `JobCompass-${version}-mac-arm64.dmg`) : null;
+      const candidates = arch === "arm64"
+        ? [`JobCompass-${version}-mac-arm64.dmg`, `JobCompass-${version}-mac-universal.dmg`, `JobCompass-${version}-mac.dmg`]
+        : [`JobCompass-${version}-mac-x64.dmg`, `JobCompass-${version}-mac-universal.dmg`, `JobCompass-${version}-mac-arm64.dmg`, `JobCompass-${version}-mac.dmg`];
+      const asset = Array.isArray(release?.assets)
+        ? candidates.map((name) => release.assets.find((item) => item?.name === name)).find(Boolean) ?? null
+        : null;
       if (!VERSION_RE.test(version) || release.draft || release.prerelease || !asset) {
         throw new Error("Invalid or incomplete release");
       }
@@ -374,6 +379,7 @@ function setupUpdater({ app, ipcMain, getMainWindow, beforeInstall, getProxyUrl 
 
   return {
     getState: snapshot,
+    check,
     dispose() {
       disposed = true;
       for (const channel of handlers.keys()) ipcMain.removeHandler(channel);

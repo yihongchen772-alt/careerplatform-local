@@ -71,15 +71,27 @@ async function renderOne(url, partition) {
   });
   try {
     const loaded = new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error("页面加载超时")), RENDER_TIMEOUT_MS);
-      win.webContents.once("did-finish-load", () => {
+      const cleanup = () => {
         clearTimeout(timer);
+        win.webContents.removeListener("did-finish-load", onFinish);
+        win.webContents.removeListener("did-fail-load", onFail);
+      };
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(new Error("页面加载超时"));
+      }, RENDER_TIMEOUT_MS);
+      const onFinish = () => {
+        cleanup();
         resolve();
-      });
-      win.webContents.once("did-fail-load", (_event, code, description) => {
-        clearTimeout(timer);
+      };
+      const onFail = (_event, code, description, _validatedURL, isMainFrame) => {
+        // Ignore subframe (analytics/ad iframe) failures and navigation redirects (-3).
+        if (!isMainFrame || code === -3) return;
+        cleanup();
         reject(new Error(`页面加载失败：${description || code}`));
-      });
+      };
+      win.webContents.on("did-finish-load", onFinish);
+      win.webContents.on("did-fail-load", onFail);
     });
     await win.loadURL(url);
     await loaded;

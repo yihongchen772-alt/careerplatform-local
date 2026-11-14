@@ -23,12 +23,16 @@ export type BoardJob = {
 
 type BoardResult = { name: string; provider: string | null; jobs: BoardJob[]; error?: string };
 
-/** Big boards that need no setup; the 企业名录's own 招聘官网 links are added to these. */
+/** Big boards & live verified AI/tech tenants that need no setup; 企业名录 adds more. */
 export const BUILT_IN_BOARDS: { name: string; careers_url: string }[] = [
   { name: "字节跳动", careers_url: "https://jobs.bytedance.com" },
   { name: "腾讯", careers_url: "https://careers.tencent.com/search.html" },
   { name: "阿里巴巴", careers_url: "https://talent.alibaba.com/off-campus/position-list" },
   { name: "美团", careers_url: "https://zhaopin.meituan.com/web/social" },
+  { name: "DeepSeek", careers_url: "https://app.mokahr.com/social-recruitment/high-flyer/140576" },
+  { name: "月之暗面", careers_url: "https://app.mokahr.com/apply/moonshot/148506" },
+  { name: "智谱AI", careers_url: "https://app.mokahr.com/social-recruitment/zphz/148983" },
+  { name: "MiniMax", careers_url: "https://vrfi1sk8a0.jobs.feishu.cn" },
 ];
 
 /** Hosts the vendored fetchers can read (what each provider's detect() claims). */
@@ -83,10 +87,16 @@ function decodeHtml(raw: string): string {
     .trim();
 }
 
+export type JobDiscoveryKind = "all" | "campus" | "intern" | "social";
+
 function inferCompanyFromTitle(title: string, url: string): string {
-  const cleaned = title.replace(/[-_|—·]\s*(?:招聘|校招|校园招聘|官网|职位|拉勾|猎聘|脉脉|BOSS|牛客).*$/i, "").trim();
-  const dashSplit = cleaned.split(/[-—|·]/)[0]?.trim();
-  if (dashSplit && dashSplit.length >= 2 && dashSplit.length <= 24) return dashSplit;
+  const bracketed = /^【([^】]{2,20})】/.exec(title.trim());
+  if (bracketed?.[1] && !/招聘|校招|社招|实习|热招|急招/.test(bracketed[1])) return bracketed[1].trim();
+  const cleaned = title
+    .replace(/[-_|—·：:]\s*(?:官方)?(?:招聘|校招|校园招聘|社招|社会招聘|实习招聘|官网|职位|加入我们|拉勾|猎聘|脉脉|BOSS|牛客|前程无忧|智联招聘).*$/i, "")
+    .trim();
+  const dashSplit = cleaned.split(/[-—|·：:]/)[0]?.trim();
+  if (dashSplit && dashSplit.length >= 2 && dashSplit.length <= 20) return dashSplit;
   try {
     return new URL(url).hostname.replace(/^www\./, "");
   } catch {
@@ -94,9 +104,21 @@ function inferCompanyFromTitle(title: string, url: string): string {
   }
 }
 
-export async function discoverWebCampusJobs(query: string, cities: string[] = []): Promise<BoardJob[]> {
+export async function discoverWebCampusJobs(
+  query: string,
+  cities: string[] = [],
+  jobKind: JobDiscoveryKind = "all"
+): Promise<BoardJob[]> {
   const cityHint = cities[0] ? ` ${cities[0]}` : "";
-  const searchTerms = `${query}${cityHint} 校园招聘 网申 投递`.trim();
+  const kindSuffix =
+    jobKind === "social"
+      ? "社招 招聘 官网"
+      : jobKind === "intern"
+        ? "实习生 招聘 网申"
+        : jobKind === "campus"
+          ? "校园招聘 网申 投递"
+          : "招聘 官网 网申";
+  const searchTerms = `${query}${cityHint} ${kindSuffix}`.trim();
   const endpoint = `https://cn.bing.com/search?q=${encodeURIComponent(searchTerms)}&count=12`;
   try {
     const res = await fetch(endpoint, {
@@ -143,6 +165,8 @@ export type FindJobsOptions = {
   includeSheets?: boolean;
   includeWeb?: boolean;
   includeBoards?: boolean;
+  resumeVersionId?: string | null;
+  jobKind?: JobDiscoveryKind;
   signal?: ProfileMatchSignal;
 };
 
@@ -158,25 +182,29 @@ export async function findJobs(
   options: FindJobsOptions = {}
 ) {
   const terms = query.split(/[\s,，、]+/).map((term) => term.trim()).filter(Boolean).slice(0, 5);
-  const [companies, userProfile, defaultResume, positions, applications] = await Promise.all([
+  const jobKind: JobDiscoveryKind = options.jobKind ?? "all";
+  const [companies, userProfile, targetResume, positions, applications] = await Promise.all([
     db.company.findMany({ where: { careerUrl: { not: null } }, select: { name: true, careerUrl: true, aliases: { select: { alias: true } } } }),
     options.signal
       ? Promise.resolve(null)
       : db.user.findUnique({ where: { id: userId }, select: { targetTrack: true, preferredCities: true, skills: true, graduationYear: true } }),
     options.signal
       ? Promise.resolve(null)
-      : db.resumeVersion.findFirst({ where: { userId }, orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }], select: { extractedText: true } }),
+      : options.resumeVersionId
+        ? db.resumeVersion.findFirst({ where: { id: options.resumeVersionId, userId }, select: { extractedText: true, structured: true } })
+        : db.resumeVersion.findFirst({ where: { userId }, orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }], select: { extractedText: true, structured: true } }),
     db.position.findMany({ where: { userId }, select: { jdUrl: true, title: true, company: { select: { name: true } } } }),
     db.application.findMany({ where: { userId }, select: { applyUrl: true, title: true, company: { select: { name: true } } } }),
   ]);
 
-  const signal = options.signal ?? extractProfileSignal(userProfile, defaultResume?.extractedText);
+  const signal = options.signal ?? extractProfileSignal(userProfile, targetResume?.extractedText, targetResume?.structured);
   const cityTerms = cities.map((city) => city.replace(/市$/, "")).filter(Boolean);
   const knownUrls = new Set([...positions.map((p) => p.jdUrl), ...applications.map((a) => a.applyUrl)].filter(Boolean).map((url) => url!.replace(/^http:/, "https:")));
   const knownTitles = new Set([...positions, ...applications].map((row) => `${normal(row.company.name)}|${normal(row.title)}`));
 
   let boardResults: BoardResult[] = [];
   let boardJobs: BoardJob[] = [];
+  let boardError: string | null = null;
   let keywords = terms;
 
   if (options.includeBoards !== false) {
@@ -185,7 +213,11 @@ export async function findJobs(
     const named = all.filter((board) => terms.some((term) => [board.name, ...board.aliases].some((name) => normal(name).includes(normal(term)) || normal(term).includes(normal(name)))));
     keywords = named.length ? terms.filter((term) => !named.some((board) => [board.name, ...board.aliases].some((name) => normal(name).includes(normal(term)) || normal(term).includes(normal(name))))) : terms;
     const boards = (named.length ? named : all).slice(0, 12).map((board) => ({ name: board.name, careers_url: board.careers_url, keywords: keywords.length ? [keywords.join(" ")] : [] }));
-    boardResults = await runBoards(boards).catch(() => []);
+    try {
+      boardResults = await runBoards(boards);
+    } catch (err) {
+      boardError = err instanceof Error ? err.message : "官网直招抓取超时";
+    }
     boardJobs = boardResults
       .flatMap((result) =>
         result.jobs.map((job) => ({
@@ -195,7 +227,12 @@ export async function findJobs(
           sourceLabel: `${result.name}官网`,
         }))
       )
-      .filter((job) => !keywords.length || keywords.some((term) => normal(job.title + job.description).includes(normal(term))));
+      .filter((job) => !keywords.length || keywords.some((term) => normal(job.title + job.description).includes(normal(term))))
+      .filter((job) => {
+        if (jobKind === "intern") return /实习|intern/i.test(`${job.title} ${job.description}`);
+        if (jobKind === "campus") return !/社会招聘|社招|only senior/i.test(job.title);
+        return true;
+      });
   }
 
   let sheetJobs: BoardJob[] = [];
@@ -236,7 +273,7 @@ export async function findJobs(
 
   let webJobs: BoardJob[] = [];
   if (options.includeWeb) {
-    webJobs = await discoverWebCampusJobs(query, cityTerms);
+    webJobs = await discoverWebCampusJobs(query, cityTerms, jobKind);
   }
 
   const seenUrls = new Set<string>();
@@ -274,6 +311,7 @@ export async function findJobs(
       sheets: sheetJobs.length,
       web: webJobs.length,
     },
+    warnings: boardError ? [boardError] : [],
     searched: boardResults.map((result) => ({
       name: result.name,
       found: result.jobs.length,

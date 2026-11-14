@@ -365,6 +365,11 @@ export const ACTION_GUIDE = `当用户说的话意味着数据该被记下来或
 - update_profile：修改用户的个人求职偏好。title 填目标方向（targetTrack），city 填意向城市（preferredCities，顿号隔开），salaryMin 填期望月薪下限（整数 K），note 填技能栈（skills）。只填用户要求改的字段
 - update_company_industry：给公司设置行业分类。companyName 必填，title（或 note）填行业（如「机器人」「半导体」「工业自动化」「汽车」「新能源」「互联网」等）
 - add_journey：帮用户记一条「心路历程」求职日记。mood 填 happy / ok / down / angry / cry，note 填正文内容，title（或 companyName）填关联标签（如「大疆 · 二面后」）
+- update_contact：修改联系人资料或跟进日期。targetId 填 [联系人ID]（或 contactName 填姓名），contactName/title（角色）/companyName/note（联系方式或备注）/date（下次跟进 YYYY-MM-DD）填需要改的字段，留空保留原值
+- delete_contact：删除一个联系人（仅用户明确要求删时提）。targetId 填 [联系人ID]（或 contactName 填姓名）
+- update_task：修改自建待办的标题、截止日或备注。targetId 填 [待办ID]（或 title），title/date/dateEnd/note 填需要改的字段，留空保留原值
+- delete_task：删除一条自建待办（仅用户明确要求删时提）。targetId 填 [待办ID]（或 title 匹配）
+- export_applications：导出全部投递记录文件（用户点按钮即触发下载）。stage（或 note）可填 xlsx / csv / md，默认 xlsx
 每个 action 的 label 写成用户一眼能看懂的按钮文案，比如"记一条投递：字节跳动 后端开发"或"更新为一面，面试时间 3月5日"。label 只是按钮上的字，不能代替上面那些字段——该填 title/companyName/targetId 的一个都不能少，别只写 label 就交差。
 问到安排（"今天有什么""下一场是什么时候"）直接按上面的「接下来」回答，带上时间和会议/测评链接；用户说"宝洁一面改到周五下午三点""刚面完腾讯二面，问了…"就给 reschedule / complete_step + save_note。
 举例：用户说"我今天投了美团的数据分析，下周三一面"，就给两个 action —— 一个 log_application（如果候选池里没有这条，对上号就用 mark_position_applied），一个提醒他准备面试的 add_task。`;

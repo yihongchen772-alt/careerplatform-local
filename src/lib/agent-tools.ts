@@ -2,10 +2,19 @@ import { db } from "@/lib/db";
 import { getResumeContext } from "@/lib/resume-context";
 import { getSearchKey, generateGroundedText } from "@/lib/ai-file-search";
 import { UserFacingError } from "@/lib/action-result";
-import { findJobs } from "@/lib/career-ops";
+import { parseApplicationProfile } from "@/lib/application-profile";
+import { ATTACHMENT_ROLE_META, resolveAutofillAttachments } from "@/lib/attachment-roles";
+import { buildBrowserApplyHref } from "@/lib/batch-apply";
+import { findJobs, type JobDiscoveryKind } from "@/lib/career-ops";
 
 /** One lookup for 小欧's tools (src/lib/agent/tools.ts), by name. */
-export type AgentDecision = { tool: "search_records" | "resume_context" | "research_web" | "find_jobs" | "prepare_application"; query: string; targetId: string };
+export type AgentDecision = {
+  tool: "search_records" | "resume_context" | "research_web" | "find_jobs" | "prepare_application";
+  query: string;
+  targetId: string;
+  cities?: string[];
+  jobKind?: JobDiscoveryKind;
+};
 export type ToolResult = { data: string; summary: string; href?: string };
 
 function safeWebUrl(raw: string | null): string | undefined {
@@ -30,13 +39,29 @@ export async function executeAgentTool(userId: string, decision: AgentDecision):
   if (decision.tool === "search_records") {
     // Search the entire database, not just the first page in the initial snapshot.
     const contains = query.trim();
-    const [positions, leads, applications, tasks] = await Promise.all([
+    const [positions, leads, applications, tasks, campusPostings, attachments, resumes, contacts] = await Promise.all([
       db.position.findMany({ where: { userId, OR: [{ title: { contains } }, { company: { name: { contains } } }, { company: { aliases: { some: { alias: { contains } } } } }, { track: { contains } }, { location: { contains } }] }, select: { id: true, title: true, company: { select: { name: true, careerUrl: true } }, jdText: true, jdUrl: true, deadline: true, location: true, status: true, salaryMin: true, salaryMax: true }, take: 10, orderBy: { createdAt: "desc" } }),
       db.jobLead.findMany({ where: { userId, OR: [{ title: { contains } }, { companyName: { contains } }, { track: { contains } }, { location: { contains } }] }, select: { id: true, companyName: true, title: true, jdUrl: true, note: true, deadline: true, fitScore: true, promotedPositionId: true }, take: 10, orderBy: { fitScore: "desc" } }),
       db.application.findMany({ where: { userId, OR: [{ title: { contains } }, { city: { contains } }, { company: { name: { contains } } }, { company: { aliases: { some: { alias: { contains } } } } }, { company: { industry: { contains } } }, { position: { location: { contains } } }, { stageHistory: { some: { note: { contains } } } }] }, include: { company: { select: { name: true, industry: true } }, stageHistory: { take: 8, orderBy: { enteredAt: "desc" }, select: { id: true, stage: true, stageLabel: true, note: true, terminatedAtStage: true, terminatedAtStageLabel: true, enteredAt: true } } }, take: 10, orderBy: { appliedDate: "desc" } }),
       db.personalTask.findMany({ where: { userId, OR: [{ title: { contains } }, { note: { contains } }] }, take: 10, orderBy: { createdAt: "desc" } }),
+      db.campusPosting.findMany({ where: { userId, OR: [{ company: { contains } }, { roles: { contains } }, { cities: { contains } }, { industry: { contains } }, { note: { contains } }] }, select: { id: true, company: true, roles: true, cities: true, kind: true, cohort: true, deadline: true, applyUrl: true, positionId: true }, take: 10, orderBy: { startDate: { sort: "desc", nulls: "last" } } }),
+      db.attachment.findMany({ where: { userId, OR: [{ name: { contains } }, { category: { contains } }] }, select: { id: true, name: true, category: true, url: true, createdAt: true }, take: 10, orderBy: { createdAt: "desc" } }),
+      db.resumeVersion.findMany({ where: { userId, OR: [{ name: { contains } }, { targetTrack: { contains } }] }, select: { id: true, name: true, targetTrack: true, isDefault: true, checkScore: true }, take: 10, orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }] }),
+      db.contact.findMany({ where: { userId, OR: [{ name: { contains } }, { companyName: { contains } }, { role: { contains } }, { note: { contains } }] }, select: { id: true, name: true, role: true, companyName: true, contactInfo: true, nextFollowUpAt: true }, take: 10, orderBy: { createdAt: "desc" } }),
     ]);
-    return { data: JSON.stringify({ positions: positions.map(p => ({ ...p, jdText: p.jdText?.slice(0, 2500) })), leads, applications, tasks }), summary: `关键词「${contains || "全部"}」：候选 ${positions.length}、线索 ${leads.length}、投递 ${applications.length}、待办 ${tasks.length} 条（每类最多 10 条，并非总数）。` };
+    return {
+      data: JSON.stringify({
+        positions: positions.map((p) => ({ ...p, jdText: p.jdText?.slice(0, 2500) })),
+        leads,
+        applications,
+        tasks,
+        campusPostings,
+        attachments,
+        resumes,
+        contacts,
+      }),
+      summary: `关键词「${contains || "全部"}」：候选 ${positions.length}、校招表 ${campusPostings.length}、线索 ${leads.length}、投递 ${applications.length}、待办 ${tasks.length}、资料 ${attachments.length}、简历 ${resumes.length} 条。`,
+    };
   }
   if (decision.tool === "resume_context") {
     const resume = targetId
@@ -56,8 +81,13 @@ export async function executeAgentTool(userId: string, decision: AgentDecision):
   if (decision.tool === "find_jobs") {
     if (!query.trim()) throw new UserFacingError("要找什么岗位？说个方向或关键词，比如「产品经理」「字节 数据分析」。");
     const profile = await db.user.findUnique({ where: { id: userId }, select: { preferredCities: true } });
-    const cities = (profile?.preferredCities ?? "").split(/[\s,，、/]+/).filter(Boolean);
-    const found = await findJobs(userId, query, cities, { includeSheets: true, includeWeb: true });
+    const defaultCities = (profile?.preferredCities ?? "").split(/[\s,，、/]+/).filter(Boolean);
+    const cities = decision.cities?.length ? decision.cities : defaultCities;
+    const found = await findJobs(userId, query, cities, {
+      includeSheets: true,
+      includeWeb: true,
+      jobKind: decision.jobKind ?? "all",
+    });
     const failed = (found.searched ?? []).filter((board) => board.error);
     const channelHint = found.channels
       ? `官网直招（${found.channels.boards}）、订阅校招表（${found.channels.sheets}）与全网检索（${found.channels.web}）`
@@ -76,6 +106,7 @@ export async function executeAgentTool(userId: string, decision: AgentDecision):
           summary: job.description.replace(/\s+/g, " ").slice(0, 160),
         })),
         channels: found.channels,
+        warnings: found.warnings,
         searched: found.searched,
         note: "这些是从企业招聘官网、已订阅校招信息表和全网招聘检索汇总的在招岗位（已去掉用户候选池和投递记录里已有的，并按用户目标方向/城市/技能打分排序）。推荐时给出公司、岗位、地点、匹配原因和链接；用户想要的用 add_position 加入候选池，url 填岗位链接，note 写地点和一句理由。",
       }),
@@ -86,21 +117,42 @@ export async function executeAgentTool(userId: string, decision: AgentDecision):
     if (!targetId) throw new UserFacingError("请先指定候选岗位；可以先查询公司或岗位名称。");
     const position = await db.position.findFirst({ where: { id: targetId, userId }, include: { company: true } });
     if (!position) throw new UserFacingError("未找到这个候选岗位，请先把岗位加入候选池。");
-    const [profile, resumes] = await Promise.all([
-      db.user.findUnique({ where: { id: userId }, select: { name: true, phone: true, contactEmail: true, school: true, graduationYear: true, skills: true } }),
-      db.resumeVersion.findMany({ where: { userId }, select: { id: true, name: true, isDefault: true, targetTrack: true, checkScore: true }, orderBy: { isDefault: "desc" } }),
+    const [profile, resumes, attachments] = await Promise.all([
+      db.user.findUnique({ where: { id: userId }, select: { name: true, phone: true, contactEmail: true, school: true, graduationYear: true, skills: true, applicationProfile: true } }),
+      db.resumeVersion.findMany({ where: { userId }, select: { id: true, name: true, isDefault: true, targetTrack: true, checkScore: true }, orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }] }),
+      db.attachment.findMany({ where: { userId, category: { not: null } }, select: { id: true, name: true, url: true, category: true, createdAt: true }, orderBy: { createdAt: "desc" } }),
     ]);
+    const pinnedAttachments = parseApplicationProfile(profile?.applicationProfile).pinnedAttachments;
+    const readyAttachments = resolveAutofillAttachments(attachments, profile?.name, pinnedAttachments);
+    const readyRoleSet = new Set(readyAttachments.map((a) => a.role));
     const missing = [];
     if (!profile?.name || profile.name === "我") missing.push("真实姓名");
     if (!profile?.phone) missing.push("联系电话");
     if (!profile?.contactEmail) missing.push("联系邮箱");
     if (!profile?.school) missing.push("学校");
     if (!resumes.length) missing.push("简历文件");
+    const missingRecommendedAttachments = (["photo", "transcript", "enrollment"] as const)
+      .filter((role) => !readyRoleSet.has(role))
+      .map((role) => ATTACHMENT_ROLE_META[role].category);
+    const defaultResume = resumes.find((r) => r.isDefault) ?? resumes[0] ?? null;
     const url = safeWebUrl(position.jdUrl) ?? safeWebUrl(position.company.careerUrl);
-    const href = url ? `/browser?url=${encodeURIComponent(url)}` : "/pool";
+    const href = url
+      ? buildBrowserApplyHref(url, { positionId: position.id, resumeVersionId: defaultResume?.id })
+      : "/pool";
     return {
-      data: JSON.stringify({ company: position.company.name, title: position.title, jdText: position.jdText?.slice(0, 7000), url, resumes, missing, instruction: "根据 JD 和真实简历摘要准备材料清单、匹配分析和可编辑的自我介绍/开放题草稿；缺少经历时询问，不要编造。网申浏览器在桌面版可辅助填写，用户检查后自行提交。打开入口和准备材料均不代表已经投递，不应生成已投递记录。" }),
-      summary: `已准备 ${position.company.name} · ${position.title}；${missing.length ? `待补充：${missing.join("、")}` : "基础资料齐全"}。${url ? "可打开网申入口。" : "尚无招聘入口链接。"}`,
+      data: JSON.stringify({
+        company: position.company.name,
+        title: position.title,
+        jdText: position.jdText?.slice(0, 7000),
+        url,
+        deepLink: href,
+        resumes,
+        attachmentsReady: readyAttachments.map((a) => ({ role: ATTACHMENT_ROLE_META[a.role].category, name: a.name, uploadName: a.uploadName })),
+        missingRecommendedAttachments,
+        missing,
+        instruction: "根据 JD 和真实简历摘要准备材料清单、匹配分析和可编辑的自我介绍/开放题草稿；缺少经历时询问，不要编造。网申浏览器在桌面版可辅助填写并自动附带已就绪的资料库附件，用户检查后自行提交。打开入口和准备材料均不代表已经投递，不应生成已投递记录。",
+      }),
+      summary: `已准备 ${position.company.name} · ${position.title}；${missing.length ? `待补充：${missing.join("、")}` : "基础资料齐全"}；资料库就绪附件 ${readyAttachments.length} 类。${url ? "可直接打开预填网申入口。" : "尚无招聘入口链接。"}`,
       href,
     };
   }

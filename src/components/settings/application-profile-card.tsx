@@ -20,6 +20,7 @@ import { extractApplicationProfile, updateApplicationProfile } from "@/lib/actio
 import {
   EXTRA_FIELDS,
   PERSONAL_FIELDS,
+  SOCIAL_FIELDS,
   type ApplicationProfile,
   type EducationRow,
   type ExperienceRow,
@@ -82,14 +83,18 @@ export function ApplicationProfileCard({
     setView((v) => ({ ...v, projects: v.projects.map((project, j) => (j === i ? { ...project, ...patch } : project)) }));
 
   function addVariant() {
-    if (profile.variants.length >= 8) return void toast.error("最多 8 套方案");
+    if (profile.variants.length >= 100) return void toast.error("最多 100 套方案");
     const source = activeVariant ?? profile;
     const variant: ProfileVariant = {
-      id: `v${Date.now().toString(36)}`,
+      id: `v${crypto.randomUUID().replace(/-/g, "").slice(0, 10)}`,
       name: `方案 ${profile.variants.length + 1}`,
       resumeVersionId: null,
       experiences: source.experiences.map((x) => ({ ...x })),
       projects: source.projects.map((x) => ({ ...x })),
+      awards: activeVariant?.awards?.map((x) => ({ ...x })),
+      campus: activeVariant?.campus?.map((x) => ({ ...x })),
+      skills: activeVariant?.skills?.map((x) => ({ ...x })),
+      languages: activeVariant?.languages?.map((x) => ({ ...x })),
       extras: { ...source.extras },
     };
     setProfile((p) => ({ ...p, variants: [...p.variants, variant] }));
@@ -99,6 +104,35 @@ export function ApplicationProfileCard({
 
   const setVariant = (patch: Partial<ProfileVariant>) =>
     setProfile((p) => ({ ...p, variants: p.variants.map((v) => (v.id === active ? { ...v, ...patch } : v)) }));
+
+  function updateSection<K extends "awards" | "campus" | "skills" | "languages">(
+    key: K,
+    updater: (current: NonNullable<ApplicationProfile[K]>) => NonNullable<ApplicationProfile[K]>
+  ) {
+    setProfile((p) => {
+      if (activeVariant && activeVariant[key] !== undefined) {
+        return {
+          ...p,
+          variants: p.variants.map((v) =>
+            v.id === active ? { ...v, [key]: updater((v[key] ?? []) as NonNullable<ApplicationProfile[K]>) } : v
+          ),
+        };
+      }
+      return { ...p, [key]: updater((p[key] ?? []) as NonNullable<ApplicationProfile[K]>) };
+    });
+  }
+
+  function listOf<K extends "awards" | "campus" | "skills" | "languages">(key: K): { rows: NonNullable<ApplicationProfile[K]>; custom: boolean } {
+    if (activeVariant && activeVariant[key] !== undefined) {
+      return { rows: activeVariant[key] as NonNullable<ApplicationProfile[K]>, custom: true };
+    }
+    return { rows: (profile[key] ?? []) as NonNullable<ApplicationProfile[K]>, custom: false };
+  }
+
+  const awardsView = listOf("awards");
+  const campusView = listOf("campus");
+  const skillsView = listOf("skills");
+  const languagesView = listOf("languages");
 
   async function handleSave() {
     setSaving(true);
@@ -119,7 +153,31 @@ export function ApplicationProfileCard({
       const res = await extractApplicationProfile(resumeId);
       if (!res.ok) return void toast.error(res.message);
       // Keep hand-typed rows when the resume does not contain that section.
-      setProfile((p) => ({ ...p, education: mergeFactRows("education", p.education, res.data.education, 10), awards: mergeFactRows("award", p.awards, res.data.awards, 30), campus: mergeFactRows("campus", p.campus ?? [], res.data.campus ?? [], 20), skills: mergeFactRows("skill", p.skills ?? [], res.data.skills ?? [], 30), languages: mergeFactRows("language", p.languages ?? [], res.data.languages ?? [], 10) }));
+      setProfile((p) => {
+        const nextBase = {
+          ...p,
+          education: mergeFactRows("education", p.education, res.data.education, 10),
+          awards: activeVariant?.awards !== undefined ? p.awards : mergeFactRows("award", p.awards, res.data.awards, 30),
+          campus: activeVariant?.campus !== undefined ? (p.campus ?? []) : mergeFactRows("campus", p.campus ?? [], res.data.campus ?? [], 20),
+          skills: activeVariant?.skills !== undefined ? (p.skills ?? []) : mergeFactRows("skill", p.skills ?? [], res.data.skills ?? [], 30),
+          languages: activeVariant?.languages !== undefined ? (p.languages ?? []) : mergeFactRows("language", p.languages ?? [], res.data.languages ?? [], 10),
+        };
+        if (!activeVariant) return nextBase;
+        return {
+          ...nextBase,
+          variants: nextBase.variants.map((v) =>
+            v.id !== active
+              ? v
+              : {
+                  ...v,
+                  awards: v.awards !== undefined ? mergeFactRows("award", v.awards, res.data.awards, 30) : undefined,
+                  campus: v.campus !== undefined ? mergeFactRows("campus", v.campus, res.data.campus ?? [], 20) : undefined,
+                  skills: v.skills !== undefined ? mergeFactRows("skill", v.skills, res.data.skills ?? [], 30) : undefined,
+                  languages: v.languages !== undefined ? mergeFactRows("language", v.languages, res.data.languages ?? [], 10) : undefined,
+                }
+          ),
+        };
+      });
       setView((v) => ({
         experiences: mergeFactRows("experience", v.experiences, res.data.experiences, 20),
         projects: mergeFactRows("project", v.projects, res.data.projects, 20),
@@ -154,7 +212,7 @@ export function ApplicationProfileCard({
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            投不同方向（比如数据 / 产品）时，可以各存一套实习、项目顺序、期望岗位、自我评价和其他常问字段；教育经历所有方案共用。网申浏览器里选方案，或给方案绑定一份简历、选简历时自动切换。
+            投不同方向（比如研发 / 产品 / 社招 / 校招）时，可建多套档案，各存一套实习/工作、项目顺序、期望岗位、自我评价与常问字段；获奖、校园、技能、语言成绩也可按需单独定制（不单独设置则默认共用）。教育经历所有方案共用。
           </p>
           {activeVariant && (
             <div className="flex flex-wrap items-end gap-2">
@@ -278,37 +336,141 @@ export function ApplicationProfileCard({
         </section>
 
         <section className="space-y-3">
-          <div className="flex items-center justify-between"><p className="text-sm font-medium">获奖情况（所有方案共用）</p><Button size="sm" variant="outline" disabled={profile.awards.length >= 30} onClick={() => setProfile((p) => ({ ...p, awards: [...p.awards, { ...emptyAward }] }))}><Plus className="size-4" />添加奖项</Button></div>
-          {profile.awards.map((award, i) => <RecordShell key={i} className="sm:grid-cols-2" startOpen={!award.name} summary={[award.name, award.level, award.date].filter(Boolean).join(" · ")} onDelete={() => setProfile((p) => ({ ...p, awards: p.awards.filter((_, j) => j !== i) }))}>
-            {([["name", "奖项名称"], ["issuer", "颁发单位"], ["level", "等级"], ["date", "获奖时间"]] as const).map(([key, label]) => <Field key={key} label={label}><Input value={award[key]} onChange={(event) => setProfile((p) => ({ ...p, awards: p.awards.map((item, j) => j === i ? { ...item, [key]: event.target.value } : item) }))} /></Field>)}
-            <Field label="补充说明" className="sm:col-span-2"><Textarea value={award.description} onChange={(event) => setProfile((p) => ({ ...p, awards: p.awards.map((item, j) => j === i ? { ...item, description: event.target.value } : item) }))} /></Field>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-medium">获奖情况{activeVariant ? (awardsView.custom ? `（${activeVariant.name} · 独立）` : "（跟随默认资料）") : ""}</p>
+            <div className="flex items-center gap-1.5">
+              {activeVariant && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() =>
+                    setVariant({
+                      awards: awardsView.custom ? undefined : profile.awards.map((item) => ({ ...item })),
+                    })
+                  }
+                >
+                  {awardsView.custom ? "恢复跟随默认" : "本方案单独设置"}
+                </Button>
+              )}
+              <Button size="sm" variant="outline" disabled={awardsView.rows.length >= 30 || (!!activeVariant && !awardsView.custom)} onClick={() => updateSection("awards", (rows) => [...rows, { ...emptyAward }])}><Plus className="size-4" />添加奖项</Button>
+            </div>
+          </div>
+          {awardsView.rows.map((award, i) => <RecordShell key={i} className="sm:grid-cols-2" startOpen={!award.name} summary={[award.name, award.level, award.date].filter(Boolean).join(" · ")} onDelete={() => {
+            if (activeVariant && !awardsView.custom) setVariant({ awards: profile.awards.filter((_, j) => j !== i).map((item) => ({ ...item })) });
+            else updateSection("awards", (rows) => rows.filter((_, j) => j !== i));
+          }}>
+            {([["name", "奖项名称"], ["issuer", "颁发单位"], ["level", "等级"], ["date", "获奖时间"]] as const).map(([key, label]) => <Field key={key} label={label}><Input value={award[key]} disabled={!!activeVariant && !awardsView.custom} onChange={(event) => updateSection("awards", (rows) => rows.map((item, j) => j === i ? { ...item, [key]: event.target.value } : item))} /></Field>)}
+            <Field label="补充说明" className="sm:col-span-2"><Textarea value={award.description} disabled={!!activeVariant && !awardsView.custom} onChange={(event) => updateSection("awards", (rows) => rows.map((item, j) => j === i ? { ...item, description: event.target.value } : item))} /></Field>
           </RecordShell>)}
         </section>
 
         <section className="space-y-3">
-          <div className="flex items-center justify-between"><p className="text-sm font-medium">校园经历 / 学生工作（所有方案共用）</p><Button size="sm" variant="outline" disabled={(profile.campus ?? []).length >= 20} onClick={() => setProfile((p) => ({ ...p, campus: [...(p.campus ?? []), { ...emptyCampus }] }))}><Plus className="size-4" />添加一段</Button></div>
-          {!(profile.campus ?? []).length && <p className="text-xs text-muted-foreground">学生会、社团、班级职务等。很多网申有「校内任职 / 学生干部」一栏，填了就能自动填。</p>}
-          {(profile.campus ?? []).map((row, i) => <RecordShell key={i} className="sm:grid-cols-2" startOpen={!row.name} summary={[row.name, row.role, row.level, [row.start, row.end].filter(Boolean).join(" – ")].filter(Boolean).join(" · ")} onDelete={() => setProfile((p) => ({ ...p, campus: (p.campus ?? []).filter((_, j) => j !== i) }))}>
-            {([["name", "组织 / 社团", "东南大学学生会"], ["role", "担任职务", "外联部部长"], ["level", "级别", "校级 / 院级 / 班级"], ["start", "开始", "2021-09"], ["end", "结束", "2022-06"]] as const).map(([key, label, hint]) => <Field key={key} label={label}><Input value={row[key]} placeholder={hint} onChange={(event) => setProfile((p) => ({ ...p, campus: (p.campus ?? []).map((item, j) => j === i ? { ...item, [key]: event.target.value } : item) }))} /></Field>)}
-            <Field label="做了什么" className="sm:col-span-2"><Textarea rows={2} value={row.description} onChange={(event) => setProfile((p) => ({ ...p, campus: (p.campus ?? []).map((item, j) => j === i ? { ...item, description: event.target.value } : item) }))} /></Field>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-medium">校园经历 / 学生工作{activeVariant ? (campusView.custom ? `（${activeVariant.name} · 独立）` : "（跟随默认资料）") : ""}</p>
+            <div className="flex items-center gap-1.5">
+              {activeVariant && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() =>
+                    setVariant({
+                      campus: campusView.custom ? undefined : (profile.campus ?? []).map((item) => ({ ...item })),
+                    })
+                  }
+                >
+                  {campusView.custom ? "恢复跟随默认" : "本方案单独设置"}
+                </Button>
+              )}
+              <Button size="sm" variant="outline" disabled={campusView.rows.length >= 20 || (!!activeVariant && !campusView.custom)} onClick={() => updateSection("campus", (rows) => [...rows, { ...emptyCampus }])}><Plus className="size-4" />添加一段</Button>
+            </div>
+          </div>
+          {!campusView.rows.length && <p className="text-xs text-muted-foreground">学生会、社团、班级职务等。很多网申有「校内任职 / 学生干部」一栏，填了就能自动填。</p>}
+          {campusView.rows.map((row, i) => <RecordShell key={i} className="sm:grid-cols-2" startOpen={!row.name} summary={[row.name, row.role, row.level, [row.start, row.end].filter(Boolean).join(" – ")].filter(Boolean).join(" · ")} onDelete={() => {
+            if (activeVariant && !campusView.custom) setVariant({ campus: (profile.campus ?? []).filter((_, j) => j !== i).map((item) => ({ ...item })) });
+            else updateSection("campus", (rows) => rows.filter((_, j) => j !== i));
+          }}>
+            {([["name", "组织 / 社团", "东南大学学生会"], ["role", "担任职务", "外联部部长"], ["level", "级别", "校级 / 院级 / 班级"], ["start", "开始", "2021-09"], ["end", "结束", "2022-06"]] as const).map(([key, label, hint]) => <Field key={key} label={label}><Input value={row[key]} disabled={!!activeVariant && !campusView.custom} placeholder={hint} onChange={(event) => updateSection("campus", (rows) => rows.map((item, j) => j === i ? { ...item, [key]: event.target.value } : item))} /></Field>)}
+            <Field label="做了什么" className="sm:col-span-2"><Textarea rows={2} value={row.description} disabled={!!activeVariant && !campusView.custom} onChange={(event) => updateSection("campus", (rows) => rows.map((item, j) => j === i ? { ...item, description: event.target.value } : item))} /></Field>
           </RecordShell>)}
         </section>
 
         <section className="space-y-3">
-          <div className="flex items-center justify-between"><p className="text-sm font-medium">专业技能（所有方案共用）</p><Button size="sm" variant="outline" disabled={(profile.skills ?? []).length >= 30} onClick={() => setProfile((p) => ({ ...p, skills: [...(p.skills ?? []), { ...emptySkill }] }))}><Plus className="size-4" />添加技能</Button></div>
-          {!(profile.skills ?? []).length && <p className="text-xs text-muted-foreground">Python、MATLAB、SolidWorks 等，一项一条。Moka、网易、中国移动等网申的「技能名称 / 掌握程度」一栏会按这里填。</p>}
-          {(profile.skills ?? []).map((row, i) => <RecordShell key={i} className="sm:grid-cols-3" startOpen={!row.name} summary={[row.name, row.level, row.category].filter(Boolean).join(" · ")} onDelete={() => setProfile((p) => ({ ...p, skills: (p.skills ?? []).filter((_, j) => j !== i) }))}>
-            {([["name", "技能名称", "Python"], ["level", "掌握程度", "了解 / 熟悉 / 熟练 / 精通"], ["category", "类别", "编程语言 / 软件工具"]] as const).map(([key, label, hint]) => <Field key={key} label={label}><Input value={row[key]} placeholder={hint} onChange={(event) => setProfile((p) => ({ ...p, skills: (p.skills ?? []).map((item, j) => j === i ? { ...item, [key]: event.target.value } : item) }))} /></Field>)}
-            <Field label="补充说明（可选）" className="sm:col-span-3"><Input value={row.description} placeholder="用它做过什么" onChange={(event) => setProfile((p) => ({ ...p, skills: (p.skills ?? []).map((item, j) => j === i ? { ...item, description: event.target.value } : item) }))} /></Field>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-medium">专业技能{activeVariant ? (skillsView.custom ? `（${activeVariant.name} · 独立）` : "（跟随默认资料）") : ""}</p>
+            <div className="flex items-center gap-1.5">
+              {activeVariant && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() =>
+                    setVariant({
+                      skills: skillsView.custom ? undefined : (profile.skills ?? []).map((item) => ({ ...item })),
+                    })
+                  }
+                >
+                  {skillsView.custom ? "恢复跟随默认" : "本方案单独设置"}
+                </Button>
+              )}
+              <Button size="sm" variant="outline" disabled={skillsView.rows.length >= 30 || (!!activeVariant && !skillsView.custom)} onClick={() => updateSection("skills", (rows) => [...rows, { ...emptySkill }])}><Plus className="size-4" />添加技能</Button>
+            </div>
+          </div>
+          {!skillsView.rows.length && <p className="text-xs text-muted-foreground">Python、MATLAB、SolidWorks 等，一项一条。Moka、网易、中国移动等网申的「技能名称 / 掌握程度」一栏会按这里填。</p>}
+          {skillsView.rows.map((row, i) => <RecordShell key={i} className="sm:grid-cols-3" startOpen={!row.name} summary={[row.name, row.level, row.category].filter(Boolean).join(" · ")} onDelete={() => {
+            if (activeVariant && !skillsView.custom) setVariant({ skills: (profile.skills ?? []).filter((_, j) => j !== i).map((item) => ({ ...item })) });
+            else updateSection("skills", (rows) => rows.filter((_, j) => j !== i));
+          }}>
+            {([["name", "技能名称", "Python"], ["level", "掌握程度", "了解 / 熟悉 / 熟练 / 精通"], ["category", "类别", "编程语言 / 软件工具"]] as const).map(([key, label, hint]) => <Field key={key} label={label}><Input value={row[key]} disabled={!!activeVariant && !skillsView.custom} placeholder={hint} onChange={(event) => updateSection("skills", (rows) => rows.map((item, j) => j === i ? { ...item, [key]: event.target.value } : item))} /></Field>)}
+            <Field label="补充说明（可选）" className="sm:col-span-3"><Input value={row.description} disabled={!!activeVariant && !skillsView.custom} placeholder="用它做过什么" onChange={(event) => updateSection("skills", (rows) => rows.map((item, j) => j === i ? { ...item, description: event.target.value } : item))} /></Field>
           </RecordShell>)}
         </section>
 
         <section className="space-y-3">
-          <div className="flex items-center justify-between"><p className="text-sm font-medium">语言成绩（所有方案共用）</p><Button size="sm" variant="outline" disabled={(profile.languages ?? []).length >= 10} onClick={() => setProfile((p) => ({ ...p, languages: [...(p.languages ?? []), { ...emptyLanguage }] }))}><Plus className="size-4" />添加考试</Button></div>
-          {!(profile.languages ?? []).length && <p className="text-xs text-muted-foreground">四六级、雅思、托福等，一门考试一条。网申里的「语言分数 / 雅思成绩 / 考试类型」会按这里填；下面「英语水平」空着时也用它。</p>}
-          {(profile.languages ?? []).map((row, i) => <RecordShell key={i} className="sm:grid-cols-4" startOpen={!row.name} summary={[row.language, row.name, row.score, row.date].filter(Boolean).join(" · ")} onDelete={() => setProfile((p) => ({ ...p, languages: (p.languages ?? []).filter((_, j) => j !== i) }))}>
-            {([["name", "考试 / 证书", "CET-6 / 雅思"], ["score", "分数", "580 / 7.0"], ["language", "语种", "英语（可不填）"], ["date", "考试时间", "2023-06"]] as const).map(([key, label, hint]) => <Field key={key} label={label}><Input value={row[key]} placeholder={hint} onChange={(event) => setProfile((p) => ({ ...p, languages: (p.languages ?? []).map((item, j) => j === i ? { ...item, [key]: event.target.value } : item) }))} /></Field>)}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-medium">语言成绩{activeVariant ? (languagesView.custom ? `（${activeVariant.name} · 独立）` : "（跟随默认资料）") : ""}</p>
+            <div className="flex items-center gap-1.5">
+              {activeVariant && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() =>
+                    setVariant({
+                      languages: languagesView.custom ? undefined : (profile.languages ?? []).map((item) => ({ ...item })),
+                    })
+                  }
+                >
+                  {languagesView.custom ? "恢复跟随默认" : "本方案单独设置"}
+                </Button>
+              )}
+              <Button size="sm" variant="outline" disabled={languagesView.rows.length >= 10 || (!!activeVariant && !languagesView.custom)} onClick={() => updateSection("languages", (rows) => [...rows, { ...emptyLanguage }])}><Plus className="size-4" />添加考试</Button>
+            </div>
+          </div>
+          {!languagesView.rows.length && <p className="text-xs text-muted-foreground">四六级、雅思、托福等，一门考试一条。网申里的「语言分数 / 雅思成绩 / 考试类型」会按这里填；下面「英语水平」空着时也用它。</p>}
+          {languagesView.rows.map((row, i) => <RecordShell key={i} className="sm:grid-cols-4" startOpen={!row.name} summary={[row.language, row.name, row.score, row.date].filter(Boolean).join(" · ")} onDelete={() => {
+            if (activeVariant && !languagesView.custom) setVariant({ languages: (profile.languages ?? []).filter((_, j) => j !== i).map((item) => ({ ...item })) });
+            else updateSection("languages", (rows) => rows.filter((_, j) => j !== i));
+          }}>
+            {([["name", "考试 / 证书", "CET-6 / 雅思"], ["score", "分数", "580 / 7.0"], ["language", "语种", "英语（可不填）"], ["date", "考试时间", "2023-06"]] as const).map(([key, label, hint]) => <Field key={key} label={label}><Input value={row[key]} disabled={!!activeVariant && !languagesView.custom} placeholder={hint} onChange={(event) => updateSection("languages", (rows) => rows.map((item, j) => j === i ? { ...item, [key]: event.target.value } : item))} /></Field>)}
           </RecordShell>)}
+        </section>
+
+        <section className="space-y-3">
+          <p className="text-sm font-medium">社招 / 在职信息（社招网申选填{activeVariant ? ` · ${activeVariant.name}` : ""}）</p>
+          <p className="text-xs text-muted-foreground">投社招岗位时填写；目前薪资和竞业情况仅存在本机用于填表，不会发送给 AI。</p>
+          <div className="grid gap-2 sm:grid-cols-3">
+            {SOCIAL_FIELDS.map((f) => (
+              <Field key={f.key} label={f.label}>
+                <Input
+                  value={view.extras[f.key] ?? ""}
+                  onChange={(ev) => setView((v) => ({ ...v, extras: { ...v.extras, [f.key]: ev.target.value } }))}
+                  placeholder={f.hint}
+                />
+              </Field>
+            ))}
+          </div>
         </section>
 
         <section className="space-y-3">

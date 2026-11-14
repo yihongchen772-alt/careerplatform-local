@@ -75,6 +75,7 @@ export function PendingConfirmDialog({
   bridge,
   resumeVersionId,
   fillOptions,
+  onRefillTab,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -84,6 +85,7 @@ export function PendingConfirmDialog({
   bridge: DesktopBridge;
   resumeVersionId?: string;
   fillOptions: DesktopBridgeAutofillOptions;
+  onRefillTab?: (tab: DesktopBridgeTab) => Promise<void> | void;
 }) {
   const openTabs = tabs.filter((t) => !!t.url && t.url !== "about:blank");
   const readyCount = openTabs.filter((t) => t.fillState?.status === "ready").length;
@@ -95,10 +97,18 @@ export function PendingConfirmDialog({
     onOpenChange(false);
   }
 
-  async function refillTab(tabId: number) {
-    await bridge.switchTab(tabId);
+  async function refillTab(tab: DesktopBridgeTab) {
+    if (onRefillTab) {
+      await onRefillTab(tab);
+      return;
+    }
+    await bridge.switchTab(tab.id);
     onOpenChange(false);
-    await bridge.autofill(resumeVersionId || undefined, fillOptions);
+    await bridge.autofill(resumeVersionId || undefined, {
+      ...fillOptions,
+      forceRefill: true,
+      positionId: tab.positionId || tab.batchMeta?.positionId || undefined,
+    });
   }
 
   return (
@@ -186,7 +196,7 @@ export function PendingConfirmDialog({
                       {fs?.status === "ready" ? "去核对提交" : fs?.status === "needs_login" ? "去登录" : "切换过去"}
                     </Button>
                     {fs?.status !== "filling" && fs?.status !== "recorded" && (
-                      <Button size="xs" variant="ghost" onClick={() => void refillTab(tab.id)}>
+                      <Button size="xs" variant="ghost" onClick={() => void refillTab(tab)}>
                         重填
                       </Button>
                     )}

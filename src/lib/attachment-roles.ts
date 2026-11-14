@@ -117,21 +117,17 @@ export type ResolvedAttachmentItem = {
 
 export function resolveAutofillAttachments(
   rows: { id: string; name: string; url: string; category: string | null; createdAt: Date }[],
-  userName: string | null | undefined
+  userName: string | null | undefined,
+  pinnedByRole?: Partial<Record<AttachmentRole, string>> | Record<string, string | null | undefined> | null
 ): ResolvedAttachmentItem[] {
-  // Newest matching standalone library file wins per role; application-only
-  // attachments (category === null) are excluded so old company-specific files
-  // never get reused unintentionally.
-  const sorted = [...rows]
-    .filter((row) => !!row.category && row.url.startsWith("/api/files/"))
-    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-
-  const byRole = new Map<AttachmentRole, ResolvedAttachmentItem>();
-  for (const row of sorted) {
-    const role = inferAttachmentRole(row.category, row.name);
-    if (!role || byRole.has(role)) continue;
+  // Explicitly pinned library files take precedence per role; otherwise the
+  // newest matching standalone library file wins. Application-only attachments
+  // (category === null) are excluded so old company-specific files never leak.
+  const valid = rows.filter((row) => !!row.category && row.url.startsWith("/api/files/"));
+  const byId = new Map(valid.map((row) => [row.id, row]));
+  const toItem = (row: (typeof valid)[number], role: AttachmentRole): ResolvedAttachmentItem => {
     const ext = path.extname(row.url) || path.extname(row.name) || (role === "photo" ? ".jpg" : ".pdf");
-    byRole.set(role, {
+    return {
       id: row.id,
       role,
       category: row.category!,
@@ -139,7 +135,27 @@ export function resolveAutofillAttachments(
       uploadName: friendlyAttachmentUploadName(userName, role, ext),
       url: row.url,
       ext,
-    });
+    };
+  };
+
+  const byRole = new Map<AttachmentRole, ResolvedAttachmentItem>();
+  if (pinnedByRole) {
+    for (const [rawRole, pinnedId] of Object.entries(pinnedByRole)) {
+      if (!(rawRole in ATTACHMENT_ROLE_META) || !pinnedId) continue;
+      const role = rawRole as AttachmentRole;
+      const row = byId.get(pinnedId);
+      if (!row) continue;
+      const inferred = inferAttachmentRole(row.category, row.name);
+      if (inferred && inferred !== role) continue;
+      byRole.set(role, toItem(row, role));
+    }
+  }
+
+  const sorted = [...valid].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  for (const row of sorted) {
+    const role = inferAttachmentRole(row.category, row.name);
+    if (!role || byRole.has(role)) continue;
+    byRole.set(role, toItem(row, role));
   }
   return [...byRole.values()];
 }

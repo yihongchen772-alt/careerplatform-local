@@ -11,7 +11,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { AddToPoolButton } from "@/components/leads/postings-controls";
 import { addPostingsToPool } from "@/lib/actions/campus-postings";
-import { launchBatchApply } from "@/lib/batch-apply";
+import { buildBrowserApplyHref, launchBatchApply } from "@/lib/batch-apply";
+import {
+  BatchProfileSelect,
+  useBatchProfileSelection,
+  type BatchResumeOption,
+  type BatchVariantOption,
+} from "@/components/leads/batch-profile-select";
 import type { PostingMatchResult } from "@/lib/posting-match";
 
 export type PostingTableRow = {
@@ -39,13 +45,20 @@ export type PostingTableRow = {
 export function PostingsTableClient({
   rows,
   showMatch,
+  resumeVersions = [],
+  profileVariants = [],
+  defaultResumeId = null,
 }: {
   rows: PostingTableRow[];
   showMatch: boolean;
+  resumeVersions?: BatchResumeOption[];
+  profileVariants?: BatchVariantOption[];
+  defaultResumeId?: string | null;
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [batchAdding, startBatchAdding] = useTransition();
+  const batchProfile = useBatchProfileSelection(resumeVersions, profileVariants, defaultResumeId);
 
   const allSelected = rows.length > 0 && rows.every((r) => selected.has(r.id));
 
@@ -94,7 +107,8 @@ export function PostingsTableClient({
         title: (r.roles || "").split(/[\n、,，]+/)[0]?.slice(0, 40) || r.cohortKind || "校园招聘",
         sourceLabel: "校招信息表",
       })),
-      (href) => router.push(href)
+      (href) => router.push(href),
+      batchProfile.launchOptions
     );
     toast.success(
       res.mode === "desktop"
@@ -111,6 +125,15 @@ export function PostingsTableClient({
             已勾选 <strong>{selected.size}</strong> 条校招信息
           </span>
           <div className="flex flex-wrap items-center gap-2">
+            <BatchProfileSelect
+              resumeVersions={resumeVersions}
+              profileVariants={profileVariants}
+              resumeVersionId={batchProfile.resumeVersionId}
+              onResumeChange={batchProfile.setResumeVersionId}
+              variantId={batchProfile.variantId}
+              onVariantChange={batchProfile.setVariantId}
+              linkedVariantName={batchProfile.linkedVariantName}
+            />
             <Button size="sm" onClick={() => void handleBatchApply()}>
               <Rocket className="mr-1.5 size-3.5" />
               批量打开网申并预填
@@ -245,7 +268,7 @@ export function PostingsTableClient({
                   <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
                     {row.applyUrl && (
                       <Link
-                        href={`/browser?url=${encodeURIComponent(row.applyUrl)}`}
+                        href={buildBrowserApplyHref(row.applyUrl, batchProfile.launchOptions)}
                         className="inline-flex items-center gap-0.5 text-xs text-primary hover:underline"
                       >
                         投递

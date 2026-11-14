@@ -61,6 +61,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   switchTab: (id) => ipcRenderer.invoke("browser:switch-tab", id),
   closeTab: (id) => ipcRenderer.invoke("browser:close-tab", id),
   getTabs: () => ipcRenderer.invoke("browser:get-tabs"),
+  bindPosition: (positionId, tabId) => ipcRenderer.invoke("browser:bind-position", positionId, tabId),
   openBatch: (jobs, options) => ipcRenderer.invoke("browser:open-batch", jobs, options),
   fillAllPending: (resumeVersionId, options) => ipcRenderer.invoke("browser:fill-all-pending", resumeVersionId, options),
   stopBatch: () => ipcRenderer.invoke("browser:stop-batch"),

@@ -362,6 +362,10 @@ function tabState(t) {
     favicon: t.favicon || null,
     fillState: t.fillState || null,
     batchMeta: t.batchMeta || null,
+    positionId: t.positionId || t.batchMeta?.positionId || null,
+    resumeVersionId: t.resumeVersionId || null,
+    variantId: t.variantId || null,
+    lastStatus: t.lastStatus || null,
   };
 }
 
@@ -952,6 +956,13 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
   handle("browser:switch-tab", (_e, id) => switchTab(id));
   handle("browser:close-tab", (_e, id) => closeTab(id));
   handle("browser:get-tabs", () => ({ tabs: tabs.map(tabState), activeId, batchRunning }));
+  handle("browser:bind-position", (_e, positionId, tabId) => {
+    const tab = typeof tabId === "number" ? tabs.find((t) => t.id === tabId) : activeTab();
+    if (!tab) return;
+    tab.positionId = typeof positionId === "string" && positionId ? positionId : undefined;
+    if (tab.batchMeta) tab.batchMeta = { ...tab.batchMeta, positionId: tab.positionId };
+    sendTabsState();
+  });
   handle("browser:open-batch", async (_e, jobs, options = {}) => {
     const list = Array.isArray(jobs)
       ? jobs.filter((j) => j && typeof j.url === "string" && /^https?:\/\//i.test(j.url.trim())).slice(0, 20)
@@ -971,6 +982,8 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
         tab = createTab(url, { activate: i === 0 });
       }
       tab.positionId = typeof job.positionId === "string" ? job.positionId : undefined;
+      tab.resumeVersionId = typeof options?.resumeVersionId === "string" && options.resumeVersionId ? options.resumeVersionId : undefined;
+      tab.variantId = typeof options?.variantId === "string" && options.variantId ? options.variantId : undefined;
       tab.batchMeta = {
         positionId: tab.positionId,
         company: typeof job.company === "string" ? job.company.slice(0, 100) : undefined,
@@ -992,6 +1005,8 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       void startBatchPrefill(openedIds, options.resumeVersionId, {
         variantId: options.variantId,
         modules: options.modules,
+        expandBlocks: options.expandBlocks !== false,
+        saveBlocks: options.saveBlocks !== false,
       });
     }
     return { opened: openedIds.length, tabIds: openedIds };
@@ -1521,7 +1536,13 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       run: (frame, fn, args = []) => frame.executeJavaScript(`(${fn.toString()})(${args.map((arg) => JSON.stringify(arg)).join(",")})`),
       api: (name, init) => fetch(`http://localhost:${port}/api/desktop-browser/${name}`, { ...init, signal: task?.controller.signal }),
       status: (payload) => {
-        if (!opts.allowBackground || activeId === tab.id) send("browser:autofill-status", { ...payload, tabId: tab.id });
+        if (payload) {
+          const { plan: _ignoredPlan, ...compact } = payload;
+          tab.lastStatus = { ...compact, tabId: tab.id };
+        }
+        if (!opts.allowBackground || activeId === tab.id || ["done", "error", "preview"].includes(payload?.phase)) {
+          send("browser:autofill-status", { ...payload, tabId: tab.id });
+        }
       },
       uploadResume: async (resumeVersionId) => {
         const initialUrl = wc.getURL();
@@ -1696,15 +1717,22 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     if (!wc || wc.isDestroyed()) return false;
     if (wc.isLoading()) {
       await new Promise((resolve) => {
-        const done = () => {
+        const cleanup = () => {
           clearTimeout(timer);
           wc.removeListener("did-stop-loading", done);
-          wc.removeListener("did-fail-load", done);
+          wc.removeListener("did-fail-load", onFailLoad);
+        };
+        const done = () => {
+          cleanup();
           resolve();
+        };
+        const onFailLoad = (_event, code, _description, _url, isMainFrame) => {
+          if (!isMainFrame || code === -3) return;
+          done();
         };
         const timer = setTimeout(done, timeoutMs);
         wc.on("did-stop-loading", done);
-        wc.on("did-fail-load", done);
+        wc.on("did-fail-load", onFailLoad);
       });
     }
     await new Promise((resolve) => setTimeout(resolve, 900));
@@ -1716,36 +1744,53 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     batchQueueToken = token;
     batchRunning = true;
     sendTabsState();
+    const readyWaiters = new Map();
+    for (const id of tabIds) {
+      const tab = tabs.find((t) => t.id === id);
+      if (tab && !tab.view.webContents.isDestroyed() && hasPage(tab)) {
+        readyWaiters.set(id, waitForTabReady(tab));
+      }
+    }
     try {
       for (const id of tabIds) {
         if (batchQueueToken !== token) break;
         const tab = tabs.find((t) => t.id === id);
         if (!tab || tab.view.webContents.isDestroyed()) continue;
         if (!hasPage(tab)) continue;
-        tab.fillState = {
-          ...(tab.fillState || { filled: 0, manual: 0, uploaded: 0 }),
-          status: "loading",
-          message: "等待页面加载完成…",
-          updatedAt: Date.now(),
-        };
-        sendTabsState();
-        const alive = await waitForTabReady(tab);
-        if (!alive || batchQueueToken !== token) break;
-        if (loginStates.has(tab.id)) {
+        if (tab.view.webContents.isLoading()) {
           tab.fillState = {
             ...(tab.fillState || { filled: 0, manual: 0, uploaded: 0 }),
-            status: "needs_login",
-            message: "需要登录账号后才能填写",
+            status: "loading",
+            message: "等待页面加载完成…",
             updatedAt: Date.now(),
           };
           sendTabsState();
-          continue;
+        }
+        const alive = await (readyWaiters.get(id) || waitForTabReady(tab));
+        if (batchQueueToken !== token) break;
+        if (!alive || tab.view.webContents.isDestroyed()) continue;
+        if (loginStates.has(tab.id)) {
+          let fillable = 0;
+          for (const frame of allFrames(tab.view.webContents)) {
+            const scanned = await frame.executeJavaScript(`(${countFillableFields.toString()})(${scanPageFields.toString()})`).catch(() => null);
+            fillable += scanned?.count || 0;
+          }
+          if (fillable < 4) {
+            tab.fillState = {
+              ...(tab.fillState || { filled: 0, manual: 0, uploaded: 0 }),
+              status: "needs_login",
+              message: "需要登录账号后才能填写",
+              updatedAt: Date.now(),
+            };
+            sendTabsState();
+            continue;
+          }
         }
         await runAutofillOnTab(tab, resumeVersionId, {
           ...options,
           mode: "fill",
           allowBackground: true,
-          positionId: tab.positionId ?? options.positionId,
+          positionId: tab.positionId ?? tab.batchMeta?.positionId ?? options.positionId,
         }).catch(() => null);
       }
     } finally {
@@ -1873,7 +1918,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
   handle("browser:save-corrections", async (_e, resumeVersionId, onlyUserEdited = false, positionId, variantId, discover = true) => {
     const tab = activeTab();
     if (!tab) return { saved: 0 };
-    if (typeof positionId === "string") tab.positionId = positionId || undefined;
+    if (typeof positionId === "string" && positionId) tab.positionId = positionId;
     if (savingAnswersForTabs.has(tab.id)) return { saved: 0 };
     savingAnswersForTabs.add(tab.id);
     try {
@@ -2015,7 +2060,9 @@ function recordFillStats(rawUrl, patch) {
     for (const [key, value] of Object.entries(patch)) row[key] = typeof value === "string" ? value : (row[key] || 0) + value;
     row.lastAt = new Date().toISOString();
     stats[host] = row;
-    fs.writeFileSync(file, JSON.stringify(stats, null, 1));
+    const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(stats, null, 1));
+    fs.renameSync(tmp, file);
   } catch { /* Statistics never get in the way of filling. */ }
 }
 

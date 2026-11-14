@@ -56,7 +56,7 @@ export function UpcomingSchedule({ items, now: serverNow, applications, days = 7
   const [busy, setBusy] = useState<string | null>(null);
   const [linking, setLinking] = useState<ScheduleItem | null>(null);
   const [editing, setEditing] = useState<ScheduleItem | null>(null);
-  const [cramming, setCramming] = useState<{ applicationId: string; heading: string } | null>(null);
+  const [cramming, setCramming] = useState<{ applicationId: string; heading: string; mode: "exam" | "interview" } | null>(null);
   const visible = items.filter((item) => !hidden.includes(item.key) && urgencyOf(item, now) !== "past");
   // Two booked times on top of each other: say so on both.
   const clashes = useMemo(() => clashingKeys(visible), [visible]);
@@ -144,7 +144,14 @@ export function UpcomingSchedule({ items, now: serverNow, applications, days = 7
                     onLink={() => setLinking(item)}
                     onAccept={() => item.suggestion && run(item, () => attachEventToApplication(item.sourceId, item.suggestion!.applicationId), `已关联到 ${item.suggestion.label}`)}
                     onEdit={() => setEditing(item)}
-                    onCram={() => item.applicationId && setCramming({ applicationId: item.applicationId, heading: [item.companyName, item.title].filter(Boolean).join(" · ") })}
+                    onCram={() =>
+                      item.applicationId &&
+                      setCramming({
+                        applicationId: item.applicationId,
+                        heading: [item.companyName, item.title].filter(Boolean).join(" · "),
+                        mode: item.kind === "exam" ? "exam" : "interview",
+                      })
+                    }
                     onCancelNoticeSeen={() => { if (item.cancelNotice) void dismissMailDraft(item.cancelNotice.taskId).then(() => router.refresh()); }}
                   />
                 ))}
@@ -175,6 +182,7 @@ export function UpcomingSchedule({ items, now: serverNow, applications, days = 7
         onOpenChange={(open) => { if (!open) setCramming(null); }}
         applicationId={cramming?.applicationId ?? null}
         heading={cramming?.heading ?? ""}
+        initialMode={cramming?.mode}
       />
     </section>
   );

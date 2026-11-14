@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ChevronDown, ClipboardCheck, Crosshair, FileText, Globe, ListChecks, Pencil, Rocket, Sparkles, Trash2 } from "lucide-react";
 import { launchBatchApply } from "@/lib/batch-apply";
+import { BatchProfileSelect, useBatchProfileSelection, type BatchVariantOption } from "@/components/leads/batch-profile-select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import {
   Table,
@@ -84,7 +85,7 @@ export type PoolPosition = {
   company: { name: string };
 };
 
-type ResumeOption = { id: string; name: string };
+type ResumeOption = { id: string; name: string; isDefault?: boolean };
 
 const ALL = "__all__";
 type SortKey = "score" | "deadline" | "added" | "priority";
@@ -217,18 +218,21 @@ const POOL_SCOPES = ["todo", "applied", "all"] as const;
 export function PoolTable({
   positions,
   resumeVersions,
+  profileVariants = [],
   defaultResumeVersionId,
   historyByTrack,
   openPrepFor = null,
 }: {
   positions: PoolPosition[];
   resumeVersions: ResumeOption[];
+  profileVariants?: BatchVariantOption[];
   defaultResumeVersionId?: string | null;
   historyByTrack: Record<string, ConversionRow>;
   /** A position whose 面试攻略 opens straight away (a 投递's 「岗位 JD / 面试攻略」). */
   openPrepFor?: string | null;
 }) {
   const router = useRouter();
+  const batchProfile = useBatchProfileSelection(resumeVersions, profileVariants, defaultResumeVersionId);
   const [markingId, setMarkingId] = useState<string | null>(null);
   const [matchingId, setMatchingId] = useState<string | null>(null);
   const [prepId, setPrepId] = useState<string | null>(() => (openPrepFor && positions.some((p) => p.id === openPrepFor) ? openPrepFor : null));
@@ -361,7 +365,16 @@ export function PoolTable({
       {selected.size > 0 && (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/50 px-3 py-2 text-sm">
           <span>已选 {selected.size} 项</span>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <BatchProfileSelect
+              resumeVersions={resumeVersions}
+              profileVariants={profileVariants}
+              resumeVersionId={batchProfile.resumeVersionId}
+              onResumeChange={batchProfile.setResumeVersionId}
+              variantId={batchProfile.variantId}
+              onVariantChange={batchProfile.setVariantId}
+              linkedVariantName={batchProfile.linkedVariantName}
+            />
             <Button
               size="sm"
               variant="default"
@@ -378,7 +391,7 @@ export function PoolTable({
                   title: p.title,
                   sourceLabel: "候选池",
                 }));
-                const res = await launchBatchApply(jobs, (href) => router.push(href));
+                const res = await launchBatchApply(jobs, (href) => router.push(href), batchProfile.launchOptions);
                 toast.success(
                   res.mode === "desktop"
                     ? `已批量打开 ${res.count} 个网申页并在后台预填，在顶部「待确认清单」核对提交`

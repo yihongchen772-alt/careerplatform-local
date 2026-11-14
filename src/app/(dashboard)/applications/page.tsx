@@ -58,7 +58,7 @@ export default async function ApplicationsPage() {
       orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }],
     }),
     db.applicationPortal.findMany({
-      select: { id: true, companyId: true, label: true, lastCheckedAt: true, lastSuccessfulAt: true, lastError: true, company: { select: { name: true } } },
+      select: { id: true, companyId: true, label: true, url: true, lastCheckedAt: true, lastSuccessfulAt: true, lastError: true, company: { select: { name: true } } },
       orderBy: { createdAt: "asc" },
     }),
     getAppSettings(),
@@ -141,7 +141,7 @@ export default async function ApplicationsPage() {
         <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{portals.map((portal) => <div key={portal.id} className="rounded-xl border border-border/55 bg-background/45 px-3 py-2.5">
           <p className="font-medium">{portal.company.name}{portal.label ? ` · ${portal.label}` : ""}</p>
           <p className="mt-1 text-muted-foreground">{portal.lastSuccessfulAt ? `上次成功：${portal.lastSuccessfulAt.toLocaleString("zh-CN")}` : "尚无成功同步记录"}</p>
-          {portal.lastError && <p className="mt-1 text-destructive">上次失败：{portal.lastError}</p>}
+          {portal.lastError && <p className="mt-1 text-destructive">上次失败：{portal.lastError}{/登录已过期/.test(portal.lastError) && portal.url ? <Link href={`/browser?url=${encodeURIComponent(portal.url)}`} className="ml-1.5 font-medium text-primary underline underline-offset-2">去重新登录</Link> : null}</p>}
         </div>)}</div>
       </section>}
     </div>

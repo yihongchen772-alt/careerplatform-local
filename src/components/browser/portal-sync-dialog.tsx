@@ -223,7 +223,23 @@ export function PortalSyncDialog({
                     <p className="truncate text-xs text-muted-foreground" title={c.url}>
                       {c.url}
                     </p>
-                    {c.lastError && <p className="mt-0.5 text-xs text-destructive">上次失败：{c.lastError}</p>}
+                    {c.lastError && (
+                      <p className="mt-0.5 text-xs text-destructive">
+                        上次失败：{c.lastError}
+                        {/登录已过期/.test(c.lastError) && c.url ? (
+                          <button
+                            type="button"
+                            className="ml-1.5 font-medium text-primary underline underline-offset-2"
+                            onClick={() => {
+                              onOpenChange(false);
+                              router.push(`/browser?url=${encodeURIComponent(c.url)}`);
+                            }}
+                          >
+                            去此页重新登录
+                          </button>
+                        ) : null}
+                      </p>
+                    )}
                     {c.lastSuccessfulAt ? (
                       <p className="mt-0.5 text-xs text-muted-foreground">
                         上次成功 {new Date(c.lastSuccessfulAt).toLocaleString("zh-CN")}

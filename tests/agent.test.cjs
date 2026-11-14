@@ -171,15 +171,27 @@ function toolWithDb(db, extras = {}) {
     "@/lib/ai-file-search": { getSearchKey: async () => null },
     "@/lib/action-result": { UserFacingError: Error },
     "@/lib/career-ops": { findJobs: async () => { throw new Error("no network in tests"); } },
+    "@/lib/application-profile": loadTs("src/lib/application-profile.ts"),
+    "@/lib/attachment-roles": loadTs("src/lib/attachment-roles.ts"),
+    "@/lib/batch-apply": loadTs("src/lib/batch-apply.ts"),
     ...extras,
   }).executeAgentTool;
 }
 test("database searches scope every category to the current user and bound row count", async () => {
   let calls = 0;
   const model = { findMany: async (args) => { calls++; assert.equal(args.where.userId, "owner"); assert.equal(args.take, 10); return []; } };
-  const execute = toolWithDb({ position: model, jobLead: model, application: model, personalTask: model });
+  const execute = toolWithDb({
+    position: model,
+    jobLead: model,
+    application: model,
+    personalTask: model,
+    campusPosting: model,
+    attachment: model,
+    resumeVersion: model,
+    contact: model,
+  });
   await execute("owner", decision("search_records", "腾讯"));
-  assert.equal(calls, 4);
+  assert.equal(calls, 8);
 });
 test("application preparation rejects foreign or nonexistent position ids", async () => {
   const execute = toolWithDb({ position: { findFirst: async ({ where }) => { assert.equal(where.userId, "owner"); return null; } } });
@@ -187,9 +199,10 @@ test("application preparation rejects foreign or nonexistent position ids", asyn
 });
 test("application preparation filters unsafe stored URLs and reports missing fields", async () => {
   const execute = toolWithDb({
-    position: { findFirst: async () => ({ company: { name: "测试", careerUrl: "javascript:alert(1)" }, title: "工程师", jdUrl: "file:///secret" }) },
+    position: { findFirst: async () => ({ id: "p", company: { name: "测试", careerUrl: "javascript:alert(1)" }, title: "工程师", jdUrl: "file:///secret" }) },
     user: { findUnique: async () => ({ name: "我" }) },
     resumeVersion: { findMany: async () => [] },
+    attachment: { findMany: async () => [] },
   });
   const result = await execute("owner", decision("prepare_application", "", "p"));
   assert.equal(result.href, "/pool");
@@ -198,12 +211,13 @@ test("application preparation filters unsafe stored URLs and reports missing fie
 });
 test("application preparation assumes https for a scheme-less stored URL instead of dropping it", async () => {
   const execute = toolWithDb({
-    position: { findFirst: async () => ({ company: { name: "测试", careerUrl: "hr.example.com/careers" }, title: "工程师", jdUrl: null }) },
+    position: { findFirst: async () => ({ id: "p", company: { name: "测试", careerUrl: "hr.example.com/careers" }, title: "工程师", jdUrl: null }) },
     user: { findUnique: async () => ({ name: "我" }) },
     resumeVersion: { findMany: async () => [] },
+    attachment: { findMany: async () => [] },
   });
   const result = await execute("owner", decision("prepare_application", "", "p"));
-  assert.equal(result.href, `/browser?url=${encodeURIComponent("https://hr.example.com/careers")}`);
+  assert.equal(result.href, `/browser?url=${encodeURIComponent("https://hr.example.com/careers")}&positionId=p`);
 });
 test("missing search credentials fail explicitly without a network call", async () => {
   const execute = toolWithDb({});
@@ -239,6 +253,8 @@ function agentTools(db, cityTools = { MAX_RESEARCH: 4, listCityGaps: async () =>
     "@/lib/db": { db },
     "@/lib/application-city": appCity,
     "@/lib/application-filters": appFilters,
+    "@/lib/application-profile": loadTs("src/lib/application-profile.ts"),
+    "@/lib/attachment-roles": loadTs("src/lib/attachment-roles.ts"),
     "@/lib/company-industry": companyIndustry,
     "@/lib/interview-schedule": interviewSchedule,
     "@/lib/pending-mail": { pendingMailRows: () => [] },
@@ -442,6 +458,11 @@ test("workspace tools: filter_applications and get_workspace_overview filter and
     stageHistory: { findMany: async () => [] },
     interviewIntelligence: { findUnique: async () => null },
     personalTask: { findMany: async () => [] },
+    position: { findMany: async () => [] },
+    resumeVersion: { findMany: async () => [] },
+    attachment: { findMany: async () => [] },
+    postingSource: { findMany: async () => [] },
+    campusPosting: { findMany: async () => [] },
     calendarEvent: { findMany: async () => [{ id: "ev-1", title: "秋招双选会", allDay: true, dateKey: "2026-11-05", startsAt: new Date(Date.now() + 86_400_000), meetingInfo: "体育馆" }] },
     contact: { findMany: async () => [{ id: "c-1", name: "张HR", role: "HR", companyName: "腾讯", contactInfo: null, note: null, nextFollowUpAt: null }] },
     journeyEntry: { findMany: async () => [{ id: "j-1", text: "完成一面", mood: "蓄力", about: "腾讯", createdAt: new Date() }] },
@@ -459,7 +480,7 @@ test("workspace tools: filter_applications and get_workspace_overview filter and
   const overview = await tools.executeTool("owner", call("get_workspace_overview", { section: "all" }), []);
   assert.match(overview.content, /Offer 与薪资对比/);
   assert.match(overview.content, /面试统计与面经复盘/);
-  assert.match(overview.content, /独立日历事项与待确认邮件日程/);
+  assert.match(overview.content, /日程、笔面试排期、自建待办与待确认邮件日程/);
   assert.match(overview.content, /心路历程/);
 });
 

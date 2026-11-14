@@ -3,15 +3,17 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BookOpen, CalendarClock, ListChecks, MessageCircleQuestion, NotebookPen, Printer, RefreshCw, Sparkles, Target, UserRound } from "lucide-react";
+import { BookOpen, CalendarClock, Globe, ListChecks, MessageCircleQuestion, NotebookPen, Printer, RefreshCw, Sparkles, Target, UserRound } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { generateInterviewBrief } from "@/lib/actions/interview-brief";
 import { meetingSummary, relativeText, whenText, type ScheduleItem } from "@/lib/interview-schedule";
-import type { InterviewBrief } from "@/lib/interview-brief";
+import type { BriefMode, InterviewBrief } from "@/lib/interview-brief";
 import { MeetingActions } from "@/components/schedule/meeting-actions";
 import { useNow } from "@/components/schedule/use-now";
 import { NativeSelect } from "@/components/ui/native-select";
+import { cn } from "@/lib/utils";
 
 type Note = { id: string; round: string; note: string; date: string; applicationId: string; title: string };
 
@@ -62,12 +64,20 @@ export function BriefView({
   const now = useNow(serverNow);
   const [brief, setBrief] = useState(initialBrief);
   const [resumeId, setResumeId] = useState(defaultResumeId ?? "");
+  const [mode, setMode] = useState<BriefMode>(
+    initialBrief?.mode ?? (next?.kind === "exam" || /笔试/.test(round) ? "exam" : "interview")
+  );
+  const [includeWebSearch, setIncludeWebSearch] = useState(false);
   const [busy, setBusy] = useState(false);
+  const isExam = (brief?.mode ?? mode) === "exam";
 
   async function generate() {
     setBusy(true);
     try {
-      const result = await generateInterviewBrief(applicationId, resumeId || null);
+      const result = await generateInterviewBrief(applicationId, resumeId || null, {
+        mode,
+        includeWebSearch,
+      });
       if (!result.ok) return void toast.error(result.message);
       setBrief(result.data);
       toast.success("速览已生成");
@@ -80,7 +90,7 @@ export function BriefView({
   return (
     <div className="space-y-4">
       <header className="surface-card rounded-xl p-5 print:border-0 print:p-0 sm:p-6">
-        <p className="flex items-center gap-2 text-xs font-semibold tracking-[0.2em] text-primary uppercase print:text-black"><NotebookPen className="size-3.5" />面试速览</p>
+        <p className="flex items-center gap-2 text-xs font-semibold tracking-[0.2em] text-primary uppercase print:text-black"><NotebookPen className="size-3.5" />{isExam ? "笔试抱佛脚" : "面试速览"}</p>
         <h1 className="mt-2 text-2xl font-semibold tracking-[-0.03em]">{companyName} · {round}</h1>
         <p className="mt-1 text-sm text-muted-foreground">{title}</p>
         {next ? (
@@ -94,6 +104,23 @@ export function BriefView({
           <p className="mt-4 text-xs text-muted-foreground">还没记面试时间。<Link href={`/applications/${applicationId}?addTime=1#interview`} className="text-primary hover:underline">去添加</Link></p>
         )}
         <div className="mt-4 flex flex-wrap items-center gap-2 print:hidden">
+          <div role="tablist" aria-label="准备模式" className="inline-flex rounded-lg bg-muted p-0.5 text-xs">
+            {([["interview", "面试速览"], ["exam", "笔试突击"]] as const).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={mode === id}
+                onClick={() => setMode(id)}
+                className={cn(
+                  "rounded-md px-2.5 py-1 transition-colors",
+                  mode === id ? "bg-card font-medium text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           {resumes.length > 1 && (
             <NativeSelect aria-label="用哪份简历" value={resumeId} onChange={(event) => setResumeId(event.target.value)} className="w-auto">
               {resumes.map((resume) => <option key={resume.id} value={resume.id}>{resume.name}</option>)}
@@ -104,6 +131,11 @@ export function BriefView({
             {busy ? "生成中，约 20 秒…" : brief ? "重新生成" : "生成速览"}
           </Button>
           <Button size="sm" variant="outline" className="gap-1" onClick={() => window.print()}><Printer className="size-3.5" />打印 / 存 PDF</Button>
+          <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground select-none">
+            <Checkbox checked={includeWebSearch} onCheckedChange={(v) => setIncludeWebSearch(v === true)} />
+            <Globe className="size-3.5" />
+            <span>联网补充公开面经/真题</span>
+          </label>
           {brief && updatedAt && <span className="text-xs text-muted-foreground">生成于 {new Date(updatedAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>}
         </div>
       </header>
@@ -112,18 +144,18 @@ export function BriefView({
         <>
           {brief.summary && <p className="rounded-2xl border border-primary/25 bg-primary/[0.05] px-4 py-3 text-sm font-medium print:border-black/20 print:bg-white">{brief.summary}</p>}
           <div className="grid gap-4 md:grid-cols-2 print:grid-cols-1">
-            <Section icon={Target} title="这一轮看重什么">
+            <Section icon={Target} title={isExam ? "这场笔试高频考点" : "这一轮看重什么"}>
               <ul className="space-y-2 text-sm">{brief.focus.map((item, index) => <li key={index}><p className="font-medium">{item.point}</p><p className="text-xs text-muted-foreground">{item.why}</p></li>)}</ul>
             </Section>
-            <Section icon={UserRound} title="用哪段经历回答">
-              <ul className="space-y-2.5 text-sm">{brief.stories.map((item, index) => <li key={index}><p className="font-medium">{item.point}</p><p className="text-xs text-foreground/80">{item.experience}</p><p className="mt-0.5 text-xs text-muted-foreground">怎么讲：{item.howToTell}</p></li>)}</ul>
+            <Section icon={UserRound} title={isExam ? "重点复习与开放题模板" : "用哪段经历回答"}>
+              <ul className="space-y-2.5 text-sm">{brief.stories.map((item, index) => <li key={index}><p className="font-medium">{item.point}</p><p className="text-xs text-foreground/80">{item.experience}</p><p className="mt-0.5 text-xs text-muted-foreground">{isExam ? "突击口诀 / 模板：" : "怎么讲："}{item.howToTell}</p></li>)}</ul>
             </Section>
           </div>
-          <Section icon={ListChecks} title="可能被问到">
+          <Section icon={ListChecks} title={isExam ? "高频笔试真题与解题思路" : "可能被问到"}>
             <ol className="list-inside list-decimal space-y-1.5 text-sm">{brief.questions.map((item, index) => <li key={index}><span className="font-medium">{item.question}</span><span className="block pl-5 text-xs text-muted-foreground">{item.hint}</span></li>)}</ol>
           </Section>
           <div className="grid gap-4 md:grid-cols-2 print:grid-cols-1">
-            <Section icon={MessageCircleQuestion} title="结尾可以反问">
+            <Section icon={MessageCircleQuestion} title={isExam ? "时间分配与得分策略" : "结尾可以反问"}>
               <ul className="list-inside list-disc space-y-1 text-sm">{brief.askBack.map((item, index) => <li key={index}>{item}</li>)}</ul>
             </Section>
             <Section icon={CalendarClock} title="临场提醒">

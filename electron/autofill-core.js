@@ -415,7 +415,7 @@ function scanPageFields(prefix, readOnly = false, preserveIds = false) {
     return clean(copy.textContent);
   }
   function selectedText(container) {
-    const shown = container.querySelector(".ant-select-selection-item, .ant-select-selection-selected-value, .atsx-select-selection-selected-value, .ud__select__selector__selectItem, .phoenix-select__tipEle, .semi-select-selection-text, .arco-select-view-value, .t-select__single, [class*='sd-Input-display-value'], .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text, .el-cascader__tags");
+    const shown = container.querySelector(".ant-select-selection-item, .ant-select-selection-selected-value, .atsx-select-selection-selected-value, .ud__select__selector__selectItem, .phoenix-select__tipEle, .semi-select-selection-text, .arco-select-view-value, .n-base-selection-input__content, .n-base-selection-tag-wrapper, .t-select__single, [class*='sd-Input-display-value'], .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text, .el-cascader__tags");
     // Some portals print their prompt ("输入工作单位名称") where the choice goes.
     if (shown && clean(shown.textContent) && !PLACEHOLDER_TEXT.test(clean(shown.textContent))) return clean(shown.textContent);
     // Element UI and cascaders show the choice in a read-only input; Arco,
@@ -452,7 +452,7 @@ function scanPageFields(prefix, readOnly = false, preserveIds = false) {
     if (customContainers.has(container) || container.classList.contains("ant-select-auto-complete") || container.classList.contains("atsx-select-auto-complete")) return;
     if (!isVisible(container)) return;
     if (container.classList.contains("ant-select-disabled") || container.classList.contains("atsx-select-disabled") || container.classList.contains("is-disabled") || container.classList.contains("phoenix-select--disabled") || /sd-Input-disabled/.test(container.className || "") || container.getAttribute("aria-disabled") === "true" || container.disabled) return;
-    const multiple = container.classList.contains("ant-select-multiple") || container.classList.contains("atsx-select-multiple") || container.getAttribute("aria-multiselectable") === "true" || !!container.querySelector(".el-select__tags, .el-cascader__tags, .phoenix-select__tag") || container.classList.contains("phoenix-select--exsitMultiValue") || container.classList.contains("phoenix-select--showCountTag");
+    const multiple = container.classList.contains("ant-select-multiple") || container.classList.contains("atsx-select-multiple") || container.classList.contains("semi-select-multiple") || container.classList.contains("arco-select-view-multiple") || container.classList.contains("n-base-selection--multiple") || (container.classList.contains("t-select__wrap") && container.classList.contains("is-multiple")) || container.getAttribute("aria-multiselectable") === "true" || !!container.querySelector(".el-select__tags, .el-cascader__tags, .phoenix-select__tag, .n-base-selection--multiple, .semi-select-multiple, .arco-select-view-multiple, .t-select__wrap.is-multiple") || container.classList.contains("phoenix-select--exsitMultiValue") || container.classList.contains("phoenix-select--showCountTag");
     if (multiple) return; // never guess multi-selects
     const innerInput = container.matches("input") ? container : container.querySelector("input:not([type='hidden'])");
     const id = assignId(container, "s");
@@ -462,7 +462,7 @@ function scanPageFields(prefix, readOnly = false, preserveIds = false) {
       tag: "custom-select",
       type: "",
       label: labelFor(innerInput || container) || labelFor(container),
-      placeholder: clean((innerInput && innerInput.getAttribute("placeholder")) || (container.querySelector(".ant-select-selection-placeholder, .atsx-select-selection__placeholder, .el-select__placeholder, .phoenix-select__placeHolder, .semi-select-selection-placeholder, .arco-select-view-placeholder") || {}).textContent || ""),
+      placeholder: clean((innerInput && innerInput.getAttribute("placeholder")) || (container.querySelector(".ant-select-selection-placeholder, .atsx-select-selection__placeholder, .el-select__placeholder, .phoenix-select__placeHolder, .semi-select-selection-placeholder, .arco-select-view-placeholder, .n-base-selection-placeholder") || {}).textContent || ""),
       name: (innerInput && innerInput.getAttribute("name")) || container.id || "",
       section: sectionFor(container),
       hasValue: !!selectedText(container),
@@ -812,15 +812,20 @@ function markResumeFileInputs() {
     const formItem = el.closest("label, .form-item, .atsx-form-item, .ant-form-item, .el-form-item, .semi-form-field, [class*='form-item' i], [class*='field' i], tr");
     const uploadWrap = el.closest("[class*='upload']");
     const nearby = formItem || uploadWrap;
-    const uploadArea = el.closest(".ant-form-item, .el-form-item, .atsx-form-item") || uploadWrap || nearby;
-    if (uploadArea?.querySelector(".ant-upload-list-item-done, .atsx-upload-list-item-done, .el-upload-list__item.is-success, .ant-upload-list-item:not(.ant-upload-list-item-error) .ant-upload-list-item-name")) continue;
+    const uploadArea = el.closest(".ant-form-item, .el-form-item, .atsx-form-item, .semi-form-field, .arco-form-item, .n-form-item, .t-form__item") || uploadWrap || nearby;
+    if (uploadArea?.querySelector(".ant-upload-list-item-done, .atsx-upload-list-item-done, .el-upload-list__item.is-success, .el-upload-list__item:not(.is-fail):not(.is-error) .el-upload-list__item-name, .ant-upload-list-item:not(.ant-upload-list-item-error) .ant-upload-list-item-name, .semi-upload-file-list-item:not(.semi-upload-file-list-item-error), .arco-upload-list-item-done, .n-upload-file--success-status, .t-upload__single-display-text")) continue;
     const description = [
       el.name, el.id, el.getAttribute("aria-label"), el.getAttribute("title"),
       label && label.textContent, nearby && nearby.textContent,
     ].filter(Boolean).join(" ");
     const accept = (el.getAttribute("accept") || "").toLowerCase();
+    const docInputs = inputs.filter((inp) => {
+      const acc = (inp.getAttribute("accept") || "").toLowerCase();
+      return !inp.disabled && (!acc || /pdf|doc|document|word/.test(acc));
+    });
     const looksLikeResume = /简历|履历|resume|curriculum|\bcv\b/i.test(description);
-    const soleDocumentUpload = inputs.length === 1 && (!accept || /pdf|doc|document|word/.test(accept));
+    const notTypedAttachment = !/证件照|个人照片|一寸照|二寸照|头像|照片|photo|avatar|成绩单|transcript|在读证明|证书|award|certificate|作品集|portfolio/i.test(description);
+    const soleDocumentUpload = (inputs.length === 1 || (docInputs.length === 1 && docInputs[0] === el && notTypedAttachment)) && (!accept || /pdf|doc|document|word/.test(accept));
     if (!looksLikeResume && !soleDocumentUpload) continue;
     el.setAttribute("data-cp-resume-upload", "1");
     marked++;
@@ -846,8 +851,8 @@ function markTypedFileInputs(wantedRoles) {
     const formItem = el.closest("label, .form-item, .atsx-form-item, .ant-form-item, .el-form-item, .semi-form-field, [class*='form-item' i], [class*='field' i], tr");
     const uploadWrap = el.closest("[class*='upload']");
     const nearby = formItem || uploadWrap;
-    const uploadArea = el.closest(".ant-form-item, .el-form-item, .atsx-form-item") || uploadWrap || nearby;
-    if (uploadArea?.querySelector(".ant-upload-list-item-done, .atsx-upload-list-item-done, .el-upload-list__item.is-success, .ant-upload-list-item:not(.ant-upload-list-item-error) .ant-upload-list-item-name")) continue;
+    const uploadArea = el.closest(".ant-form-item, .el-form-item, .atsx-form-item, .semi-form-field, .arco-form-item, .n-form-item, .t-form__item") || uploadWrap || nearby;
+    if (uploadArea?.querySelector(".ant-upload-list-item-done, .atsx-upload-list-item-done, .el-upload-list__item.is-success, .el-upload-list__item:not(.is-fail):not(.is-error) .el-upload-list__item-name, .ant-upload-list-item:not(.ant-upload-list-item-error) .ant-upload-list-item-name, .semi-upload-file-list-item:not(.semi-upload-file-list-item-error), .arco-upload-list-item-done, .n-upload-file--success-status, .t-upload__single-display-text")) continue;
     const description = [
       el.name, el.id, el.getAttribute("aria-label"), el.getAttribute("title"),
       label && label.textContent, nearby && nearby.textContent,
@@ -884,7 +889,10 @@ function markTypedFileInputs(wantedRoles) {
 // any wording the AI might naturally produce.
 const NEEDS_MANUAL_INPUT = "NEEDS_MANUAL_INPUT";
 
-async function fillFields(pairs) {
+async function fillFields(pairs, taskId) {
+  const assertActive = () => {
+    if (taskId && document.documentElement.getAttribute("data-cp-task") !== taskId) throw new Error("填写已停止");
+  };
   const filled = [];
   const failed = [];
   const skipped = [];
@@ -904,6 +912,13 @@ async function fillFields(pairs) {
   // Fields inside open shadow roots carry the same data-cp-fill-id markers.
   const roots = [document];
   for (let i = 0; i < roots.length; i++) Array.from(roots[i].querySelectorAll ? roots[i].querySelectorAll("*") : []).forEach((node) => { if (node.shadowRoot) roots.push(node.shadowRoot); });
+  const collectRoots = () => {
+    const out = [document];
+    for (let i = 0; i < out.length; i++) Array.from(out[i].querySelectorAll ? out[i].querySelectorAll("*") : []).forEach((node) => { if (node.shadowRoot) out.push(node.shadowRoot); });
+    return out;
+  };
+  const qAll = (selector) => collectRoots().flatMap((root) => Array.from(root.querySelectorAll ? root.querySelectorAll(selector) : []));
+  const findById = (id) => { for (const root of collectRoots()) { const hit = root.getElementById ? root.getElementById(id) : root.querySelector?.(`#${CSS.escape(id)}`); if (hit) return hit; } return null; };
   const find = (selector) => { for (const root of roots) { const hit = root.querySelector(selector); if (hit) return hit; } return null; };
   const findAll = (selector) => roots.flatMap((root) => Array.from(root.querySelectorAll ? root.querySelectorAll(selector) : []));
   const clean = (text) => String(text || "").replace(/[​-‍﻿]/g, "").replace(/\s+/g, " ").replace(/([㐀-鿿]) (?=[㐀-鿿])/g, "$1").trim();
@@ -984,6 +999,7 @@ async function fillFields(pairs) {
   }
 
   for (const p of pairs) {
+    assertActive();
     if (!p.value || pickerDone.has(p.id)) continue;
     if (/-r\d+$/.test(p.id)) {
       // radio group (ids are "<frame>-r<n>", fields are "<frame>-f<n>"):
@@ -1370,6 +1386,13 @@ async function fillCustomSelects(pairs, taskId) {
   const missing = [];
   const roots = [document];
   for (let i = 0; i < roots.length; i++) Array.from(roots[i].querySelectorAll ? roots[i].querySelectorAll("*") : []).forEach((node) => { if (node.shadowRoot) roots.push(node.shadowRoot); });
+  const collectRoots = () => {
+    const out = [document];
+    for (let i = 0; i < out.length; i++) Array.from(out[i].querySelectorAll ? out[i].querySelectorAll("*") : []).forEach((node) => { if (node.shadowRoot) out.push(node.shadowRoot); });
+    return out;
+  };
+  const qAll = (selector) => collectRoots().flatMap((root) => Array.from(root.querySelectorAll ? root.querySelectorAll(selector) : []));
+  const findById = (id) => { for (const root of collectRoots()) { const hit = root.getElementById ? root.getElementById(id) : root.querySelector?.(`#${CSS.escape(id)}`); if (hit) return hit; } return null; };
   const find = (selector) => { for (const root of roots) { const hit = root.querySelector(selector); if (hit) return hit; } return null; };
   const clean = (text) => String(text || "").replace(/[​-‍﻿]/g, "").replace(/\s+/g, " ").replace(/([㐀-鿿]) (?=[㐀-鿿])/g, "$1").trim();
   // Same reading as scanPageFields: what the dropdown currently shows.
@@ -1381,7 +1404,7 @@ async function fillCustomSelects(pairs, taskId) {
     return clean(copy.textContent);
   }
   function selectedText(container) {
-    const shown = container.querySelector(".ant-select-selection-item, .ant-select-selection-selected-value, .atsx-select-selection-selected-value, .ud__select__selector__selectItem, .phoenix-select__tipEle, .semi-select-selection-text, .arco-select-view-value, .t-select__single, [class*='sd-Input-display-value'], .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text, .el-cascader__tags");
+    const shown = container.querySelector(".ant-select-selection-item, .ant-select-selection-selected-value, .atsx-select-selection-selected-value, .ud__select__selector__selectItem, .phoenix-select__tipEle, .semi-select-selection-text, .arco-select-view-value, .n-base-selection-input__content, .n-base-selection-tag-wrapper, .t-select__single, [class*='sd-Input-display-value'], .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text, .el-cascader__tags");
     // Some portals print their prompt ("输入工作单位名称") where the choice goes.
     if (shown && clean(shown.textContent) && !PLACEHOLDER_TEXT.test(clean(shown.textContent))) return clean(shown.textContent);
     // Element UI and cascaders show the choice in a read-only input; Arco,
@@ -1402,17 +1425,18 @@ async function fillCustomSelects(pairs, taskId) {
   function visibleOptions(container) {
     // An ARIA combobox names its own list; that one wins when it is showing.
     const owned = container && !container.matches(".ant-select, .el-select") ? (container.getAttribute("aria-controls") || container.getAttribute("aria-owns") || container.querySelector("[aria-controls]")?.getAttribute("aria-controls")) : null;
-    const list = owned ? document.getElementById(owned) : null;
+    const list = owned ? findById(owned) : null;
     if (list && visible(list)) {
       const own = Array.from(list.querySelectorAll("[role='option']:not([aria-disabled='true'])")).filter(visible);
       if (own.length) return own;
     }
-    const nodes = document.querySelectorAll(
+    const nodes = qAll(
       ".ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option:not(.ant-select-item-option-disabled), " +
         ".ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-dropdown-menu-item:not(.ant-select-dropdown-menu-item-disabled), " +
         ".atsx-select-dropdown:not(.atsx-select-dropdown-hidden) .atsx-select-dropdown-menu-item:not(.atsx-select-dropdown-menu-item-disabled), " +
         ".el-select-dropdown:not([style*='display: none']) .el-select-dropdown__item:not(.is-disabled), " +
         ".semi-select-option-list .semi-select-option:not(.semi-select-option-disabled), " +
+        ".n-base-select-menu .n-base-select-option:not(.n-base-select-option--disabled), " +
         ".ivu-select-dropdown .ivu-select-item:not(.ivu-select-item-disabled), .arco-select-option:not(.arco-select-option-disabled), .t-select-option:not(.t-is-disabled), " +
         "[role='listbox'] [role='option']:not([aria-disabled='true']), " +
         "[data-uxi-widget-type='multiselect'] [role='option']:not([aria-disabled='true']), " +
@@ -1422,7 +1446,7 @@ async function fillCustomSelects(pairs, taskId) {
         // Moka：每一行是 sd-Menu-container，带副标题的（学校、专业）外面还包一层 common-item。
         "[class*='sd-Select-menu'] [class*='sd-Menu-container']:not([class*='sd-Menu-disabled'])"
     );
-    let found = Array.from(nodes).filter(visible);
+    let found = nodes.filter(visible);
     // 北森关掉的列表还留在页面上而且看得见：只认紧挨着这个框的那一层，不然点到的是上一个字段的列表。
     const layer = container?.matches?.(".phoenix-select") ? nearestLayer(container) : null;
     if (layer) found = found.filter((node) => layer.contains(node));
@@ -1434,11 +1458,11 @@ async function fillCustomSelects(pairs, taskId) {
   // 又是一排同样形状的，就是选项。
   let visibleBefore = null;
   function rememberVisible() {
-    visibleBefore = new Set(Array.from(document.querySelectorAll("body *")).filter((node) => node.getClientRects?.().length));
+    visibleBefore = new Set(qAll("*").filter((node) => node.getClientRects?.().length));
   }
   function discoveredOptions() {
     if (!visibleBefore) return [];
-    const fresh = Array.from(document.querySelectorAll("body *")).filter((node) => !visibleBefore.has(node) && visible(node));
+    const fresh = qAll("*").filter((node) => !visibleBefore.has(node) && visible(node));
     const parents = new Map();
     for (const node of fresh) {
       if (!node.parentElement || !clean(node.textContent) || clean(node.textContent).length > 60 || node.closest("[data-cp-fill-id]")) continue;
@@ -1453,11 +1477,11 @@ async function fillCustomSelects(pairs, taskId) {
   }
   // 「没有找到专业？添加专业全称」：列表里没有时，网站自己留的那条路。
   function customEntryButton() {
-    return Array.from(document.querySelectorAll("[class*='sd-Select-menu'] button, [class*='sd-Dropdown-dropdown'] button")).find((button) => visible(button) && /添加|新增|自定义|使用/.test(clean(button.textContent))) || null;
+    return qAll("[class*='sd-Select-menu'] button, [class*='sd-Dropdown-dropdown'] button").find((button) => visible(button) && /添加|新增|自定义|使用/.test(clean(button.textContent))) || null;
   }
   const LAYER_POPUP_SELECTOR = ".phoenix-selectList, .phoenix-calendar, .phoenix-date-picker, .phoenix-popover, .area-selector-container, [role='listbox']";
   function nearestLayer(container) {
-    const layers = Array.from(document.querySelectorAll(".common-unmodeled-layer, .phoenix-unmodeled-layer"))
+    const layers = qAll(".common-unmodeled-layer, .phoenix-unmodeled-layer")
       .filter((layer) => visible(layer) && (!container || !layer.contains(container)) && layer.querySelector(LAYER_POPUP_SELECTOR));
     if (layers.length < 2) return layers[0] || null;
     // 点开之后才出现的那一层就是它；紧贴上下的旧层可能离得一样近。
@@ -1468,7 +1492,7 @@ async function fillCustomSelects(pairs, taskId) {
     return layers.sort((a, b) => away(a) - away(b))[0];
   }
   function optionText(n) {
-    const inner = n.querySelector(".ant-select-item-option-content, .semi-select-option-text, .arco-select-option-content, [data-key='sugar.select.label'], [class*='sd-Menu-content-item'] > div:first-child");
+    const inner = n.querySelector(".ant-select-item-option-content, .semi-select-option-text, .arco-select-option-content, .n-base-select-option__content, [data-key='sugar.select.label'], [class*='sd-Menu-content-item'] > div:first-child");
     return clean((inner || n).textContent);
   }
   function pickOne(options, value) {
@@ -1500,7 +1524,7 @@ async function fillCustomSelects(pairs, taskId) {
     rememberVisible();
     // Innermost first: a click on the inner input bubbles up through the
     // wrapper/selector, so every library's own handler sees it.
-    const trigger = container.querySelector("input:not([type='hidden'])") || container.querySelector(".ant-select-selector, .ant-select-selection, .atsx-select-selection, .el-select__wrapper, .el-input__wrapper, .semi-select-selection, .arco-select-view") || container;
+    const trigger = container.querySelector("input:not([type='hidden'])") || container.querySelector(".ant-select-selector, .ant-select-selection, .atsx-select-selection, .el-select__wrapper, .el-input__wrapper, .semi-select-selection, .arco-select-view, .n-base-selection, .t-select") || container;
     trigger.focus?.();
     trigger.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
     trigger.click();
@@ -1632,7 +1656,7 @@ async function fillCustomSelects(pairs, taskId) {
   // 的输入框再回车；只有年月时再补成当月 1 日重试（有的框要完整日期）。
   let openedBox = null;
   const calendarPanel = () => {
-    const panels = Array.from(document.querySelectorAll(".phoenix-calendar")).filter((node) => visible(node) && !node.closest(".phoenix-popover-hidden"));
+    const panels = qAll(".phoenix-calendar").filter((node) => visible(node) && !node.closest(".phoenix-popover-hidden"));
     if (panels.length < 2 || !openedBox) return panels[0];
     const layer = nearestLayer(openedBox);
     return panels.find((node) => layer?.contains(node)) || panels[0];
@@ -1758,16 +1782,16 @@ async function fillCustomSelects(pairs, taskId) {
       // Which choices the dropdown really offers, so the AI picks one instead of guessing a word.
       if (!container || container.classList.contains("ant-cascader") || container.classList.contains("el-cascader") || hasExistingValue(container)) continue;
       open(container);
-      await sleep(300);
+      await sleep(160);
       assertActive();
-      const texts = [...new Set((await waitFor(() => visibleOptions(container), 600)).map(optionText).filter(Boolean))];
+      const texts = [...new Set((await waitFor(() => visibleOptions(container), 450)).map(optionText).filter(Boolean))];
       close();
-      await sleep(120);
+      await sleep(60);
       assertActive();
       // A list that only closes by clicking its own trigger again: leave it as found.
-      if (visibleOptions(container).length) { open(container); await sleep(150); assertActive(); }
-      // One option is no choice; hundreds (cities, schools) are a search box in disguise.
-      if (texts.length >= 2 && texts.length <= 60) optionsRead[p.id] = texts;
+      if (visibleOptions(container).length) { open(container); await sleep(100); assertActive(); }
+      // One option is no choice; hundreds (cities, schools) are a search box in disguise (allow up to 80 for 民族 etc.).
+      if (texts.length >= 2 && texts.length <= 80) optionsRead[p.id] = texts;
       continue;
     }
     // 勾了「至今」，网站把结束的 年 / 月 收起来了：这一格已经答完。
@@ -2028,7 +2052,7 @@ function resetAutofillInFrame(keepUserEdited = false) {
         }
         if (wasFilled) cleared++;
       } else {
-        const clearBtn = el.querySelector?.(".ant-select-selection-clear, .atsx-select-selection__clear, .el-select__clear, .el-input__clear, .phoenix-select__clearIcon, .ud__select__clear, .semi-select-clear, .arco-select-clear-btn");
+        const clearBtn = el.querySelector?.(".ant-select-selection-clear, .atsx-select-selection__clear, .el-select__clear, .el-input__clear, .phoenix-select__clearIcon, .ud__select__clear, .semi-select-clear, .arco-select-clear-btn, .n-base-clear, .t-input__suffix-clear");
         if (clearBtn) clearBtn.click();
         else {
           for (const inner of el.querySelectorAll?.("input:not([type='hidden'])") || []) {
@@ -2254,6 +2278,13 @@ function readFieldValues(ids) {
   const result = {};
   const roots = [document];
   for (let i = 0; i < roots.length; i++) Array.from(roots[i].querySelectorAll ? roots[i].querySelectorAll("*") : []).forEach((node) => { if (node.shadowRoot) roots.push(node.shadowRoot); });
+  const collectRoots = () => {
+    const out = [document];
+    for (let i = 0; i < out.length; i++) Array.from(out[i].querySelectorAll ? out[i].querySelectorAll("*") : []).forEach((node) => { if (node.shadowRoot) out.push(node.shadowRoot); });
+    return out;
+  };
+  const qAll = (selector) => collectRoots().flatMap((root) => Array.from(root.querySelectorAll ? root.querySelectorAll(selector) : []));
+  const findById = (id) => { for (const root of collectRoots()) { const hit = root.getElementById ? root.getElementById(id) : root.querySelector?.(`#${CSS.escape(id)}`); if (hit) return hit; } return null; };
   const find = (selector) => { for (const root of roots) { const hit = root.querySelector(selector); if (hit) return hit; } return null; };
   const findAll = (selector) => roots.flatMap((root) => Array.from(root.querySelectorAll ? root.querySelectorAll(selector) : []));
   const clean = (text) => String(text || "").replace(/[​-‍﻿]/g, "").replace(/\s+/g, " ").replace(/([㐀-鿿]) (?=[㐀-鿿])/g, "$1").trim();
@@ -2306,6 +2337,13 @@ function readFieldValues(ids) {
 function clearSavedUserEdits(saved) {
   const roots = [document];
   for (let i = 0; i < roots.length; i++) Array.from(roots[i].querySelectorAll ? roots[i].querySelectorAll("*") : []).forEach((node) => { if (node.shadowRoot) roots.push(node.shadowRoot); });
+  const collectRoots = () => {
+    const out = [document];
+    for (let i = 0; i < out.length; i++) Array.from(out[i].querySelectorAll ? out[i].querySelectorAll("*") : []).forEach((node) => { if (node.shadowRoot) out.push(node.shadowRoot); });
+    return out;
+  };
+  const qAll = (selector) => collectRoots().flatMap((root) => Array.from(root.querySelectorAll ? root.querySelectorAll(selector) : []));
+  const findById = (id) => { for (const root of collectRoots()) { const hit = root.getElementById ? root.getElementById(id) : root.querySelector?.(`#${CSS.escape(id)}`); if (hit) return hit; } return null; };
   const find = (selector) => { for (const root of roots) { const hit = root.querySelector(selector); if (hit) return hit; } return null; };
   const findAll = (selector) => roots.flatMap((root) => Array.from(root.querySelectorAll ? root.querySelectorAll(selector) : []));
   const clean = (text) => String(text || "").replace(/[​-‍﻿]/g, "").replace(/\s+/g, " ").replace(/([㐀-鿿]) (?=[㐀-鿿])/g, "$1").trim();
@@ -2445,10 +2483,16 @@ const BASIC_FIELD_RULES = [
   { keys: ["是否接受调剂", "服从调剂", "接受调剂", "岗位调剂", "是否服从", "接受其他岗位", "考虑其他岗位"], not: /工作地|城市|地点/, get: (p) => p.acceptAdjust, learn: "acceptAdjust" },
   // The job being applied for: the one this tab was opened for (比亚迪 / 钉钉表单's 「投递岗位」).
   { keys: ["投递岗位", "应聘岗位", "申请岗位", "应聘职位", "申请职位", "报考岗位", "投递职位"], not: /是否|期望|意向|第二|其他/, get: (p) => p.appliedJob },
-  // 工作年限 for someone still studying: 应届生 (or the option that means none).
-  { keys: ["工作年限", "工作经验年限", "工作经验（年）", "工作年数"], get: (p) => studyingNow(p) ? "应届生" : null, workYears: true },
+  // 工作年限：优先用保存的工作年限，否则在校生按应届生匹配。
+  { keys: ["工作年限", "工作经验年限", "工作经验（年）", "工作年数"], get: (p) => p.workYears || (studyingNow(p) ? "应届生" : null), workYears: true, learn: "workYears" },
   // Moka's 工作经验 is a dropdown (在校生 / 应届毕业生 / 1 年…), not a place for the experience itself.
-  { keys: ["工作经验"], when: (field) => isWorkYearsChoice(field), get: (p) => studyingNow(p) ? "应届生" : null, workYears: true },
+  { keys: ["工作经验"], when: (field) => isWorkYearsChoice(field), get: (p) => p.workYears || (studyingNow(p) ? "应届生" : null), workYears: true, learn: "workYears" },
+  { keys: ["目前状态", "在职状态", "求职状态", "当前状态", "人员状态", "就业状态", "current status", "employment status"], not: /婚姻|健康|政治|户口|户籍|投递|简历/, get: (p) => p.employmentStatus, learn: "employmentStatus" },
+  { keys: ["目前薪资", "当前薪资", "目前月薪", "当前月薪", "目前年薪", "当前年薪", "税前薪资", "上家薪资", "原薪资", "现薪资", "current salary"], get: (p) => p.currentSalary, learn: "currentSalary" },
+  { keys: ["离职周期", "到岗周期", "入职周期", "离职交接", "notice period"], get: (p) => p.noticePeriod || p.availableFrom, learn: "noticePeriod" },
+  { keys: ["离职原因", "跳槽原因", "离开原因", "变动原因", "reason for leaving"], get: (p) => p.leaveReason, learn: "leaveReason" },
+  { keys: ["管理规模", "带团队人数", "团队规模", "下属人数", "管理人数", "直接下属", "management size", "team size"], not: /项目|公司|企业/, get: (p) => p.managementScale, learn: "managementScale" },
+  { keys: ["竞业协议", "竞业限制", "是否签有竞业", "有无竞业", "non-compete", "noncompete"], get: (p) => p.nonCompete, learn: "nonCompete", yesNo: "options-only" },
   { keys: ["最近公司", "目前公司", "当前公司", "现公司", "最近工作单位", "目前单位", "当前单位"], not: /是否|名称.*(?:学校|院校)/, get: (p) => p.latestCompany },
   // 是否有交换生经历 (是 / 否) or a box for the exchange itself.
   { keys: ["交换生经历", "交换经历", "海外交换", "交换学习", "海外经历", "海外学习经历"], not: /是否接受|愿意|意向/, get: (p) => p.exchange, learn: "exchange", yesNo: true },
@@ -3687,7 +3731,12 @@ async function clickAddBlock(group, dryRun = false) {
     }
     return "";
   };
-  const candidates = Array.from(document.querySelectorAll("button, a, [role='button'], .ant-btn, .el-button, span, div"))
+  const qAll = (selector) => {
+    const out = [document];
+    for (let i = 0; i < out.length; i++) Array.from(out[i].querySelectorAll ? out[i].querySelectorAll("*") : []).forEach((node) => { if (node.shadowRoot) out.push(node.shadowRoot); });
+    return out.flatMap((root) => Array.from(root.querySelectorAll ? root.querySelectorAll(selector) : []));
+  };
+  const candidates = qAll("button, a, [role='button'], .ant-btn, .el-button, span, div")
     .filter((el) => {
       const text = (el.textContent || "").replace(/\s+/g, " ").trim();
       if (!text || text.length > 16 || !ADD.test(text) || !visible(el)) return false;
@@ -3704,7 +3753,7 @@ async function clickAddBlock(group, dryRun = false) {
   target.scrollIntoView({ block: "center" });
   target.click();
   await new Promise((resolve) => setTimeout(resolve, 700));
-  const modal = Array.from(document.querySelectorAll(".ant-modal-wrap, .el-dialog__wrapper, .el-overlay-dialog, [role='dialog'][aria-modal='true']")).some(visible);
+  const modal = qAll(".ant-modal-wrap, .el-dialog__wrapper, .el-overlay-dialog, [role='dialog'][aria-modal='true']").some(visible);
   return { clicked: true, text: (target.textContent || "").trim().slice(0, 20), modal };
 }
 
@@ -3722,8 +3771,14 @@ async function saveFilledBlock(ids, issues = []) {
   const visible = (el) => { const r = el.getBoundingClientRect(); const st = getComputedStyle(el); return r.width > 0 && r.height > 0 && st.visibility !== "hidden" && st.display !== "none"; };
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const MODAL = ".ant-modal-wrap, .el-dialog__wrapper, .el-overlay-dialog, .vxe-modal--box, .ant-drawer-open, .el-drawer, [role='dialog'][aria-modal='true']";
-  const openModals = () => Array.from(document.querySelectorAll(MODAL)).filter(visible);
-  const marked = (root) => Array.from(root.querySelectorAll("[data-cp-fill-id]"));
+  const allRoots = () => {
+    const out = [document];
+    for (let i = 0; i < out.length; i++) Array.from(out[i].querySelectorAll ? out[i].querySelectorAll("*") : []).forEach((node) => { if (node.shadowRoot) out.push(node.shadowRoot); });
+    return out;
+  };
+  const qAll = (selector) => allRoots().flatMap((root) => Array.from(root.querySelectorAll ? root.querySelectorAll(selector) : []));
+  const openModals = () => qAll(MODAL).filter(visible);
+  const marked = (root) => root === document ? qAll("[data-cp-fill-id]") : Array.from(root.querySelectorAll("[data-cp-fill-id]"));
   const idOf = (el) => el.getAttribute("data-cp-fill-id").replace(/:\d+$/, "");
   const mine = new Set(ids);
   const own = marked(document).filter((el) => mine.has(idOf(el)));
@@ -3738,7 +3793,7 @@ async function saveFilledBlock(ids, issues = []) {
   } else {
     // The entry's own block: grows from the filled boxes until it holds them
     // all, and stops before it would take in a box of another entry.
-    for (let node = own[0].parentElement, depth = 0; node && node !== document.body && depth < 10; node = node.parentElement, depth++) {
+    for (let node = own[0].parentElement || own[0].getRootNode?.()?.host, depth = 0; node && node !== document.body && depth < 10; node = node.parentElement || node.getRootNode?.()?.host, depth++) {
       if (marked(node).some((el) => !mine.has(idOf(el)))) break;
       if (own.every((el) => node.contains(el)) && buttonsIn(node).length) { scope = node; break; }
     }
@@ -4105,6 +4160,23 @@ function matchFlatField(field, profile) {
     }
     if (rule.noReferral) return field.options.find((option) => NO_REFERRAL.test(String(option).trim()));
     if (rule.workYears && field.options) {
+      if (profile.workYears) {
+        const direct = matchFieldOption(field, value);
+        if (direct) return direct;
+        const years = Number(String(value).match(/\d+(?:\.\d+)?/)?.[0]);
+        if (Number.isFinite(years)) {
+          const range = field.options.find((option) => {
+            const nums = String(option).match(/\d+/g)?.map(Number);
+            if (!nums?.length) return false;
+            if (/以下|以内|under|less/i.test(option)) return years <= nums[0];
+            if (/以上|\+|more|over/i.test(option)) return years >= nums[0];
+            if (nums.length >= 2) return years >= nums[0] && years <= nums[1];
+            return years === nums[0];
+          });
+          if (range) return range;
+        }
+      }
+      if (!studyingNow(profile)) continue;
       const none = field.options.find((option) => /应届/.test(String(option).trim())) || field.options.find((option) => /无工作|无经验|^无$|^0\s*年?$|在校/.test(String(option).trim())) || field.options.find((option) => /1\s*年以下|一年以下|1年以内/.test(String(option)));
       if (none) return none;
       continue;
@@ -4154,7 +4226,7 @@ function isNeverGuessField(field) {
 
 function portalContext(rawUrl) {
   const url = new URL(rawUrl);
-  const sharedHost = /(?:^|\.)(?:mokahr\.com|beisen\.com|zhaopin\.com|zhipin\.com|liepin\.com|51job\.com|lagou\.com|nowcoder\.com|shixiseng\.com)$/i.test(url.hostname);
+  const sharedHost = /(?:^|\.)(?:mokahr\.com|beisen\.com|zhiye\.com|italent\.cn|dayee\.com|hotjob\.cn|feishu\.cn|jobs\.feishu\.cn|zhaopin\.com|zhipin\.com|liepin\.com|51job\.com|lagou\.com|nowcoder\.com|shixiseng\.com)$/i.test(url.hostname);
   const tenant = [...url.searchParams].filter(([key]) => /^(?:company|companyId|tenant|tenantId|organization|orgid|brand|recruitment)$/i.test(key)).sort(([a], [b]) => a.localeCompare(b));
   // An explicit tenant on a recognised shared portal is stable across steps.
   // Unknown hosts, query-routed tenants and SPA routes stay page-specific.
@@ -4171,7 +4243,9 @@ function portalContext(rawUrl) {
 // way Electron's CDP does, so the bytes arrive base64-encoded and become a
 // File set through DataTransfer — the same thing a drag-and-drop produces.
 function attachResumeFile(base64, filename, mimeType) {
-  const inputs = Array.from(document.querySelectorAll('input[type="file"][data-cp-resume-upload="1"]'));
+  const roots = [document];
+  for (let i = 0; i < roots.length; i++) Array.from(roots[i].querySelectorAll ? roots[i].querySelectorAll("*") : []).forEach((node) => { if (node.shadowRoot) roots.push(node.shadowRoot); });
+  const inputs = roots.flatMap((root) => Array.from(root.querySelectorAll ? root.querySelectorAll('input[type="file"][data-cp-resume-upload="1"]') : []));
   if (!inputs.length) return 0;
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
@@ -4190,7 +4264,10 @@ function attachResumeFile(base64, filename, mimeType) {
 }
 
 function attachTypedFile(role, base64, filename, mimeType) {
-  const inputs = Array.from(document.querySelectorAll(`input[type="file"][data-cp-upload-role="${CSS.escape(role)}"]`));
+  const roots = [document];
+  for (let i = 0; i < roots.length; i++) Array.from(roots[i].querySelectorAll ? roots[i].querySelectorAll("*") : []).forEach((node) => { if (node.shadowRoot) roots.push(node.shadowRoot); });
+  const sel = `input[type="file"][data-cp-upload-role="${CSS.escape(role)}"]`;
+  const inputs = roots.flatMap((root) => Array.from(root.querySelectorAll ? root.querySelectorAll(sel) : []));
   if (!inputs.length) return 0;
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
@@ -4398,15 +4475,22 @@ async function readSelectOptions(adapter, questions, frameById, initialUrl) {
 
 // 写完回头读一遍：网站把值吞掉（清空、弹回）的框不算填上，不然用户到提交时才发现。
 function readBackFilled(ids) {
+  const PLACEHOLDER_TEXT = /^(?:请|点击|點擊)?(?:选择|选取|输入|填写|搜索)|^(?:select|choose|search|please (?:select|choose|enter))\b|^(?:--|—)|^(?:此项|该项|本项)?必填|未填写$|不能为空$|^(?:this field is )?required\b/i;
+  const roots = [document];
+  for (let i = 0; i < roots.length; i++) Array.from(roots[i].querySelectorAll ? roots[i].querySelectorAll("*") : []).forEach((node) => { if (node.shadowRoot) roots.push(node.shadowRoot); });
+  const find = (selector) => { for (const root of roots) { const hit = root.querySelector(selector); if (hit) return hit; } return null; };
+  const clean = (text) => String(text || "").replace(/[​-‍﻿]/g, "").replace(/\s+/g, " ").trim();
   const lost = [];
   for (const id of ids) {
-    const el = document.querySelector('[data-cp-fill-id="' + id + '"]');
+    const el = find('[data-cp-fill-id="' + CSS.escape(id) + '"]');
     if (!el || el.getClientRects().length === 0 || el.hasAttribute("data-cp-until-now")) continue;
     if (el.matches("input, textarea")) { if (!String(el.value || "").trim()) lost.push(id); continue; }
     if (el.matches("select")) continue;
     if (el.isContentEditable) { if (!String(el.innerText || "").trim()) lost.push(id); continue; }
     const input = el.querySelector("input:not([type='hidden']):not([type='checkbox']):not([type='radio'])");
-    if (!String(el.innerText || "").trim() && !String(input?.value || "").trim()) lost.push(id);
+    const shown = clean(el.innerText);
+    const val = clean(input?.value);
+    if ((!shown || PLACEHOLDER_TEXT.test(shown)) && (!val || PLACEHOLDER_TEXT.test(val))) lost.push(id);
   }
   return lost;
 }
@@ -4438,7 +4522,7 @@ async function fillFrames(adapter, pairs, frameById, initialUrl) {
         if (!batch.length) continue;
         if (!adapter.stillOnPage(initialUrl)) throw new Error("页面或标签已切换，已停止写入");
         try {
-          const result = await adapter.run(frame, writer, writer === fillCustomSelects ? [batch, adapter.taskId] : [batch]);
+          const result = await adapter.run(frame, writer, [batch, adapter.taskId]);
           let lost = [];
           const checkable = result.filled.filter((id) => !/-[rg]\d+$/.test(id));
           if (checkable.length) { const back = await adapter.run(frame, readBackFilled, [checkable]).catch(() => null); if (Array.isArray(back)) lost = back; }
@@ -4498,10 +4582,10 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     if (!modules.size) throw new Error("请先在「填写范围」里至少勾选一个模块");
     // 框选填写 fills that one block: no attachment, no pressing 添加 for more.
     if (options.region && !["x", "y", "width", "height"].every((key) => Number.isFinite(options.region[key]))) throw new Error("框选的范围不对，请重新框一次");
-    if (options.region) modules.delete("resume");
+    if (options.region) modules.delete("resume"), modules.delete("attachment");
     // A follow-up round (`onlyKeys`): only the boxes an earlier choice revealed; the 简历 is already up.
     const onlyKeys = Array.isArray(options.onlyKeys) ? new Set(options.onlyKeys) : null;
-    if (onlyKeys) modules.delete("resume");
+    if (onlyKeys) modules.delete("resume"), modules.delete("attachment");
     assertActive();
     adapter.status({ phase: "scanning", message: "正在读取页面…" });
 
@@ -4586,7 +4670,11 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       }
       const mapping = !repeat && (profile.mappings || []).find((m) => m.fieldKey === field.mappingKey);
       const mapped = mapping && profileChoices(profile).find((c) => c.ref === mapping.ref);
-      if (mapped?.value) { pairs.push({ id: field.id, value: mapped.value, source: "profile", label: field.label, tag: field.tag, ref: mapped.ref }); continue; }
+      if (mapped?.value) {
+        const degAlt = degreeAlternatives(field, mapped.value);
+        pairs.push({ id: field.id, value: mapped.value, source: "profile", label: field.label, tag: field.tag, ref: mapped.ref, alternatives: degAlt?.length ? degAlt : yesNoAlternatives(mapped.value) });
+        continue;
+      }
       // Saved 网申资料 rows are the source of truth for repeated blocks. A
       // remembered "学校" is one value and would otherwise fill every row.
       const structured = repeat ? repeatFieldValue(field, repeat, profile) : null;
@@ -4737,14 +4825,27 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
         adapter.status({ phase: "ai", message: `正在查看 ${dropdowns.length} 个下拉框里有哪些选项…` });
         const offered = await readSelectOptions(adapter, dropdowns, frameById, initialUrl);
         assertActive();
-        candidates = candidates.map((q) => (offered[q.id] ? { ...q, kind: "choice", options: offered[q.id] } : q));
+        candidates = candidates.map((q) => {
+          if (!offered[q.id]) return q;
+          const fld = fields.find((f) => f.id === q.id);
+          if (fld) fld.options = offered[q.id];
+          return { ...q, kind: "choice", options: offered[q.id] };
+        });
       }
       adapter.status({ phase: "ai", message: `已验证填入 ${basicResult.filled.length} 个资料字段，正在用 AI 生成 ${candidates.length} 个字段的内容…` });
       try {
+        const aiProfile = {
+          name: profile.name, phone: profile.phone, email: profile.email, gender: profile.gender, birthDate: profile.birthDate,
+          school: profile.school, targetTrack: profile.targetTrack, graduationYear: profile.graduationYear, preferredCities: profile.preferredCities,
+          major: profile.major, degree: profile.degree, gpa: profile.gpa, educationStart: profile.educationStart, educationEnd: profile.educationEnd,
+          latestCompany: profile.latestCompany, latestRole: profile.latestRole, politics: profile.politics, hometown: profile.hometown,
+          ethnicity: profile.ethnicity, english: profile.english, currentCity: profile.currentCity, targetRole: profile.targetRole,
+          selfIntro: profile.selfIntro, extra: profile.extra,
+        };
         const answerRes = await adapter.api("answer-questions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ questions: candidates.map((q) => { const field = fields.find((f) => f.id === q.id); return { ...q, maxLength: (field && textLimitFor(field)) || undefined }; }), resumeVersionId, profile, contextKey: pageContext, positionId: options.positionId, regenerate: options.regenerate, answerLength: options.answerLength }),
+          body: JSON.stringify({ questions: candidates.map((q) => { const field = fields.find((f) => f.id === q.id); return { ...q, maxLength: (field && textLimitFor(field)) || undefined }; }), resumeVersionId, profile: aiProfile, contextKey: pageContext, positionId: options.positionId, regenerate: options.regenerate, answerLength: options.answerLength }),
         });
         if (answerRes.ok) {
           const { answers } = await answerRes.json();
@@ -4786,7 +4887,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
         const sameContext = priorPlan?.url === initialUrl && priorPlan?.resumeVersionId === resumeVersionId && priorPlan?.options.variantId === options.variantId && priorPlan?.options.positionId === options.positionId;
         const edit = stored || (sameContext && !questionKeys.has(field.mappingKey) && (!options.regenerate || questionKeys.size || candidateEdit?.edited) && candidateEdit);
         return { ...(edit || {}), id: field.id, fieldKey: field.mappingKey, label: displayLabel(field), section: field.section, value: edit ? edit.value : pair?.value || "", selected: eligible && (edit ? edit.selected : !!pair && pair.source !== "ai"), eligible,
-          source: pair?.source || "manual", ref: edit?.ref || pair?.ref || "", required: field.required, maxLength: field.maxLength,
+          source: pair?.source || "manual", ref: edit?.ref || pair?.ref || "", required: field.required, maxLength: field.maxLength, options: Array.isArray(field.options) && field.options.length ? field.options.slice(0, 80) : undefined,
           note: field.userEdited ? "手动修改过，保持不动" : field.hasValue ? "已有内容，保持不动" : excluded.has(field.id) ? "未选择此模块" : isThirdPartyField(field) ? "家庭成员 / 联系人等他人信息，请在网页上填写" : field.readonlyPicker ? `日期需在网页上点选${field.suggestion ? `：${field.suggestion}` : ""}` : !eligible ? "需在网页上手动填写" : stored?.captured ? "来自本次申请的网页草稿，请核对后选择填写" : pair?.source === "ai" ? "AI 草稿，请核对后勾选" : pair ? "来自已保存资料或回答" : (aiError || "请选择资料或输入内容") };
       });
       const result = { phase: "preview", message: "填写建议已准备好，勾选并核对后再写入；网页内容尚未改动", plan: { id: plan.id, url: initialUrl, proposals, choices, blocks: previewRecordBlocks(blocks, repeats, profile), resumeVersionId, positionId: options.positionId, uploadResume: modules.has("resume") && !!resumeVersionId, uploadAttachments: modules.has("attachment"), contextKey: pageContext, variantId: options.variantId } };
@@ -5185,7 +5286,7 @@ async function saveCorrectionsCore(adapter, resumeVersionId, onlyUserEdited = fa
   if (adapter.url() !== pageUrl || adapter.stillOnPage?.(pageUrl) === false) return { saved: 0 };
   const contextKey = adapter.jobId?.() ? `job:v1:${adapter.jobId()}` : portalContext(pageUrl);
   const draft = { contextKey, url: pageUrl, positionId: adapter.jobId?.(), resumeVersionId, variantId,
-    fields: fields.filter((field) => !isForbiddenMemoryField(field) && snapshots[field.id] && String(snapshots[field.id].value || "").length <= 20000).map((field) => ({ label: field.label || field.placeholder || field.name || "字段", fieldKey: field.mappingKey, section: field.section, value: String(snapshots[field.id].value || ""), selected: false, remember: false, edited: !!snapshots[field.id].userEdited, captured: true })) };
+    fields: fields.filter((field) => !isForbiddenMemoryField(field) && snapshots[field.id] && String(snapshots[field.id].value || "").length <= 20000).slice(0, 250).map((field) => ({ label: String(field.label || field.placeholder || field.name || "字段").slice(0, 500), fieldKey: String(field.mappingKey || "").slice(0, 1000), section: field.section ? String(field.section).slice(0, 200) : undefined, value: String(snapshots[field.id].value || ""), selected: false, remember: false, edited: !!snapshots[field.id].userEdited, captured: true })) };
   const signature = JSON.stringify(draft);
   // Boxes the applicant typed in that 一键填写 left to them (essays are theirs to write anyway).
   // A 职位搜索 / 筛选 page is not a form it missed (ubtrobot's 校招职位 list was auto-sampled
@@ -5218,7 +5319,7 @@ async function saveCorrectionsCore(adapter, resumeVersionId, onlyUserEdited = fa
 // Values are referenced from the saved profile, never reconstructed by the model.
 function profileChoices(profile) {
   const choices = [];
-  const labels = { name: "姓名", phone: "手机", email: "邮箱", gender: "性别", birthDate: "出生日期", currentCity: "现居地", country: "所在国家 / 地区", englishName: "英文名", exchange: "交换 / 海外经历", targetRole: "期望岗位", selfIntro: "自我评价", politics: "政治面貌", hometown: "籍贯", ethnicity: "民族", english: "英语水平", wechat: "微信号", qq: "QQ 号", expectedSalary: "期望薪资", availableFrom: "最早到岗时间", internshipDuration: "可实习时长", address: "通讯地址", researchDirection: "研究方向", rank: "成绩排名", acceptAdjust: "是否接受调剂", courses: "主修课程", homepage: "个人主页 / 作品链接", lab: "实验室 / 课题组", hobbies: "兴趣爱好", thesis: "毕业论文" };
+  const labels = { name: "姓名", phone: "手机", email: "邮箱", gender: "性别", birthDate: "出生日期", currentCity: "现居地", country: "所在国家 / 地区", englishName: "英文名", exchange: "交换 / 海外经历", targetRole: "期望岗位", selfIntro: "自我评价", politics: "政治面貌", hometown: "籍贯", ethnicity: "民族", english: "英语水平", wechat: "微信号", qq: "QQ 号", expectedSalary: "期望薪资", availableFrom: "最早到岗时间", internshipDuration: "可实习时长", address: "通讯地址", researchDirection: "研究方向", researchTopic: "研究方向（简短）", rank: "成绩排名", acceptAdjust: "是否接受调剂", jobSource: "招聘信息来源", courses: "主修课程", homepage: "个人主页 / 作品链接", lab: "实验室 / 课题组", hobbies: "兴趣爱好", thesis: "毕业论文", employmentStatus: "目前状态", workYears: "工作年限", currentSalary: "目前薪资", noticePeriod: "离职 / 到岗周期", leaveReason: "离职原因", managementScale: "管理团队规模", nonCompete: "竞业协议" };
   for (const [ref, label] of Object.entries(labels)) if (profile[ref]) choices.push({ ref, label, value: String(profile[ref]) });
   const columns = { school: "学校", major: "专业", department: "院系 / 部门", degree: "学历", gpa: "GPA", start: "开始时间", end: "结束时间", company: "公司", role: "角色/职位", name: "名称", description: "描述", responsibilities: "职责", link: "项目链接", teamSize: "参加人数", issuer: "颁发单位", level: "等级 / 程度", category: "类别", date: "日期", language: "语种", score: "分数" };
   for (const [group, label] of [["education", "教育"], ["experience", "工作/实习"], ["project", "项目"], ["award", "获奖"], ["campus", "校园经历"], ["skill", "技能"], ["language", "语言"]]) {
@@ -5303,7 +5404,7 @@ function readCurrentApplicationFields() {
     if (!(radios ? radios.some((r) => (r.closest("label") || r).getBoundingClientRect().width) : el.getBoundingClientRect().width)) continue;
     const label = el.getAttribute("data-cp-fill-label") || el.getAttribute("aria-label") || (el.id && el.getRootNode().querySelector('label[for="' + CSS.escape(el.id) + '"]')?.textContent) || el.closest(".ant-form-item, .el-form-item, .form-group")?.querySelector("label, [class*='label']")?.textContent || el.name || el.placeholder || "字段";
     if (/密码|验证码|证件|身份证|银行卡|护照|家庭住址|password|captcha|passport|social security|bank account/i.test(label)) continue;
-    let value = el.value || el.querySelector?.(".ant-select-selection-item, .ud__select__selector__selectItem, .phoenix-select__tipEle, [class*='sd-Input-display-value'], .el-select__selected-item:not(.el-select__input-wrapper)")?.textContent || "";
+    let value = el.value || el.querySelector?.(".ant-select-selection-item, .atsx-select-selection-selected-value, .ud__select__selector__selectItem, .phoenix-select__tipEle, [class*='sd-Input-display-value'], .el-select__selected-item:not(.el-select__input-wrapper), .semi-select-selection-text, .arco-select-view-value, .n-base-selection-input__content, .t-select__single")?.textContent || "";
     if (radios) {
       const checked = radios.find((r) => r.checked);
       value = checked?.closest("label")?.textContent || checked?.value || "";
@@ -5408,9 +5509,18 @@ async function applyAutofillPlan(adapter, input) {
     const issues = await validateFrames(adapter, live.frameById);
     const filledSet = new Set(result.filled);
     adapter.setDrafts([...adapter.getDrafts(), ...pairs.filter((p) => filledSet.has(p.id) && p.answerId && p.value === plan.pairs.find((o) => liveByOldId.get(o.id)?.id === p.id)?.value).map((p) => ({ id: p.id, answerId: p.answerId, label: p.label, filledValue: p.value }))]);
-    // Store reference mappings only for fields that actually accepted the chosen value.
-    const mappings = (input.approved || []).filter((row) => row.remember && row.ref && filledSet.has(liveByOldId.get(row.id)?.id)).map((row) => ({ fieldKey: plan.fields.find((f) => f.id === row.id).mappingKey, ref: row.ref }));
-    if (mappings.length) await adapter.api("field-mapping", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contextKey: plan.options.positionId ? `job:v1:${plan.options.positionId}` : portalContext(plan.url), mappings }) }).then((r) => { if (!r.ok) throw new Error("填写已完成，但字段对应关系保存失败"); });
+    // Store reference mappings only for fields that actually accepted the chosen value;
+    // saving failure must not abort resume/attachment uploads or leaving preview mode.
+    const mappings = (input.approved || []).filter((row) => row.remember && row.ref && filledSet.has(liveByOldId.get(row.id)?.id)).map((row) => ({ fieldKey: plan.fields.find((f) => f.id === row.id)?.mappingKey || "", ref: row.ref })).filter((m) => m.fieldKey);
+    let mappingSaveFailed = false;
+    if (mappings.length) {
+      try {
+        const mapRes = await adapter.api("field-mapping", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contextKey: plan.options.positionId ? `job:v1:${plan.options.positionId}` : portalContext(plan.url), mappings }) });
+        if (!mapRes?.ok) mappingSaveFailed = true;
+      } catch {
+        mappingSaveFailed = true;
+      }
+    }
     let uploaded = 0;
     let uploadedAttachments = [];
     if (input.uploadResume && plan.resumeVersionId && adapter.stillOnPage(plan.url)) uploaded = await adapter.uploadResume(plan.resumeVersionId);
@@ -5427,7 +5537,7 @@ async function applyAutofillPlan(adapter, input) {
       const isFailed = result.failed.includes(current.id) || (field.label && result.failed.includes(field.label)) || (current.label && result.failed.includes(current.label));
       return { id: current.id, label: field.section ? `${field.section} · ${field.label || field.name}` : field.label || field.name || "字段", source: issue || isFailed ? "manual" : filledSet.has(current.id) ? "profile" : current.hasValue || current.userEdited || result.skipped.includes(current.id) ? "prefilled" : "excluded", state: issue?.message || (filledSet.has(current.id) ? "已写入；提交前核对网页" : isFailed ? "写入未通过，需要手填" : current.hasValue || current.userEdited || result.skipped.includes(current.id) ? "已有或手改内容，已保留" : "本次未选择") };
     });
-    const status = { phase: "done", message: `已写入 ${result.filled.length} 项，网页校验发现 ${issues.length} 项需处理；未替你保存或提交`, details, summary: { filled: result.filled.length, manual: details.filter((d) => d.source === "manual").length, preserved: details.filter((d) => d.source === "prefilled").length, excluded: details.filter((d) => d.source === "excluded").length, uploaded, uploadedAttachments } };
+    const status = { phase: "done", message: `已写入 ${result.filled.length} 项，网页校验发现 ${issues.length} 项需处理；未替你保存或提交${mappingSaveFailed ? "（字段对应关系保存失败，不影响已填内容与附件）" : ""}`, details, summary: { filled: result.filled.length, manual: details.filter((d) => d.source === "manual").length, preserved: details.filter((d) => d.source === "prefilled").length, excluded: details.filter((d) => d.source === "excluded").length, uploaded, uploadedAttachments } };
     await adapter.setPlan(null); if (adapter.onFilled) await adapter.onFilled(); adapter.status(status); return status;
   } catch (error) { const valid = plan && plan.id === input.planId && Date.now() - plan.at <= 10 * 60000 && adapter.stillOnPage(plan.url); const status = { phase: "error", message: error.message || "填写失败", ...(valid && plan.preview ? { plan: plan.preview } : {}) }; if (!valid) await adapter.setPlan(null); adapter.status(status); return status; }
 }

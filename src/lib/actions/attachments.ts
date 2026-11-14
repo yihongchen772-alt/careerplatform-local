@@ -2,9 +2,12 @@
 
 import { readFile } from "fs/promises";
 import { revalidatePath } from "next/cache";
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { deleteLocalFileByUrl, localPathForStoredUrl, saveLocalFile } from "@/lib/local-storage";
+import { parseApplicationProfile } from "@/lib/application-profile";
+import { ATTACHMENT_ROLE_META, inferAttachmentRole, LIBRARY_CATEGORIES, type AttachmentRole } from "@/lib/attachment-roles";
 import { photoFromPdf } from "@/lib/resume-photo";
 
 export async function addAttachment(
@@ -129,4 +132,54 @@ export async function extractResumePhotoToLibrary(
   });
   revalidatePath("/library");
   return { ok: true, name: fileName };
+}
+
+export async function pinLibraryAttachment(
+  role: AttachmentRole,
+  attachmentId: string | null
+): Promise<{ ok: true; pinned: Record<string, string> } | { ok: false; message: string }> {
+  const user = await requireUser();
+  if (!(role in ATTACHMENT_ROLE_META)) return { ok: false, message: "不支持的附件类型" };
+  if (attachmentId) {
+    const owned = await db.attachment.findFirst({
+      where: { id: attachmentId, userId: user.id },
+      select: { id: true, category: true, name: true },
+    });
+    if (!owned) return { ok: false, message: "附件不存在或已被删除" };
+    const inferred = inferAttachmentRole(owned.category, owned.name);
+    if (inferred && inferred !== role) {
+      return { ok: false, message: `「${owned.name}」当前归类为其他用途，请先改分类后再设为默认` };
+    }
+  }
+  const profile = parseApplicationProfile(user.applicationProfile);
+  const pinned: Record<string, string> = { ...(profile.pinnedAttachments ?? {}) };
+  if (attachmentId) pinned[role] = attachmentId;
+  else delete pinned[role];
+  await db.user.update({
+    where: { id: user.id },
+    data: { applicationProfile: { ...profile, pinnedAttachments: pinned } as Prisma.InputJsonValue },
+  });
+  revalidatePath("/library");
+  return { ok: true, pinned };
+}
+
+export async function updateLibraryAttachment(
+  id: string,
+  input: { name?: string; category?: string }
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const user = await requireUser();
+  const row = await db.attachment.findFirst({ where: { id, userId: user.id } });
+  if (!row) return { ok: false, message: "未找到该资料" };
+  const nextName = typeof input.name === "string" ? input.name.trim().slice(0, 120) : row.name;
+  if (!nextName) return { ok: false, message: "名称不能为空" };
+  const nextCategory =
+    typeof input.category === "string" && LIBRARY_CATEGORIES.includes(input.category as (typeof LIBRARY_CATEGORIES)[number])
+      ? input.category
+      : row.category;
+  await db.attachment.update({
+    where: { id: row.id },
+    data: { name: nextName, category: nextCategory },
+  });
+  revalidatePath("/library");
+  return { ok: true };
 }

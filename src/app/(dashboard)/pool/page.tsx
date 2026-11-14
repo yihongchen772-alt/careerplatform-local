@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { AddPositionDialog } from "@/components/pool/add-position-dialog";
 import { PoolTable } from "@/components/pool/pool-table";
 import { computeConversion, type ConversionRow } from "@/lib/analytics";
+import { parseApplicationProfile } from "@/lib/application-profile";
 import type { InterviewPrep, GroupInterviewPrep } from "@/lib/validation";
 import { PageHero } from "@/components/layout/page-hero";
 import { ListChecks } from "lucide-react";
@@ -84,6 +85,7 @@ export default async function PoolPage({ searchParams }: { searchParams: Promise
               };
             })}
             resumeVersions={resumeVersions}
+            profileVariants={parseApplicationProfile(user.applicationProfile).variants.map((v) => ({ id: v.id, name: v.name, resumeVersionId: v.resumeVersionId ?? null }))}
             defaultResumeVersionId={defaultResumeVersionId}
             historyByTrack={historyByTrack}
             openPrepFor={selected && prep === "1" ? selected : null}

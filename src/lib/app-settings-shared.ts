@@ -61,6 +61,8 @@ export type AppSettings = {
    * SOCKS5 — the user needs their proxy tool's HTTP(S) port specifically.
    */
   proxyUrl?: string;
+  /** Outbound notification webhook (Feishu / DingTalk / Enterprise WeCom / custom JSON). */
+  webhookUrl?: string;
 };
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -70,6 +72,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   inboxScanIntervalHours: 0,
   jobRadarIntervalHours: 0,
   applicationSyncIntervalHours: 0,
+  webhookUrl: "",
 };
 
 /** Options offered in settings; 0 keeps the launch-only behaviour. */

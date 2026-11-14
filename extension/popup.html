@@ -49,18 +49,24 @@
       <label class="check"><input type="checkbox" data-module="questions" checked> 开放题 / 自我评价</label>
       <label class="check"><input type="checkbox" data-module="other" checked> 其他字段</label>
       <label class="check"><input type="checkbox" data-module="resume" checked> 简历附件</label>
+      <label class="check"><input type="checkbox" data-module="attachment" checked> 个人材料（证件照 / 成绩单 / 证明）</label>
     </details>
     <label class="check"><input type="checkbox" id="expand"> 自动补齐所选栏目（资料段数多于页面时点「添加」）</label>
     <label class="check"><input type="checkbox" id="saveBlocks"> 逐段自动保存（弹窗里的经历填好就点它的「保存」再加下一段，不点提交）</label>
     <label class="check"><input type="checkbox" id="auto-remember" checked> 记住我在本网站手填的内容</label>
+    <label class="check"><input type="checkbox" id="auto-record"> 检测到投递成功页时自动记入投递记录（已有则跳过）</label>
     <p id="memory-state" class="hint">网页草稿自动保存；离开输入框后检测：网申资料里还空着的直接记进去（可撤销），其他的先放进待核对。离开页面前请等待保存状态。</p>
     <p id="learned-state" class="hint" hidden><span id="learned-text"></span> <button id="learned-undo" type="button">撤销</button></p>
     <label>开放题长度<select id="answer-length"><option value="100">100 字</option><option value="200" selected>200 字</option><option value="300">300 字</option><option value="500">500 字</option></select></label>
     <button id="preview" type="button">扫描并逐字段预览</button>
     <div id="plan" hidden></div>
-    <details><summary>资料卡 · 点击复制</summary><div id="profile-cards"></div></details>
+    <details id="cards-details"><summary>资料卡 · 点击填入当前焦点框 / 复制</summary><div id="profile-cards"></div></details>
     <button id="fill" class="primary">一键填写这一页</button>
     <button id="cancel" hidden>停止填写</button>
+    <div class="row row-2">
+      <button id="undo-fill" type="button" title="撤回刚才自动填入的内容，保留你手动填的">撤销刚填</button>
+      <button id="refill" type="button" title="清掉上次自动填入的内容后重新扫描填写">清掉重填</button>
+    </div>
     <div class="row">
       <button id="save" title="检查这页完整的项目、实习、获奖和手填回答，放入待核对列表">核对本页变化</button>
       <button id="capture" title="用 AI 解析这页岗位信息，加进候选岗位池">收藏岗位</button>
@@ -70,10 +76,32 @@
       <p id="record-hint" class="hint" role="status" hidden></p>
       <input id="record-company" placeholder="公司" required>
       <input id="record-title" placeholder="岗位" required>
+      <input id="record-city" placeholder="工作城市（可留空自动识别）">
       <button class="primary" type="submit">保存到投递记录</button>
     </form>
     <p id="message" class="message" hidden></p>
     <details id="result-details" hidden><summary>逐字段填写结果</summary><label class="check"><input id="only-manual" type="checkbox" checked>只看未填 / 失败</label><ul id="result-list"></ul></details>
+    <details id="batch">
+      <summary>批量多页投递 · 待确认清单 <span id="batch-badge" class="pill" hidden>0</span></summary>
+      <p class="hint">勾选多个已打开的网申标签页并按顺序自动填写；填好后生成待确认清单，点进每一页核对无误再人工提交并记投递。</p>
+      <div class="scope-actions">
+        <button id="batch-refresh" type="button">刷新标签页</button>
+        <button id="batch-all" type="button">全选网页</button>
+        <button id="batch-run" class="primary" type="button">一键批量填选中</button>
+      </div>
+      <div id="batch-tabs"></div>
+      <div id="batch-queue-wrap" hidden>
+        <div class="batch-head">
+          <strong>待确认清单</strong>
+          <button id="batch-clear-done" type="button">清理已确认</button>
+        </div>
+        <div id="batch-queue"></div>
+      </div>
+    </details>
+    <div class="row row-2">
+      <button id="export-xlsx" type="button" title="导出已投递企业与岗位 Excel 工作簿">导出已投记录 (.xlsx)</button>
+      <button id="export-csv" type="button" title="导出已投递记录 CSV 表格">导出 CSV</button>
+    </div>
     <details id="agent">
       <summary>✨ 问小欧（看着这个页面回答）</summary>
       <p class="hint">问这个岗位值不值得投、这家公司怎么样，或者让小欧按你的真实经历写这页的开放题，写好点「填进这一栏」。</p>

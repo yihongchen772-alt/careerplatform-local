@@ -79,7 +79,7 @@ export type PortalSyncResult = {
   unmatched: PortalSyncUnmatched[];
   unassigned: PortalSyncUnmatched[];
   unchanged: string[];
-  errors: { companyName: string; message: string }[];
+  errors: { companyName: string; message: string; portalUrl?: string }[];
 };
 
 export async function setCompanyPortalUrl(
@@ -382,7 +382,7 @@ async function runSync(portalIds?: string[], force = false): Promise<PortalSyncR
       result.unmatched.push(...outcome.unmatched);
     } catch (err) {
       const message = err instanceof Error ? err.message : "同步失败";
-      result.errors.push({ companyName: portal.company.name, message });
+      result.errors.push({ companyName: portal.company.name, message, portalUrl: portal.url });
       await db.applicationPortal.update({
         where: { id: portal.id },
         data: { lastCheckedAt: new Date(), lastError: message },

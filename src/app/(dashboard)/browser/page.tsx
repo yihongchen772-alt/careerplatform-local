@@ -12,10 +12,10 @@ const TERMINAL = ["REJECTED", "ACCEPTED", "DECLINED", "WITHDRAWN", "CANCELLED"] 
 export default async function BrowserPage({
   searchParams,
 }: {
-  searchParams: Promise<{ url?: string; positionId?: string }>;
+  searchParams: Promise<{ url?: string; positionId?: string; resumeVersionId?: string; variantId?: string }>;
 }) {
   const user = await requireUser();
-  const { url, positionId } = await searchParams;
+  const { url, positionId, resumeVersionId, variantId } = await searchParams;
 
   const [resumeVersions, companies, careerCompanies, positions, applications, knownSites, tailorings] = await Promise.all([
     db.resumeVersion.findMany({
@@ -81,6 +81,8 @@ export default async function BrowserPage({
       <h1 className="sr-only">网申浏览器</h1>
       <EmbeddedBrowser initialPositionId={positionId}
         initialUrl={url}
+        initialResumeVersionId={resumeVersionId}
+        initialVariantId={variantId}
         knownSites={knownSites}
         profileVariants={parseApplicationProfile(user.applicationProfile).variants.map((v) => ({ id: v.id, name: v.name, resumeVersionId: v.resumeVersionId ?? null }))}
         resumeVersions={resumeVersions}

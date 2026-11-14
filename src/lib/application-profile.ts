@@ -115,6 +115,16 @@ export const PERSONAL_FIELDS = [
   { key: "emergencyPhone", label: "紧急联系人电话", hint: "", private: true },
 ] as const;
 
+export const SOCIAL_FIELDS = [
+  { key: "employmentStatus", label: "目前状态", hint: "在职 / 离职 / 应届生 / 在校生" },
+  { key: "workYears", label: "工作年限", hint: "如 3年 / 应届生 / 无经验" },
+  { key: "currentSalary", label: "目前薪资", hint: "如 25k×14 / 面议（仅本地填表）", private: true },
+  { key: "noticePeriod", label: "离职 / 到岗周期", hint: "如 1个月内 / 随时到岗 / 交接2周" },
+  { key: "leaveReason", label: "离职原因", hint: "寻求更大发展空间 / 业务调整" },
+  { key: "managementScale", label: "管理团队规模", hint: "如 无 / 带过3人小组" },
+  { key: "nonCompete", label: "竞业协议", hint: "如 无竞业协议 / 已解除", private: true },
+] as const;
+
 export const EXTRA_FIELDS = [
   { key: "politics", label: "政治面貌", hint: "群众 / 共青团员 / 中共党员" },
   { key: "hometown", label: "籍贯", hint: "省 市" },
@@ -187,6 +197,10 @@ export const profileVariantSchema = z.object({
   resumeVersionId: z.string().trim().max(40).nullish(),
   experiences: z.array(experienceSchema).max(20).default([]),
   projects: z.array(projectSchema).max(20).default([]),
+  awards: z.array(awardSchema).max(30).optional(),
+  campus: z.array(campusSchema).max(20).optional(),
+  skills: z.array(skillSchema).max(30).optional(),
+  languages: z.array(languageSchema).max(10).optional(),
   extras: z.record(z.string(), z.string().trim().max(1000)).default({}),
 });
 
@@ -200,9 +214,11 @@ export const applicationProfileSchema = z.object({
   languages: z.array(languageSchema).max(10).default([]),
   family: z.array(familyMemberSchema).max(10).default([]),
   extras: z.record(z.string(), z.string().trim().max(1000)).default({}),
-  variants: z.array(profileVariantSchema).max(8).default([]),
+  variants: z.array(profileVariantSchema).max(100).default([]),
   /** What the 网申浏览器 wrote in by itself from hand-filled pages (for 撤销). */
   learned: z.array(learnedEntrySchema).max(80).default([]),
+  /** Per-role pinned library attachment id (`photo`, `transcript`, `certificate`, ...). */
+  pinnedAttachments: z.record(z.string(), z.string().trim().max(64)).optional(),
 });
 
 export type ApplicationProfile = z.infer<typeof applicationProfileSchema>;
@@ -210,8 +226,8 @@ export type ProfileVariant = z.infer<typeof profileVariantSchema>;
 
 /**
  * The profile a 网申 is filled from: the default one, or with a variant's
- * experiences/projects/extras swapped in. An unknown id falls back to the
- * variant linked to `resumeVersionId`, then to the default.
+ * experiences/projects/extras (and optional awards/campus/skills/languages) swapped in.
+ * An unknown id falls back to the variant linked to `resumeVersionId`, then to the default.
  */
 export function resolveProfileVariant(
   profile: ApplicationProfile,
@@ -224,7 +240,16 @@ export function resolveProfileVariant(
     null;
   if (!variant) return { profile, variant: null };
   return {
-    profile: { ...profile, experiences: variant.experiences, projects: variant.projects, extras: { ...profile.extras, ...variant.extras } },
+    profile: {
+      ...profile,
+      experiences: variant.experiences,
+      projects: variant.projects,
+      awards: variant.awards ?? profile.awards,
+      campus: variant.campus ?? profile.campus,
+      skills: variant.skills ?? profile.skills,
+      languages: variant.languages ?? profile.languages,
+      extras: { ...profile.extras, ...variant.extras },
+    },
     variant,
   };
 }
@@ -304,7 +329,7 @@ export function describeApplicationProfile(p: ApplicationProfile): string {
   if (skills.length) lines.push(`专业技能：${skills.join("、")}`);
   const languages = (p.languages || []).filter((row) => row.name).map(languageLine);
   if (languages.length) lines.push(`语言成绩：${languages.join("、")}`);
-  for (const f of [...EXTRA_FIELDS, ...PERSONAL_FIELDS.filter((field) => !("private" in field))]) {
+  for (const f of [...EXTRA_FIELDS, ...SOCIAL_FIELDS.filter((field) => !("private" in field)), ...PERSONAL_FIELDS.filter((field) => !("private" in field))]) {
     const v = p.extras[f.key];
     if (v) lines.push(`${f.label}：${v}`);
   }

@@ -7,7 +7,7 @@ import { cohortLabel } from "@/lib/campus-sheet";
  * 近3天 / 7天内截止), kind, industry, cohort=all (every 届次), closed=1
  * (include past deadlines), fresh=1 (added to the sheet since it was first synced), page.
  */
-export type PostingFilters = { q: string; chip: "" | "today" | "recent" | "closing"; kind: string; industry: string; allCohorts: boolean; withClosed: boolean; fresh: boolean; sort: "" | "match"; page: number };
+export type PostingFilters = { q: string; chip: "" | "today" | "recent" | "closing"; kind: string; industry: string; allCohorts: boolean; withClosed: boolean; fresh: boolean; sort: "" | "match"; resumeId: string; page: number };
 
 /** How long a row the sheet's owner added stays marked 新. */
 export const FRESH_DAYS = 3;
@@ -27,6 +27,7 @@ export function readPostingFilters(params: Record<string, string | string[] | un
     withClosed: one("closed") === "1",
     fresh: one("fresh") === "1",
     sort: one("sort") === "match" ? "match" : "",
+    resumeId: one("resumeId"),
     page: Math.max(1, Math.min(1000, Number(one("page")) || 1)),
   };
 }
@@ -73,6 +74,7 @@ export function postingsHref(filters: PostingFilters, change: Partial<PostingFil
   if (next.withClosed) params.set("closed", "1");
   if (next.fresh) params.set("fresh", "1");
   if (next.sort === "match") params.set("sort", "match");
+  if (next.resumeId) params.set("resumeId", next.resumeId);
   if (next.page > 1) params.set("page", String(next.page));
   return `/leads?${params}`;
 }

@@ -29,8 +29,8 @@ export default async function CalendarPage() {
         include: { application: { include: { company: true } } },
       }),
       db.personalTask.findMany({
-        where: { userId: user.id, done: false, dueDate: { not: null } },
-        select: { id: true, title: true, dueDate: true, dueDateEnd: true },
+        where: { userId: user.id, dueDate: { not: null } },
+        select: { id: true, title: true, done: true, dueDate: true, dueDateEnd: true },
       }),
       // For the add dialog's 投递 picker: every application, not just the
       // ones with a time already on the calendar.
@@ -82,6 +82,7 @@ export default async function CalendarPage() {
       dateEnd: t.dueDateEnd?.toISOString() ?? null,
       label: `📌 ${t.title}`,
       timed: false,
+      done: t.done,
       href: "/dashboard",
     })),
     ...contacts.map((c) => ({

@@ -15,14 +15,26 @@ function useExamLinks(): ExamLink[] {
   const [links, setLinks] = useState<ExamLink[]>([]);
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/upcoming?days=14")
-      .then((response) => (response.ok ? response.json() : null))
-      .then((data: { items?: { key: string; kind: string; label: string; relative: string; meetingUrl: string | null }[] } | null) => {
-        if (cancelled || !data?.items) return;
-        setLinks(data.items.filter((item) => item.kind === "exam" && item.meetingUrl).slice(0, 4).map((item) => ({ key: item.key, label: item.label, relative: item.relative, meetingUrl: item.meetingUrl! })));
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
+    const refresh = () => {
+      fetch("/api/upcoming?days=14")
+        .then((response) => (response.ok ? response.json() : null))
+        .then((data: { items?: { key: string; kind: string; label: string; relative: string; meetingUrl: string | null }[] } | null) => {
+          if (cancelled || !data?.items) return;
+          setLinks(data.items.filter((item) => item.kind === "exam" && item.meetingUrl).slice(0, 4).map((item) => ({ key: item.key, label: item.label, relative: item.relative, meetingUrl: item.meetingUrl! })));
+        })
+        .catch(() => {});
+    };
+    refresh();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, []);
   return links;
 }

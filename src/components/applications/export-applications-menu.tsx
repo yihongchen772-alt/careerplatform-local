@@ -13,8 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { ExportFormat } from "@/lib/applications-export";
-import { todayKey } from "@/lib/dates";
+import { formatExportDate, type ExportFormat } from "@/lib/applications-export";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -79,7 +78,7 @@ export function ExportApplicationsMenu({
         throw new Error(body?.error || "导出失败，请稍后重试");
       }
       const blob = await res.blob();
-      const fallback = `已投递企业与岗位_${todayKey()}.${format}`;
+      const fallback = `已投递企业与岗位_${formatExportDate()}.${format}`;
       const filename = filenameFromDisposition(res.headers.get("content-disposition"), fallback);
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");

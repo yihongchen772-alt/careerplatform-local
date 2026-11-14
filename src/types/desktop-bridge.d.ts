@@ -36,6 +36,10 @@ export type DesktopBridgeTab = {
   favicon?: string | null;
   fillState?: DesktopBridgeTabFillState | null;
   batchMeta?: DesktopBridgeTabBatchMeta | null;
+  positionId?: string | null;
+  resumeVersionId?: string | null;
+  variantId?: string | null;
+  lastStatus?: DesktopBridgeAutofillStatus | null;
 };
 
 export type DesktopBridgeTabsState = { tabs: DesktopBridgeTab[]; activeId: number | null; batchRunning?: boolean };
@@ -45,7 +49,7 @@ export type DesktopBridgeFillSource = "profile" | "memory" | "ai" | "manual" | "
 
 export type DesktopBridgeAutofillModule = "basic" | "education" | "experience" | "project" | "award" | "campus" | "skill" | "questions" | "other" | "resume" | "attachment";
 
-export type FillProposal = { id: string; fieldKey: string; label: string; section?: string; value: string; selected: boolean; eligible: boolean; source: string; ref: string; required?: boolean; maxLength?: number | null; note: string; edited?: boolean; remember?: boolean };
+export type FillProposal = { id: string; fieldKey: string; label: string; section?: string; value: string; selected: boolean; eligible: boolean; source: string; ref: string; required?: boolean; maxLength?: number | null; options?: string[]; note: string; edited?: boolean; remember?: boolean };
 export type FillRecordBlock = { id: string; label: string; note: string; fieldIds: string[]; choices: { ref: string; label: string; values: Record<string, { value: string; ref: string }> }[] };
 export type FillPlan = { id: string; url: string; proposals: FillProposal[]; choices: { ref: string; label: string; value: string }[]; blocks?: FillRecordBlock[]; uploadResume: boolean; uploadAttachments?: boolean; contextKey: string; positionId?: string; resumeVersionId?: string; variantId?: string };
 export type ApplicationSnapshot = {
@@ -166,7 +170,8 @@ export type DesktopBridge = {
   switchTab(id: number): Promise<void>;
   closeTab(id: number): Promise<void>;
   getTabs(): Promise<DesktopBridgeTabsState>;
-  openBatch?(jobs: DesktopBridgeBatchJob[], options?: { autoFill?: boolean; resumeVersionId?: string; variantId?: string; modules?: DesktopBridgeAutofillModule[] }): Promise<{ opened: number; tabIds: number[] }>;
+  bindPosition?(positionId: string | null, tabId?: number): Promise<void>;
+  openBatch?(jobs: DesktopBridgeBatchJob[], options?: { autoFill?: boolean; resumeVersionId?: string; variantId?: string; modules?: DesktopBridgeAutofillModule[]; expandBlocks?: boolean; saveBlocks?: boolean }): Promise<{ opened: number; tabIds: number[] }>;
   fillAllPending?(resumeVersionId?: string, options?: DesktopBridgeAutofillOptions): Promise<{ started: number }>;
   stopBatch?(): Promise<void>;
   clearRecordedTabs?(): Promise<{ closed: number }>;

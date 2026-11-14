@@ -28,9 +28,65 @@ const SYNONYM_GROUPS: [RegExp, string[]][] = [
 const RESUME_TECH_TOKENS = [
   "java", "python", "c++", "golang", "typescript", "javascript", "react", "vue",
   "stm32", "rtos", "freertos", "linux", "fpga", "verilog", "pcb", "altium",
-  "sql", "mysql", "redis", "docker", "kubernetes", "k8s", "pytorch", "llm",
+  "sql", "mysql", "postgresql", "redis", "docker", "kubernetes", "k8s", "pytorch", "llm",
   "大模型", "嵌入式", "硬件", "前端", "后端", "算法", "产品", "数据分析", "测试",
 ];
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function hasTerm(haystack: string, rawTerm: string): boolean {
+  const term = rawTerm.trim().toLowerCase();
+  if (!term) return false;
+  if (/^[a-z0-9.+#_-]+$/i.test(term)) {
+    return new RegExp(`(?:^|[^a-z0-9])${escapeRegExp(term)}(?:$|[^a-z0-9])`, "i").test(haystack);
+  }
+  return haystack.includes(term);
+}
+
+export function resumeStructuredText(structured: unknown): string {
+  if (!structured || typeof structured !== "object") return "";
+  const doc = structured as {
+    headline?: unknown;
+    sections?: Array<{
+      heading?: unknown;
+      items?: Array<{ text?: unknown }>;
+      entries?: Array<{
+        title?: unknown;
+        subtitle?: unknown;
+        tags?: unknown;
+        lines?: Array<{ text?: unknown }>;
+        bullets?: Array<{ text?: unknown }>;
+      }>;
+    }>;
+  };
+  const chunks: string[] = [];
+  if (typeof doc.headline === "string" && doc.headline.trim()) chunks.push(doc.headline.trim());
+  if (Array.isArray(doc.sections)) {
+    for (const sec of doc.sections) {
+      if (typeof sec?.heading === "string" && sec.heading.trim()) chunks.push(sec.heading.trim());
+      if (Array.isArray(sec?.items)) {
+        for (const item of sec.items) if (typeof item?.text === "string" && item.text.trim()) chunks.push(item.text.trim());
+      }
+      if (Array.isArray(sec?.entries)) {
+        for (const entry of sec.entries) {
+          for (const v of [entry?.title, entry?.subtitle, entry?.tags]) {
+            if (typeof v === "string" && v.trim()) chunks.push(v.trim());
+            else if (Array.isArray(v)) {
+              const joined = v.filter((t): t is string => typeof t === "string" && !!t.trim()).join(" ");
+              if (joined) chunks.push(joined);
+            }
+          }
+          for (const row of [...(entry?.lines ?? []), ...(entry?.bullets ?? [])]) {
+            if (typeof row?.text === "string" && row.text.trim()) chunks.push(row.text.trim());
+          }
+        }
+      }
+    }
+  }
+  return chunks.join("\n");
+}
 
 function splitTerms(raw: string | null | undefined): string[] {
   if (!raw) return [];
@@ -49,7 +105,8 @@ export function extractProfileSignal(
     skills?: string | null;
     graduationYear?: number | null;
   } | null,
-  resumeText?: string | null
+  resumeText?: string | null,
+  resumeStructured?: unknown
 ): ProfileMatchSignal {
   const baseTracks = splitTerms(user?.targetTrack);
   const trackSet = new Set(baseTracks.map((t) => t.toLowerCase()));
@@ -62,10 +119,11 @@ export function extractProfileSignal(
 
   const cities = splitTerms(user?.preferredCities).map((c) => c.replace(/[市省区]$/, ""));
   const skillSet = new Set(splitTerms(user?.skills).map((s) => s.toLowerCase()));
-  if (resumeText) {
-    const lowerResume = resumeText.toLowerCase();
+  const effectiveText = (resumeText && resumeText.trim()) || resumeStructuredText(resumeStructured);
+  if (effectiveText) {
+    const lowerResume = effectiveText.toLowerCase();
     for (const token of RESUME_TECH_TOKENS) {
-      if (lowerResume.includes(token.toLowerCase())) skillSet.add(token.toLowerCase());
+      if (hasTerm(lowerResume, token)) skillSet.add(token.toLowerCase());
     }
   }
 
@@ -109,7 +167,7 @@ export function scorePostingMatch(
 
   if (signal.trackTerms.length > 0) {
     maxPossible += 50;
-    const hits = signal.trackTerms.filter((t) => directionText.includes(t));
+    const hits = signal.trackTerms.filter((t) => hasTerm(directionText, t));
     if (hits.length > 0) {
       const ratio = Math.min(1, hits.length / Math.min(3, signal.trackTerms.length));
       earned += Math.round(30 + ratio * 20);
@@ -131,7 +189,7 @@ export function scorePostingMatch(
 
   if (signal.skillTerms.length > 0) {
     maxPossible += 15;
-    const skillHits = signal.skillTerms.filter((t) => directionText.includes(t));
+    const skillHits = signal.skillTerms.filter((t) => hasTerm(directionText, t));
     if (skillHits.length > 0) {
       earned += Math.min(15, skillHits.length * 6);
       reasons.push(`技能:${skillHits[0]}`);

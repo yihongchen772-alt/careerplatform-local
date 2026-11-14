@@ -381,6 +381,9 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
         toast.error(res.message);
         return;
       }
+      if (res.data.downloadUrl) {
+        window.open(res.data.downloadUrl, "_blank", "noopener");
+      }
       toast.success(res.data.done);
       update((prev) => prev.map((m) => (m.id === messageId ? { ...m, applied: [...(m.applied ?? []), index] } : m)));
       addMessage("assistant", `操作已完成：${res.data.done}`);
@@ -403,7 +406,10 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
     try {
       for (const { action, index } of pending) {
         const res = await applyAssistantAction(action).catch(() => null);
-        if (res?.ok) saved.push(index);
+        if (res?.ok) {
+          saved.push(index);
+          if (res.data.downloadUrl) window.open(res.data.downloadUrl, "_blank", "noopener");
+        }
         else failed.push(`${action.label}${res && !res.ok ? `（${res.message}）` : ""}`);
       }
     } finally {

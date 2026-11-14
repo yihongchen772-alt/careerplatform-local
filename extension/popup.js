@@ -20,7 +20,7 @@ function updateScope() {
 
 function saveScope() {
   updateScope();
-  return chrome.storage.local.set({ fillModules: fillModules(), fillModulesVersion: 4 });
+  return chrome.storage.local.set({ fillModules: fillModules(), fillModulesVersion: 5 });
 }
 
 function send(type, payload = {}) {
@@ -139,13 +139,15 @@ async function load() {
   }
   setConn(`已连接 · v${statusInfo.appVersion}`, "ok");
   show("main");
-  const prefs = await chrome.storage.local.get(["resumeVersionId", "variantId", "expandBlocks", "saveBlocks", "fillModules", "fillModulesVersion", "autoRemember"]);
+  const prefs = await chrome.storage.local.get(["resumeVersionId", "variantId", "expandBlocks", "saveBlocks", "fillModules", "fillModulesVersion", "autoRemember", "autoRecord"]);
   if (Array.isArray(prefs.fillModules)) {
     if (prefs.fillModulesVersion !== 2 && ["basic", "education", "experience", "project", "questions", "other", "resume"].every((id) => prefs.fillModules.includes(id))) prefs.fillModules.push("award");
     // v3 added 校园经历: on for whoever fills 实习/工作经历 (it used to be filled as one).
     if ((prefs.fillModulesVersion ?? 0) < 3 && prefs.fillModules.includes("experience") && !prefs.fillModules.includes("campus")) prefs.fillModules.push("campus");
     // 专业技能 boxes were filled as 其他字段 before they had a module of their own.
     if ((prefs.fillModulesVersion ?? 0) < 4 && prefs.fillModules.includes("other") && !prefs.fillModules.includes("skill")) prefs.fillModules.push("skill");
+    // v5 added 个人材料（证件照/成绩单/证明）: on for whoever fills 简历附件.
+    if ((prefs.fillModulesVersion ?? 0) < 5 && prefs.fillModules.includes("resume") && !prefs.fillModules.includes("attachment")) prefs.fillModules.push("attachment");
     for (const input of document.querySelectorAll("[data-module]")) input.checked = prefs.fillModules.includes(input.dataset.module);
     await saveScope();
   }
@@ -164,6 +166,7 @@ async function load() {
   variant.value = prefs.variantId || "";
   $("expand").checked = !!prefs.expandBlocks;
   $("saveBlocks").checked = prefs.saveBlocks !== false;
+  $("auto-record").checked = !!prefs.autoRecord;
   const last = await send("lastStatus").catch(() => null);
   if (last && Date.now() - last.at < 10 * 60 * 1000) {
     renderDetails(last.details || []);
@@ -177,6 +180,8 @@ async function load() {
   await send("watchMemory", { enabled: $("auto-remember").checked }).catch((error) => { $("memory-state").textContent = `自动记忆未启动：${error.message}`; });
   const memory = await send("memoryStatus").catch(() => null); if (memory) renderMemoryStatus(memory);
   renderSite();
+  loadBatchPanel().catch(() => {});
+  if ($("agent").open) loadAgent();
 }
 
 let learnedIds = [];
@@ -229,6 +234,7 @@ $("resume").addEventListener("change", (e) => chrome.storage.local.set({ resumeV
 $("variant").addEventListener("change", (e) => chrome.storage.local.set({ variantId: e.target.value }));
 $("expand").addEventListener("change", (e) => chrome.storage.local.set({ expandBlocks: e.target.checked }));
 $("saveBlocks").addEventListener("change", (e) => chrome.storage.local.set({ saveBlocks: e.target.checked }));
+$("auto-record").addEventListener("change", (e) => chrome.storage.local.set({ autoRecord: e.target.checked }));
 for (const input of document.querySelectorAll("[data-module]")) input.addEventListener("change", saveScope);
 $("scope-all").addEventListener("click", () => {
   for (const input of document.querySelectorAll("[data-module]")) input.checked = true;
@@ -251,6 +257,33 @@ $("fill").addEventListener("click", async () => {
   message("正在读取页面…");
   try {
     await send("fill", { resumeVersionId: $("resume").value || undefined, variantId: $("variant").value || undefined, expandBlocks: $("expand").checked, saveBlocks: $("expand").checked && $("saveBlocks").checked, modules });
+  } catch (err) {
+    message(err.message, "error");
+    filling = false;
+    updateScope();
+  }
+});
+
+$("undo-fill").addEventListener("click", async () => {
+  $("undo-fill").disabled = true;
+  try {
+    await send("undoFill");
+  } catch (err) {
+    message(err.message, "error");
+  } finally {
+    $("undo-fill").disabled = false;
+  }
+});
+
+$("refill").addEventListener("click", async () => {
+  const modules = fillModules();
+  if (!modules.length) { message("请先在「填写范围」里至少勾选一个模块", "error"); return; }
+  await chrome.permissions.request({ origins: ["https://*/*", "http://*/*"] }).catch(() => false);
+  filling = true;
+  updateScope();
+  message("正在清掉上次自动填入的内容并重填…");
+  try {
+    await send("fill", { forceRefill: true, resumeVersionId: $("resume").value || undefined, variantId: $("variant").value || undefined, expandBlocks: $("expand").checked, saveBlocks: $("expand").checked && $("saveBlocks").checked, modules });
   } catch (err) {
     message(err.message, "error");
     filling = false;
@@ -290,11 +323,12 @@ $("record-toggle").addEventListener("click", () => {
   form.hidden = !form.hidden;
   if (form.hidden) return;
   const job = assistantJobs.find((p) => p.id === $("job").value);
-  const company = $("record-company"), title = $("record-title"), hint = $("record-hint");
+  const company = $("record-company"), title = $("record-title"), city = $("record-city"), hint = $("record-hint");
   recognized = null;
   company.dataset.touched = title.dataset.touched = "";
   company.value = job?.company || (siteInfo && siteInfo.match && siteInfo.match.companyName) || "";
   title.value = job?.title || "";
+  city.value = "";
   hint.hidden = !!job;
   (company.value ? title : company).focus();
   if (job) return;
@@ -318,18 +352,22 @@ for (const id of ["record-company", "record-title"]) $(id).addEventListener("inp
 
 $("record").addEventListener("submit", async (event) => {
   event.preventDefault();
-  const companyName = $("record-company").value.trim(), title = $("record-title").value.trim();
+  const companyName = $("record-company").value.trim(), title = $("record-title").value.trim(), city = $("record-city").value.trim();
   const recognizedPositionId = recognized && recognized.companyName === companyName && recognized.title === title ? recognized.positionId : undefined;
   try {
-    await send("record", { companyName, title, applyUrl: tab.url, resumeVersionId: $("resume").value || undefined, recognizedPositionId });
+    await send("record", { companyName, title, city: city || undefined, applyUrl: tab.url, resumeVersionId: $("resume").value || undefined, recognizedPositionId });
     $("record").hidden = true;
     message(`已记入投递记录：${companyName} · ${title}。之后打开这家公司的“我的投递”页，可以一键设为进度页。`);
+    renderSite();
+    loadBatchPanel().catch(() => {});
   } catch (err) {
     message(err.message, "error");
   }
 });
 
 chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type === "batch-update") { renderBatchQueue(msg.queue || []); return; }
+  if (msg.type === "agent-state" && tab && msg.tabId === tab.id) { applyAgentEvent(msg); return; }
   if (msg.type === "memory-status" && tab && msg.tabId === tab.id) { renderMemoryStatus(msg.status); return; }
   if (msg.type !== "status" || !tab || msg.tabId !== tab.id) return;
   renderDetails(msg.status.details || []);
@@ -351,17 +389,78 @@ async function loadAssistant() {
     $("job").onchange = async () => { await send("bind", { positionId: $("job").value }); renderPlan(null); hint(); }; hint();
     const profile = await send("profile", { resumeVersionId: $("resume").value, variantId: $("variant").value });
     $("profile-cards").textContent = "";
-    const labels = { name: "姓名", phone: "手机", email: "邮箱", selfIntro: "自我评价", currentCity: "现居地" };
+    const labels = {
+      name: "姓名", phone: "手机", email: "邮箱", gender: "性别", birthDate: "出生日期",
+      school: "学校", major: "专业", degree: "学历", gpa: "成绩/GPA", graduationYear: "毕业年份",
+      politics: "政治面貌", ethnicity: "民族", hometown: "籍贯", householdPlace: "户籍地",
+      currentCity: "现居城市", preferredCities: "意向城市", targetRole: "求职意向",
+      expectedSalary: "期望薪资", availableFrom: "到岗时间", english: "英语水平",
+      employmentStatus: "在职状态", workYears: "工作年限", currentSalary: "当前薪资",
+      noticePeriod: "离职/到岗周期", leaveReason: "离职原因", managementScale: "管理规模", nonCompete: "竞业协议",
+      selfIntro: "自我评价",
+    };
     for (const [key, label] of Object.entries(labels)) if (profile[key]) addCopyCard({ label, value: String(profile[key]) });
-    for (const key of ["education", "experiences", "projects"]) for (const [i, row] of (profile[key] || []).entries()) for (const [label, value] of Object.entries(row)) if (value) addCopyCard({ label: `${key} ${i + 1} · ${label}`, value });
+    const groupNames = {
+      education: "教育经历",
+      experiences: "实习/工作",
+      projects: "项目经历",
+      awards: "获奖荣誉",
+      campus: "校园经历",
+      skills: "专业技能",
+      languages: "语言能力",
+    };
+    for (const [key, groupLabel] of Object.entries(groupNames)) {
+      for (const [i, row] of (profile[key] || []).entries()) {
+        for (const [fieldKey, value] of Object.entries(row)) {
+          if (value) addCopyCard({ label: `${groupLabel} ${i + 1} · ${fieldKey}`, value: String(value) });
+        }
+      }
+    }
   } catch (err) { message(err.message, "error"); }
 }
-function addCopyCard(card) { const button = document.createElement("button"); button.textContent = `${card.label}\n${card.value}`; button.onclick = () => navigator.clipboard.writeText(card.value).then(() => message("已复制")); $("profile-cards").appendChild(button); }
+function addCopyCard(card) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = `${card.label}\n${card.value}`;
+  button.onclick = async () => {
+    const res = await send("insert", { value: card.value }).catch(() => null);
+    if (res?.ok) {
+      message(`已填入网页当前输入框${res.label ? `（${res.label}）` : ""}：${card.label}`);
+      return;
+    }
+    await navigator.clipboard.writeText(card.value).catch(() => {});
+    message(`已复制「${card.label}」${res?.reason ? `（${res.reason}）` : ""}`);
+  };
+  $("profile-cards").appendChild(button);
+}
 let previewRows = [];
 let previewPlan = null;
 let assistantJobs = [];
 let draftTimer;
-function savePreviewDraft() { clearTimeout(draftTimer); const plan = previewPlan; if (!plan) return; draftTimer = setTimeout(() => send("saveDraft", { draft: { contextKey: plan.contextKey, url: plan.url, positionId: plan.positionId, resumeVersionId: plan.resumeVersionId, variantId: plan.variantId, fields: previewRows.filter((p) => p.eligible).map(({ label, fieldKey, section, value, ref, selected, remember, edited }) => ({ label, fieldKey, section, value, ref, selected, remember, edited })) } }).catch((e) => message(`草稿保存失败：${e.message}`, "error")), 700); }
+function savePreviewDraft() {
+  clearTimeout(draftTimer);
+  const plan = previewPlan;
+  if (!plan) return;
+  draftTimer = setTimeout(() => send("saveDraft", {
+    draft: {
+      contextKey: plan.contextKey,
+      url: plan.url,
+      positionId: plan.positionId,
+      resumeVersionId: plan.resumeVersionId,
+      variantId: plan.variantId,
+      fields: previewRows.filter((p) => p.eligible).slice(0, 250).map(({ label, fieldKey, section, value, ref, selected, remember, edited }) => ({
+        label: String(label || "").slice(0, 500),
+        fieldKey: String(fieldKey || "").slice(0, 1000),
+        ...(section ? { section: String(section).slice(0, 200) } : {}),
+        value: String(value || ""),
+        ref,
+        selected,
+        remember,
+        edited,
+      })),
+    },
+  }).catch((e) => message(`草稿保存失败：${e.message}`, "error")), 700);
+}
 function renderPlan(plan) {
   if (plan && previewPlan?.id === plan.id) { const apply = $("plan").querySelector(".primary"); if (apply) apply.disabled = false; return; }
   clearTimeout(draftTimer);
@@ -386,7 +485,7 @@ function renderPlan(plan) {
       const choice = block.choices.find((entry) => entry.ref === select.value); if (!choice) return;
       for (const row of previewRows) if (block.fieldIds.includes(row.id) && row.eligible) {
         Object.assign(row, choice.values[row.id] || { value: "", ref: "" }, { selected: !!choice.values[row.id]?.value, remember: true, edited: true });
-        const ui = uiById.get(row.id); if (ui) { ui.value.value = row.value; ui.select.value = row.ref; ui.check.checked = row.selected; ui.remember.checked = true; }
+        const ui = uiById.get(row.id); if (ui) { ui.value.value = row.value; ui.select.value = row.ref; ui.check.checked = row.selected; ui.remember.checked = true; if (ui.optSelect) ui.optSelect.value = row.value; }
       }
       savePreviewDraft();
     };
@@ -402,17 +501,40 @@ function renderPlan(plan) {
     const note = document.createElement("p"); note.className = "hint"; note.textContent = p.note + (p.maxLength ? ` · 上限 ${p.maxLength} 字` : ""); box.appendChild(note);
     if (p.eligible) {
       const select = document.createElement("select"); select.appendChild(option("", "手动编辑 / 原建议")); for (const c of plan.choices) select.appendChild(option(c.ref, c.label)); select.value = p.ref || "";
+      let optSelect = null;
+      if (Array.isArray(p.options) && p.options.length) {
+        optSelect = document.createElement("select");
+        optSelect.append(option("", "从网页选项中选择…"));
+        for (const optText of p.options) optSelect.append(option(optText, optText));
+        if (p.options.includes(p.value)) optSelect.value = p.value;
+      }
       const value = document.createElement("textarea"); value.value = p.value;
-      select.onchange = () => { p.edited = true; p.ref = select.value; const c = plan.choices.find((c) => c.ref === p.ref); if (c) { p.value = c.value; value.value = c.value; check.checked = p.selected = true; } savePreviewDraft(); };
-      value.oninput = () => { p.edited = true; p.value = value.value; p.ref = ""; select.value = ""; savePreviewDraft(); };
-      const rememberLabel = document.createElement("label"); rememberLabel.className = "check"; const remember = document.createElement("input"); remember.type = "checkbox"; remember.checked = p.remember; remember.onchange = () => { p.edited = true; p.remember = remember.checked; savePreviewDraft(); }; rememberLabel.append(remember, document.createTextNode("记住对应资料（需先选择资料项）")); box.append(select, value, rememberLabel);
-      uiById.set(p.id, { value, select, check, remember });
-      if (p.source === "ai") { const rewrite = document.createElement("button"); rewrite.textContent = "只重写这道题"; rewrite.onclick = () => startPreview({ questionIds: [p.id], regenerate: true, previewEdits: previewRows }); box.appendChild(rewrite); }
+      select.onchange = () => { p.edited = true; p.ref = select.value; const c = plan.choices.find((c) => c.ref === p.ref); if (c) { p.value = c.value; value.value = c.value; check.checked = p.selected = true; if (optSelect) optSelect.value = p.options?.includes(c.value) ? c.value : ""; } savePreviewDraft(); };
+      if (optSelect) {
+        optSelect.onchange = () => {
+          if (!optSelect.value) return;
+          p.edited = true;
+          p.value = optSelect.value;
+          value.value = optSelect.value;
+          p.ref = "";
+          select.value = "";
+          check.checked = p.selected = true;
+          savePreviewDraft();
+        };
+      }
+      value.oninput = () => { p.edited = true; p.value = value.value; p.ref = ""; select.value = ""; if (optSelect) optSelect.value = ""; savePreviewDraft(); };
+      const rememberLabel = document.createElement("label"); rememberLabel.className = "check"; const remember = document.createElement("input"); remember.type = "checkbox"; remember.checked = p.remember; remember.onchange = () => { p.edited = true; p.remember = remember.checked; savePreviewDraft(); }; rememberLabel.append(remember, document.createTextNode("记住对应资料（需先选择资料项）"));
+      box.append(select);
+      if (optSelect) box.append(optSelect);
+      box.append(value, rememberLabel);
+      uiById.set(p.id, { value, select, check, remember, optSelect });
+      if (p.source === "ai") { const rewrite = document.createElement("button"); rewrite.type = "button"; rewrite.textContent = "只重写这道题"; rewrite.onclick = () => startPreview({ questionIds: [p.id], regenerate: true, previewEdits: previewRows }); box.appendChild(rewrite); }
     }
     $("plan").appendChild(box);
   }
   const upload = document.createElement("input"); upload.type = "checkbox"; upload.checked = plan.uploadResume; const uploadLabel = document.createElement("label"); uploadLabel.className = "check"; uploadLabel.append(upload, document.createTextNode("上传所选简历")); uploadLabel.hidden = !plan.uploadResume; $("plan").appendChild(uploadLabel);
-  const apply = document.createElement("button"); apply.className = "primary"; apply.textContent = "确认填写所选字段"; apply.onclick = async () => { const oversize = previewRows.find((p) => p.selected && p.maxLength && p.value.length > p.maxLength); if (oversize) return message(`「${oversize.label}」超过 ${oversize.maxLength} 字，请缩短后再填`, "error"); filling = true; updateScope(); apply.disabled = true; await send("fill", { mode: "apply", planId: plan.id, approved: previewRows.filter((p) => p.selected && p.eligible).map(({ id, value, ref, remember }) => ({ id, value, ref, remember })), uploadResume: upload.checked }).catch((e) => { filling = false; updateScope(); message(e.message, "error"); }); }; $("plan").appendChild(apply); savePreviewDraft();
+  const uploadAtt = document.createElement("input"); uploadAtt.type = "checkbox"; uploadAtt.checked = plan.uploadAttachments !== false; const uploadAttLabel = document.createElement("label"); uploadAttLabel.className = "check"; uploadAttLabel.append(uploadAtt, document.createTextNode("自动附带证件照 / 成绩单 / 证明材料")); uploadAttLabel.hidden = plan.uploadAttachments === undefined; $("plan").appendChild(uploadAttLabel);
+  const apply = document.createElement("button"); apply.className = "primary"; apply.textContent = "确认填写所选字段"; apply.onclick = async () => { const oversize = previewRows.find((p) => p.selected && p.maxLength && p.value.length > p.maxLength); if (oversize) return message(`「${oversize.label}」超过 ${oversize.maxLength} 字，请缩短后再填`, "error"); filling = true; updateScope(); apply.disabled = true; await send("fill", { mode: "apply", planId: plan.id, approved: previewRows.filter((p) => p.selected && p.eligible).map(({ id, value, ref, remember }) => ({ id, value, ref, remember })), uploadResume: upload.checked, uploadAttachments: plan.uploadAttachments !== undefined ? uploadAtt.checked : undefined }).catch((e) => { filling = false; updateScope(); message(e.message, "error"); }); }; $("plan").appendChild(apply); savePreviewDraft();
 }
 async function startPreview(extra = {}) { extra = { previewEdits: previewRows, ...extra }; await chrome.permissions.request({ origins: ["https://*/*", "http://*/*"] }).catch(() => false); filling = true; updateScope(); await send("fill", { mode: "preview", resumeVersionId: $("resume").value || undefined, variantId: $("variant").value || undefined, modules: fillModules(), positionId: $("job").value || undefined, answerLength: Number($("answer-length").value), ...extra }).catch((e) => { filling = false; updateScope(); message(e.message, "error"); }); }
 $("preview").onclick = () => startPreview();
@@ -464,16 +586,49 @@ function agentDraft(draft) {
   $("agent-log").appendChild(box);
 }
 
+let agentWorkingText = "";
+let agentWorkingEl = null;
+
 function renderAgent() {
   $("agent-log").textContent = "";
+  agentWorkingEl = null;
   for (const item of agentHistory) {
     agentBubble(item.role === "user" ? "user" : "ai", item.content);
     for (const draft of item.drafts || []) agentDraft(draft);
+    if (item.actionsNote) agentBubble("working", item.actionsNote);
   }
+  if (agentBusy) agentWorkingEl = agentBubble("working", agentWorkingText || "小欧在想该怎么做…");
+}
+
+function applyAgentEvent(event) {
+  agentBusy = !!event.busy;
+  agentWorkingText = event.working || "";
+  $("agent-send").disabled = agentBusy;
+  if (Array.isArray(event.history)) {
+    agentHistory = event.history;
+    renderAgent();
+  } else if (agentBusy) {
+    if (!agentWorkingEl) agentWorkingEl = agentBubble("working", agentWorkingText);
+    else agentWorkingEl.textContent = agentWorkingText;
+  } else if (agentWorkingEl) {
+    agentWorkingEl.remove();
+    agentWorkingEl = null;
+  }
+  if (event.error) agentBubble("error", event.error);
 }
 
 async function loadAgent() {
   if (!tab) return;
+  const data = await send("agentState").catch(() => null);
+  if (data) {
+    agentHistory = data.history || [];
+    agentBusy = !!data.state?.busy;
+    agentWorkingText = data.state?.working || "";
+    $("agent-send").disabled = agentBusy;
+    renderAgent();
+    if (data.state?.error) agentBubble("error", data.state.error);
+    return;
+  }
   agentHistory = (await chrome.storage.session.get(agentKey()))[agentKey()] || [];
   renderAgent();
 }
@@ -482,53 +637,223 @@ async function askAgent(text) {
   const content = String(text || "").trim();
   if (!content || agentBusy) return;
   agentBusy = true;
+  agentWorkingText = "小欧在想该怎么做…";
   $("agent-send").disabled = true;
-  const history = agentHistory.map(({ role, content }) => ({ role, content })).slice(-20);
   agentHistory.push({ role: "user", content });
-  agentBubble("user", content);
-  const working = agentBubble("working", "小欧在想该怎么做…");
+  renderAgent();
   try {
-    const page = await send("pageContext").catch(() => null);
-    const { appBase, token } = await chrome.storage.local.get(["appBase", "token"]);
-    const res = await fetch(`${appBase || "http://localhost:3210"}/api/extension/agent`, { method: "POST", headers: { "Content-Type": "application/json", "x-jobcompass-token": token || "" }, body: JSON.stringify({ message: content, history, ...(page ? { page } : {}) }) });
-    if (!res.ok || !res.body) throw new Error((await res.json().catch(() => ({}))).error || "小欧暂时连不上，请确认求职罗盘 App 开着");
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "", done = null;
-    while (!done) {
-      const chunk = await reader.read();
-      buffer += decoder.decode(chunk.value, { stream: !chunk.done });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        const event = JSON.parse(line);
-        if (event.type === "step" && event.step) working.textContent = `小欧正在做：${event.step.label}`;
-        else if (event.type === "note" && event.text) working.textContent = event.text;
-        else if (event.type === "done" || event.type === "error") done = event;
-      }
-      if (chunk.done && !done) throw new Error("连接中断，本次请求未完成");
-    }
-    working.remove();
-    if (done.type === "error") throw new Error(done.message);
-    const reply = { role: "assistant", content: done.reply, drafts: done.drafts || [] };
-    agentHistory.push(reply);
-    agentBubble("ai", reply.content);
-    for (const draft of reply.drafts) agentDraft(draft);
-    if (done.actions && done.actions.length) agentBubble("working", "小欧建议改的记录（记投递、改进度等）请在求职罗盘 App 里的小欧点按钮确认。");
+    await send("askAgent", { text: content });
   } catch (error) {
-    working.remove();
-    agentBubble("error", error.message || "小欧这次没跑完");
-    agentHistory.pop();
-  } finally {
     agentBusy = false;
     $("agent-send").disabled = false;
-    chrome.storage.session.set({ [agentKey()]: agentHistory.slice(-40) }).catch(() => {});
+    agentHistory.pop();
+    renderAgent();
+    agentBubble("error", error.message || "小欧这次没跑完");
   }
 }
 
 $("agent-send").addEventListener("click", () => { const text = $("agent-input").value; $("agent-input").value = ""; askAgent(text); });
 $("agent-input").addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); $("agent-send").click(); } });
-$("agent-clear").addEventListener("click", () => { agentHistory = []; renderAgent(); chrome.storage.session.remove(agentKey()).catch(() => {}); });
+$("agent-clear").addEventListener("click", () => { agentHistory = []; agentBusy = false; agentWorkingText = ""; $("agent-send").disabled = false; renderAgent(); send("clearAgent").catch(() => {}); });
 for (const chip of document.querySelectorAll("[data-ask]")) chip.addEventListener("click", () => askAgent(chip.dataset.ask));
 $("agent").addEventListener("toggle", () => { if ($("agent").open) loadAgent(); });
+
+// 批量多页投递 + 待确认清单 + 快捷导出
+const BATCH_STAGE_LABEL = {
+  queued: ["排队中", ""],
+  filling: ["填写中", "warn"],
+  ready: ["待确认", "ok"],
+  needs_login: ["需登录", "warn"],
+  error: ["失败", "bad"],
+  confirmed: ["已记投递", "ok"],
+};
+const selectedBatchTabIds = new Set();
+
+function renderBatchQueue(queue = []) {
+  const pending = queue.filter((item) => item.status !== "confirmed").length;
+  $("batch-badge").hidden = queue.length === 0;
+  $("batch-badge").textContent = pending ? `${pending} 待处理` : `${queue.length}`;
+  $("batch-queue-wrap").hidden = queue.length === 0;
+  const list = $("batch-queue");
+  list.textContent = "";
+  for (const item of queue) {
+    const card = document.createElement("div");
+    card.className = "batch-queue-item";
+    const meta = document.createElement("div");
+    meta.className = "batch-meta";
+    const title = document.createElement("span");
+    title.className = "batch-title";
+    title.textContent = item.companyName && item.jobTitle ? `${item.companyName} · ${item.jobTitle}` : (item.title || item.url);
+    title.title = item.url;
+    const [badgeText, badgeKind] = BATCH_STAGE_LABEL[item.status] || ["未知", ""];
+    const pill = document.createElement("span");
+    pill.className = `pill ${badgeKind}`;
+    pill.textContent = badgeText;
+    meta.append(title, pill);
+    const msg = document.createElement("div");
+    msg.className = "hint";
+    msg.textContent = item.message || `已填 ${item.filled || 0} 项 / 需手填 ${item.manual || 0} 项`;
+    const actions = document.createElement("div");
+    actions.className = "batch-actions";
+    const openBtn = document.createElement("button");
+    openBtn.type = "button";
+    openBtn.textContent = "切到该页";
+    openBtn.onclick = () => send("focusTab", { tabId: item.tabId }).catch((e) => message(e.message, "error"));
+    const refillBtn = document.createElement("button");
+    refillBtn.type = "button";
+    refillBtn.textContent = "重填";
+    refillBtn.disabled = item.status === "filling";
+    refillBtn.onclick = () => {
+      const modules = fillModules();
+      if (!modules.length) return message("请先选择填写范围模块", "error");
+      send("batchRefill", {
+        tabId: item.tabId,
+        resumeVersionId: $("resume").value || undefined,
+        variantId: $("variant").value || undefined,
+        expandBlocks: $("expand").checked,
+        saveBlocks: $("expand").checked && $("saveBlocks").checked,
+        modules,
+      }).catch((e) => message(e.message, "error"));
+    };
+    const recordBtn = document.createElement("button");
+    recordBtn.type = "button";
+    recordBtn.className = item.status === "ready" ? "primary" : "";
+    recordBtn.textContent = item.status === "confirmed" ? "已记投递" : "一键记投递";
+    recordBtn.disabled = item.status === "confirmed";
+    recordBtn.onclick = async () => {
+      recordBtn.disabled = true;
+      try {
+        await send("focusTab", { tabId: item.tabId });
+        const found = await send("identify", { tabId: item.tabId }).catch(() => ({}));
+        if (found.companyName && found.title) {
+          await send("record", {
+            tabId: item.tabId,
+            companyName: found.companyName,
+            title: found.title,
+            applyUrl: item.url,
+            resumeVersionId: $("resume").value || undefined,
+            recognizedPositionId: found.positionId,
+          });
+          message(`已记入投递记录：${found.companyName} · ${found.title}`);
+        } else {
+          $("record").hidden = false;
+          if (found.companyName) $("record-company").value = found.companyName;
+          if (found.title) $("record-title").value = found.title;
+          $("record-hint").hidden = false;
+          $("record-hint").textContent = "已切到该标签页，请补充公司或岗位名后保存。";
+        }
+      } catch (e) {
+        recordBtn.disabled = false;
+        message(e.message, "error");
+      }
+    };
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.textContent = "移除";
+    removeBtn.onclick = () => send("batchRemove", { tabId: item.tabId }).then((res) => renderBatchQueue(res.queue || [])).catch(() => {});
+    actions.append(openBtn, refillBtn, recordBtn, removeBtn);
+    card.append(meta, msg, actions);
+    list.appendChild(card);
+  }
+}
+
+async function loadBatchPanel() {
+  const { tabs = [], queue = [] } = await send("listTabs");
+  const container = $("batch-tabs");
+  container.textContent = "";
+  if (!tabs.length) {
+    const empty = document.createElement("p");
+    empty.className = "hint";
+    empty.textContent = "当前窗口没有打开可填写的招聘网页标签页。";
+    container.appendChild(empty);
+  } else {
+    for (const t of tabs) {
+      if (t.active && selectedBatchTabIds.size === 0) selectedBatchTabIds.add(t.id);
+      const wrap = document.createElement("div");
+      wrap.className = "batch-item";
+      const label = document.createElement("label");
+      label.className = "check";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.value = String(t.id);
+      cb.checked = selectedBatchTabIds.has(t.id);
+      cb.onchange = () => {
+        if (cb.checked) selectedBatchTabIds.add(t.id);
+        else selectedBatchTabIds.delete(t.id);
+      };
+      const text = document.createElement("span");
+      text.className = "batch-title";
+      text.textContent = t.title || t.url;
+      text.title = t.url;
+      label.append(cb, text);
+      wrap.appendChild(label);
+      container.appendChild(wrap);
+    }
+  }
+  renderBatchQueue(queue);
+}
+
+$("batch").addEventListener("toggle", () => { if ($("batch").open) loadBatchPanel().catch(() => {}); });
+$("batch-refresh").addEventListener("click", () => loadBatchPanel().catch((e) => message(e.message, "error")));
+$("batch-all").addEventListener("click", () => {
+  const inputs = $("batch-tabs").querySelectorAll("input[type='checkbox']");
+  const allChecked = inputs.length > 0 && Array.from(inputs).every((cb) => cb.checked);
+  for (const cb of inputs) {
+    cb.checked = !allChecked;
+    const id = Number(cb.value);
+    if (cb.checked) selectedBatchTabIds.add(id);
+    else selectedBatchTabIds.delete(id);
+  }
+});
+$("batch-run").addEventListener("click", async () => {
+  const ids = Array.from($("batch-tabs").querySelectorAll("input[type='checkbox']:checked"), (cb) => Number(cb.value));
+  if (!ids.length) return message("请先勾选要批量填写的网申标签页", "error");
+  const modules = fillModules();
+  if (!modules.length) return message("请先在「填写范围」里至少勾选一个模块", "error");
+  await chrome.permissions.request({ origins: ["https://*/*", "http://*/*"] }).catch(() => false);
+  const res = await send("batchFill", {
+    tabIds: ids,
+    resumeVersionId: $("resume").value || undefined,
+    variantId: $("variant").value || undefined,
+    expandBlocks: $("expand").checked,
+    saveBlocks: $("expand").checked && $("saveBlocks").checked,
+    modules,
+  });
+  renderBatchQueue(res.queue || []);
+  message(`已将 ${ids.length} 个标签页加入批量填写队列`);
+});
+$("batch-clear-done").addEventListener("click", () => send("batchClearDone").then((res) => renderBatchQueue(res.queue || [])).catch(() => {}));
+
+async function exportRecords(format, button) {
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = "正在导出…";
+  try {
+    const { appBase, token } = await chrome.storage.local.get(["appBase", "token"]);
+    if (!token) throw new Error("请先连接求职罗盘 App");
+    const res = await fetch(`${appBase || "http://localhost:3210"}/api/extension/export?format=${encodeURIComponent(format)}`, {
+      headers: { "x-jobcompass-token": token },
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "导出失败");
+    const blob = await res.blob();
+    const header = res.headers.get("content-disposition") || "";
+    const utfMatch = /filename\*=UTF-8''([^;]+)/i.exec(header);
+    const filename = utfMatch ? decodeURIComponent(utfMatch[1]) : `已投递企业与岗位.${format}`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    message(`已导出：${filename}`);
+  } catch (err) {
+    message(err.message || "导出失败", "error");
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+$("export-xlsx").addEventListener("click", () => exportRecords("xlsx", $("export-xlsx")));
+$("export-csv").addEventListener("click", () => exportRecords("csv", $("export-csv")));

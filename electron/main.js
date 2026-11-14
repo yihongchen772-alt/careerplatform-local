@@ -759,11 +759,17 @@ async function maybeSyncApplications(force = false) {
     const expired = failures.filter((e) => /登录已过期/.test(e.message || ""));
     const failureKey = failures.map((e) => `${e.companyName}:${/登录已过期/.test(e.message || "") ? "login" : "other"}`).sort().join("|");
     if (expired.length > 0 && failureKey !== lastNotifiedApplicationSyncError) {
+      const targetUrl = expired[0]?.portalUrl
+        ? `http://localhost:${PORT}/browser?url=${encodeURIComponent(expired[0].portalUrl)}`
+        : `http://localhost:${PORT}/browser`;
       new Notification({
         title: "网申进度同步：需要重新登录",
-        body: `${expired.map((e) => e.companyName).join("、")} 的招聘系统登录已过期，去网申浏览器重新登录`,
+        body: `${expired.map((e) => e.companyName).join("、")} 的招聘系统登录已过期，点此打开网申浏览器重新登录`,
       })
-        .on("click", showWindow)
+        .on("click", () => {
+          showWindow();
+          mainWindow?.loadURL(targetUrl).catch(() => {});
+        })
         .show();
     }
     const otherFailures = failures.filter((e) => !/登录已过期/.test(e.message || ""));
@@ -970,7 +976,7 @@ app.whenReady().then(async () => {
     productivity = require("./productivity").setupProductivity({ port: PORT, token: eventReminderToken, getMainWindow: () => mainWindow, showMainWindow: showWindow, getNotesAtLogin: () => readAppSettings().notesAtLogin, setNotesAtLogin, openNotesAtLogin: openedAtLogin && settings.notesAtLogin });
     buildApplicationMenu();
     if (process.env.CAREERPLATFORM_TEST_MODE !== "1") buildTray();
-    setupUpdater({
+    const updaterController = setupUpdater({
       app,
       ipcMain: require("electron").ipcMain,
       getMainWindow: () => mainWindow,
@@ -982,6 +988,10 @@ app.whenReady().then(async () => {
         shutdown();
       },
     });
+    if (app.isPackaged && process.env.CAREERPLATFORM_TEST_MODE !== "1") {
+      // Idle check-only ping shortly after startup; never auto-downloads or installs.
+      setTimeout(() => { updaterController.check().catch(() => {}); }, 15000).unref();
+    }
 
     // Never in test mode: an isolated copy of real data still carries the
     // user's real backup folder and WebDAV settings.

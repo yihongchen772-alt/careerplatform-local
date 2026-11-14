@@ -11,6 +11,8 @@ export async function POST(request: Request) {
     includeBoards?: unknown;
     includeSheets?: unknown;
     includeWeb?: unknown;
+    resumeVersionId?: unknown;
+    jobKind?: unknown;
   };
   const query = typeof body.query === "string" ? body.query.trim().slice(0, 120) : "";
   if (!query) {
@@ -29,10 +31,21 @@ export async function POST(request: Request) {
     ? body.cities.split(/[\s,，、/]+/).filter(Boolean).slice(0, 10)
     : defaultCities;
 
+  const resumeVersionId =
+    typeof body.resumeVersionId === "string" && body.resumeVersionId.trim()
+      ? body.resumeVersionId.trim()
+      : null;
+  const jobKind =
+    body.jobKind === "campus" || body.jobKind === "intern" || body.jobKind === "social"
+      ? body.jobKind
+      : "all";
+
   const result = await findJobs(user.id, query, cities, {
     includeBoards: body.includeBoards !== false,
     includeSheets: body.includeSheets !== false,
     includeWeb: body.includeWeb !== false,
+    resumeVersionId,
+    jobKind,
   });
   return NextResponse.json(result);
 }

@@ -34,14 +34,18 @@ export const AGENT_TOOLS: ToolSpec[] = [
     industry: str("可选：行业关键词（如 机器人、半导体、汽车）"),
     company: str("可选：公司名或简称"),
   } } },
-  { name: "get_workspace_overview", description: "读取全软件指定模块的完整数据：offers（所有Offer与薪资/年包/通勤/加班对比）、interviews（各轮面试统计与最近面经复盘）、calendar（独立日历事项与邮件识别待确认的安排）、profile（求职偏好与网申资料经历）、contacts（HR/内推人/面试官名录）、journey（心路历程）、all（全部概览）。", parameters: { type: "object", properties: {
-    section: { type: "string", enum: ["offers", "interviews", "calendar", "profile", "contacts", "journey", "all"], description: "要查看的模块" },
+  { name: "get_workspace_overview", description: "读取全软件指定模块的完整数据：offers（所有Offer与薪资/年包/通勤/加班对比）、interviews（各轮面试统计与最近面经复盘/AI复盘）、calendar（独立日历事项、自建待办、已排期笔面试与邮件待确认安排）、profile（求职偏好与网申资料经历）、contacts（HR/内推人/面试官名录）、journey（心路历程）、pool（完整候选岗位池）、materials（简历版本与资料库网申自动附带附件）、postings（已订阅校招信息表概览）、all（全部概览）。", parameters: { type: "object", properties: {
+    section: { type: "string", enum: ["offers", "interviews", "calendar", "profile", "contacts", "journey", "pool", "materials", "postings", "all"], description: "要查看的模块" },
   }, required: ["section"] } },
-  { name: "get_application", description: "读一条投递的完整详情：每一轮的时间、会议/测评链接、面经复盘、结果、渠道、薪资备注，以及对应岗位的 JD。分析某家进展、准备面试前用。", parameters: { type: "object", properties: { applicationId: str("[投递ID]") }, required: ["applicationId"] } },
+  { name: "get_application", description: "读一条投递的完整详情：每一轮的时间、会议/测评链接、面经复盘、AI复盘分析、结果、渠道、薪资备注，以及对应岗位的 JD。分析某家进展、准备面试前用。", parameters: { type: "object", properties: { applicationId: str("[投递ID]") }, required: ["applicationId"] } },
   { name: "get_position", description: "读候选池里一个岗位的完整 JD、地点、截止、薪资和 AI 匹配分析。比较岗位、判断值不值得投前用。", parameters: { type: "object", properties: { positionId: str("[岗位ID]") }, required: ["positionId"] } },
   { name: "resume_context", description: "读简历内容摘要（不填 resumeId 读默认简历）。做匹配分析、写材料前用。", parameters: { type: "object", properties: { resumeId: str("[简历ID]，可留空") } } },
   { name: "research_web", description: "联网查公开信息（公司近况、岗位要求、面经、薪资口碑），返回带来源链接的结论。不要在问题里写用户的姓名、电话、简历内容。", parameters: { type: "object", properties: { question: str("要查证的具体问题") }, required: ["question"] } },
-  { name: "find_jobs", description: "到公司招聘官网找实时在招的岗位（字节/腾讯/阿里/美团等），自动去掉用户已记过的，意向城市优先。", parameters: { type: "object", properties: { keywords: str("1-3 个关键词，可带公司名，如「产品经理」「字节 数据分析」") }, required: ["keywords"] } },
+  { name: "find_jobs", description: "到公司招聘官网、已订阅校招信息表和全网公告实时找在招岗位，自动去掉用户已记过的，可按城市和校招/实习/社招过滤。", parameters: { type: "object", properties: {
+    keywords: str("1-3 个关键词，可带公司名，如「产品经理」「字节 数据分析」"),
+    cities: str("可选：指定筛选城市，多个用空格或顿号隔开（不填则优先用户意向城市）"),
+    jobKind: { type: "string", enum: ["all", "campus", "intern", "social"], description: "可选：all(全部) / campus(校招) / intern(实习) / social(社招)" },
+  }, required: ["keywords"] } },
   { name: "read_webpage", description: "读一个公开网页的正文（岗位详情页、招聘公告）。很多招聘站是动态加载的，读不到正文时改用 research_web。", parameters: { type: "object", properties: { url: str("http(s) 链接") }, required: ["url"] } },
   { name: "prepare_application", description: "为候选池里的一个岗位准备投递：缺项清单、可用简历、网申入口。", parameters: { type: "object", properties: { positionId: str("[岗位ID]") }, required: ["positionId"] } },
   { name: "list_missing_cities", description: "列出没写工作城市的投递，和城市只是按公司推测的投递（带投递ID）。他要你补城市、查工作地点时先用这个。", parameters: { type: "object", properties: {} } },
@@ -123,7 +127,11 @@ export async function executeTool(userId: string, call: ToolCall, proposed: Assi
       return { content: result.data, label, summary: result.summary };
     }
     case "find_jobs": {
-      const result = await executeAgentTool(userId, { tool: "find_jobs", query: text(call.args.keywords, 100), targetId: "" });
+      const citiesRaw = text(call.args.cities, 80);
+      const cities = citiesRaw ? citiesRaw.split(/[\s,，、/]+/).filter(Boolean).slice(0, 8) : undefined;
+      const rawKind = text(call.args.jobKind, 20);
+      const jobKind = rawKind === "campus" || rawKind === "intern" || rawKind === "social" ? rawKind : "all";
+      const result = await executeAgentTool(userId, { tool: "find_jobs", query: text(call.args.keywords, 100), targetId: "", cities, jobKind });
       return { content: result.data, label, summary: result.summary };
     }
     case "prepare_application": {
@@ -136,14 +144,30 @@ export async function executeTool(userId: string, call: ToolCall, proposed: Assi
         include: {
           company: { select: { name: true } },
           position: { select: { id: true, jdText: true, jdUrl: true, location: true, deadline: true } },
-          stageHistory: { orderBy: { enteredAt: "asc" }, select: { id: true, stage: true, stageLabel: true, enteredAt: true, note: true, nextDeadline: true, nextDeadlineEnd: true, nextHasTime: true, meetingInfo: true, interviewFormat: true, interviewer: true, completedAt: true, followedUpAt: true, terminatedAtStageLabel: true } },
+          stageHistory: { orderBy: { enteredAt: "asc" }, select: { id: true, stage: true, stageLabel: true, enteredAt: true, note: true, nextDeadline: true, nextDeadlineEnd: true, nextHasTime: true, meetingInfo: true, interviewFormat: true, interviewer: true, completedAt: true, followedUpAt: true, terminatedAtStageLabel: true, postmortem: { select: { content: true } } } },
         },
       });
       if (!app) throw new UserFacingError("没找到这条投递（ID 要用快照或 search_records 里的）");
       const data = {
         company: app.company.name, title: app.title, stage: STAGE_LABELS[app.currentStage], appliedDate: ymd(app.appliedDate), source: app.source, referrer: app.referrer,
         salary: app.salaryMin || app.salaryMax ? `${app.salaryMin ?? "?"}-${app.salaryMax ?? "?"}K` : null, offerNote: app.offerNote, growthNote: app.growthNote, overtimeNote: app.overtimeNote, commuteMinutes: app.commuteMinutes,
-        rounds: orderStageHistory(app.stageHistory, app.appliedDate).map((row) => ({ 进度ID: row.id, stage: row.stageLabel || STAGE_LABELS[row.stage], enteredAt: ymd(row.enteredAt), time: row.nextDeadline ? (row.nextHasTime ? row.nextDeadline.toLocaleString("zh-CN") : ymd(row.nextDeadline)) : null, until: row.nextDeadlineEnd?.toLocaleString("zh-CN") ?? null, meeting: row.meetingInfo, format: row.interviewFormat, interviewer: row.interviewer, done: !!row.completedAt, followedUp: ymd(row.followedUpAt), notes: row.note?.slice(0, 3000) ?? null, endedAt: row.terminatedAtStageLabel })),
+        rounds: orderStageHistory(app.stageHistory, app.appliedDate).map((row) => ({
+          进度ID: row.id,
+          stage: row.stageLabel || STAGE_LABELS[row.stage],
+          enteredAt: ymd(row.enteredAt),
+          time: row.nextDeadline ? (row.nextHasTime ? row.nextDeadline.toLocaleString("zh-CN") : ymd(row.nextDeadline)) : null,
+          until: row.nextDeadlineEnd?.toLocaleString("zh-CN") ?? null,
+          meeting: row.meetingInfo,
+          format: row.interviewFormat,
+          interviewer: row.interviewer,
+          done: !!row.completedAt,
+          followedUp: ymd(row.followedUpAt),
+          notes: row.note?.slice(0, 3000) ?? null,
+          postmortem: row.postmortem?.content
+            ? (typeof row.postmortem.content === "string" ? row.postmortem.content : JSON.stringify(row.postmortem.content)).slice(0, 1500)
+            : null,
+          endedAt: row.terminatedAtStageLabel,
+        })),
         position: app.position ? { 岗位ID: app.position.id, location: app.position.location, deadline: ymd(app.position.deadline), jdUrl: app.position.jdUrl, jd: app.position.jdText?.slice(0, 5000) ?? null } : null,
       };
       return { content: JSON.stringify(data), label: `看投递详情：${app.company.name} · ${app.title}`, summary: `${STAGE_LABELS[app.currentStage]}，共 ${app.stageHistory.length} 轮记录${app.position?.jdText ? "，含 JD" : ""}`, href: `/applications/${app.id}` };

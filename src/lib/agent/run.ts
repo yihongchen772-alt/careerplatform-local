@@ -18,8 +18,8 @@ export type AgentEvent = { type: "step"; step: AgentStep } | { type: "note"; tex
 /** Enough for "plan my week" (records, a few JDs, the resume, a search) without running away with the Key. */
 export const MAX_TOOL_ROUNDS = 12;
 const MAX_RESULT_CHARS = 12000;
-/** Tools that only read: safe to run at the same time. */
-const READ_ONLY_TOOLS = new Set(["search_records", "filter_applications", "get_workspace_overview", "get_application", "get_position", "resume_context", "research_web", "read_webpage", "list_missing_cities", "recall_conversations"]);
+/** Tools that only read: safe to run at the same time and deduplicate within one turn. */
+const READ_ONLY_TOOLS = new Set(["search_records", "filter_applications", "get_workspace_overview", "get_application", "get_position", "resume_context", "research_web", "find_jobs", "prepare_application", "read_webpage", "list_missing_cities", "recall_conversations"]);
 
 /**
  * The agent loop: the model sees the conversation and the tools, and either
@@ -70,9 +70,10 @@ export async function runAgent({ chat, request, execute, describe, emit, review,
     // records at once); anything that writes or remembers runs alone, in order.
     const outcomes: ({ call: ToolCall; content: string; step: AgentStep | null } | undefined)[] = new Array(turn.calls.length);
     const runOne = async (call: ToolCall, index: number) => {
-      const key = JSON.stringify([call.name, call.args]);
+      const readOnly = READ_ONLY_TOOLS.has(call.name);
+      const key = readOnly ? JSON.stringify([call.name, call.args]) : "";
       const step: AgentStep = { id: `${round}-${index}`, tool: call.name, label: describe(call), status: "running", summary: "" };
-      const earlier = seen.get(key);
+      const earlier = readOnly ? seen.get(key) : undefined;
       if (earlier) {
         // The same lookup again returns what it returned before, without running it twice.
         const repeated = await earlier.catch(() => null);
@@ -85,12 +86,12 @@ export async function runAgent({ chat, request, execute, describe, emit, review,
         Object.assign(step, { label: outcome.label, status: "success", summary: outcome.summary, href: outcome.href });
         return content;
       })();
-      seen.set(key, work);
+      if (readOnly) seen.set(key, work);
       emit({ type: "step", step: { ...step } });
       try {
         return { call, content: await work, step };
       } catch (error) {
-        seen.delete(key);
+        if (readOnly) seen.delete(key);
         if (!(error instanceof UserFacingError)) console.error(`[agent:${call.name}]`, error);
         const message = error instanceof UserFacingError ? error.message : "工具执行出错";
         Object.assign(step, { status: "error", summary: message.slice(0, 300) });

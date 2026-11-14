@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
-const schema = z.object({ contextKey: z.string().min(1).max(16384), mappings: z.array(z.object({ fieldKey: z.string().min(1).max(2000), ref: z.string().max(3000).regex(/^(?:name|phone|email|gender|birthDate|currentCity|targetRole|selfIntro|politics|hometown|ethnicity|english|summary:(?:education|experience|project|award)|row:(?:education|experience|project|award):[^:]+:(?:school|major|degree|gpa|start|end|company|role|name|description|responsibilities|issuer|level|date|range|summary))$/) })).max(500) });
+const PROFILE_REF_REGEX =
+  /^(?:name|phone|email|gender|birthDate|currentCity|country|englishName|exchange|targetRole|selfIntro|politics|hometown|ethnicity|english|wechat|qq|expectedSalary|availableFrom|internshipDuration|address|researchDirection|researchTopic|rank|acceptAdjust|jobSource|courses|homepage|lab|hobbies|thesis|partyDate|birthplace|householdPlace|householdType|sourcePlace|archivePlace|marital|health|height|weight|colorVision|onlyChild|religion|relativeInCompany|firstWorkDate|computerLevel|certificates|campusZone|failedCourses|advisor|emergencyName|emergencyRelation|emergencyPhone|employmentStatus|workYears|currentSalary|noticePeriod|leaveReason|managementScale|nonCompete|summary:(?:education|experience|project|award|campus|skill|language)(?::memory:[^:]+:[^:]+)?|row:(?:education|experience|project|award|campus|skill|language):(?:memory:[^:]+:[^:]+|[^:]+):(?:school|major|department|degree|gpa|start|end|company|role|name|description|responsibilities|link|teamSize|issuer|level|category|date|language|score|range|summary))$/;
+
+const schema = z.object({ contextKey: z.string().min(1).max(16384), mappings: z.array(z.object({ fieldKey: z.string().min(1).max(2000), ref: z.string().max(3000).regex(PROFILE_REF_REGEX) })).max(500) });
 export async function POST(request: Request) {
   const user = await requireUser();
   const input = schema.safeParse(await request.json().catch(() => null));

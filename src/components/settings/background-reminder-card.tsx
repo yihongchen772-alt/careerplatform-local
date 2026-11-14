@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -11,7 +13,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { getAppSettings, updateAppSettings } from "@/lib/actions/app-settings";
+import {
+  getAppSettings,
+  testWebhookNotification,
+  updateAppSettings,
+} from "@/lib/actions/app-settings";
 import { setAutoApplyProgress } from "@/lib/actions/auto-progress";
 import {
   SCAN_INTERVAL_OPTIONS,
@@ -25,6 +31,29 @@ export function BackgroundReminderCard({ initial, autoApplyProgress }: { initial
   const [saving, setSaving] = useState(false);
   const [autoApply, setAutoApply] = useState(autoApplyProgress);
   const [savingAutoApply, setSavingAutoApply] = useState(false);
+  const [webhookDraft, setWebhookDraft] = useState(initial.webhookUrl ?? "");
+  const [testingWebhook, setTestingWebhook] = useState(false);
+
+  async function saveWebhook() {
+    const trimmed = webhookDraft.trim();
+    const ok = await set({ webhookUrl: trimmed });
+    if (ok) setWebhookDraft(trimmed);
+  }
+
+  async function testWebhook() {
+    if (testingWebhook) return;
+    setTestingWebhook(true);
+    try {
+      const res = await testWebhookNotification(webhookDraft.trim());
+      if (!res.ok) {
+        toast.error(res.message);
+        return;
+      }
+      toast.success(`已向「${res.data.providerLabel}」发送测试通知`);
+    } finally {
+      setTestingWebhook(false);
+    }
+  }
 
   async function toggleAutoApply(enabled: boolean) {
     if (savingAutoApply) return;
@@ -43,7 +72,7 @@ export function BackgroundReminderCard({ initial, autoApplyProgress }: { initial
     }
   }
 
-  async function set(next: Partial<AppSettings>) {
+  async function set(next: Partial<AppSettings>): Promise<boolean> {
     const optimistic = { ...settings, ...next };
     setSettings(optimistic);
     setSaving(true);
@@ -52,7 +81,7 @@ export function BackgroundReminderCard({ initial, autoApplyProgress }: { initial
       if (!res.ok) {
         toast.error(res.message);
         setSettings(settings);
-        return;
+        return false;
       }
       setSettings(res.data);
       if (window.desktopBridge) {
@@ -60,9 +89,11 @@ export function BackgroundReminderCard({ initial, autoApplyProgress }: { initial
         setSettings(await getAppSettings());
       }
       toast.success("已保存，1 秒内生效");
+      return true;
     } catch {
       setSettings(settings);
       toast.error("保存设置失败，请稍后重试");
+      return false;
     } finally {
       setSaving(false);
     }
@@ -275,6 +306,31 @@ export function BackgroundReminderCard({ initial, autoApplyProgress }: { initial
             常驻托盘那项不受影响，照常工作。
           </p>
         )}
+
+        <div className="space-y-2 rounded-md border p-3">
+          <p className="text-sm font-medium">Webhook 消息推送（飞书 / 钉钉 / 企业微信）</p>
+          <p className="text-xs text-muted-foreground">
+            填入群机器人 Webhook URL 后，无需配置发件邮箱也可收到每日早报、面试日程提醒与网申进度播报；自动识别飞书、钉钉、企业微信或通用 JSON 格式。
+          </p>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Input
+              type="url"
+              value={webhookDraft}
+              onChange={(e) => setWebhookDraft(e.target.value)}
+              placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..."
+              aria-label="Webhook 地址"
+              className="flex-1 font-mono text-xs"
+            />
+            <div className="flex shrink-0 gap-2">
+              <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void saveWebhook()}>
+                保存地址
+              </Button>
+              <Button type="button" size="sm" variant="outline" disabled={testingWebhook || !webhookDraft.trim()} onClick={() => void testWebhook()}>
+                {testingWebhook ? "发送中…" : "测试推送"}
+              </Button>
+            </div>
+          </div>
+        </div>
       </CardContent>
     </Card>
   );

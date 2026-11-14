@@ -7,6 +7,7 @@ import { cohortLabel } from "@/lib/campus-sheet";
 import { KIND_OPTIONS, PAGE_SIZE, baseWhere, chipWhere, freshSince, postingsHref, startOfDay, type PostingFilters } from "@/lib/campus-postings-query";
 import { PostingSearch, SubscribeCard, SyncControls } from "@/components/leads/postings-controls";
 import { PostingsTableClient, type PostingTableRow } from "@/components/leads/postings-table-client";
+import type { BatchVariantOption } from "@/components/leads/batch-profile-select";
 import { extractProfileSignal, scorePostingMatch } from "@/lib/posting-match";
 
 const STALE_MS = 12 * 3600_000;
@@ -34,15 +35,28 @@ function syncedText(at: Date | null) {
  * hold 10k+ rows). Chips with counts on top like the sheets' own 今日新增 /
  * 快截止 views; each row opens in the 网申浏览器 or goes into the 候选岗位池.
  */
-export async function PostingsPanel({ userId, filters }: { userId: string; filters: PostingFilters }) {
-  const [source, profile, defaultResume] = await Promise.all([
+export async function PostingsPanel({
+  userId,
+  filters,
+  profileVariants = [],
+}: {
+  userId: string;
+  filters: PostingFilters;
+  profileVariants?: BatchVariantOption[];
+}) {
+  const [source, profile, allResumes] = await Promise.all([
     db.postingSource.findFirst({ where: { userId }, orderBy: { createdAt: "asc" } }),
     db.user.findUnique({ where: { id: userId }, select: { graduationYear: true, targetTrack: true, preferredCities: true, skills: true } }),
-    db.resumeVersion.findFirst({ where: { userId }, orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }], select: { extractedText: true } }),
+    db.resumeVersion.findMany({
+      where: { userId },
+      orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }],
+      select: { id: true, name: true, isDefault: true, extractedText: true, structured: true },
+    }),
   ]);
   if (!source) return <SubscribeCard />;
 
-  const signal = extractProfileSignal(profile, defaultResume?.extractedText);
+  const activeResume = (filters.resumeId ? allResumes.find((r) => r.id === filters.resumeId) : null) ?? allResumes[0] ?? null;
+  const signal = extractProfileSignal(profile, activeResume?.extractedText, activeResume?.structured);
   const now = new Date();
   const today = startOfDay(now);
   const graduationYear = profile?.graduationYear ?? null;
@@ -112,6 +126,7 @@ export async function PostingsPanel({ userId, filters }: { userId: string; filte
   if (filters.withClosed) hidden.closed = "1";
   if (filters.fresh) hidden.fresh = "1";
   if (filters.sort === "match") hidden.sort = "match";
+  if (filters.resumeId) hidden.resumeId = filters.resumeId;
   const pill = (active: boolean) => cn("inline-flex h-7 items-center gap-1 rounded-full border px-2.5 text-xs whitespace-nowrap transition-colors", active ? "border-primary bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground");
 
   const tableRows: PostingTableRow[] = rows.map((row) => {
@@ -187,6 +202,21 @@ export async function PostingsPanel({ userId, filters }: { userId: string; filte
         <span className="mr-1 text-xs text-muted-foreground">类型</span>
         {KIND_OPTIONS.map((kind) => <Link key={kind} href={postingsHref(filters, { kind: filters.kind === kind ? "" : kind })} className={pill(filters.kind === kind)}>{kind}</Link>)}
       </div>
+      {allResumes.length > 1 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 text-xs text-muted-foreground">按简历算匹配度</span>
+          {allResumes.map((r, idx) => {
+            const isSelected = activeResume?.id === r.id;
+            const nextResumeId = idx === 0 && !filters.resumeId ? r.id : r.id === activeResume?.id ? "" : r.id;
+            return (
+              <Link key={r.id} href={postingsHref(filters, { resumeId: nextResumeId, sort: "match" })} className={pill(isSelected)}>
+                {r.name}
+                {r.isDefault ? "（默认）" : ""}
+              </Link>
+            );
+          })}
+        </div>
+      )}
       {industries.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="mr-1 text-xs text-muted-foreground">行业</span>
@@ -201,7 +231,13 @@ export async function PostingsPanel({ userId, filters }: { userId: string; filte
       {rows.length === 0 ? (
         <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">没有符合条件的招聘信息{source.lastSyncedAt ? "，换个筛选试试" : "，正在同步…"}</p>
       ) : (
-        <PostingsTableClient rows={tableRows} showMatch={signal.hasSignal} />
+        <PostingsTableClient
+          rows={tableRows}
+          showMatch={signal.hasSignal}
+          resumeVersions={allResumes.map(({ id, name, isDefault }) => ({ id, name, isDefault }))}
+          profileVariants={profileVariants}
+          defaultResumeId={activeResume?.id ?? null}
+        />
       )}
       {pages > 1 && (
         <div className="flex items-center justify-center gap-3 text-sm">

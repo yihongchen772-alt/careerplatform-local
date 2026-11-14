@@ -11,8 +11,8 @@ import { resolveCompanyId } from "@/lib/company-resolver";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
 import { markPositionsApplied, deletePosition } from "@/lib/actions/positions";
 import { deleteApplication, updateApplication } from "@/lib/actions/applications";
-import { toggleTaskDone } from "@/lib/actions/personal-tasks";
-import { markContacted } from "@/lib/actions/contacts";
+import { toggleTaskDone, updatePersonalTask, deletePersonalTask } from "@/lib/actions/personal-tasks";
+import { markContacted, updateContact, deleteContact } from "@/lib/actions/contacts";
 import { revalidateContactPaths } from "@/lib/revalidate-contacts";
 import { addCalendarItem, addStageSchedule, markFollowedUp, saveStepNote, setEventCompleted, setStageSchedule, setStepCompleted, writeMailSchedule } from "@/lib/actions/schedule";
 import { assistantActionSchema, type AssistantAction } from "@/lib/assistant-shared";
@@ -166,7 +166,7 @@ function normalizePositionStatus(input: string | null | undefined): "EVALUATING"
  */
 export async function applyAssistantAction(
   action: AssistantAction
-): Promise<ActionResult<{ done: string }>> {
+): Promise<ActionResult<{ done: string; downloadUrl?: string }>> {
   return toActionResult(async () => {
     const user = await requireUser();
     const a = assistantActionSchema.parse(action);
@@ -601,6 +601,85 @@ export async function applyAssistantAction(
         revalidatePath("/journey");
         revalidatePath("/dashboard");
         return { done: `已记入心路历程${about ? `（${about}）` : ""}` };
+      }
+
+      case "update_contact": {
+        const id = a.targetId?.trim() || "";
+        let contact = id ? await db.contact.findFirst({ where: { id, userId: user.id } }) : null;
+        if (!contact && id) {
+          const allIds = (await db.contact.findMany({ where: { userId: user.id }, select: { id: true } })).map((c) => c.id);
+          const fixed = closestId(id, allIds);
+          if (fixed) contact = await db.contact.findFirst({ where: { id: fixed, userId: user.id } });
+        }
+        if (!contact && a.contactName?.trim()) {
+          contact = await db.contact.findFirst({ where: { userId: user.id, name: { contains: a.contactName.trim() } } });
+        }
+        if (!contact) throw new UserFacingError("找不到这个联系人，改成手动编辑吧");
+        await updateContact(contact.id, {
+          name: a.contactName?.trim() || contact.name,
+          role: a.title?.trim() ?? contact.role ?? "",
+          companyName: a.companyName?.trim() ?? contact.companyName ?? "",
+          contactInfo: contact.contactInfo ?? "",
+          note: a.note?.trim() ?? contact.note ?? "",
+          nextFollowUpAt: a.date !== undefined && a.date !== null ? parseDate(a.date) ?? undefined : contact.nextFollowUpAt ?? undefined,
+          positionId: contact.positionId ?? "",
+          applicationId: contact.applicationId ?? "",
+        });
+        return { done: `已更新联系人：${a.contactName?.trim() || contact.name}` };
+      }
+
+      case "delete_contact": {
+        const id = a.targetId?.trim() || "";
+        let contact = id ? await db.contact.findFirst({ where: { id, userId: user.id } }) : null;
+        if (!contact && a.contactName?.trim()) {
+          contact = await db.contact.findFirst({ where: { userId: user.id, name: { contains: a.contactName.trim() } } });
+        }
+        if (!contact) throw new UserFacingError("找不到要删除的联系人");
+        await deleteContact(contact.id);
+        return { done: `已删除联系人：${contact.name}` };
+      }
+
+      case "update_task": {
+        const id = a.targetId?.trim() || "";
+        let task = id ? await db.personalTask.findFirst({ where: { id, userId: user.id } }) : null;
+        if (!task && id) {
+          const allIds = (await db.personalTask.findMany({ where: { userId: user.id }, select: { id: true } })).map((t) => t.id);
+          const fixed = closestId(id, allIds);
+          if (fixed) task = await db.personalTask.findFirst({ where: { id: fixed, userId: user.id } });
+        }
+        if (!task && a.title?.trim()) {
+          task = await db.personalTask.findFirst({ where: { userId: user.id, title: { contains: a.title.trim() } } });
+        }
+        if (!task) throw new UserFacingError("找不到这条待办，改成手动编辑吧");
+        await updatePersonalTask(task.id, {
+          title: a.title?.trim() || task.title,
+          note: a.note?.trim() ?? task.note ?? "",
+          dueDate: a.date ? parseDate(a.date) ?? undefined : task.dueDate ?? undefined,
+          dueDateEnd: a.dateEnd ? parseDate(a.dateEnd) ?? undefined : task.dueDateEnd ?? undefined,
+          positionId: task.positionId ?? "",
+          applicationId: task.applicationId ?? "",
+        });
+        return { done: `已更新待办：${a.title?.trim() || task.title}` };
+      }
+
+      case "delete_task": {
+        const id = a.targetId?.trim() || "";
+        let task = id ? await db.personalTask.findFirst({ where: { id, userId: user.id } }) : null;
+        if (!task && a.title?.trim()) {
+          task = await db.personalTask.findFirst({ where: { userId: user.id, title: { contains: a.title.trim() } } });
+        }
+        if (!task) throw new UserFacingError("找不到要删除的待办");
+        await deletePersonalTask(task.id);
+        return { done: `已删除待办：${task.title}` };
+      }
+
+      case "export_applications": {
+        const rawFmt = `${a.stage ?? ""} ${a.note ?? ""} ${a.label}`.toLowerCase();
+        const format = /csv/.test(rawFmt) ? "csv" : /markdown|md\b/.test(rawFmt) ? "md" : "xlsx";
+        return {
+          done: `已准备好导出投递记录（${format.toUpperCase()}）`,
+          downloadUrl: `/api/applications/export?format=${format}`,
+        };
       }
     }
   });

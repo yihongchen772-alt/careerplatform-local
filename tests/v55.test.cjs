@@ -140,7 +140,7 @@ test("answers read clean: dates whole, no +86, a validation message is not a val
   ];
   assert.deepEqual(core.readFormAnswers(scan).map((f) => `${f.label}=${f.value}`), ["手机号码=13800000000", "就读时间=2024-09 ~ 2026-06", "起止时间=2025", "公司=甲公司"]);
   const engine = read("electron/autofill-core.js");
-  assert.equal((engine.match(/\^\(\?:此项\|该项\|本项\)\?必填\|未填写\$\|不能为空\$/g) || []).length, 4, "every copy of the placeholder rule knows validation messages");
+  assert.equal((engine.match(/\^\(\?:此项\|该项\|本项\)\?必填\|未填写\$\|不能为空\$/g) || []).length, 5, "every copy of the placeholder rule knows validation messages");
   assert.match(read("tests/fill-lab/run.mjs"), /"validation-msg": \[\[/);
   assert.match(read("tests/fill-lab/run.mjs"), /"jd-heading": \[\[/);
 });

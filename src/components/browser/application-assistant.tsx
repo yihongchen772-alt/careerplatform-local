@@ -209,7 +209,7 @@ function PlanEditor({ plan, busy, bridge, onApply, onQuestion, onRows }: { plan:
   const [saveState, setSaveState] = useState("准备保存草稿…");
   useEffect(() => {
     const controller = new AbortController();
-    const timer = setTimeout(() => { fetch("/api/desktop-browser/application-draft", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contextKey: plan.contextKey, url: plan.url, positionId: plan.positionId, resumeVersionId: plan.resumeVersionId, variantId: plan.variantId, fields: rows.filter((r) => r.eligible).map(({ label, fieldKey, section, value, ref, selected, remember, edited }) => ({ label, fieldKey, section, value, ref, selected, remember, edited })) }) }).then((r) => { if (!r.ok) throw new Error(); setSaveState("填写草稿已保存在 App，尚未提交"); }).catch((e) => { if (e.name !== "AbortError") setSaveState("草稿保存失败，请保留当前内容并重试"); }); }, 700);
+    const timer = setTimeout(() => { fetch("/api/desktop-browser/application-draft", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contextKey: plan.contextKey, url: plan.url, positionId: plan.positionId, resumeVersionId: plan.resumeVersionId, variantId: plan.variantId, fields: rows.filter((r) => r.eligible).slice(0, 250).map(({ label, fieldKey, section, value, ref, selected, remember, edited }) => ({ label: label.slice(0, 500), fieldKey: fieldKey.slice(0, 500), section: section ? section.slice(0, 200) : undefined, value: value.slice(0, 20000), ref: ref ? ref.slice(0, 500) : undefined, selected, remember, edited })) }) }).then((r) => { if (!r.ok) throw new Error(); setSaveState("填写草稿已保存在 App，尚未提交"); }).catch((e) => { if (e.name !== "AbortError") setSaveState("草稿保存失败，请保留当前内容并重试"); }); }, 700);
     return () => { clearTimeout(timer); controller.abort(); };
   }, [rows, plan]);
   const patch = (id: string, value: Partial<typeof rows[number]>) => setRows((items) => items.map((p) => p.id === id ? { ...p, ...value, edited: true } : p));
@@ -235,6 +235,12 @@ function PlanEditor({ plan, busy, bridge, onApply, onQuestion, onRows }: { plan:
       </div>
       <p className="text-muted-foreground">{p.note}{p.maxLength ? ` · 上限 ${p.maxLength} 字` : ""}</p>
       {p.eligible && <><select aria-label={`${p.label}对应资料`} className={panelSelect} value={p.ref} onChange={(e) => { const c = plan.choices.find((x) => x.ref === e.target.value); patch(p.id, { ref: e.target.value, value: c?.value || p.value, selected: true }); }}><option value="">手动编辑 / 原建议</option>{plan.choices.map((c) => <option key={c.ref} value={c.ref}>{c.label}</option>)}</select>
+      {p.options?.length ? (
+        <select aria-label={`${p.label}页面选项`} className={panelSelect} value={p.options.includes(p.value) ? p.value : ""} onChange={(e) => patch(p.id, { value: e.target.value, ref: "", selected: !!e.target.value })}>
+          <option value="">{p.value && !p.options.includes(p.value) ? `当前：${p.value}（下拉列表不含此项）` : "从页面选项里选…"}</option>
+          {p.options.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+        </select>
+      ) : null}
       <textarea aria-label={`${p.label}建议值`} className={cn(panelText, "min-h-16")} value={p.value} onChange={(e) => patch(p.id, { value: e.target.value, ref: "" })} />
       {p.maxLength && p.value.length > p.maxLength && <p className="text-destructive">超过上限 {p.value.length - p.maxLength} 字</p>}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">

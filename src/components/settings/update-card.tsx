@@ -8,6 +8,12 @@ import type { DesktopUpdateState, DesktopUpdates } from "@/types/desktop-updates
 
 const RELEASES_URL = "https://github.com/yihongchen772-alt/careerplatform-local/releases/latest";
 
+function formatSpeed(bytesPerSecond: number): string {
+  if (!Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) return "";
+  if (bytesPerSecond >= 1048576) return ` · ${(bytesPerSecond / 1048576).toFixed(1)} MB/s`;
+  return ` · ${Math.max(1, Math.round(bytesPerSecond / 1024))} KB/s`;
+}
+
 export function UpdateCard({ currentVersion }: { currentVersion: string }) {
   const [state, setState] = useState<DesktopUpdateState | null>(null);
   const [requestPending, setRequestPending] = useState(false);
@@ -62,7 +68,7 @@ export function UpdateCard({ currentVersion }: { currentVersion: string }) {
           <div className="space-y-1">
             <progress className="h-2 w-full accent-primary" max={100} value={state.progress?.percent} aria-label="更新下载进度" />
             <p className="text-xs text-muted-foreground">
-              {state.progress ? `已下载 ${state.progress.percent.toFixed(0)}%${state.progress.total > 0 ? `（${(state.progress.transferred / 1048576).toFixed(1)} / ${(state.progress.total / 1048576).toFixed(1)} MB）` : ""}` : "正在连接下载服务器…"}
+              {state.progress ? `已下载 ${state.progress.percent.toFixed(0)}%${state.progress.total > 0 ? `（${(state.progress.transferred / 1048576).toFixed(1)} / ${(state.progress.total / 1048576).toFixed(1)} MB）` : ""}${formatSpeed(state.progress.bytesPerSecond)}` : "正在连接下载服务器…"}
             </p>
           </div>
         )}

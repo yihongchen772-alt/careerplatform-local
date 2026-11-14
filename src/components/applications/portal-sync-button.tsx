@@ -38,7 +38,19 @@ export function PortalSyncButton({ configuredCount }: { configuredCount: number 
         toast.warning(rejected > 0 ? `官网提示 ${rejected} 条投递未通过，请在看板核对` : `${review.length} 条官网结果或非标准阶段顺序需要你在看板核对`);
       }
       if (unassigned.length > 0) toast.warning(`${unassigned.length} 条投递尚未指定进度页，请到投递详情关联后再同步`);
-      for (const e of errors) toast.error(`${e.companyName}：${e.message}`);
+      for (const e of errors) {
+        if (/登录已过期/.test(e.message) && e.portalUrl) {
+          const targetUrl = e.portalUrl;
+          toast.error(`${e.companyName}：${e.message}`, {
+            action: {
+              label: "去重新登录",
+              onClick: () => router.push(`/browser?url=${encodeURIComponent(targetUrl)}`),
+            },
+          });
+        } else {
+          toast.error(`${e.companyName}：${e.message}`);
+        }
+      }
       router.refresh();
     } finally {
       setSyncing(false);

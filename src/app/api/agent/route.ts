@@ -3,7 +3,7 @@ import { requireUser } from "@/lib/session";
 import { getAgentConfig } from "@/lib/agent/config";
 import { UserFacingError } from "@/lib/action-result";
 import { MAX_HISTORY_TURNS } from "@/lib/assistant-context";
-import { createChat, historyMessages } from "@/lib/agent/llm";
+import { createChat, historyMessages, summarizeDroppedHistory } from "@/lib/agent/llm";
 import { runAgent, type AgentEvent } from "@/lib/agent/run";
 import { AGENT_TOOLS, describeToolCall, executeTool } from "@/lib/agent/tools";
 import { buildAgentSystemPrompt } from "@/lib/agent/prompt";
@@ -77,6 +77,10 @@ export async function POST(request: Request) {
         const notices: string[] = [];
         // Falling over to a backup model is worth knowing about, not hiding.
         const chat = createChat((text) => { notices.push(text); send({ type: "note", text }); });
+        const historyLimit = MAX_HISTORY_TURNS * 2;
+        const droppedHistory = history.length > historyLimit ? history.slice(0, -historyLimit) : [];
+        const recentHistory = history.slice(-historyLimit);
+        const earlierSummary = summarizeDroppedHistory(droppedHistory);
         const result = await runAgent({
           chat: (turn) => {
             if (!open) throw new UserFacingError("窗口已关闭，停止执行");
@@ -84,8 +88,11 @@ export async function POST(request: Request) {
           },
           request: {
             config,
-            system: (await buildAgentSystemPrompt(user.id)) + (page ? pageSection(page) : ""),
-            messages: [...historyMessages(config.provider, history.slice(-MAX_HISTORY_TURNS * 2)), { role: "user", text: message }],
+            system:
+              (await buildAgentSystemPrompt(user.id)) +
+              (earlierSummary ? `\n\n## 更早对话摘要（避免遗忘前面的结论与 ID，最新数据仍以工具为准）\n${earlierSummary}` : "") +
+              (page ? pageSection(page) : ""),
+            messages: [...historyMessages(config.provider, recentHistory), { role: "user", text: message }],
             tools: page ? [...AGENT_TOOLS, DRAFT_TOOL] : AGENT_TOOLS,
           },
           execute: (call) => {

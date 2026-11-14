@@ -36,7 +36,23 @@ export function VoiceInput({ disabled, onText }: { disabled: boolean; onText: (t
     if (state === "recording") return stop();
     if (busy.current || disabled) return;
     busy.current = true;
-    try { const recorder = await startRecording({ preferCompressed: true }); if (!mounted.current) { recorder.cancel(); return; } active.current = recorder; setSeconds(0); setState("recording"); }
+    try {
+      const check = await fetch("/api/interview/transcribe", { method: "GET", cache: "no-store" })
+        .then((res) => (res.ok ? res.json() : null))
+        .catch(() => null) as { ready?: boolean } | null;
+      if (check && check.ready === false) {
+        toast.error("语音输入需要配置 Gemini API Key，请先到「设置 → AI 模型」添加 Gemini Key");
+        return;
+      }
+      const recorder = await startRecording({ preferCompressed: true });
+      if (!mounted.current) {
+        recorder.cancel();
+        return;
+      }
+      active.current = recorder;
+      setSeconds(0);
+      setState("recording");
+    }
     catch (error) { toast.error(error instanceof MicAccessDeniedError ? "请在系统隐私设置中允许麦克风访问" : "无法打开麦克风，请检查权限或设备"); }
     finally { busy.current = false; }
   }

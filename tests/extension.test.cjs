@@ -466,3 +466,68 @@ test('cancellation while a custom dropdown opens prevents the option click', asy
   await assert.rejects(fill([{ id: 'field-s0', value: '北京' }], 'fixture-task'), /填写已停止/);
   assert.equal(optionClicks, 0);
 });
+
+test('extension settings migrates fillModules v5 (attachment) and dark-mode CSS vars exist', async () => {
+  const f = workerFixture();
+  f.sandbox.chrome.storage.local.get = async () => ({ fillModules: ['basic', 'resume'], fillModulesVersion: 4, saveBlocks: true, autoRecord: true });
+  const prefs = await vm.runInContext('settings()', f.sandbox);
+  assert.deepEqual([...prefs.fillModules], ['basic', 'resume', 'attachment']);
+  assert.equal(prefs.saveBlocks, true);
+  assert.equal(prefs.autoRecord, true);
+
+  const html = fs.readFileSync(path.join(__dirname, '../extension/popup.html'), 'utf8');
+  const css = fs.readFileSync(path.join(__dirname, '../extension/popup.css'), 'utf8');
+  const js = fs.readFileSync(path.join(__dirname, '../extension/popup.js'), 'utf8');
+  for (const id of ['data-module="attachment"', 'id="undo-fill"', 'id="refill"', 'id="batch"', 'id="export-xlsx"', 'id="export-csv"', 'id="auto-record"', 'id="record-city"']) {
+    assert.ok(html.includes(id), `popup.html should contain ${id}`);
+  }
+  assert.match(css, /--bubble-user/);
+  assert.match(css, /--draft-bg/);
+  assert.match(js, /fillModulesVersion:\s*5/);
+  assert.match(js, /uploadAttachments/);
+  assert.match(js, /\.slice\(0,\s*250\)/);
+});
+
+test('extension supports undoFill, forceRefill, batchFill queue, and identify/record fallback', async () => {
+  const f = workerFixture();
+  f.allowInit();
+  const calls = [];
+  const sessionStore = {};
+  f.sandbox.chrome.storage.session = {
+    get: async (keys) => {
+      const list = Array.isArray(keys) ? keys : [keys];
+      const out = {};
+      for (const k of list) if (k in sessionStore) out[k] = sessionStore[k];
+      return out;
+    },
+    set: async (obj) => { Object.assign(sessionStore, obj); },
+    remove: async (keys) => { for (const k of Array.isArray(keys) ? keys : [keys]) delete sessionStore[k]; },
+  };
+  f.sandbox.chrome.tabs.get = async (id) => ({ id, url: `https://fixture.example/job/${id}`, title: `Job ${id}` });
+  f.sandbox.chrome.webNavigation.getAllFrames = async () => [{ frameId: 0, url: 'https://fixture.example/job/7' }];
+  Object.assign(f.sandbox.self.JobCompassCore, {
+    portalContext: (u) => u,
+    capturePageText: () => '岗位职责：开发系统',
+    detectApplicationSuccess: () => null,
+    readCurrentApplicationFields: () => {},
+    collectApplicationFields: () => [],
+    watchApplicationFields: () => true,
+    scanPageFields: () => [{ label: '应聘职位', currentValue: '后端工程师', type: 'text' }],
+    resetAutofillInFrame: () => { calls.push('reset'); return { cleared: 3 }; },
+    runAutofillCore: async () => { calls.push('run'); return { phase: 'done', message: '完成', summary: { filled: 2, manual: 0 } }; },
+  });
+  f.sandbox.chrome.scripting.executeScript = async ({ func, args }) => [{ result: func ? func(...(args || [])) : null }];
+
+  await vm.runInContext('handlers.undoFill({ tabId: 7 })', f.sandbox);
+  assert.ok(calls.includes('reset'));
+
+  await vm.runInContext('fillTab(7, { forceRefill: true })', f.sandbox);
+  assert.ok(calls.indexOf('run') > calls.lastIndexOf('reset'));
+
+  const batchRes = await vm.runInContext('handlers.batchFill({ tabIds: [7] })', f.sandbox);
+  assert.equal(batchRes.started, true);
+  await new Promise((r) => setTimeout(r, 30));
+  const queue = await vm.runInContext('readBatchQueue()', f.sandbox);
+  assert.equal(queue.length, 1);
+  assert.equal(queue[0].status, 'ready');
+});

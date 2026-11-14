@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import { applicationCities } from "@/lib/application-city";
 import { APPLICATION_FILTERS, FILTER_LABELS, furthestInterview, interviewBreakdown, matchesFilter, type ApplicationFilter } from "@/lib/application-filters";
+import { parseApplicationProfile } from "@/lib/application-profile";
+import { ATTACHMENT_ROLE_META, resolveAutofillAttachments } from "@/lib/attachment-roles";
 import { industryLabel } from "@/lib/company-industry";
 import { currentStageRow, isTerminalStage, stepView } from "@/lib/interview-schedule";
 import { pendingMailRows } from "@/lib/pending-mail";
@@ -133,23 +135,8 @@ export async function getWorkspaceOverviewTool(userId: string, section: string) 
         ],
       },
       include: { company: true, position: { select: { location: true } } },
-      orderBy: { updatedAt: "desc" } as never,
-    }).catch(() =>
-      db.application.findMany({
-        where: {
-          userId,
-          OR: [
-            { currentStage: { in: ["OFFER", "ACCEPTED", "DECLINED"] } },
-            { salaryMin: { not: null } },
-            { salaryMax: { not: null } },
-            { offerAnnualTotal: { not: null } },
-            { offerNote: { not: null } },
-          ],
-        },
-        include: { company: true, position: { select: { location: true } } },
-        orderBy: { appliedDate: "desc" },
-      })
-    );
+      orderBy: [{ currentStageDate: "desc" }, { appliedDate: "desc" }],
+    });
     const lines = apps.map((app) => {
       const cities = applicationCities({ city: app.city, location: app.position?.location, title: app.title, companyName: app.company.name });
       const parts = [
@@ -192,7 +179,10 @@ export async function getWorkspaceOverviewTool(userId: string, section: string) 
     );
     const noteLines = notes.map((row) => {
       const text = (row.note ?? "").replace(/\s+/g, " ").slice(0, 260);
-      return `- [进度ID:${row.id}][投递ID:${row.application.id}] ${row.application.company.name} · ${row.application.title}（${ row.stageLabel || STAGE_LABELS[row.stage] }，${ymd(row.enteredAt)}）${row.interviewFormat ? ` [${row.interviewFormat}]` : ""}${row.interviewer ? ` 面试官:${row.interviewer}` : ""}：${text || "（无正文）"}`;
+      const rawPm = row.postmortem?.content;
+      const pmStr = rawPm ? (typeof rawPm === "string" ? rawPm : JSON.stringify(rawPm)).replace(/\s+/g, " ").slice(0, 180) : "";
+      const pm = pmStr ? `；AI复盘：${pmStr}` : "";
+      return `- [进度ID:${row.id}][投递ID:${row.application.id}] ${row.application.company.name} · ${row.application.title}（${row.stageLabel || STAGE_LABELS[row.stage]}，${ymd(row.enteredAt)}）${row.interviewFormat ? ` [${row.interviewFormat}]` : ""}${row.interviewer ? ` 面试官:${row.interviewer}` : ""}：${text || "（无正文）"}${pm}`;
     });
     blocks.push(
       `### 面试统计与面经复盘\n进过面试共 ${breakdown.total} 条：\n${tableLines.join("\n")}\n\n最近记录的面经/备注（共展示 ${noteLines.length} 条）：\n${noteLines.join("\n") || "（暂无面经记录）"}${intel?.result ? `\n\n面试能力分析摘要：${JSON.stringify(intel.result).slice(0, 800)}` : ""}`
@@ -200,10 +190,15 @@ export async function getWorkspaceOverviewTool(userId: string, section: string) 
   }
 
   if (kind === "calendar" || kind === "all") {
-    const [events, mailTasks, scheduledStages] = await Promise.all([
+    const [events, manualTasks, mailTasks, scheduledStages] = await Promise.all([
       db.calendarEvent.findMany({
         where: { userId, stageHistoryId: null, completedAt: null, startsAt: { gte: new Date(now - 7 * 86_400_000) } },
         orderBy: { startsAt: "asc" },
+        take: 25,
+      }),
+      db.personalTask.findMany({
+        where: { userId, done: false, sourceMailKey: null },
+        orderBy: [{ dueDate: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
         take: 25,
       }),
       db.personalTask.findMany({
@@ -212,20 +207,41 @@ export async function getWorkspaceOverviewTool(userId: string, section: string) 
         take: 30,
       }),
       db.stageHistory.findMany({
-        where: { application: { userId }, nextDeadline: { gte: new Date(now) }, completedAt: null },
-        select: { applicationId: true },
+        where: { application: { userId }, nextDeadline: { gte: new Date(now - 7 * 86_400_000) }, completedAt: null },
+        select: {
+          id: true,
+          applicationId: true,
+          stage: true,
+          stageLabel: true,
+          nextDeadline: true,
+          nextDeadlineEnd: true,
+          nextHasTime: true,
+          meetingInfo: true,
+          application: { select: { title: true, company: { select: { name: true } } } },
+        },
+        orderBy: { nextDeadline: "asc" },
+        take: 25,
       }),
     ]);
-    const scheduledApps = new Set(scheduledStages.map((s) => s.applicationId));
+    const scheduledApps = new Set(scheduledStages.filter((s) => s.nextDeadline && s.nextDeadline.getTime() >= now).map((s) => s.applicationId));
     const pendingMail = pendingMailRows(mailTasks, now, scheduledApps);
+    const stageLines = scheduledStages.map((s) => {
+      const label = s.stageLabel?.trim() || STAGE_LABELS[s.stage];
+      const when = s.nextDeadline ? (s.nextHasTime ? s.nextDeadline.toLocaleString("zh-CN") : ymd(s.nextDeadline)) : "";
+      const until = s.nextDeadlineEnd ? ` ~ ${s.nextHasTime ? s.nextDeadlineEnd.toLocaleString("zh-CN") : ymd(s.nextDeadlineEnd)}` : "";
+      return `- [进度ID:${s.id}][投递ID:${s.applicationId}] ${s.application.company.name} · ${s.application.title}（${label}）：${when}${until}${s.meetingInfo ? `；会议/备注：${s.meetingInfo.slice(0, 120)}` : ""}`;
+    });
     const eventLines = events.map(
       (e) => `- [日程ID:${e.id}] ${e.title}：${e.allDay ? e.dateKey : e.startsAt.toLocaleString("zh-CN")}${e.meetingInfo ? `；链接/备注：${e.meetingInfo.slice(0, 120)}` : ""}`
+    );
+    const taskLines = manualTasks.map(
+      (t) => `- [待办ID:${t.id}] ${t.title}${t.dueDate ? `；截止：${ymd(t.dueDate)}` : ""}${t.dueDateEnd ? ` ~ ${ymd(t.dueDateEnd)}` : ""}${t.note ? `；备注：${t.note.slice(0, 100)}` : ""}`
     );
     const mailLines = pendingMail.map(
       (m) => `- [邮件待办ID:${m.id}] ${m.company ? `${m.company} · ` : ""}${m.type}（${m.summary}）${m.time ? `；识别时间：${new Date(m.time.startsAt).toLocaleString("zh-CN")}` : m.waiting ? "；时间另行通知" : "；未写出具体时间"}`
     );
     blocks.push(
-      `### 独立日历事项与待确认邮件日程\n独立日历事项（未完成）：\n${eventLines.join("\n") || "（无）"}\n\n邮件里识别到、还没进日历的安排（可用 complete_calendar_event 确认写入日历，或用 set_schedule 记到投递上）：\n${mailLines.join("\n") || "（无）"}`
+      `### 日程、笔面试排期、自建待办与待确认邮件日程\n已排期笔面试/截止（未完成）：\n${stageLines.join("\n") || "（无）"}\n\n独立日历事项（未完成）：\n${eventLines.join("\n") || "（无）"}\n\n自建待办（未完成）：\n${taskLines.join("\n") || "（无）"}\n\n邮件里识别到、还没进日历的安排（可用 complete_calendar_event 确认写入日历，或用 set_schedule 记到投递上）：\n${mailLines.join("\n") || "（无）"}`
     );
   }
 
@@ -275,6 +291,69 @@ export async function getWorkspaceOverviewTool(userId: string, section: string) 
       (e) => `- [${ymd(e.createdAt)} 心情:${e.mood}${e.about ? ` · ${e.about}` : ""}] ${e.text.slice(0, 200)}`
     );
     blocks.push(`### 心路历程（最近 ${entries.length} 条，可用 add_journey 帮用户记录感悟）\n${lines.join("\n") || "（暂无记录）"}`);
+  }
+
+  if (kind === "pool" || kind === "all") {
+    const positions = await db.position.findMany({
+      where: { userId },
+      include: {
+        company: { select: { name: true } },
+        positionMatches: { orderBy: { updatedAt: "desc" }, take: 1, select: { matchScore: true, recommendation: true } },
+      },
+      orderBy: [{ status: "asc" }, { deadline: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
+      take: kind === "pool" ? 40 : 12,
+    });
+    const lines = positions.map((p) => {
+      const m = p.positionMatches[0];
+      return `- [岗位ID:${p.id}] ${p.company.name} · ${p.title}；状态：${p.status}${p.location ? `；地点：${p.location}` : ""}${p.deadline ? `；截止：${ymd(p.deadline)}` : ""}${m ? `；匹配度：${m.matchScore}（${m.recommendation}）` : ""}`;
+    });
+    blocks.push(`### 候选岗位池（展示 ${lines.length} 条，可用 get_position 看 JD、prepare_application 做投递准备）\n${lines.join("\n") || "（暂无候选岗位）"}`);
+  }
+
+  if (kind === "materials" || kind === "all") {
+    const [resumes, attachments, user] = await Promise.all([
+      db.resumeVersion.findMany({
+        where: { userId },
+        select: { id: true, name: true, isDefault: true, targetTrack: true, checkScore: true, fileUrl: true },
+        orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }],
+      }),
+      db.attachment.findMany({
+        where: { userId, category: { not: null } },
+        select: { id: true, name: true, category: true, url: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
+        take: 30,
+      }),
+      db.user.findUnique({ where: { id: userId }, select: { name: true, applicationProfile: true } }),
+    ]);
+    const pinned = parseApplicationProfile(user?.applicationProfile).pinnedAttachments;
+    const autoReady = resolveAutofillAttachments(attachments, user?.name, pinned);
+    const resumeLines = resumes.map(
+      (r) => `- [简历ID:${r.id}] ${r.name}${r.isDefault ? "（默认）" : ""}${r.targetTrack ? ` · 方向：${r.targetTrack}` : ""}${r.checkScore != null ? ` · 体检分：${r.checkScore}` : ""}${r.fileUrl ? "" : "（仅文本/未附PDF）"}`
+    );
+    const autoLines = autoReady.map(
+      (a) => `- ${ATTACHMENT_ROLE_META[a.role].category}：${a.name}（网申上传名：${a.uploadName}${pinned?.[a.role] === a.id ? "；已固定默认" : ""}）`
+    );
+    blocks.push(
+      `### 简历版本与资料库网申附件\n简历版本（${resumes.length} 份）：\n${resumeLines.join("\n") || "（暂无简历）"}\n\n资料库已就绪网申自动附带文件（共 ${autoReady.length} 类，总库共 ${attachments.length} 个文件）：\n${autoLines.join("\n") || "（尚未上传可自动附带的证件照/成绩单/证书）"}`
+    );
+  }
+
+  if (kind === "postings" || kind === "all") {
+    const [sources, postings] = await Promise.all([
+      db.postingSource.findMany({ where: { userId }, select: { name: true, total: true, lastSyncedAt: true } }),
+      db.campusPosting.findMany({
+        where: { userId, positionId: null },
+        orderBy: [{ startDate: { sort: "desc", nulls: "last" } }],
+        take: kind === "postings" ? 25 : 8,
+        select: { id: true, company: true, roles: true, cities: true, kind: true, cohort: true, deadline: true, applyUrl: true },
+      }),
+    ]);
+    const lines = postings.map(
+      (p) => `- ${p.company}${p.kind ? `（${p.kind}）` : ""}${p.cohort ? `[${p.cohort}]` : ""}：${(p.roles || "").replace(/\s+/g, " ").slice(0, 60)}${p.cities ? `；城市：${p.cities}` : ""}${p.deadline ? `；截止：${ymd(p.deadline)}` : ""}`
+    );
+    blocks.push(
+      `### 已订阅校招信息表（${sources.map((s) => `${s.name || "校招表"} ${s.total} 条`).join("，") || "未订阅"}）\n最新未加入候选池的条目（${lines.length} 条）：\n${lines.join("\n") || "（空）"}`
+    );
   }
 
   return {

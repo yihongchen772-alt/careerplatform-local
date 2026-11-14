@@ -43,6 +43,7 @@ export async function updateApplicationProfile(input: unknown): Promise<ActionRe
     // The 撤销 records belong to the browser, which may have learned more
     // while this form was open; the stored ones are kept as they are.
     const stored = await db.user.findUnique({ where: { id: user.id }, select: { applicationProfile: true } });
+    const existingStored = parseApplicationProfile(stored?.applicationProfile);
     // Drop fully blank rows — an empty education row still counts as
     // "education[0]" to the keyword matcher and would fill nothing.
     const cleaned: ApplicationProfile = {
@@ -55,12 +56,17 @@ export async function updateApplicationProfile(input: unknown): Promise<ActionRe
       languages: data.languages.filter((row) => row.name),
       family: data.family.filter((row) => Object.values(row).some(Boolean)),
       extras: Object.fromEntries(Object.entries(data.extras).filter(([, v]) => v)),
-      learned: parseApplicationProfile(stored?.applicationProfile).learned,
+      learned: existingStored.learned,
+      pinnedAttachments: existingStored.pinnedAttachments,
       variants: data.variants.map((variant) => ({
         ...variant,
         resumeVersionId: variant.resumeVersionId || null,
         experiences: variant.experiences.filter((x) => Object.values(x).some(Boolean)),
         projects: variant.projects.filter((project) => Object.values(project).some(Boolean)),
+        awards: variant.awards ? variant.awards.filter((award) => Object.values(award).some(Boolean)) : undefined,
+        campus: variant.campus ? variant.campus.filter((row) => Object.values(row).some(Boolean)) : undefined,
+        skills: variant.skills ? variant.skills.filter((row) => Object.values(row).some(Boolean)) : undefined,
+        languages: variant.languages ? variant.languages.filter((row) => row.name) : undefined,
         extras: Object.fromEntries(Object.entries(variant.extras).filter(([, v]) => v)),
       })),
     };

@@ -123,6 +123,11 @@ function formatYmd(value: Date | string | null | undefined): string {
   return DATE_FMT.format(date);
 }
 
+/** Calendar YYYY-MM-DD in Asia/Shanghai for export filenames and report headers. */
+export function formatExportDate(date: Date = new Date()): string {
+  return formatYmd(date);
+}
+
 function formatScheduleText(item: ReturnType<typeof nextScheduleItem>): string {
   if (!item) return "";
   const date = new Date(item.startsAt);
@@ -343,19 +348,33 @@ export function applicationsToMarkdown(rows: ApplicationExportRow[], scopeLabel?
     );
   }
 
+function mdLink(rawUrl: string): string {
+  const trimmed = rawUrl.trim();
+  if (!/^https?:\/\//i.test(trimmed)) return trimmed ? mdCell(trimmed) : "—";
+  const safe = trimmed
+    .replace(/[\r\n\t\s]+/g, "")
+    .replace(/\(/g, "%28")
+    .replace(/\)/g, "%29")
+    .replace(/</g, "%3C")
+    .replace(/>/g, "%3E")
+    .replace(/\|/g, "%7C");
+  return `[打开链接](${safe})`;
+}
+
   lines.push(
     ``,
     `## 二、已投递岗位明细（${rows.length} 条）`,
     ``,
-    `| 企业名称 | 岗位名称 | 城市 | 当前阶段 | 投递日期 | 安排/官网状态 | 使用简历 | 链接 |`,
-    `| --- | --- | --- | --- | --- | --- | --- | --- |`,
+    `| 企业名称 | 岗位名称 | 行业 | 城市 | 当前阶段 | 薪资 | 渠道 / 内推 | 投递日期 | 安排 / 官网状态 | 使用简历 | 链接 |`,
+    `| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |`,
   );
 
   for (const row of rows) {
     const extraStatus = [row.nextSchedule, row.portalStatus].filter(Boolean).join(" / ");
-    const link = row.applyUrl ? `[打开链接](${row.applyUrl.replace(/[()]/g, "")})` : "—";
+    const channel = [row.source, row.referrer ? `内推:${row.referrer}` : ""].filter(Boolean).join(" · ");
+    const link = row.applyUrl ? mdLink(row.applyUrl) : "—";
     lines.push(
-      `| ${mdCell(row.companyName)} | ${mdCell(row.title)} | ${mdCell(row.cities)} | ${mdCell(row.stageDisplay)} | ${mdCell(row.appliedDate)} | ${mdCell(extraStatus)} | ${mdCell(row.resumeName)} | ${link} |`,
+      `| ${mdCell(row.companyName)} | ${mdCell(row.title)} | ${mdCell(row.industry)} | ${mdCell(row.cities)} | ${mdCell(row.stageDisplay)} | ${mdCell(row.salaryRange)} | ${mdCell(channel)} | ${mdCell(row.appliedDate)} | ${mdCell(extraStatus)} | ${mdCell(row.resumeName)} | ${link} |`,
     );
   }
 

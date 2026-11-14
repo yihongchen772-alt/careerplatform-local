@@ -19,6 +19,12 @@ const resultSchema = z.object({
   delivery: z.string().nullish(),
 });
 
+export async function GET(): Promise<NextResponse> {
+  const user = await requireUser();
+  const config = await getUserAiKey(user.id, "gemini").catch(() => null);
+  return NextResponse.json({ ready: Boolean(config) });
+}
+
 export async function POST(request: Request): Promise<NextResponse> {
   const user = await requireUser();
 

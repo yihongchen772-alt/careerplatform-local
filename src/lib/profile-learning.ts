@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { EXTRA_FIELDS, PERSONAL_FIELDS, type ApplicationProfile, type LearnedEntry } from "@/lib/application-profile";
+import { EXTRA_FIELDS, PERSONAL_FIELDS, SOCIAL_FIELDS, type ApplicationProfile, type LearnedEntry } from "@/lib/application-profile";
 import { MEMORY_CATEGORIES, MEMORY_LISTS, memoryAnchor, memoryContent, sameMemoryEntity, type MemoryCapture, type MemoryCategory, type MemoryContent } from "@/lib/application-memory";
 
 // What the applicant types into a 网申 by hand is usually something 网申资料
@@ -10,7 +10,7 @@ import { MEMORY_CATEGORIES, MEMORY_LISTS, memoryAnchor, memoryContent, sameMemor
 
 /** 网申资料 fields a hand-typed answer may fill while they are blank. */
 export const LEARNABLE_FACTS: Record<string, string> = {
-  ...Object.fromEntries([...EXTRA_FIELDS, ...PERSONAL_FIELDS].map((field) => [field.key, field.label])),
+  ...Object.fromEntries([...EXTRA_FIELDS, ...SOCIAL_FIELDS, ...PERSONAL_FIELDS].map((field) => [field.key, field.label])),
   preferredCities: "期望城市",
 };
 
@@ -75,6 +75,13 @@ const LABEL_KEYS: Array<[RegExp, string, RegExp?]> = [
   [/^country(?:\/?(?:or)?region)?(?:ofresidence)?$|^所在国家|^居住国家|^国家(?:\/|或)?地区$/i, "country"],
   [/现居|所在城市|居住城市|^currentcity$|^city$/i, "currentCity"],
   [/期望岗位|期望职位|意向岗位|意向职位/, "targetRole"],
+  [/目前状态|在职状态|求职状态|当前状态|就业状态|employmentstatus/i, "employmentStatus", /婚姻|健康|政治|户口|户籍|投递/],
+  [/工作年限|工作经验年限|工作年数/, "workYears"],
+  [/目前(?:月|年)?薪|当前(?:月|年)?薪|上家薪资|原薪资|现薪资|currentsalary/i, "currentSalary"],
+  [/离职周期|到岗周期|入职周期|离职交接|noticeperiod/i, "noticePeriod"],
+  [/离职原因|跳槽原因|离开原因|变动原因/, "leaveReason"],
+  [/管理规模|带团队人数|团队规模|下属人数|直接下属/, "managementScale", /项目|公司|企业/],
+  [/竞业协议|竞业限制|有无竞业|是否签有竞业|non.?compete/i, "nonCompete"],
 ];
 
 /**

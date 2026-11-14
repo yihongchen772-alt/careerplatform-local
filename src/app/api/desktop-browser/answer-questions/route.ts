@@ -123,7 +123,16 @@ export async function POST(request: Request) {
     );
   }
 
-  const contextDigest = createHash("sha256").update(JSON.stringify([position?.jdText, position?.title, position?.company.name, resume.fileUrl, resume.extractedText, profile])).digest("hex");
+  const stableFacts = profile
+    ? Object.fromEntries(
+        Object.entries(profile)
+          .filter(([, v]) => v !== null && v !== undefined && v !== "")
+          .sort(([a], [b]) => a.localeCompare(b))
+      )
+    : null;
+  const contextDigest = createHash("sha256")
+    .update(JSON.stringify([position?.id ?? null, position?.jdText ?? null, position?.title ?? null, position?.company.name ?? null, resume.fileUrl, resume.extractedText ?? null, stableFacts]))
+    .digest("hex");
 
   // Cache lookup first — reused answers cost nothing and need no AI key.
   const cached = await db.autofillAnswer.findMany({
@@ -144,12 +153,16 @@ export async function POST(request: Request) {
   const needsGeneration: typeof questions = [];
   for (const q of questions) {
     let best: { answer: string; score: number; id: string; confirmed: boolean } | null = null;
+    const plainKey = questionKey(q.label);
+    const sectionedKey = q.section ? questionKey(`${q.section.trim()} · ${q.label}`) : plainKey;
     for (const c of cached) {
       if (c.kind !== q.kind || (!c.confirmed && c.contextDigest !== contextDigest)) continue;
       if (c.contextKey && c.contextKey !== contextKey) continue;
       if (companySpecificQuestion(q.label) && !c.contextKey && !c.confirmed) continue;
       if (q.kind === "choice" && (!q.options?.includes(c.answer))) continue;
-      const score = questionKey(q.label) === questionKey(c.questionLabel) ? 1 : 0;
+      const cKey = questionKey(c.questionLabel);
+      const hasSectionPrefix = c.questionLabel.includes(" · ");
+      const score = cKey === sectionedKey ? (q.section ? 2 : 1) : !hasSectionPrefix && cKey === plainKey ? 1 : 0;
       const threshold = 1;
       const rank = score + (c.confirmed ? 2 : 0) + (c.contextKey && c.contextKey === contextKey ? 1 : 0);
       if (score >= threshold && (!best || rank > best.score)) {
@@ -243,7 +256,7 @@ export async function POST(request: Request) {
               shortFields
                 .map(
                   (q) =>
-                    `- [id:${q.id}] ${q.label}${sectionNote(q)}` + (q.options?.length ? `（可选项：${q.options.join("/")}）` : "")
+                    `- [id:${q.id}] ${q.label}${sectionNote(q)}${q.maxLength ? `（最多 ${q.maxLength} 字）` : ""}` + (q.options?.length ? `（可选项：${q.options.join("/")}）` : "")
                 )
                 .join("\n")
           );
@@ -272,13 +285,14 @@ export async function POST(request: Request) {
           required: ["answers"],
         };
 
+        const thinkingBudget = essays.length > 0 ? 1024 : 128;
         const raw = usingCachedText
-          ? await callTextAi({ config: textConfig, prompt, schema, thinkingBudget: 1024, timeoutMs: 90000 })
+          ? await callTextAi({ config: textConfig, prompt, schema, thinkingBudget, timeoutMs: 90000 })
           : await generateStructuredWithFile({
               config: fileKey!,
               prompt,
               file: await fetchFileAsInlinePart(resume.fileUrl),
-              thinkingBudget: 1024,
+              thinkingBudget,
               timeoutMs: 90000,
               schema,
             });
@@ -294,6 +308,7 @@ export async function POST(request: Request) {
         const result = resultSchema.safeParse(raw);
         if (result.success) {
           const questionById = new Map(needsGeneration.map((q) => [q.id, q]));
+          const prepared: { id: string; value: string; save?: { userId: string; resumeVersionId: string; questionLabel: string; answer: string; kind: string; contextKey: string | null; contextDigest: string } }[] = [];
           for (const a of result.data.answers) {
             const question = questionById.get(a.id);
             if (!question) continue;
@@ -319,14 +334,23 @@ export async function POST(request: Request) {
                 continue;
               }
             }
-            let answerId: string | undefined;
-            if (!isSentinel) {
-              const created = await db.autofillAnswer.create({
-                data: { userId: user.id, resumeVersionId, questionLabel: question.label, answer: value, kind: question.kind, contextKey, contextDigest },
-              });
-              answerId = created.id;
-            }
-            answers.push({ id: a.id, answer: value, reused: false, answerId });
+            const scopedLabel = question.section ? `${question.section.trim()} · ${question.label}` : question.label;
+            prepared.push({
+              id: a.id,
+              value,
+              save: isSentinel ? undefined : { userId: user.id, resumeVersionId, questionLabel: scopedLabel, answer: value, kind: question.kind, contextKey, contextDigest },
+            });
+          }
+          const toSave = prepared.filter((item) => item.save);
+          const createdRows = toSave.length
+            ? typeof db.$transaction === "function"
+              ? await db.$transaction(toSave.map((item) => db.autofillAnswer.create({ data: item.save! })))
+              : await Promise.all(toSave.map((item) => db.autofillAnswer.create({ data: item.save! })))
+            : [];
+          let createIndex = 0;
+          for (const item of prepared) {
+            const answerId = item.save ? createdRows[createIndex++]?.id : undefined;
+            answers.push({ id: item.id, answer: item.value, reused: false, answerId });
           }
         } else if (answers.length === 0) {
           return NextResponse.json({ error: "AI 返回格式异常，请重试" }, { status: 502 });

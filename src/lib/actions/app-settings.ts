@@ -1,36 +1,20 @@
 "use server";
 
-import path from "path";
-import { randomUUID } from "crypto";
 import { z } from "zod";
-import { readFile, writeFile, mkdir, rename, rm } from "fs/promises";
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/session";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
-import { DEFAULT_APP_SETTINGS, type AppSettings } from "@/lib/app-settings-shared";
+import type { AppSettings } from "@/lib/app-settings-shared";
+import { readAppSettingsFile, writeAppSettingsFile } from "@/lib/app-settings-store";
 import { applyProxy } from "@/lib/proxy-agent";
-
-/**
- * Both sides agree on this path: main.js builds it from
- * app.getPath("userData"), and the Next server derives the same directory
- * from LOCAL_UPLOADS_DIR's parent.
- */
-function settingsPath(): string {
-  const uploads = process.env.LOCAL_UPLOADS_DIR;
-  const dir = uploads ? path.dirname(uploads) : process.cwd();
-  return path.join(dir, "app-settings.json");
-}
+import {
+  WEBHOOK_PROVIDER_LABELS,
+  sendWebhookNotification,
+  validateWebhookUrl,
+} from "@/lib/webhook";
 
 export async function getAppSettings(): Promise<AppSettings> {
-  try {
-    const raw = await readFile(settingsPath(), "utf8");
-    let status = {};
-    try { status = JSON.parse(await readFile(path.join(path.dirname(settingsPath()), "app-settings-status.json"), "utf8")); } catch { /* No OS status yet. */ }
-    return { ...DEFAULT_APP_SETTINGS, ...JSON.parse(raw), ...status };
-  } catch {
-    // No file yet (or unreadable) — the defaults are the correct answer.
-    return DEFAULT_APP_SETTINGS;
-  }
+  return readAppSettingsFile();
 }
 
 export async function updateAppSettings(
@@ -45,19 +29,45 @@ export async function updateAppSettings(
       applicationSyncIntervalHours: z.number().refine((v) => [0, 6, 12, 24].includes(v)).optional(),
       postingSheetIntervalHours: z.number().refine((v) => [0, 1, 3, 6].includes(v)).optional(),
       proxyUrl: z.string().trim().max(1000).optional(),
+      webhookUrl: z.string().trim().max(1000).optional(),
     }).strict().safeParse(next);
     if (!patch.success) throw new UserFacingError("设置格式或检查频率不支持");
-    const merged = { ...(await getAppSettings()), ...patch.data };
-    const file = settingsPath();
-    await mkdir(path.dirname(file), { recursive: true });
-    const temp = `${file}.${randomUUID()}.tmp`;
-    try {
-      await writeFile(temp, JSON.stringify(merged, null, 2), { encoding: "utf8", flag: "wx" });
-      await rename(temp, file);
-    } finally { await rm(temp, { force: true }); }
+    if (patch.data.webhookUrl !== undefined && patch.data.webhookUrl !== "") {
+      const normalized = validateWebhookUrl(patch.data.webhookUrl);
+      if (!normalized) {
+        throw new UserFacingError("Webhook 地址无效，请填 http:// 或 https:// 开头的完整 URL");
+      }
+      patch.data.webhookUrl = normalized;
+    }
+    const merged = { ...(await readAppSettingsFile()), ...patch.data };
+    await writeAppSettingsFile(merged);
     if ("proxyUrl" in next) applyProxy(merged.proxyUrl);
     revalidatePath("/settings");
     return merged;
+  });
+}
+
+export async function testWebhookNotification(
+  webhookUrl?: string
+): Promise<ActionResult<{ providerLabel: string }>> {
+  return toActionResult(async () => {
+    await requireUser();
+    const saved = await readAppSettingsFile();
+    const target = (webhookUrl !== undefined ? webhookUrl : saved.webhookUrl ?? "").trim();
+    const normalized = validateWebhookUrl(target);
+    if (!normalized) {
+      throw new UserFacingError("先填写有效的飞书 / 钉钉 / 企业微信或自定义 Webhook 地址");
+    }
+    const res = await sendWebhookNotification(normalized, {
+      event: "test",
+      title: "Webhook 测试通知",
+      body: "求职罗盘推送通道已连通！后续有面试/笔试提醒或网申进度变化时，将自动同步到此处。",
+      items: ["支持飞书 / Lark 机器人", "支持钉钉机器人", "支持企业微信与自定义 JSON Webhook"],
+    });
+    if (!res.ok) {
+      throw new UserFacingError(`Webhook 发送失败：${res.error || "请检查机器人关键词或网络设置"}`);
+    }
+    return { providerLabel: WEBHOOK_PROVIDER_LABELS[res.provider] };
   });
 }
 

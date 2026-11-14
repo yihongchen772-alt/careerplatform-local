@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import path from "path";
 import { requireUser } from "@/lib/session";
-import { ALLOWED_LIBRARY_MIME, saveLocalFile } from "@/lib/local-storage";
+import { ALLOWED_LIBRARY_MIME, mimeTypeForExtension, saveLocalFile } from "@/lib/local-storage";
 
 /**
  * Separate from /api/upload because the 资料库 accepts Office files and zips
@@ -17,9 +18,13 @@ export async function POST(request: Request): Promise<NextResponse> {
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "未收到文件" }, { status: 400 });
   }
-  if (!ALLOWED_LIBRARY_MIME.includes(file.type)) {
+  const mimeType =
+    file.type && file.type !== "application/octet-stream"
+      ? file.type
+      : (mimeTypeForExtension(path.extname(file.name)) ?? file.type);
+  if (!ALLOWED_LIBRARY_MIME.includes(mimeType)) {
     return NextResponse.json(
-      { error: "不支持这个格式（可用：PDF、图片、Word/PPT/Excel、zip、txt）" },
+      { error: "不支持这个格式（可用：PDF、图片、Word/PPT/Excel、zip、txt、md）" },
       { status: 400 }
     );
   }
@@ -28,7 +33,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
-  const { url } = await saveLocalFile(buffer, file.type);
+  const { url } = await saveLocalFile(buffer, mimeType);
 
   return NextResponse.json({ url, name: file.name });
 }

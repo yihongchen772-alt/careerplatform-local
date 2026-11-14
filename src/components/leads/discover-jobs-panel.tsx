@@ -11,28 +11,46 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { addDiscoveredJobsToPool } from "@/lib/actions/campus-postings";
-import { launchBatchApply } from "@/lib/batch-apply";
-import type { BoardJob } from "@/lib/career-ops";
+import { buildBrowserApplyHref, launchBatchApply } from "@/lib/batch-apply";
+import {
+  BatchProfileSelect,
+  useBatchProfileSelection,
+  type BatchResumeOption,
+  type BatchVariantOption,
+} from "@/components/leads/batch-profile-select";
+import type { BoardJob, JobDiscoveryKind } from "@/lib/career-ops";
 
 type DiscoverResponse = {
   jobs: BoardJob[];
   total: number;
   channels: { boards: number; sheets: number; web: number };
+  warnings?: string[];
   searched: { name: string; found: number; error: string | null }[];
 };
 
 const QUICK_TOPICS = ["前端", "后端", "嵌入式", "AI算法", "产品经理", "硬件", "数据分析"];
+const JOB_KIND_OPTIONS: { id: JobDiscoveryKind; label: string }[] = [
+  { id: "all", label: "全部类型" },
+  { id: "campus", label: "校招" },
+  { id: "intern", label: "实习" },
+  { id: "social", label: "社招" },
+];
 
 export function DiscoverJobsPanel({
   defaultTrack,
   defaultCities,
+  resumeVersions = [],
+  profileVariants = [],
 }: {
   defaultTrack: string;
   defaultCities: string;
+  resumeVersions?: BatchResumeOption[];
+  profileVariants?: BatchVariantOption[];
 }) {
   const router = useRouter();
   const [query, setQuery] = useState(defaultTrack || "");
   const [cities, setCities] = useState(defaultCities || "");
+  const [jobKind, setJobKind] = useState<JobDiscoveryKind>("all");
   const [includeBoards, setIncludeBoards] = useState(true);
   const [includeSheets, setIncludeSheets] = useState(true);
   const [includeWeb, setIncludeWeb] = useState(true);
@@ -41,6 +59,7 @@ export function DiscoverJobsPanel({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [addedUrls, setAddedUrls] = useState<Set<string>>(new Set());
   const [adding, startAdding] = useTransition();
+  const batchProfile = useBatchProfileSelection(resumeVersions, profileVariants);
 
   async function handleSearch(overrideQuery?: string) {
     const q = (overrideQuery ?? query).trim();
@@ -61,6 +80,8 @@ export function DiscoverJobsPanel({
           includeBoards,
           includeSheets,
           includeWeb,
+          jobKind,
+          resumeVersionId: batchProfile.resumeVersionId || undefined,
         }),
       });
       const json = await res.json();
@@ -135,7 +156,8 @@ export function DiscoverJobsPanel({
         title: j.title,
         sourceLabel: j.sourceLabel || "全网搜岗",
       })),
-      (href) => router.push(href)
+      (href) => router.push(href),
+      batchProfile.launchOptions
     );
     toast.success(
       res.mode === "desktop"
@@ -213,6 +235,23 @@ export function DiscoverJobsPanel({
             ))}
           </div>
           <div className="flex flex-wrap items-center gap-3 text-muted-foreground">
+            <div className="flex items-center gap-1">
+              {JOB_KIND_OPTIONS.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setJobKind(opt.id)}
+                  className={cn(
+                    "rounded-full border px-2.5 py-0.5 transition-colors",
+                    jobKind === opt.id
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
             <label className="flex cursor-pointer items-center gap-1.5">
               <input type="checkbox" checked={includeBoards} onChange={(e) => setIncludeBoards(e.target.checked)} />
               企业官网直招
@@ -227,10 +266,29 @@ export function DiscoverJobsPanel({
             </label>
           </div>
         </div>
+        {(resumeVersions.length > 0 || profileVariants.length > 0) && (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-2.5 text-xs">
+            <span className="text-muted-foreground">按哪份简历算匹配度 & 默认投递方案：</span>
+            <BatchProfileSelect
+              resumeVersions={resumeVersions}
+              profileVariants={profileVariants}
+              resumeVersionId={batchProfile.resumeVersionId}
+              onResumeChange={batchProfile.setResumeVersionId}
+              variantId={batchProfile.variantId}
+              onVariantChange={batchProfile.setVariantId}
+              linkedVariantName={batchProfile.linkedVariantName}
+            />
+          </div>
+        )}
       </div>
 
       {data && (
         <div className="space-y-3">
+          {data.warnings && data.warnings.length > 0 && (
+            <div className="rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+              部分官网直招抓取超时或受限：{data.warnings.join("；")}（已展示其余渠道结果）
+            </div>
+          )}
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
             <span>
               找到 <strong>{data.total}</strong> 个尚未记录的新岗位（官网直招 {data.channels.boards} · 信息表 {data.channels.sheets} · 全网检索 {data.channels.web}）
@@ -241,6 +299,15 @@ export function DiscoverJobsPanel({
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-primary/30 bg-primary/[0.05] px-3 py-2 text-sm">
               <span>已勾选 <strong>{selected.size}</strong> 个搜到的岗位</span>
               <div className="flex flex-wrap items-center gap-2">
+                <BatchProfileSelect
+                  resumeVersions={resumeVersions}
+                  profileVariants={profileVariants}
+                  resumeVersionId={batchProfile.resumeVersionId}
+                  onResumeChange={batchProfile.setResumeVersionId}
+                  variantId={batchProfile.variantId}
+                  onVariantChange={batchProfile.setVariantId}
+                  linkedVariantName={batchProfile.linkedVariantName}
+                />
                 <Button size="sm" onClick={() => void batchApplySelected()}>
                   <Rocket className="mr-1.5 size-3.5" />
                   批量打开网申并预填
@@ -333,7 +400,7 @@ export function DiscoverJobsPanel({
                         <td className="px-3 py-2">
                           <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
                             <Link
-                              href={`/browser?url=${encodeURIComponent(job.url)}`}
+                              href={buildBrowserApplyHref(job.url, batchProfile.launchOptions)}
                               className="inline-flex items-center gap-0.5 text-xs text-primary hover:underline"
                             >
                               投递

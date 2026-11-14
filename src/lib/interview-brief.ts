@@ -7,6 +7,8 @@ import { z } from "zod";
  * because a zod object cannot be exported from one.
  */
 export const interviewBriefSchema = z.object({
+  mode: z.enum(["interview", "exam"]).optional(),
+  webUsed: z.boolean().optional(),
   summary: z.string(),
   focus: z.array(z.object({ point: z.string(), why: z.string() })).max(8),
   stories: z.array(z.object({ point: z.string(), experience: z.string(), howToTell: z.string() })).max(8),
@@ -16,6 +18,13 @@ export const interviewBriefSchema = z.object({
 });
 
 export type InterviewBrief = z.infer<typeof interviewBriefSchema>;
+export type BriefMode = "interview" | "exam";
+
+export function inferBriefMode(stage: string, stageLabel?: string | null): BriefMode {
+  if (stage === "OA" || stage === "ASSESSMENT") return "exam";
+  if (stageLabel && /笔试|测评|机考/.test(stageLabel)) return "exam";
+  return "interview";
+}
 
 export const interviewBriefAiSchema = {
   type: "OBJECT",
@@ -36,6 +45,8 @@ export function parseInterviewBrief(raw: unknown): InterviewBrief | null {
   const value = raw as Record<string, unknown>;
   const list = (key: string, max: number) => (Array.isArray(value[key]) ? (value[key] as unknown[]).slice(0, max) : []);
   const parsed = interviewBriefSchema.safeParse({
+    mode: value.mode === "exam" ? "exam" : value.mode === "interview" ? "interview" : undefined,
+    webUsed: typeof value.webUsed === "boolean" ? value.webUsed : undefined,
     summary: typeof value.summary === "string" ? value.summary : "",
     focus: list("focus", 8),
     stories: list("stories", 8),

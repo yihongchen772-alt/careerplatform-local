@@ -14,6 +14,7 @@ import { toDateKey } from "@/lib/dates";
 import { absoluteWhen, clock, dayLabel, kindFromText, SCHEDULE_KIND_LABELS } from "@/lib/interview-schedule";
 import { KIND_STYLE } from "@/components/schedule/kind-style";
 import { setEventCompleted, setStepCompleted } from "@/lib/actions/schedule";
+import { toggleTaskDone } from "@/lib/actions/personal-tasks";
 import { cn } from "@/lib/utils";
 
 export type CalendarEvent = {
@@ -49,17 +50,25 @@ export function DeadlineCalendar({
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
 
-  // 「已完成」 / 撤销 for your own events (event-…) and a 投递's steps (stage-…).
+  // 「已完成」 / 撤销 for your own events (event-…), manual tasks (task-…), and a 投递's steps (stage-…).
   async function toggleDone(e: CalendarEvent) {
     const [kind, ...rest] = e.id.split("-");
     const id = rest.join("-");
     const done = !e.done;
     setBusy(e.id);
     try {
+      if (kind === "task") {
+        await toggleTaskDone(id, done);
+        toast.success(done ? "已完成" : "已恢复为未完成");
+        router.refresh();
+        return;
+      }
       const result = kind === "event" ? await setEventCompleted(id, done) : await setStepCompleted(id, done);
       if (!result.ok) return void toast.error(result.message);
       toast.success(done ? "已完成" : "已恢复为未完成");
       router.refresh();
+    } catch {
+      toast.error("更新状态失败，请重试");
     } finally {
       setBusy(null);
     }
@@ -121,7 +130,7 @@ export function DeadlineCalendar({
   }
 
   function row(e: CalendarEvent) {
-    const canComplete = e.id.startsWith("event-") || e.id.startsWith("stage-");
+    const canComplete = e.id.startsWith("event-") || e.id.startsWith("stage-") || e.id.startsWith("task-");
     const kind = kindFromText(e.label);
     return (
       <li

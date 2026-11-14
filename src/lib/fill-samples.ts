@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 // 网申样本 for the Chrome extension: the same folder and files the desktop
@@ -23,7 +23,9 @@ export async function recordFillStats(rawUrl: string, patch: Partial<Record<"fil
   for (const [key, value] of Object.entries(patch)) row[key] = Number(row[key] || 0) + (value || 0);
   row.lastAt = new Date().toISOString();
   stats[host] = row;
-  await writeFile(file, JSON.stringify(stats, null, 1));
+  const tmp = `${file}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 7)}.tmp`;
+  await writeFile(tmp, JSON.stringify(stats, null, 1));
+  await rename(tmp, file);
 }
 
 /** Saves one automatic sample (one per page a day); false when today's is already there. */

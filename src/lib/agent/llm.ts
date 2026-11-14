@@ -344,3 +344,23 @@ export function historyMessages(provider: UserAiConfig["provider"], history: { r
   if (messages[messages.length - 1]?.role === "user") messages.pop();
   return messages;
 }
+
+/** Compacts turns truncated beyond MAX_HISTORY_TURNS so early decisions/IDs survive long threads. */
+export function summarizeDroppedHistory(
+  dropped: { role: "user" | "assistant"; content: string; refs?: string }[],
+  maxChars = 1600
+): string {
+  if (!dropped.length) return "";
+  const lines: string[] = [];
+  let used = 0;
+  for (const item of dropped) {
+    const clean = item.content.replace(/\s+/g, " ").trim();
+    if (!clean) continue;
+    const refs = item.refs ? ` [涉及:${item.refs.replace(/\s+/g, " ").trim().slice(0, 140)}]` : "";
+    const line = `- ${item.role === "user" ? "用户" : "小欧"}：${clean.slice(0, item.role === "user" ? 100 : 140)}${clean.length > (item.role === "user" ? 100 : 140) ? "…" : ""}${refs}`;
+    if (used + line.length + 1 > maxChars) break;
+    lines.push(line);
+    used += line.length + 1;
+  }
+  return lines.join("\n");
+}
