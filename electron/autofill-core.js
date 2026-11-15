@@ -1050,14 +1050,15 @@ async function fillFields(pairs, taskId) {
     const el = find('[data-cp-fill-id="' + p.id + '"]');
     if (!el && p.mappingKey) { missing.push(p.id); continue; }
     const rich = !!el && el.isContentEditable && !/^(?:INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
+    const allowCalOverwrite = !!p.retry && el?.getAttribute("data-cp-filled") && el.getAttribute("data-cp-user-edited") !== "1";
     if (el && el.readOnly && el.closest(".ant-calendar-picker, .atsx-calendar-picker")) {
-      if (el.value && String(el.value).trim()) { skipped.push(p.id); continue; }
+      if (el.value && String(el.value).trim() && !allowCalOverwrite) { skipped.push(p.id); continue; }
       if (await pickAntCalendar(el, p.value)) { mark(el, p.source || "profile", p.answerId); confirmManual(el, p); filled.push(p.id); }
       else failed.push(p.label || p.id);
       continue;
     }
     if (el && el.readOnly && el.closest("[class*='sd-Dropdown-container']")) {
-      if (el.value && String(el.value).trim()) { skipped.push(p.id); continue; }
+      if (el.value && String(el.value).trim() && !allowCalOverwrite) { skipped.push(p.id); continue; }
       if (await (el.closest("[class*='location_info']") ? pickSdLocation(el, p.value) : pickSdCalendar(el, p.value))) { mark(el, p.source || "profile", p.answerId); confirmManual(el, p); filled.push(p.id); }
       else failed.push(p.label || p.id);
       continue;
@@ -1069,7 +1070,8 @@ async function fillFields(pairs, taskId) {
     const selected = el.tagName.toLowerCase() === "select" ? el.options[el.selectedIndex] : null;
     const placeholder = selected && (!selected.value || /^(?:请(?:选择|选取)|please\s*(?:select|choose)|select\s*(?:one|an?\b)|choose\s*(?:one|an?\b)|[-—]+\s*(?:请选择|select))/i.test(clean(selected.textContent)));
     const current = rich ? clean(el.innerText) : el.value && String(el.value).trim();
-    if ((!placeholder && current) || el.getAttribute("data-cp-user-edited") === "1") {
+    const allowOverwrite = !!p.retry && el.getAttribute("data-cp-filled") && el.getAttribute("data-cp-user-edited") !== "1";
+    if ((!placeholder && current && !allowOverwrite) || el.getAttribute("data-cp-user-edited") === "1") {
       skipped.push(p.id);
       continue;
     }
@@ -1117,7 +1119,8 @@ async function fillFields(pairs, taskId) {
       const group = Array.from(picker.querySelectorAll("input")).map((input) => {
         const id = input.getAttribute("data-cp-fill-id");
         const pair = input === el ? p : pairs.find((other) => other.id === id && other.value && other.value !== "至今");
-        if (pair && ((input.value && String(input.value).trim()) || input.getAttribute("data-cp-user-edited") === "1")) {
+        const allowPickerOverwrite = pair && !!pair.retry && input.getAttribute("data-cp-filled") && input.getAttribute("data-cp-user-edited") !== "1";
+        if (pair && (((input.value && String(input.value).trim()) && !allowPickerOverwrite) || input.getAttribute("data-cp-user-edited") === "1")) {
           pickerDone.add(pair.id);
           skipped.push(pair.id);
           return null;
@@ -4577,6 +4580,77 @@ async function fillFrames(adapter, pairs, frameById, initialUrl) {
 
 // `options`: { variantId, expandBlocks, saveBlocks } from the UI, plus round/modal/added
 // carried between 自动补齐栏目 rounds.
+function buildAiProfile(profile) {
+  return {
+    name: profile.name, phone: profile.phone, email: profile.email, gender: profile.gender, birthDate: profile.birthDate,
+    school: profile.school, targetTrack: profile.targetTrack, graduationYear: profile.graduationYear, preferredCities: profile.preferredCities,
+    major: profile.major, degree: profile.degree, gpa: profile.gpa, educationStart: profile.educationStart, educationEnd: profile.educationEnd,
+    latestCompany: profile.latestCompany, latestRole: profile.latestRole, politics: profile.politics, hometown: profile.hometown,
+    ethnicity: profile.ethnicity, english: profile.english, currentCity: profile.currentCity, targetRole: profile.targetRole,
+    expectedSalary: profile.expectedSalary, availableFrom: profile.availableFrom, researchDirection: profile.researchDirection, researchTopic: profile.researchTopic,
+    employmentStatus: profile.employmentStatus, workYears: profile.workYears, noticePeriod: profile.noticePeriod, leaveReason: profile.leaveReason, managementScale: profile.managementScale,
+    selfIntro: profile.selfIntro, extra: profile.extra,
+  };
+}
+
+function suggestValidationRepair(field, pair, issueMessage) {
+  if (!field || !pair || !pair.value || isNeverGuessField(field) || isThirdPartyField(field) || field.readonlyPicker) return null;
+  const value = String(pair.value).trim();
+  if (!value) return null;
+  const issue = String(issueMessage || "");
+  const hint = `${issue} ${field.placeholder || ""}`;
+  const haystack = `${field.label || ""} ${field.name || ""} ${hint}`;
+
+  // 1. Dynamic length limit from validation message or field maxLength
+  const limitMatch = /(?:不超过|最多(?:可?输入|可?填写|填)?|少于|以内)\D*(\d{1,4})\s*(?:个?字|字符|char)?|(\d{1,4})\s*字以内|(?:max(?:imum)?(?:\s*length)?|at\s*most)\D*(\d{1,4})/i.exec(issue);
+  const parsedLimit = Number(limitMatch?.[1] || limitMatch?.[2] || limitMatch?.[3] || 0);
+  const limit = parsedLimit >= 2 ? parsedLimit : field.maxLength || 0;
+  if (limit >= 2 && value.length > limit) {
+    const fitted = fitToLimit(value, limit);
+    if (fitted && fitted !== value) return { value: fitted, reason: "长度适配" };
+  }
+
+  // 2. Date separator / precision format repair (skip native date/month inputs)
+  const dateMatch = /^(\d{4})[-/.年](\d{1,2})(?:[-/.月](\d{1,2}))?日?$/.exec(value);
+  if (dateMatch && !(field.tag === "input" && (field.type === "date" || field.type === "month"))) {
+    const y = dateMatch[1];
+    const mo = dateMatch[2].padStart(2, "0");
+    const da = dateMatch[3] ? dateMatch[3].padStart(2, "0") : null;
+    let formatted = null;
+    if (/yyyy\s*\/\s*mm\s*\/\s*dd/i.test(hint)) formatted = `${y}/${mo}/${da || "01"}`;
+    else if (/yyyy\s*\/\s*mm(?![/\w])/i.test(hint)) formatted = `${y}/${mo}`;
+    else if (/yyyy\s*\.\s*mm\s*\.\s*dd/i.test(hint)) formatted = `${y}.${mo}.${da || "01"}`;
+    else if (/yyyy\s*\.\s*mm(?![.\w])/i.test(hint)) formatted = `${y}.${mo}`;
+    else if (/\byyyymmdd\b/i.test(hint)) formatted = `${y}${mo}${da || "01"}`;
+    else if (/\byyyymm\b/i.test(hint)) formatted = `${y}${mo}`;
+    else if (/yyyy\s*年\s*mm?\s*月\s*dd?\s*日/i.test(hint)) formatted = `${y}年${mo}月${da || "01"}日`;
+    else if (/yyyy\s*年\s*mm?\s*月(?!\s*dd?)/i.test(hint)) formatted = `${y}年${mo}月`;
+    else if (/yyyy\s*-\s*mm\s*-\s*dd/i.test(hint) && !da) formatted = `${y}-${mo}-01`;
+    else if (/yyyy\s*-\s*mm(?![-\w])/i.test(hint) && da) formatted = `${y}-${mo}`;
+    else if (/格式|日期|时间|date|format|invalid/i.test(issue) && value.includes("-")) formatted = `${y}/${mo}${da ? `/${da}` : ""}`;
+    if (formatted && formatted !== value) return { value: formatted, reason: "日期格式" };
+  }
+
+  // 3. Phone formatting cleanup (+86 / hyphens / spaces)
+  if (/手机|电话|联系方式|mobile|phone|tel/i.test(haystack) && /[\s\-+()]/.test(value)) {
+    let digits = value.replace(/\D/g, "");
+    if (/^86(\d{11})$/.test(digits)) digits = digits.slice(2);
+    if (digits.length >= 7 && digits !== value) return { value: digits, reason: "手机号格式" };
+  }
+
+  // 4. Numeric / GPA / percentage scale strip when the box expects a pure number
+  if (/数字|数值|整数|小数|纯数字|仅限?数字|number|numeric/i.test(issue) || field.type === "number") {
+    const ratio = /^\s*(\d+(?:\.\d+)?)\s*\/\s*\d+(?:\.\d+)?\s*$/.exec(value)?.[1];
+    if (ratio && ratio !== value) return { value: ratio, reason: "数值格式" };
+    const pct = /(?:前|top\s*)?(\d+(?:\.\d+)?)\s*%/i.exec(value)?.[1];
+    if (pct && pct !== value) return { value: pct, reason: "百分比数值" };
+    const plainNum = /^\s*(\d+(?:\.\d+)?)\s*(?:分|年|个月|月|天|人|万元|万|k|K)?\s*$/.exec(value)?.[1];
+    if (plainNum && plainNum !== value) return { value: plainNum, reason: "纯数字格式" };
+  }
+
+  return null;
+}
+
 async function runAutofillCore(adapter, resumeVersionId, options = {}) {
   const initialUrl = adapter.url();
   const priorPlan = adapter.getPlan?.();
@@ -4595,7 +4669,10 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     assertActive();
     adapter.status({ phase: "scanning", message: "正在读取页面…" });
 
-    const profileQuery = new URLSearchParams({ contextKey: options.positionId ? `job:v1:${options.positionId}` : portalContext(initialUrl) });
+    const profileQuery = new URLSearchParams({
+      contextKey: options.positionId ? `job:v1:${options.positionId}` : portalContext(initialUrl),
+      url: initialUrl,
+    });
     if (options.variantId) profileQuery.set("variantId", options.variantId);
     if (resumeVersionId) profileQuery.set("resumeVersionId", resumeVersionId);
     const profileRes = await adapter.api(`profile?${profileQuery}`);
@@ -4840,20 +4917,11 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       }
       adapter.status({ phase: "ai", message: `已验证填入 ${basicResult.filled.length} 个资料字段，正在用 AI 生成 ${candidates.length} 个字段的内容…` });
       try {
-        const aiProfile = {
-          name: profile.name, phone: profile.phone, email: profile.email, gender: profile.gender, birthDate: profile.birthDate,
-          school: profile.school, targetTrack: profile.targetTrack, graduationYear: profile.graduationYear, preferredCities: profile.preferredCities,
-          major: profile.major, degree: profile.degree, gpa: profile.gpa, educationStart: profile.educationStart, educationEnd: profile.educationEnd,
-          latestCompany: profile.latestCompany, latestRole: profile.latestRole, politics: profile.politics, hometown: profile.hometown,
-          ethnicity: profile.ethnicity, english: profile.english, currentCity: profile.currentCity, targetRole: profile.targetRole,
-          expectedSalary: profile.expectedSalary, availableFrom: profile.availableFrom, researchDirection: profile.researchDirection, researchTopic: profile.researchTopic,
-          employmentStatus: profile.employmentStatus, workYears: profile.workYears, noticePeriod: profile.noticePeriod, leaveReason: profile.leaveReason, managementScale: profile.managementScale,
-          selfIntro: profile.selfIntro, extra: profile.extra,
-        };
+        const aiProfile = buildAiProfile(profile);
         const answerRes = await adapter.api("answer-questions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ questions: candidates.map((q) => { const field = fields.find((f) => f.id === q.id); return { ...q, maxLength: (field && textLimitFor(field)) || undefined }; }), resumeVersionId, profile: aiProfile, contextKey: pageContext, positionId: options.positionId, regenerate: options.regenerate, answerLength: options.answerLength }),
+          body: JSON.stringify({ questions: candidates.map((q) => { const field = fields.find((f) => f.id === q.id); return { ...q, maxLength: (field && textLimitFor(field)) || undefined }; }), resumeVersionId, profile: aiProfile, contextKey: pageContext, positionId: options.positionId, jdContext: !options.positionId && options.jdContext ? options.jdContext : undefined, regenerate: options.regenerate, answerLength: options.answerLength }),
         });
         if (answerRes.ok) {
           const { answers } = await answerRes.json();
@@ -4952,7 +5020,91 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
         merged.set(key, prior);
       } else merged.set(key, { ...detail, key });
     });
-    const validation = [...await validateFrames(adapter, frameById), ...[...tooLong].map((id) => ({ id, message: "内容超过网页字数上限，已跳过，请缩短后填写" }))];
+    let validation = [...await validateFrames(adapter, frameById), ...[...tooLong].map((id) => ({ id, message: "内容超过网页字数上限，已跳过，请缩短后填写" }))];
+    let healedCount = 0;
+    if (validation.length > 0 && !options.skipSelfHeal && adapter.stillOnPage(initialUrl)) {
+      const beforeIssueIds = new Set(validation.map((v) => v.id));
+      const ruleRepairs = [];
+      const aiRepairQueue = [];
+      for (const issue of validation) {
+        const field = fields.find((f) => f.id === issue.id);
+        const pair = pairs.find((p) => p.id === issue.id);
+        if (!field || !pair || pair.healed || tooLong.has(field.id) || isNeverGuessField(field) || isThirdPartyField(field) || field.readonlyPicker) continue;
+        const fix = suggestValidationRepair(field, pair, issue.message);
+        if (fix && fix.value !== pair.value) {
+          pair.value = fix.value;
+          pair.healed = true;
+          ruleRepairs.push({ ...pair, retry: true });
+        } else if (resumeVersionId && !field.datePart) {
+          aiRepairQueue.push({ field, pair, issueMessage: issue.message });
+        }
+      }
+      const applyHealBatch = async (batch) => {
+        if (!batch.length || !adapter.stillOnPage(initialUrl)) return;
+        const healRes = await fillFrames(adapter, batch, frameById, initialUrl);
+        assertActive();
+        for (const id of healRes.filled) {
+          if (!filledSet.has(id)) { filled.push(id); filledSet.add(id); }
+          const f = fields.find((x) => x.id === id);
+          const p = pairs.find((x) => x.id === id);
+          if (f && p) {
+            failedSet.delete(f.id);
+            failedSet.delete(f.label || f.id);
+            merged.set(f.resultKey || f.id, { ...fillDetail(f, p, filledSet, failedSet, reasons), id: f.id, key: f.resultKey || f.id });
+          }
+        }
+      };
+      if (ruleRepairs.length) {
+        adapter.status({ phase: "scanning", message: `检测到 ${ruleRepairs.length} 项格式报错，正在自动修正重试…` });
+        await applyHealBatch(ruleRepairs);
+        await new Promise((r) => setTimeout(r, 120));
+        validation = [...await validateFrames(adapter, frameById), ...[...tooLong].map((id) => ({ id, message: "内容超过网页字数上限，已跳过，请缩短后填写" }))];
+      }
+      const remainingIds = new Set(validation.map((v) => v.id));
+      const needAiHeal = aiRepairQueue.filter((item) => remainingIds.has(item.field.id)).slice(0, 12);
+      if (needAiHeal.length && resumeVersionId && adapter.stillOnPage(initialUrl)) {
+        adapter.status({ phase: "ai", message: `有 ${needAiHeal.length} 项未通过网页校验，正结合报错提示让 AI 修正…` });
+        try {
+          const healQuestions = needAiHeal.map(({ field, pair, issueMessage }) => ({
+            id: field.id,
+            label: displayLabel(field),
+            kind: field.tag === "textarea" || field.tag === "richtext" ? "essay" : field.options?.length ? "choice" : "short",
+            options: field.options?.length ? field.options : undefined,
+            section: String(field.section || "").replace(/\s+/g, " ").trim().slice(0, 40) || undefined,
+            maxLength: textLimitFor(field) || undefined,
+            validationError: String(issueMessage || "").slice(0, 300),
+            previousValue: String(pair.value || "").slice(0, 500),
+          }));
+          const healRes = await adapter.api("answer-questions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ questions: healQuestions, resumeVersionId, profile: buildAiProfile(profile), contextKey: pageContext, positionId: options.positionId, jdContext: !options.positionId && options.jdContext ? options.jdContext : undefined, regenerate: true, answerLength: options.answerLength }),
+          });
+          if (healRes?.ok) {
+            const body = await healRes.json().catch(() => null);
+            const aiRepairs = [];
+            for (const a of Array.isArray(body?.answers) ? body.answers : []) {
+              if (!a || typeof a.answer !== "string" || !a.answer.trim()) continue;
+              if (a.answer.trim().toUpperCase() === NEEDS_MANUAL_INPUT || /简历里没有相关信息|需要自己填/.test(a.answer)) continue;
+              const pair = pairs.find((p) => p.id === a.id);
+              if (!pair || a.answer.trim() === pair.value) continue;
+              pair.value = a.answer.trim();
+              pair.healed = true;
+              aiRepairs.push({ ...pair, retry: true });
+            }
+            if (aiRepairs.length) {
+              await applyHealBatch(aiRepairs);
+              await new Promise((r) => setTimeout(r, 120));
+              validation = [...await validateFrames(adapter, frameById), ...[...tooLong].map((id) => ({ id, message: "内容超过网页字数上限，已跳过，请缩短后填写" }))];
+            }
+          }
+        } catch {
+          // Best-effort validation healing never breaks an otherwise completed fill.
+        }
+      }
+      const afterIssueIds = new Set(validation.map((v) => v.id));
+      healedCount = [...beforeIssueIds].filter((id) => !afterIssueIds.has(id)).length;
+    }
     for (const issue of validation) { const field = fields.find((f) => f.id === issue.id); if (field) merged.set(field.resultKey || field.id, { id: field.id, label: field.label || field.placeholder || field.name, state: issue.message, source: "manual" }); }
     const allDetails = [...merged.values()];
     let uploadedResumeCount = 0;
@@ -4981,6 +5133,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     if (adapter.onFilled) await adapter.onFilled();
 
     const parts = [`已验证填入 ${basicFilled} 个基础字段${profile.variantName ? `（资料方案「${profile.variantName}」）` : ""}`];
+    if (healedCount > 0) parts.push(`已根据网页报错自动修正 ${healedCount} 个字段`);
     if (essayFilled > 0) {
       const fresh = essayFilled - essayReused;
       const bits = [];
@@ -5123,12 +5276,13 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     parts.push("你手填的内容：网申资料里还空着的会直接记进去（可撤销），其余的先放进待核对；提交前请核对所有填入内容");
 
     assertActive();
-    const summary = { filled: previous.filled + filled.length, manual: allDetails.filter((d) => d.source === "manual").length, deliberate: allDetails.filter((d) => d.source === "manual" && d.deliberate).length, preserved: Math.max(0, alreadyFilled - priorFillsOnPage) + skipped.length, excluded: allDetails.filter((d) => d.source === "excluded").length, uploaded: previous.uploaded + uploadedResumeCount + uploadedAttachmentCount, uploadedAttachments: uploadedAttachmentLabels };
+    const summary = { filled: previous.filled + filled.length, manual: allDetails.filter((d) => d.source === "manual").length, deliberate: allDetails.filter((d) => d.source === "manual" && d.deliberate).length, preserved: Math.max(0, alreadyFilled - priorFillsOnPage) + skipped.length, excluded: allDetails.filter((d) => d.source === "excluded").length, uploaded: previous.uploaded + uploadedResumeCount + uploadedAttachmentCount, uploadedAttachments: uploadedAttachmentLabels, ...(healedCount > 0 ? { healed: healedCount } : {}) };
     if (round) parts.unshift(`本次累计填入 ${summary.filled} 个字段、上传 ${summary.uploaded} 个附件；以下为最后一轮说明`);
     const openedSection = options.openedSection;
     // What needs the applicant's next step, shown on the result bar itself (the
     // full message only shows on hover there).
     const notes = [];
+    if (healedCount > 0) notes.push(`检测到校验报错并自动修正了 ${healedCount} 个字段`);
     if (openedSection) {
       const line = `已点开${openedSection.section ? `「${openedSection.section}」的` : ""}「编辑」并填写${openedSection.more ? "——核对后点网页上的保存，再点一次一键填写会打开下一栏" : "——核对后记得点网页上的保存"}`;
       parts.unshift(line);
@@ -5376,11 +5530,24 @@ function validatePageFields() {
   const issues = [];
   const roots = [document];
   for (let i = 0; i < roots.length; i++) Array.from(roots[i].querySelectorAll ? roots[i].querySelectorAll("*") : []).forEach((node) => { if (node.shadowRoot) roots.push(node.shadowRoot); });
+  const visibleErr = (node) => {
+    if (!node || node.querySelector("input, textarea, select")) return "";
+    if (typeof node.getClientRects === "function" && !node.getClientRects().length) return "";
+    const text = String(node.textContent || "").replace(/\s+/g, " ").trim();
+    return text && text.length <= 120 ? text : "";
+  };
+  const ERR_SEL = ".ant-form-item-explain-error, .el-form-item__error, .ud__form-item-explain-error, .arco-form-message, .t-form__error, .phoenix-form-explain, .sd-Form-error, [role='alert']:not([aria-live='off']), [class*='error-msg'], [class*='error-text'], [class*='errorTip'], [class*='explain-error']";
   for (const el of roots.flatMap((root) => Array.from(root.querySelectorAll("[data-cp-fill-id]")))) {
     if (el.disabled || el.readOnly || !el.getBoundingClientRect().width) continue;
     const id = el.getAttribute("data-cp-fill-id");
-    const row = el.closest(".ant-form-item, .el-form-item, .form-group, [class*='form-item']");
-    const message = row?.querySelector(".ant-form-item-explain-error, .el-form-item__error, [role='alert']")?.textContent?.trim();
+    const row = el.closest(".ant-form-item, .el-form-item, .ud__form-item, .arco-form-item, .t-form__item, .form-group, [class*='form-item'], [class*='form-field']");
+    let message = "";
+    if (row) {
+      for (const candidate of row.querySelectorAll(ERR_SEL)) {
+        const text = visibleErr(candidate);
+        if (text) { message = text; break; }
+      }
+    }
     if (message || el.getAttribute("aria-invalid") === "true") issues.push({ id, message: `网页提示：${message || "内容未通过校验"}` });
     // React Aria's hidden date twin carries step="60" (meant as seconds, read as 60 days).
     else if (el.validity && !el.validity.valid && !(el.type === "date" && el.validity.stepMismatch && !el.validity.valueMissing && !el.validity.badInput && !el.validity.typeMismatch && !el.validity.rangeUnderflow && !el.validity.rangeOverflow)) issues.push({ id, message: el.validity.valueMissing ? "必填项尚未填写" : `格式需核对：${el.validationMessage || "网页校验未通过"}` });
@@ -5523,7 +5690,7 @@ async function applyAutofillPlan(adapter, input) {
     let mappingSaveFailed = false;
     if (mappings.length) {
       try {
-        const mapRes = await adapter.api("field-mapping", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contextKey: plan.options.positionId ? `job:v1:${plan.options.positionId}` : portalContext(plan.url), mappings }) });
+        const mapRes = await adapter.api("field-mapping", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contextKey: plan.options.positionId ? `job:v1:${plan.options.positionId}` : portalContext(plan.url), url: plan.url, mappings }) });
         if (!mapRes?.ok) mappingSaveFailed = true;
       } catch {
         mappingSaveFailed = true;
@@ -5560,7 +5727,7 @@ module.exports = {
   pickPageRegion,
   isThirdPartyField, displayLabel, basicRuleMatches, normalizePhone, englishValue, matchPhoneChoice,
   classifyRepeatBlocks, savedRecordsOnPage, repeatsSavedEntry, previewRecordBlocks, formSkeleton, rowsForGroup, recordReference, awardFieldKind,
-  profileChoices, applyAutofillPlan, validatePageFields, focusFormField, collectApplicationFields, readCurrentApplicationFields, readFormAnswers, watchApplicationFields,
+  profileChoices, applyAutofillPlan, validatePageFields, suggestValidationRepair, focusFormField, collectApplicationFields, readCurrentApplicationFields, readFormAnswers, watchApplicationFields,
   AUTOFILL_MODULES,
   socialValues,
   fillDetail,

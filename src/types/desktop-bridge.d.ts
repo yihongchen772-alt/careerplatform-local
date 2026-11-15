@@ -53,6 +53,20 @@ export type DesktopBridgeAutofillModule = "basic" | "education" | "experience" |
 export type FillProposal = { id: string; fieldKey: string; label: string; section?: string; value: string; selected: boolean; eligible: boolean; source: string; ref: string; required?: boolean; maxLength?: number | null; options?: string[]; note: string; edited?: boolean; remember?: boolean };
 export type FillRecordBlock = { id: string; label: string; note: string; fieldIds: string[]; choices: { ref: string; label: string; values: Record<string, { value: string; ref: string }> }[] };
 export type FillPlan = { id: string; url: string; proposals: FillProposal[]; choices: { ref: string; label: string; value: string }[]; blocks?: FillRecordBlock[]; uploadResume: boolean; uploadAttachments?: boolean; contextKey: string; positionId?: string; resumeVersionId?: string; variantId?: string };
+export type ApplicationSnapshotField = {
+  id: string;
+  label: string;
+  section?: string;
+  tag: string;
+  type: string;
+  required?: boolean;
+  filled: boolean;
+  value?: string;
+  options?: string[];
+  maxLength?: number;
+  validationError?: string;
+};
+
 export type ApplicationSnapshot = {
   fields: { label: string; value: string }[]; url: string; positionId?: string; resumeVersionId?: string; variantId?: string; contextKey?: string;
   /** The current page's title, visible text (capped) and og:site_name, and this tab's earlier pages. */
@@ -63,6 +77,9 @@ export type ApplicationSnapshot = {
   jdPage?: { url: string; title: string; text: string; headings?: string[]; at: number } | null;
   /** When the applicant last pressed a real send button (提交 / 投递…) in this tab. */
   lastSendAt?: number | null;
+  /** Detailed interactive schema & validation state (only populated when requested with `{ detailed: true }`). */
+  formFields?: ApplicationSnapshotField[];
+  uploadSlots?: { label: string; fileKind: string; uploaded: boolean }[];
 };
 export type DesktopBridgeRegion = { x: number; y: number; width: number; height: number };
 export type DesktopBridgeAutofillOptions = {
@@ -144,7 +161,7 @@ export type DesktopBridge = {
   insertProfileValue(value: string): Promise<{ ok: boolean; label?: string; reason?: string }>;
   /** 框选填写: the box dragged over the page, or null when cancelled. */
   pickRegion(): Promise<DesktopBridgeRegion | null>;
-  applicationSnapshot(): Promise<ApplicationSnapshot | null>;
+  applicationSnapshot(options?: { detailed?: boolean }): Promise<ApplicationSnapshot | null>;
   autofill(resumeVersionId?: string, options?: DesktopBridgeAutofillOptions): Promise<unknown>;
   undoAutofill(): Promise<{ cleared: number }>;
   cancelAutofill(tabId?: number): Promise<void>;
@@ -157,7 +174,8 @@ export type DesktopBridge = {
   /** Writes text to the system clipboard (navigator.clipboard fails while the page view has focus). */
   copyText(text: string): Promise<void>;
   /** 小欧's 「填进这一栏」: writes an answer into the box with this question label. */
-  fillField(label: string, value: string, overwrite?: boolean): Promise<{ ok: boolean; needsConfirm?: boolean; reason?: string }>;
+  fillField(label: string, value: string, overwrite?: boolean): Promise<{ ok: boolean; needsConfirm?: boolean; reason?: string; label?: string; section?: string; contextKey?: string }>;
+  fillFields?(items: { label: string; value: string; overwrite?: boolean }[]): Promise<{ filled: { label: string; value: string; section?: string }[]; skipped: { label: string; reason: string; needsConfirm?: boolean }[]; contextKey?: string }>;
   clearMarks(): Promise<void>;
   capturePage(): Promise<DesktopBridgeCapturedPage>;
   exportFormStructure(): Promise<{ path: string; fields: number; frames: number }>;
@@ -212,6 +230,9 @@ export type DesktopBridge = {
   loginNeverRemove?(realm: string): Promise<void>;
   onLoginOffer?(callback: (payload: LoginOffer) => void): () => void;
   onLoginState?(callback: (payload: { tabId: number; state: LoginState | null }) => void): () => void;
+  otpState?(tabId?: number): Promise<{ visible: boolean; emailLikely: boolean } | null>;
+  fillOtp?(code: string, tabId?: number): Promise<{ filled: boolean; segmented?: boolean; message?: string }>;
+  onOtpState?(callback: (payload: { tabId: number; state: { visible: boolean; emailLikely: boolean } | null }) => void): () => void;
 };
 
 declare global {

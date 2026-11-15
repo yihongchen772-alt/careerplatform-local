@@ -82,14 +82,57 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && event.target && event.target.type === "password") report(event.target);
 }, true);
 
-// A password box showing up: worth checking for a kept password.
+// A password box or email/verification OTP box showing up: notify main process.
+const OTP_INPUT_HINT = /验证码|校验码|动态码|邮箱验证|email.*code|mail.*code|verif.*code|auth.*code|one-time-code|passcode|\botp\b/i;
+const GRAPHIC_CAPTCHA = /图形|图片验证|图像|滑块|滑动|slider|image.?captcha/i;
+
+function rowTextOf(el) {
+  const wrap = el.closest("form, [class*='item'], [class*='field'], [class*='row'], [class*='group']") || el.parentElement;
+  return String((wrap && (wrap.innerText || wrap.textContent)) || "").replace(/\s+/g, " ").slice(0, 120);
+}
+
+function detectOtpBox(root) {
+  const inputs = Array.from(root.querySelectorAll("input")).filter((input) => {
+    if (!visible(input)) return false;
+    const type = (input.getAttribute("type") || "text").toLowerCase();
+    return /^(?:text|tel|number|)$/.test(type);
+  });
+  let foundVisible = false;
+  let emailLikely = false;
+  for (const input of inputs) {
+    const desc = describe(input);
+    const row = rowTextOf(input);
+    if (GRAPHIC_CAPTCHA.test(desc) || GRAPHIC_CAPTCHA.test(row)) continue;
+    const isSegmentedOtp = input.maxLength === 1 && /验证码|动态码|校验码|otp|code|邮箱/i.test(row);
+    const matchesHint = input.getAttribute("autocomplete") === "one-time-code" || OTP_INPUT_HINT.test(desc) || (/验证码|动态码|校验码|verification code|otp/i.test(row) && !PASSWORD_ONLY_HINT(input));
+    if (isSegmentedOtp || matchesHint) {
+      foundVisible = true;
+      if (/邮箱|email|mail/i.test(`${desc} ${row}`) || /发送至.*@|邮件|收件箱/i.test(row)) emailLikely = true;
+    }
+  }
+  return { visible: foundVisible, emailLikely };
+}
+
+function PASSWORD_ONLY_HINT(el) {
+  const desc = describe(el);
+  return USERNAME_HINT.test(desc) && !OTP_INPUT_HINT.test(desc);
+}
+
 let announced = false;
+let lastOtpKey = "";
 let timer = null;
 function checkForPasswordBox() {
   timer = null;
   const present = passwordInputs(document).length > 0;
   if (present && !announced) ipcRenderer.send("browser-guest:login-form");
   announced = present;
+
+  const otp = detectOtpBox(document);
+  const otpKey = otp.visible ? `1:${otp.emailLikely ? 1 : 0}` : "0";
+  if (otpKey !== lastOtpKey) {
+    lastOtpKey = otpKey;
+    ipcRenderer.send("browser-guest:otp-form", otp);
+  }
 }
 function schedule() {
   if (!timer) timer = setTimeout(checkForPasswordBox, 400);

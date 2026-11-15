@@ -1,13 +1,14 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ClipboardCopy, Crosshair, FileText, ListChecks, ScanSearch, Settings2, SquareDashedMousePointer, X } from "lucide-react";
+import { ClipboardCopy, Crosshair, FileText, ListChecks, NotebookPen, ScanSearch, Settings2, SquareDashedMousePointer, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { InlinePendingReview } from "@/components/browser/inline-pending-review";
 import { cn } from "@/lib/utils";
 import type { DesktopBridge, DesktopBridgeAutofillOptions, DesktopBridgeAutofillStatus, DesktopBridgeFillSource, FillPlan } from "@/types/desktop-bridge";
 import { copyText } from "@/lib/copy-text";
 
-export type AssistantTab = "preview" | "result" | "cards" | "settings";
+export type AssistantTab = "preview" | "result" | "cards" | "pending" | "settings";
 
 type Job = { id: string; company: string; title: string; jd: string | null; url: string | null; submitted: number; rules: Record<string, unknown> | null };
 
@@ -45,20 +46,23 @@ const TABS: { id: AssistantTab; label: string; icon: typeof ScanSearch }[] = [
   { id: "preview", label: "预览", icon: ScanSearch },
   { id: "result", label: "结果", icon: ListChecks },
   { id: "cards", label: "资料卡", icon: ClipboardCopy },
+  { id: "pending", label: "待核对", icon: NotebookPen },
   { id: "settings", label: "设置", icon: Settings2 },
 ];
 
 /**
  * The browser's side panel (Chrome's 侧边栏): previewing a fill field by
  * field, checking the last result and jumping to what still needs typing,
- * copying profile facts by hand, and the fill settings. It sits beside the
- * page, so the page stays visible and clickable while it is open.
+ * copying profile facts by hand, inline review of pending changes, and the
+ * fill settings. It sits beside the page, so the page stays visible and
+ * clickable while it is open.
  */
-export function ApplicationAssistant({ bridge, status, busy, hasPage, resumeId, variantId, positionId, onRegion, tab, onTab, onClose, onPosition, onPreview, onApply, settings, onOpenProfile }: {
+export function ApplicationAssistant({ bridge, status, busy, hasPage, resumeId, variantId, positionId, onRegion, tab, onTab, onClose, onPosition, onPreview, onApply, settings, onOpenProfile, pendingCount = 0, pendingRefreshToken = 0, onPendingCountChange, onOpenSettingsPending }: {
   bridge: DesktopBridge; status: DesktopBridgeAutofillStatus | null; busy: boolean; hasPage: boolean; resumeId: string; variantId: string; positionId: string; onRegion: () => void;
   tab: AssistantTab; onTab: (tab: AssistantTab) => void; onClose: () => void;
   onPosition: (id: string) => void; onPreview: (extra?: DesktopBridgeAutofillOptions) => void; onApply: (options: DesktopBridgeAutofillOptions) => void;
   settings: React.ReactNode; onOpenProfile: () => void;
+  pendingCount?: number; pendingRefreshToken?: number; onPendingCountChange?: (count: number) => void; onOpenSettingsPending?: () => void;
 }) {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [cards, setCards] = useState<Card[]>([]);
@@ -80,18 +84,19 @@ export function ApplicationAssistant({ bridge, status, busy, hasPage, resumeId, 
   const job = jobs.find((j) => j.id === positionId);
   const manual = status?.details?.filter((d) => d.source === "manual") ?? [];
 
-  return <aside className="flex w-[21rem] shrink-0 flex-col border-l bg-card text-sm" aria-label="填写助手">
+  return <aside className="flex w-[22rem] shrink-0 flex-col border-l bg-card text-sm" aria-label="填写助手">
     <div className="shrink-0 border-b">
       <div className="flex h-10 items-center gap-2 pr-1.5 pl-3">
         <span className="font-medium">填写助手</span>
         <button type="button" aria-label="关闭填写助手" title="关闭侧边栏" onClick={onClose} className="ml-auto grid size-7 place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"><X className="size-4" /></button>
       </div>
-      <div role="tablist" aria-label="填写助手页签" className="mx-3 mb-2.5 grid grid-cols-4 rounded-lg bg-muted p-0.5">
+      <div role="tablist" aria-label="填写助手页签" className="mx-3 mb-2.5 grid grid-cols-5 rounded-lg bg-muted p-0.5">
         {TABS.map(({ id, label, icon: Icon }) => (
-          <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => onTab(id)} className={cn("flex h-7 items-center justify-center gap-1 rounded-md text-xs whitespace-nowrap transition-colors", tab === id ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
-            <Icon className="size-3.5" />
+          <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => onTab(id)} className={cn("flex h-7 items-center justify-center gap-0.5 rounded-md px-1 text-[11px] whitespace-nowrap transition-colors", tab === id ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+            <Icon className="size-3 shrink-0" />
             {label}
             {id === "result" && manual.length > 0 && <span className="rounded-full bg-red-500/15 px-1 text-[10px] leading-4 text-red-600">{manual.length}</span>}
+            {id === "pending" && pendingCount > 0 && <span className="rounded-full bg-amber-500/15 px-1 text-[10px] leading-4 text-amber-700 dark:text-amber-400">{pendingCount}</span>}
           </button>
         ))}
       </div>
@@ -133,6 +138,8 @@ export function ApplicationAssistant({ bridge, status, busy, hasPage, resumeId, 
       ))}
 
       {tab === "cards" && <ProfileCards cards={cards} bridge={bridge} hasPage={hasPage} onOpenProfile={onOpenProfile} />}
+
+      {tab === "pending" && <InlinePendingReview active={tab === "pending"} refreshToken={pendingRefreshToken} onCountChange={onPendingCountChange} onOpenFullPage={onOpenSettingsPending} />}
 
       {tab === "settings" && settings}
     </div>

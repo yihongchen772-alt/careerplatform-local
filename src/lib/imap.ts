@@ -175,3 +175,33 @@ export async function fetchRecentEmails(
 
   return results;
 }
+
+/**
+ * Read-only: fetches the newest N messages from the last day for instant email
+ * verification code (OTP) lookup. Reads tail UIDs (unlike fetchRecentEmails
+ * which advances oldest-first from a scan cursor) and never mutates flags.
+ */
+export async function fetchLatestEmailsForOtp(config: ImapConfig, limit = 12): Promise<InboxEmail[]> {
+  const client = await connect(config);
+  const results: InboxEmail[] = [];
+  try {
+    const lock = await client.getMailboxLock("INBOX");
+    try {
+      const since = new Date(Date.now() - 86_400_000);
+      const uids = await client.search({ since }, { uid: true });
+      const list = Array.isArray(uids) ? uids.filter((u) => Number.isSafeInteger(u) && u > 0).sort((a, b) => a - b) : [];
+      const newestUids = list.slice(-Math.max(1, Math.min(limit, 25)));
+      if (newestUids.length) {
+        for await (const message of client.fetch(newestUids, { envelope: true, source: true }, { uid: true })) {
+          results.push(await toInboxEmail(message));
+        }
+        results.sort((a, b) => b.date.getTime() - a.date.getTime());
+      }
+    } finally {
+      lock.release();
+    }
+  } finally {
+    await client.logout().catch(() => {});
+  }
+  return results;
+}

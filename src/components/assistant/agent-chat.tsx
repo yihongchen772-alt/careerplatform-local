@@ -32,10 +32,36 @@ type DisplayMessage = AssistantChatMessage & {
   filled?: number[];
 };
 
-export type PageDraft = { question: string; answer: string };
+export type PageDraft = { question: string; answer: string; section?: string };
+
+export type AgentPageField = {
+  label: string;
+  section?: string;
+  tag?: string;
+  type?: string;
+  required?: boolean;
+  filled?: boolean;
+  value?: string;
+  options?: string[];
+  maxLength?: number;
+  validationError?: string;
+};
 
 /** The 网申 page open beside 小欧 (网申浏览器's side panel). */
-export type AgentPageContext = { url: string; title: string; text: string; questions: { label: string; value: string }[]; positionId?: string };
+export type AgentPageContext = {
+  url: string;
+  title: string;
+  text: string;
+  questions: { label: string; value: string }[];
+  formFields?: AgentPageField[];
+  uploadSlots?: { label: string; fileKind?: string; uploaded: boolean }[];
+  jdPage?: { url: string; title: string; text: string } | null;
+  positionId?: string;
+  contextKey?: string;
+  portalCompanyId?: string;
+  portalCompanyName?: string;
+  portalAlreadySet?: boolean;
+};
 
 type TurnResult = { ok: true; reply: string; actions: AssistantAction[]; drafts: PageDraft[]; steps: AgentStep[]; notices: string[]; refs: string } | { ok: false; message: string };
 type Tab = "chat" | "history" | "plan" | "memory";
@@ -157,7 +183,7 @@ function when(iso: string) {
  * 小欧's conversation, plan and memory — the floating window on every page
  * and the 网申浏览器's side panel (with the open page as context) both show this.
  */
-export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIONS, quickQuestions = DEFAULT_QUICK_QUESTIONS, intro, askText, askSend = false, onAskConsumed, onNavigate, onReply, onFillField, className }: {
+export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIONS, quickQuestions = DEFAULT_QUICK_QUESTIONS, intro, askText, askSend = false, onAskConsumed, onNavigate, onReply, onFillField, onFillFields, className }: {
   header: ReactNode;
   pageContext?: () => Promise<AgentPageContext | null>;
   suggestions?: string[];
@@ -173,6 +199,8 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
   onReply?: () => void;
   /** 网申浏览器 only: writes a drafted answer into the page box with that question. */
   onFillField?: (draft: PageDraft) => Promise<boolean>;
+  /** 网申浏览器 only: batch writes drafted answers and returns filled draft indices. */
+  onFillFields?: (drafts: PageDraft[]) => Promise<number[]>;
   className?: string;
 }) {
   const router = useRouter();
@@ -437,6 +465,29 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
     if (ok) update((prev) => prev.map((m) => (m.id === messageId ? { ...m, filled: [...(m.filled ?? []), index] } : m)));
   }
 
+  async function fillAllDrafts(messageId: number, drafts: PageDraft[], alreadyFilled: number[]) {
+    if ((!onFillFields && !onFillField) || applying) return;
+    const pendingEntries = drafts.map((draft, index) => ({ draft, index })).filter(({ index }) => !alreadyFilled.includes(index));
+    if (!pendingEntries.length) return;
+    setApplying(`${messageId}:drafts`);
+    try {
+      let filledRelative: number[] = [];
+      if (onFillFields) {
+        filledRelative = await onFillFields(pendingEntries.map((item) => item.draft));
+      } else if (onFillField) {
+        for (let i = 0; i < pendingEntries.length; i++) {
+          if (await onFillField(pendingEntries[i].draft)) filledRelative.push(i);
+        }
+      }
+      const filledIndexes = filledRelative.map((relIdx) => pendingEntries[relIdx]?.index).filter((v): v is number => typeof v === "number");
+      if (filledIndexes.length) {
+        update((prev) => prev.map((m) => (m.id === messageId ? { ...m, filled: [...new Set([...(m.filled ?? []), ...filledIndexes])] } : m)));
+      }
+    } finally {
+      setApplying(null);
+    }
+  }
+
   async function savePlan() {
     if (planDraft === null) return;
     const res = await saveAgentPlan(planDraft);
@@ -560,6 +611,11 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
                   </div>
                   {!!m.notices?.length && <p className="px-1 text-xs text-amber-600 dark:text-amber-400">{m.notices.join("；")}</p>}
 
+                  {(m.drafts?.length ?? 0) - (m.filled?.length ?? 0) >= 2 && (onFillFields || onFillField) && (
+                    <Button size="sm" variant="outline" className="w-full text-xs" disabled={!!applying} onClick={() => void fillAllDrafts(m.id, m.drafts ?? [], m.filled ?? [])}>
+                      {applying === `${m.id}:drafts` ? <><Loader2 className="size-3.5 animate-spin" />正在填入网页…</> : <><Check className="size-3.5" />一键全部填入本页（{(m.drafts?.length ?? 0) - (m.filled?.length ?? 0)} 项）</>}
+                    </Button>
+                  )}
                   {m.drafts?.map((draft, i) => {
                     const done = m.filled?.includes(i);
                     return (

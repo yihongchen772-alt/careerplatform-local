@@ -70,7 +70,7 @@ const {
   sectionGroup,
   sectionOrdinal,
   snapshotFormStructure,
-  applyAutofillPlan, focusFormField, collectApplicationFields, readCurrentApplicationFields,
+  applyAutofillPlan, focusFormField, collectApplicationFields, readCurrentApplicationFields, validatePageFields,
   trackUserEdits,
   insertIntoLastField, lastFieldFocusAt, pickPageRegion, iframeOffsets,
   runAutofillCore,
@@ -153,8 +153,19 @@ function logins() {
 const pendingLogins = new Map();
 // What the key icon shows for a tab: the site's kept accounts.
 const loginStates = new Map();
+// Whether an email/verification OTP box is visible on the tab.
+const otpStates = new Map();
 // Pop-up windows (微信扫码登录 and the like) belong to the tab that opened them.
 const popupTabs = new Map();
+
+function sendOtpState(tab, state) {
+  if (state && state.visible) {
+    otpStates.set(tab.id, state);
+  } else {
+    otpStates.delete(tab.id);
+  }
+  send("browser:otp-state", { tabId: tab.id, state: state && state.visible ? state : null });
+}
 
 function tabForSender(sender) {
   return tabs.find((t) => t.view.webContents === sender) || tabs.find((t) => t.id === popupTabs.get(sender.id)) || null;
@@ -210,6 +221,81 @@ function fillLoginFields(username, password, overwrite) {
   if (overwrite || !box.value) { put(box, password); changed = true; }
   box.blur();
   return { filled: changed };
+}
+
+function fillOtpInPage(rawCode) {
+  const code = String(rawCode || "").trim();
+  if (!code) return { filled: false };
+  const OTP_HINT = /验证码|校验码|动态码|邮箱验证|email.*code|mail.*code|verif.*code|auth.*code|one-time-code|passcode|\botp\b/i;
+  const GRAPHIC_CAPTCHA = /图形|图片验证|图像|滑块|滑动|slider|image.?captcha/i;
+  const USER_ONLY = /user|account|login|email|mail|phone|mobile|tel|账号|帐号|用户名|手机|邮箱|登录名/i;
+  const visible = (el) => !!el && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden" && !el.disabled && !el.readOnly;
+  const describe = (el) => [el.name, el.id, el.placeholder, el.getAttribute("aria-label"), el.getAttribute("autocomplete")].filter(Boolean).join(" ");
+  const rowText = (el) => {
+    const wrap = el.closest("form, [class*='item'], [class*='field'], [class*='row'], [class*='group']") || el.parentElement;
+    return String((wrap && (wrap.innerText || wrap.textContent)) || "").replace(/\s+/g, " ").slice(0, 120);
+  };
+  const setNativeValue = (el, val) => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    el.focus();
+    if (setter) setter.call(el, val);
+    else el.value = val;
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    el.style.backgroundColor = "rgb(232, 240, 254)";
+  };
+
+  const inputs = Array.from(document.querySelectorAll("input")).filter((input) => {
+    if (!visible(input)) return false;
+    const t = (input.getAttribute("type") || "text").toLowerCase();
+    return /^(?:text|tel|number|)$/.test(t);
+  });
+
+  // 1. Segmented 1-char OTP boxes (e.g., 4 or 6 separate maxLength=1 inputs)
+  const chars = code.split("");
+  const segGroups = new Map();
+  for (const input of inputs) {
+    if (input.maxLength !== 1) continue;
+    const box = input.parentElement?.parentElement || input.parentElement;
+    if (!box) continue;
+    const text = String(box.innerText || "").slice(0, 120);
+    if (GRAPHIC_CAPTCHA.test(text)) continue;
+    if (!segGroups.has(box)) segGroups.set(box, []);
+    segGroups.get(box).push(input);
+  }
+  for (const group of segGroups.values()) {
+    if (group.length >= chars.length && group.length <= 8) {
+      for (let i = 0; i < chars.length; i++) setNativeValue(group[i], chars[i]);
+      group[chars.length - 1]?.blur();
+      return { filled: true, segmented: true };
+    }
+  }
+
+  // 2. Single OTP input (prefer email-labeled, empty, non-graphic)
+  const candidates = inputs
+    .map((el) => {
+      const desc = describe(el);
+      const row = rowText(el);
+      if (GRAPHIC_CAPTCHA.test(desc) || GRAPHIC_CAPTCHA.test(row)) return null;
+      const isOtp =
+        el.getAttribute("autocomplete") === "one-time-code" ||
+        OTP_HINT.test(desc) ||
+        (/验证码|动态码|校验码|verification code|\botp\b/i.test(row) && !(USER_ONLY.test(desc) && !OTP_HINT.test(desc)));
+      if (!isOtp) return null;
+      const score =
+        (/邮箱|email|mail/i.test(`${desc} ${row}`) ? 10 : 0) +
+        (OTP_HINT.test(desc) ? 5 : 0) +
+        (el.value ? -3 : 4) +
+        (document.activeElement === el ? 2 : 0);
+      return { el, score };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score);
+
+  if (!candidates.length) return { filled: false };
+  setNativeValue(candidates[0].el, code);
+  candidates[0].el.blur();
+  return { filled: true, segmented: false };
 }
 
 let batchQueueToken = null;
@@ -278,6 +364,7 @@ const pendingPlans = new Map();
 const savingAnswersForTabs = new Set();
 const fillingTabs = new Set();
 const fillTasks = new Map();
+let resumeLoginHandler = null;
 // The applicant pressed 暂停: what is filled stays, and 继续填写 runs the fill again for the rest.
 const PAUSED = "已暂停填写，已填入的内容保留";
 function stopFillTask(tabId, reason = PAUSED, { force = false } = {}) {
@@ -563,6 +650,7 @@ function createTab(url, { activate = true } = {}) {
     lastAiFilled.delete(tab.id);
     // A new page: its own login box (if any) will announce itself.
     if (loginStates.has(tab.id)) sendLoginState(tab, null);
+    if (otpStates.has(tab.id)) sendOtpState(tab, null);
     // A new document brings its own icon; keep none rather than the last site's.
     tab.favicon = null;
     tab.faviconUrl = null;
@@ -576,6 +664,7 @@ function createTab(url, { activate = true } = {}) {
     stopFillTask(tab.id, "页面已变化，已停止填写；请在当前页面重新填写", { force: true });
     sendTabsState();
     scheduleJobPageCapture(tab);
+    if (tab.resumeAfterLogin) void resumeLoginHandler?.();
   });
   wc.on("page-title-updated", () => {
     recordHistory(wc.getURL(), wc.getTitle());
@@ -603,6 +692,7 @@ function createTab(url, { activate = true } = {}) {
     sendTabsState();
     void installUserEditTrackers(wc);
     scheduleJobPageCapture(tab);
+    if (tab.resumeAfterLogin) void resumeLoginHandler?.();
   });
   // Cmd/Ctrl shortcuts land in the guest page when it has focus, which is
   // most of the time — forward the browser-chrome ones to our own UI.
@@ -706,6 +796,7 @@ function closeTab(id) {
   pendingPlans.delete(id);
   pendingLogins.delete(id);
   loginStates.delete(id);
+  otpStates.delete(id);
   tab.view.webContents.close();
   if (activeId === id) {
     const next = tabs[index] || tabs[index - 1] || null;
@@ -1280,6 +1371,30 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     }
   });
   handle("browser:login-state", (_e, tabId) => loginStates.get(tabId) || null);
+  ipcMain.on("browser-guest:otp-form", (event, payload) => {
+    const tab = tabForSender(event.sender);
+    if (!tab) return;
+    if (payload && payload.visible) {
+      sendOtpState(tab, { visible: true, emailLikely: !!payload.emailLikely });
+    } else if (otpStates.has(tab.id)) {
+      sendOtpState(tab, null);
+    }
+  });
+  handle("browser:otp-state", (_e, tabId) => otpStates.get(tabId ?? activeId) || null);
+  handle("browser:fill-otp", async (_e, code, tabId) => {
+    const target = typeof tabId === "number" ? tabs.find((t) => t.id === tabId) : activeTab();
+    if (!target) return { filled: false, message: "没有打开的页面" };
+    const clean = typeof code === "string" ? code.trim().slice(0, 16) : "";
+    if (!clean) return { filled: false, message: "验证码不能为空" };
+    for (const frame of allFrames(target.view.webContents)) {
+      const res = await frame.executeJavaScript(`(${fillOtpInPage.toString()})(${JSON.stringify(clean)})`).catch(() => null);
+      if (res && res.filled) {
+        sendOtpState(target, null);
+        return { filled: true, segmented: !!res.segmented };
+      }
+    }
+    return { filled: false, message: "当前页面没找到验证码输入框，已将验证码复制到剪贴板，请直接粘贴" };
+  });
   handle("browser:login-save", (_e, tabId) => {
     const pending = pendingLogins.get(tabId);
     if (!pending || Date.now() - pending.at > 10 * 60 * 1000) {
@@ -1413,7 +1528,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     if (!tab) throw new Error("没有打开的页面");
     const wc = tab.view.webContents;
     const pageUrl = wc.getURL();
-    const profileRes = await fetch(`http://localhost:${port}/api/desktop-browser/profile?contextKey=${encodeURIComponent(portalContext(pageUrl))}`);
+    const profileRes = await fetch(`http://localhost:${port}/api/desktop-browser/profile?contextKey=${encodeURIComponent(portalContext(pageUrl))}&url=${encodeURIComponent(pageUrl)}`);
     const profile = profileRes.ok ? await profileRes.json() : {};
     const secrets = profileSecrets(profile);
     const { fields } = await scanAllFrames(wc);
@@ -1482,27 +1597,90 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
   // Settings → 浏览器插件: put an unpacked copy of the extension in a stable,
   // visible folder Chrome can keep loading across app updates, and show it,
   // for chrome://extensions → 加载已解压的扩展程序.
+  async function fillSingleFieldByLabel(tab, label, value, overwrite = false, preScanned = null) {
+    const wc = tab.view.webContents;
+    const { fields, frameById } = preScanned || (await scanAllFrames(wc));
+    const norm = (text) => String(text || "").normalize("NFKC").replace(/[\s*＊:：?？。.，,、（）()「」“”"'【】\[\]]/g, "").toLowerCase();
+    const want = norm(label);
+    const boxes = fields.filter((field) => field.type !== "file" && field.type !== "password");
+    const matchesExact = boxes.filter((item) => norm(item.label) === want);
+    const matchesFuzzy = matchesExact.length
+      ? matchesExact
+      : boxes.filter((item) => {
+          const own = norm(item.label);
+          return own.length >= 2 && (own.includes(want.slice(0, 24)) || want.includes(own));
+        });
+    // Prefer an unfilled matching field first so multi-entry sections don't collide blindly.
+    const field = matchesFuzzy.find((item) => !item.hasValue) || matchesFuzzy[0];
+    if (!field) return { ok: false, reason: "没在页面上找到这一栏，可能换页了；可以复制后自己粘贴" };
+    if (field.hasValue && !overwrite) return { ok: false, needsConfirm: true };
+    const frame = frameById.get(field.id);
+    if (field.hasValue && field.tag !== "custom-select" && field.tag !== "radio" && field.tag !== "select") {
+      await frame.executeJavaScript(`(() => { const el = document.querySelector('[data-cp-fill-id="${field.id}"]'); if (!el) return; el.removeAttribute("data-cp-user-edited"); const setter = Object.getOwnPropertyDescriptor(el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype, "value"); if (setter && "value" in el) { setter.set.call(el, ""); el.dispatchEvent(new Event("input", { bubbles: true })); } else if (el.isContentEditable) { el.textContent = ""; } })()`).catch(() => {});
+    }
+    const pair = {
+      id: field.id,
+      value,
+      source: "ai",
+      label: field.label,
+      tag: field.tag,
+      type: field.type,
+      options: field.options,
+      retry: overwrite,
+    };
+    let ok = false;
+    if (field.tag === "custom-select" || field.tag === "radio") {
+      const customRes = await frame.executeJavaScript(`(${fillCustomSelects.toString()})(${JSON.stringify([pair])})`).catch(() => null);
+      ok = !!customRes?.filled?.includes(field.id);
+    }
+    if (!ok) {
+      const result = await frame.executeJavaScript(`(${fillFields.toString()})(${JSON.stringify([pair])})`).catch(() => null);
+      ok = !!result?.filled?.includes(field.id);
+    }
+    await frame.executeJavaScript(`(${focusFormField.toString()})(${JSON.stringify(field.id)})`).catch(() => {});
+    const contextKey = tab.positionId ? `job:v1:${tab.positionId}` : portalContext(tab.archiveUrl || wc.getURL());
+    return {
+      ok,
+      label: field.label || label,
+      section: field.section || undefined,
+      contextKey,
+      reason: ok ? undefined : "这一栏没填进去，可以复制后自己粘贴",
+    };
+  }
+
   // 小欧's 「填进这一栏」: one drafted answer into the page box with that
   // question. A box already holding text is only replaced when asked.
   handle("browser:fill-field", async (_e, label, value, overwrite = false) => {
     const tab = activeTab();
     if (!tab) throw new Error("先打开网申页面");
     if (typeof label !== "string" || typeof value !== "string" || !value.trim() || value.length > 20000) throw new Error("回答内容不对");
-    const { fields, frameById } = await scanAllFrames(tab.view.webContents);
-    const norm = (text) => String(text || "").normalize("NFKC").replace(/[\s*＊:：?？。.，,、（）()「」“”"'【】\[\]]/g, "").toLowerCase();
-    const want = norm(label);
-    const boxes = fields.filter((field) => ["input", "textarea", "richtext"].includes(field.tag) && !field.options && !["date", "month", "number", "email", "tel"].includes(field.type));
-    const field = boxes.find((item) => norm(item.label) === want)
-      || boxes.find((item) => { const own = norm(item.label); return own.length >= 6 && (own.includes(want.slice(0, 24)) || want.includes(own)); });
-    if (!field) return { ok: false, reason: "没在页面上找到这道题，可能换页了；可以复制后自己粘贴" };
-    if (field.hasValue && !overwrite) return { ok: false, needsConfirm: true };
-    const frame = frameById.get(field.id);
-    if (field.hasValue) {
-      await frame.executeJavaScript(`(() => { const el = document.querySelector('[data-cp-fill-id="${field.id}"]'); if (!el) return; el.removeAttribute("data-cp-user-edited"); const setter = Object.getOwnPropertyDescriptor(el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype, "value"); if (setter && "value" in el) { setter.set.call(el, ""); el.dispatchEvent(new Event("input", { bubbles: true })); } else if (el.isContentEditable) { el.textContent = ""; } })()`).catch(() => {});
+    return fillSingleFieldByLabel(tab, label, value, overwrite);
+  });
+
+  // Batch fill drafted fields proposed by 小欧 (textboxes, selects, dates, essays).
+  handle("browser:fill-fields", async (_e, items) => {
+    const tab = activeTab();
+    if (!tab) throw new Error("先打开网申页面");
+    if (!Array.isArray(items) || !items.length) return { filled: [], skipped: [] };
+    const wc = tab.view.webContents;
+    const contextKey = tab.positionId ? `job:v1:${tab.positionId}` : portalContext(tab.archiveUrl || wc.getURL());
+    let scan = await scanAllFrames(wc);
+    const filled = [];
+    const skipped = [];
+    for (const raw of items.slice(0, 30)) {
+      const label = typeof raw?.label === "string" ? raw.label.trim() : "";
+      const value = typeof raw?.value === "string" ? raw.value.trim() : "";
+      if (!label || !value || value.length > 20000) continue;
+      const res = await fillSingleFieldByLabel(tab, label, value, !!raw?.overwrite, scan);
+      if (res.ok) {
+        filled.push({ label: res.label || label, value, section: res.section });
+        // Custom dropdown choices can expand/mount dependent fields — refresh scan for later items.
+        scan = await scanAllFrames(wc);
+      } else {
+        skipped.push({ label, reason: res.needsConfirm ? "这一栏已有内容" : res.reason || "未填进去", needsConfirm: !!res.needsConfirm });
+      }
     }
-    const result = await frame.executeJavaScript(`(${fillFields.toString()})(${JSON.stringify([{ id: field.id, value, source: "ai", label: field.label, tag: field.tag }])})`);
-    await frame.executeJavaScript(`(${focusFormField.toString()})(${JSON.stringify(field.id)})`).catch(() => {});
-    return { ok: !!result?.filled?.includes(field.id), reason: result?.filled?.includes(field.id) ? undefined : "这一栏没填进去，可以复制后自己粘贴" };
+    return { filled, skipped, contextKey };
   });
 
   handle("browser:fill-stats", () => {
@@ -1554,10 +1732,14 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
   });
 
   handle("browser:form-dismiss", (_e, { tabId, signature }) => markFormSettled(tabId, signature));
-  if (!formWatch.timer) formWatch.timer = setInterval(() => {
-    checkForms().catch(() => {});
-    checkApplicationSubmitted().catch(() => {});
-  }, 2500);
+  if (!formWatch.timer) {
+    formWatch.timer = setInterval(() => {
+      checkForms().catch(() => {});
+      checkApplicationSubmitted().catch(() => {});
+      resumeLoginHandler?.().catch(() => {});
+    }, 2500);
+    formWatch.timer.unref?.();
+  }
 
   handle("browser:clear-marks", async () => {
     const tab = activeTab();
@@ -1702,17 +1884,22 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       for (const frame of allFrames(wc)) await frame.executeJavaScript(`document.documentElement.setAttribute("data-cp-task", ${JSON.stringify(task.id)})`).catch(() => {});
       let result = null;
       const adapter = electronAdapter(tab, task, { allowBackground: !!options?.allowBackground });
+      const resolvedResumeId = resumeVersionId !== undefined ? resumeVersionId : tab.resumeVersionId;
+      const resolvedVariantId = options?.variantId !== undefined ? options.variantId : tab.variantId;
       if (options?.mode === "apply") {
         result = await applyAutofillPlan(adapter, options);
       } else {
         tab.archiveUrl = wc.getURL();
         tab.positionId = options?.positionId ?? tab.positionId;
-        const resolvedResumeId = resumeVersionId !== undefined ? resumeVersionId : tab.resumeVersionId;
-        const resolvedVariantId = options?.variantId !== undefined ? options.variantId : tab.variantId;
         tab.resumeVersionId = resolvedResumeId;
         tab.variantId = resolvedVariantId;
         await rememberPreFill(tab);
-        result = await runAutofillCore(adapter, resolvedResumeId, { ...(options || {}), variantId: resolvedVariantId });
+        const fallbackJd = !options?.positionId && !tab.positionId && !options?.jdContext ? validJdPageForTab(tab, wc) : null;
+        result = await runAutofillCore(adapter, resolvedResumeId, {
+          ...(options || {}),
+          variantId: resolvedVariantId,
+          ...(fallbackJd ? { jdContext: { title: fallbackJd.title, url: fallbackJd.url, text: fallbackJd.text.slice(0, 6000) } } : {}),
+        });
         if (result?.phase === "done" && result.summary) {
           tab.filledAt = Date.now();
           tab.typedSinceFill = 0;
@@ -1726,6 +1913,36 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       if (result?.phase === "done" && result.summary) {
         const hasLoginBox = loginStates.has(tab.id);
         const status = hasLoginBox && !result.summary.filled && !result.summary.manual ? "needs_login" : "ready";
+        const notes = [...(result.summary.notes || [])];
+        const strategy = siteStrategyFor(readSiteStats(tab.archiveUrl || wc.getURL()));
+        if (options?.isAutoResume && !notes.includes("登录后已自动续填")) notes.unshift("登录后已自动续填");
+        if (strategy.hint && (result.summary.manual || 0) > 0 && !notes.includes(strategy.hint)) notes.push(strategy.hint);
+        if (notes.length !== (result.summary.notes || []).length || notes.some((line, index) => line !== result.summary.notes?.[index])) {
+          result.summary.notes = notes;
+          const extra = notes.filter((line) => !String(result.message || "").includes(line));
+          if (extra.length) result.message = [result.message, ...extra].filter(Boolean).join("；");
+          const { plan: _ignoredPlan, ...compact } = result;
+          tab.lastStatus = { ...compact, tabId: tab.id };
+          if (!options?.allowBackground || activeId === tab.id) {
+            send("browser:autofill-status", { ...result, tabId: tab.id });
+          }
+        }
+        if (status === "needs_login" && options?.mode !== "apply") {
+          if (!tab.resumeAfterLogin) {
+            tab.resumeAfterLogin = {
+              resumeVersionId: resolvedResumeId,
+              options: {
+                ...(options || {}),
+                variantId: resolvedVariantId,
+                mode: options?.mode === "preview" ? "preview" : "fill",
+              },
+              since: Date.now(),
+              attempts: 0,
+            };
+          }
+        } else {
+          tab.resumeAfterLogin = null;
+        }
         tab.fillState = {
           status,
           filled: result.summary.filled || 0,
@@ -1737,6 +1954,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
           updatedAt: Date.now(),
         };
       } else if (result?.phase === "preview") {
+        tab.resumeAfterLogin = null;
         tab.fillState = {
           ...(tab.fillState || { filled: 0, manual: 0, uploaded: 0 }),
           status: "idle",
@@ -1783,9 +2001,72 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
         wc.on("did-fail-load", onFailLoad);
       });
     }
-    await new Promise((resolve) => setTimeout(resolve, 900));
+    if (wc.isDestroyed()) return false;
+    const strategy = siteStrategyFor(readSiteStats(wc.getURL()));
+    const settleBudgetMs = Math.min(timeoutMs, 1500 + strategy.extraWaitMs);
+    const startedAt = Date.now();
+    let prevCount = -1;
+    let stableTicks = 0;
+    while (!wc.isDestroyed()) {
+      const elapsed = Date.now() - startedAt;
+      let count = 0;
+      for (const frame of allFrames(wc)) {
+        const scanned = await frame.executeJavaScript(`(${countFillableFields.toString()})(${scanPageFields.toString()})`).catch(() => null);
+        count += scanned?.count || 0;
+      }
+      stableTicks = count === prevCount ? stableTicks + 1 : 0;
+      prevCount = count;
+      if (elapsed >= 350 && ((count >= 3 && stableTicks >= 1) || (loginStates.has(tab.id) && elapsed >= 650 && stableTicks >= 1))) break;
+      if (elapsed >= settleBudgetMs) break;
+      await new Promise((resolve) => setTimeout(resolve, 180));
+    }
     return !wc.isDestroyed();
   }
+
+  let resumingLogins = false;
+  async function checkPendingLoginResumes() {
+    if (resumingLogins) return;
+    resumingLogins = true;
+    try {
+      const now = Date.now();
+      for (const tab of [...tabs]) {
+        const pending = tab.resumeAfterLogin;
+        if (!pending) continue;
+        const wc = tab.view?.webContents;
+        if (!wc || wc.isDestroyed() || now - pending.since > 15 * 60 * 1000 || (pending.attempts || 0) >= 2) {
+          tab.resumeAfterLogin = null;
+          continue;
+        }
+        if (wc.isLoading() || fillingTabs.has(tab.id)) continue;
+        const checks = [];
+        for (const frame of allFrames(wc)) {
+          const check = await frame.executeJavaScript(`(${detectLoginGateCleared.toString()})(${scanPageFields.toString()})`).catch(() => null);
+          if (check) checks.push(check);
+        }
+        const totalFillable = checks.reduce((sum, item) => sum + (item.fillable || 0), 0);
+        const anyLoginWall = checks.some((item) => item.hasPasswordInput || item.looksLikeLoginWall);
+        if (totalFillable < 4 || anyLoginWall) continue;
+        tab.resumeAfterLogin = { ...pending, attempts: (pending.attempts || 0) + 1 };
+        const alive = await waitForTabReady(tab);
+        if (!alive || wc.isDestroyed() || fillingTabs.has(tab.id)) continue;
+        tab.fillState = {
+          ...(tab.fillState || { filled: 0, manual: 0, uploaded: 0 }),
+          status: "filling",
+          message: "检测到登录完成，正在自动续填…",
+          updatedAt: Date.now(),
+        };
+        sendTabsState();
+        await runAutofillOnTab(tab, pending.resumeVersionId, {
+          ...(pending.options || {}),
+          allowBackground: Boolean(pending.options?.allowBackground || activeId !== tab.id),
+          isAutoResume: true,
+        }).catch(() => null);
+      }
+    } finally {
+      resumingLogins = false;
+    }
+  }
+  resumeLoginHandler = checkPendingLoginResumes;
 
   async function startBatchPrefill(tabIds, resumeVersionId, options = {}) {
     const token = crypto.randomUUID();
@@ -1824,6 +2105,17 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
             fillable += scanned?.count || 0;
           }
           if (fillable < 4) {
+            tab.resumeAfterLogin = {
+              resumeVersionId,
+              options: {
+                ...options,
+                mode: "fill",
+                allowBackground: true,
+                positionId: tab.positionId ?? tab.batchMeta?.positionId ?? options.positionId,
+              },
+              since: Date.now(),
+              attempts: 0,
+            };
             tab.fillState = {
               ...(tab.fillState || { filled: 0, manual: 0, uploaded: 0 }),
               status: "needs_login",
@@ -1870,6 +2162,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     }
     lastAiFilled.delete(tab.id);
     pendingPlans.delete(tab.id);
+    tab.resumeAfterLogin = null;
     tab.fillState = { status: "idle", filled: 0, manual: 0, uploaded: 0, message: cleared ? `已撤销 ${cleared} 个自动填写字段` : "没有可撤销的自动填写内容", updatedAt: Date.now() };
     sendTabsState();
     return { cleared };
@@ -1905,7 +2198,15 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     return rect && activeTab() === tab ? rect : null;
   });
 
-  handle("browser:application-snapshot", async () => {
+  function validJdPageForTab(tab, wc) {
+    if (!tab?.jdPage) return null;
+    const visited = new Set(wc.navigationHistory.getAllEntries().map((entry) => entry.url));
+    const lastSent = [...(tab.sentForms || [])].sort((a, b) => b.at - a.at)[0];
+    const jdHere = tab.jdPage?.fromOpener ? inheritedJdFits(tab.jdPage.url, tab.landing, [wc.getURL(), lastSent?.url].filter(Boolean)) : visited.has(tab.jdPage?.url);
+    return Date.now() - tab.jdPage.at < 2 * 3600_000 && jdHere ? tab.jdPage : null;
+  }
+
+  handle("browser:application-snapshot", async (_e, snapshotOptions = {}) => {
     const tab = activeTab(); if (!tab) return null;
     const wc = tab.view.webContents;
     const fields = [];
@@ -1916,15 +2217,11 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     // What the tab went through before the success page — the job page's
     // title usually names both the role and the employer — for working out
     // which application this was.
+    const visited = new Set(wc.navigationHistory.getAllEntries().map((entry) => entry.url));
     const history = historySinceMark(tab.historyMark, tab.lastSendAt, wc.navigationHistory.getAllEntries().slice(0, wc.navigationHistory.getActiveIndex() + 1))
       .filter((entry) => /^https?:/i.test(entry.url)).slice(-15).map((entry) => ({ url: entry.url.slice(0, 2000), title: String(entry.title || "").slice(0, 300) }));
     const page = await wc.executeJavaScript(`(() => ({ text: (${capturePageText.toString()})().slice(0, 4000), siteName: (document.querySelector('meta[property="og:site_name"], meta[name="application-name"]') || {}).content || "" }))()`).catch(() => ({ text: "", siteName: "" }));
-    // The JD only if this tab went through it on the way here (or was opened from it),
-    // lately: one tab may have sent another company's 网申 before, and that JD is not this one's.
-    const visited = new Set(wc.navigationHistory.getAllEntries().map((entry) => entry.url));
-    const lastSent = [...(tab.sentForms || [])].sort((a, b) => b.at - a.at)[0];
-    const jdHere = tab.jdPage?.fromOpener ? inheritedJdFits(tab.jdPage.url, tab.landing, [wc.getURL(), lastSent?.url].filter(Boolean)) : visited.has(tab.jdPage?.url);
-    const jdPage = tab.jdPage && Date.now() - tab.jdPage.at < 2 * 3600_000 && jdHere ? tab.jdPage : null;
+    const jdPage = validJdPageForTab(tab, wc);
     // Nothing readable here (the 投递成功 page): the form as it was sent, all its
     // steps — the newest, then the earlier ones on the same site within the hour
     // before each — merged, later answers winning.
@@ -1948,9 +2245,51 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       }
       fields.push(...merged.slice(0, 250));
     }
-    return { fields, url: wc.getURL(), title: wc.getTitle(), text: page.text, siteName: String(page.siteName || "").slice(0, 100), history, positionId: tab.positionId, resumeVersionId: tab.resumeVersionId, variantId: tab.variantId, uploads: tab.resumeUploads || [], jdPage, lastSendAt: tab.lastSendAt || null };
+    const contextKey = tab.positionId ? `job:v1:${tab.positionId}` : portalContext(tab.archiveUrl || wc.getURL());
+    let formFields;
+    let uploadSlots;
+    if (snapshotOptions?.detailed) {
+      const scanned = await scanAllFrames(wc).catch(() => ({ fields: [], frameById: new Map() }));
+      const errById = new Map();
+      for (const frame of allFrames(wc)) {
+        const issues = await frame.executeJavaScript(`(${validatePageFields.toString()})()`).catch(() => []);
+        for (const issue of Array.isArray(issues) ? issues : []) {
+          if (issue?.id && issue?.message) errById.set(issue.id, String(issue.message).slice(0, 200));
+        }
+      }
+      uploadSlots = scanned.fields
+        .filter((f) => f.type === "file")
+        .slice(0, 10)
+        .map((f) => ({
+          label: String(f.label || f.fileKind || "文件上传").slice(0, 120),
+          fileKind: String(f.fileKind || "attachment"),
+          uploaded: !!f.hasValue,
+        }));
+      formFields = scanned.fields
+        .filter((f) => f.type !== "file" && f.type !== "password")
+        .slice(0, 80)
+        .map((f) => ({
+          id: f.id,
+          label: String(f.label || f.placeholder || f.name || "").slice(0, 200),
+          section: f.section ? String(f.section).slice(0, 80) : undefined,
+          tag: String(f.tag || "input"),
+          type: String(f.type || "text"),
+          required: !!f.required,
+          filled: !!f.hasValue,
+          value: String(f.currentValue || "").slice(0, 800),
+          options: Array.isArray(f.options) && f.options.length ? f.options.slice(0, 25) : undefined,
+          maxLength: f.maxLength || undefined,
+          validationError: errById.get(f.id),
+        }));
+    }
+    return { fields, url: wc.getURL(), title: wc.getTitle(), text: page.text, siteName: String(page.siteName || "").slice(0, 100), history, contextKey, positionId: tab.positionId, resumeVersionId: tab.resumeVersionId, variantId: tab.variantId, uploads: tab.resumeUploads || [], jdPage, lastSendAt: tab.lastSendAt || null, ...(formFields ? { formFields } : {}), ...(uploadSlots ? { uploadSlots } : {}) };
   });
-  handle("browser:cancel-autofill", (_e, tabId) => stopFillTask(tabId ?? activeId, PAUSED, { force: true }));
+  handle("browser:cancel-autofill", (_e, tabId) => {
+    const resolvedId = tabId ?? activeId;
+    const target = tabs.find((t) => t.id === resolvedId);
+    if (target) target.resumeAfterLogin = null;
+    stopFillTask(resolvedId, PAUSED, { force: true });
+  });
 
   // Remember manually entered facts and essays; never save untouched drafts.
   // 「这页没填好」: the current page's form structure, what the applicant wrote
@@ -2094,6 +2433,70 @@ async function captureSample(tab, note, { auto = false } = {}) {
   return { file, fields: frames.reduce((sum, frame) => sum + frame.fields.length, 0) };
 }
 
+function detectLoginGateCleared(scanFn, rootDoc) {
+  const doc = rootDoc || document;
+  const fields = typeof scanFn === "function" ? scanFn(doc) : [];
+  const fillable = Array.isArray(fields) ? fields.length : 0;
+  const isVisible = (el) => {
+    if (!el || el.hidden || el.getAttribute?.("aria-hidden") === "true") return false;
+    if (el.style?.display === "none" || el.style?.visibility === "hidden") return false;
+    if (typeof window !== "undefined" && typeof window.getComputedStyle === "function" && typeof Element !== "undefined" && el instanceof Element) {
+      const style = window.getComputedStyle(el);
+      if (style.display === "none" || style.visibility === "hidden" || parseFloat(style.opacity || "1") === 0) return false;
+      const rects = el.getClientRects?.();
+      if (rects && rects.length === 0) return false;
+    }
+    return true;
+  };
+  const passwordInputs = Array.from(doc.querySelectorAll?.('input[type="password"]') || []).filter(isVisible);
+  let hasOtpOrQrLoginCue = false;
+  if (fillable < 4 && passwordInputs.length === 0) {
+    const inputs = Array.from(doc.querySelectorAll?.("input") || []).filter(isVisible);
+    const otpInput = inputs.some((el) => /验证码|短信|otp|sms|手机|邮箱/i.test(`${el.placeholder || ""} ${el.getAttribute?.("aria-label") || ""} ${el.name || ""} ${el.id || ""}`));
+    const bodyText = String(doc.body?.innerText || "").slice(0, 600);
+    hasOtpOrQrLoginCue = otpInput || /(扫码登录|微信扫码|验证码登录|账号密码登录)/.test(bodyText);
+  }
+  return {
+    fillable,
+    hasPasswordInput: passwordInputs.length > 0,
+    looksLikeLoginWall: passwordInputs.length > 0 || hasOtpOrQrLoginCue,
+    cleared: fillable >= 4 && passwordInputs.length === 0 && !hasOtpOrQrLoginCue,
+  };
+}
+
+/** Adaptive wait/hint strategy derived from per-site 填写统计.json history. */
+function siteStrategyFor(row) {
+  if (!row || typeof row !== "object") return { extraWaitMs: 0, preferAi: false, hint: null };
+  const fills = row.fills || 0;
+  const errors = row.errors || 0;
+  const filled = row.filled || 0;
+  const manual = row.manual || 0;
+  const total = filled + manual;
+  const manualRate = total > 0 ? manual / total : 0;
+  const highManual = fills >= 2 && total >= 6 && manualRate > 0.55;
+  const flakyErrors = errors >= 2;
+  const extraWaitMs = highManual || flakyErrors ? 900 : 0;
+  let hint = null;
+  if (highManual) {
+    hint = "该站点历史待手填比例较高，遇到联动选择器可试试「AI 辅助」或「框选填写」局部重试";
+  } else if (flakyErrors && row.lastError) {
+    hint = `该站点曾出现加载/填写异常（${String(row.lastError).slice(0, 32)}），已自动延长页面就绪等待`;
+  }
+  return { extraWaitMs, preferAi: highManual, hint };
+}
+
+function readSiteStats(rawUrl) {
+  try {
+    const host = new URL(rawUrl).hostname;
+    if (!host) return null;
+    const file = path.join(sampleDir(), "填写统计.json");
+    const stats = JSON.parse(fs.readFileSync(file, "utf8")) || {};
+    return stats[host] || null;
+  } catch {
+    return null;
+  }
+}
+
 /** Per-site counts (填写统计.json): how much 一键填写 filled and how much was still typed by hand. */
 function recordFillStats(rawUrl, patch) {
   try {
@@ -2114,4 +2517,4 @@ function recordFillStats(rawUrl, patch) {
   } catch { /* Statistics never get in the way of filling. */ }
 }
 
-module.exports = { setupBrowserViewIpc, syncChromeExtension };
+module.exports = { setupBrowserViewIpc, syncChromeExtension, __test: { detectLoginGateCleared, siteStrategyFor } };

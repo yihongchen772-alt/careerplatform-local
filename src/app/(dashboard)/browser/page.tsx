@@ -7,6 +7,8 @@ import { currentTimeMs } from "@/lib/dates";
 import { parseDraft } from "@/lib/resume-doc";
 import { siteKey } from "@/lib/site-key";
 
+import { STAGE_LABELS } from "@/lib/stage-labels";
+
 const TERMINAL = ["REJECTED", "ACCEPTED", "DECLINED", "WITHDRAWN", "CANCELLED"] as const;
 
 export default async function BrowserPage({
@@ -20,7 +22,7 @@ export default async function BrowserPage({
   const [resumeVersions, companies, careerCompanies, positions, applications, knownSites, tailorings] = await Promise.all([
     db.resumeVersion.findMany({
       where: { userId: user.id, fileUrl: { not: null } },
-      select: { id: true, name: true, isDefault: true },
+      select: { id: true, name: true, isDefault: true, extractedText: true },
       orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }],
     }),
     // Companies the user has actually applied to, for the 进度同步 dialog —
@@ -74,6 +76,9 @@ export default async function BrowserPage({
   });
 
 
+  const parsedProfile = parseApplicationProfile(user.applicationProfile);
+  const highestDegree = parsedProfile.education.find((e) => e.degree)?.degree ?? null;
+
   // The browser frame is the whole page, like a browser window: no page
   // header above its tab strip.
   return (
@@ -84,8 +89,9 @@ export default async function BrowserPage({
         initialResumeVersionId={resumeVersionId}
         initialVariantId={variantId}
         knownSites={knownSites}
-        profileVariants={parseApplicationProfile(user.applicationProfile).variants.map((v) => ({ id: v.id, name: v.name, resumeVersionId: v.resumeVersionId ?? null }))}
-        resumeVersions={resumeVersions}
+        profileFacts={{ graduationYear: user.graduationYear ?? null, degree: highestDegree }}
+        profileVariants={parsedProfile.variants.map((v) => ({ id: v.id, name: v.name, resumeVersionId: v.resumeVersionId ?? null }))}
+        resumeVersions={resumeVersions.map((r) => ({ id: r.id, name: r.name, isDefault: r.isDefault, digest: r.extractedText?.slice(0, 1200) ?? null }))}
         tailoredResumes={tailoredResumes}
         portalCompanies={companies.map((c) => ({
           id: c.id,
@@ -110,11 +116,27 @@ export default async function BrowserPage({
         }}
         poolPositions={positions
           .filter((p) => p.status === "EVALUATING")
-          .map((p) => ({ id: p.id, label: `${p.company.name} · ${p.title}`, companyName: p.company.name, source: p.source, title: p.title, jdUrl: p.jdUrl }))}
+          .map((p) => ({
+            id: p.id,
+            label: `${p.company.name} · ${p.title}`,
+            companyName: p.company.name,
+            source: p.source,
+            title: p.title,
+            jdUrl: p.jdUrl,
+            jdText: p.jdText?.slice(0, 3000) ?? null,
+            applicationRules:
+              p.applicationRules == null
+                ? null
+                : typeof p.applicationRules === "string"
+                  ? p.applicationRules
+                  : JSON.stringify(p.applicationRules),
+          }))}
         applications={applications.map((a) => ({
           id: a.id,
           label: `${a.company.name} · ${a.title}`,
           companyName: a.company.name,
+          title: a.title,
+          stage: STAGE_LABELS[a.currentStage] ?? a.currentStage,
         }))}
       />
     </div>

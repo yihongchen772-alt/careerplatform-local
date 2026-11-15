@@ -82,6 +82,36 @@ export type PortalSyncResult = {
   errors: { companyName: string; message: string; portalUrl?: string }[];
 };
 
+export type OpenPortalSyncResult = {
+  portalId: string;
+  companyName: string;
+  status: "changed" | "unchanged" | "skipped";
+  changes: PortalSyncChange[];
+  review: PortalSyncReview[];
+  matched: PortalSyncMatch[];
+  unmatched: PortalSyncUnmatched[];
+};
+
+async function upsertPortalForCompany(companyId: string, url: string, label?: string | null) {
+  const trimmed = url.trim();
+  if (!/^https?:\/\//i.test(trimmed)) throw new UserFacingError("进度页地址要以 http(s):// 开头");
+  const company = await db.company.findUnique({ where: { id: companyId } });
+  if (!company) throw new UserFacingError("未找到该公司");
+  const portal = await db.$transaction(async (tx) => {
+    const existingCount = await tx.applicationPortal.count({ where: { companyId } });
+    const saved = await tx.applicationPortal.upsert({
+      where: { companyId_url: { companyId, url: trimmed } },
+      create: { companyId, url: trimmed, label: label?.trim() || null },
+      update: { label: label?.trim() || null, contentHash: null, lastError: null },
+    });
+    if (existingCount === 0) {
+      await tx.application.updateMany({ where: { companyId, portalId: null }, data: { portalId: saved.id } });
+    }
+    return saved;
+  });
+  return { company, portal };
+}
+
 export async function setCompanyPortalUrl(
   companyId: string,
   url: string,
@@ -89,21 +119,7 @@ export async function setCompanyPortalUrl(
 ): Promise<ActionResult<null>> {
   return toActionResult(async () => {
     await requireUser();
-    const trimmed = url.trim();
-    if (!/^https?:\/\//i.test(trimmed)) throw new UserFacingError("进度页地址要以 http(s):// 开头");
-    const company = await db.company.findUnique({ where: { id: companyId } });
-    if (!company) throw new UserFacingError("未找到该公司");
-    await db.$transaction(async (tx) => {
-      const existingCount = await tx.applicationPortal.count({ where: { companyId } });
-      const portal = await tx.applicationPortal.upsert({
-        where: { companyId_url: { companyId, url: trimmed } },
-        create: { companyId, url: trimmed, label: label?.trim() || null },
-        update: { label: label?.trim() || null, contentHash: null, lastError: null },
-      });
-      if (existingCount === 0) {
-        await tx.application.updateMany({ where: { companyId, portalId: null }, data: { portalId: portal.id } });
-      }
-    });
+    await upsertPortalForCompany(companyId, url, label);
     revalidatePath("/applications");
     revalidatePath("/browser");
     revalidatePath("/companies");
@@ -204,29 +220,35 @@ ${pageText}
   return parsed.data;
 }
 
-async function syncOne(portal: {
-  id: string;
-  url: string;
-  contentHash: string | null;
+async function loadPortalApplications(companyId: string, portalId: string) {
+  const companyApplications = await db.application.findMany({
+    where: { companyId, userId: LOCAL_USER_ID, currentStage: { notIn: TERMINAL_STAGES } },
+    select: { id: true, title: true, currentStage: true, currentStageLabel: true, portalId: true, autoUndoneStatus: true },
+  });
+  return companyApplications.filter((app) => portalOwnsApplication(portalId, app.portalId));
+}
+
+async function applyPortalPageText({
+  portal,
+  company,
+  applications,
+  text,
+  force = false,
+  autoApply = false,
+}: {
+  portal: { id: string; url: string; contentHash: string | null };
   company: { id: string; name: string };
-}, force = false, autoApply = false): Promise<{
-  status: "changed" | "unchanged" | "skipped";
+  applications: Awaited<ReturnType<typeof loadPortalApplications>>;
+  text: string;
+  force?: boolean;
+  autoApply?: boolean;
+}): Promise<{
+  status: "changed" | "unchanged";
   changes: PortalSyncChange[];
   review: PortalSyncReview[];
   matched: PortalSyncMatch[];
   unmatched: PortalSyncUnmatched[];
 }> {
-  const company = portal.company;
-
-  const companyApplications = await db.application.findMany({
-    where: { companyId: company.id, userId: LOCAL_USER_ID, currentStage: { notIn: TERMINAL_STAGES } },
-    select: { id: true, title: true, currentStage: true, currentStageLabel: true, portalId: true, autoUndoneStatus: true },
-  });
-  const applications = companyApplications.filter((app) => portalOwnsApplication(portal.id, app.portalId));
-  // Nothing in flight at this company — no point loading the page.
-  if (applications.length === 0) return { status: "skipped", changes: [], review: [], matched: [], unmatched: [] };
-
-  const text = (await renderPageText(portal.url, { useApplicationSession: true })).trim();
   if (!text) throw new Error("进度页渲染出来是空的");
   const pageHash = crypto.createHash("sha256").update(text).digest("hex");
   // A page can stay unchanged while the user's local list gains or loses an
@@ -338,6 +360,73 @@ async function syncOne(portal: {
       .filter((a) => !matchedIds.has(a.id))
       .map((a) => ({ companyName: company.name, applicationId: a.id, title: a.title })),
   };
+}
+
+async function syncOne(portal: {
+  id: string;
+  url: string;
+  contentHash: string | null;
+  company: { id: string; name: string };
+}, force = false, autoApply = false): Promise<{
+  status: "changed" | "unchanged" | "skipped";
+  changes: PortalSyncChange[];
+  review: PortalSyncReview[];
+  matched: PortalSyncMatch[];
+  unmatched: PortalSyncUnmatched[];
+}> {
+  const company = portal.company;
+  const applications = await loadPortalApplications(company.id, portal.id);
+  // Nothing in flight at this company — no point loading the page.
+  if (applications.length === 0) return { status: "skipped", changes: [], review: [], matched: [], unmatched: [] };
+
+  const text = (await renderPageText(portal.url, { useApplicationSession: true })).trim();
+  return applyPortalPageText({ portal, company, applications, text, force, autoApply });
+}
+
+/** Sync statuses directly from an already-open, logged-in "我的投递" tab without re-rendering headlessly. */
+export async function syncOpenPortalPage(input: {
+  companyId: string;
+  url: string;
+  pageText: string;
+  label?: string | null;
+}): Promise<ActionResult<OpenPortalSyncResult>> {
+  return toActionResult(async () => {
+    await requireUser();
+    const text = input.pageText.trim();
+    if (!text) throw new UserFacingError("当前页面正文为空，无法识别投递状态");
+    const { company, portal } = await upsertPortalForCompany(input.companyId, input.url, input.label);
+    const applications = await loadPortalApplications(company.id, portal.id);
+    if (applications.length === 0) {
+      revalidatePath("/applications");
+      revalidatePath("/browser");
+      revalidatePath("/companies");
+      return {
+        portalId: portal.id,
+        companyName: company.name,
+        status: "skipped",
+        changes: [],
+        review: [],
+        matched: [],
+        unmatched: [],
+      };
+    }
+    const autoApply = (await db.user.findUnique({ where: { id: LOCAL_USER_ID }, select: { autoApplyProgress: true } }))?.autoApplyProgress ?? false;
+    try {
+      const outcome = await applyPortalPageText({ portal, company, applications, text, force: true, autoApply });
+      revalidatePath("/applications");
+      revalidatePath("/dashboard");
+      revalidatePath("/browser");
+      revalidatePath("/companies");
+      return { portalId: portal.id, companyName: company.name, ...outcome };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "同步失败";
+      await db.applicationPortal.update({
+        where: { id: portal.id },
+        data: { lastCheckedAt: new Date(), lastError: message },
+      }).catch(() => {});
+      throw err instanceof UserFacingError ? err : new UserFacingError(message);
+    }
+  });
 }
 
 async function runSync(portalIds?: string[], force = false): Promise<PortalSyncResult> {

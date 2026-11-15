@@ -37,7 +37,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   focusField: (id) => ipcRenderer.invoke("browser:focus-field", id),
   insertProfileValue: (value) => ipcRenderer.invoke("browser:insert-profile-value", value),
   pickRegion: () => ipcRenderer.invoke("browser:pick-region"),
-  applicationSnapshot: () => ipcRenderer.invoke("browser:application-snapshot"),
+  applicationSnapshot: (options) => ipcRenderer.invoke("browser:application-snapshot", options),
   applicationRecorded: (undone) => ipcRenderer.invoke("browser:application-recorded", !!undone),
   autofill: (resumeVersionId, options) => ipcRenderer.invoke("browser:autofill", resumeVersionId, options),
   undoAutofill: () => ipcRenderer.invoke("browser:undo-autofill"),
@@ -46,6 +46,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   captureSample: (note) => ipcRenderer.invoke("browser:capture-sample", note),
   fillStats: () => ipcRenderer.invoke("browser:fill-stats"),
   fillField: (label, value, overwrite) => ipcRenderer.invoke("browser:fill-field", label, value, overwrite),
+  fillFields: (items) => ipcRenderer.invoke("browser:fill-fields", items),
   openSamples: () => ipcRenderer.invoke("browser:open-samples"),
   clearMarks: () => ipcRenderer.invoke("browser:clear-marks"),
   capturePage: () => ipcRenderer.invoke("browser:capture-page"),
@@ -139,6 +140,13 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("browser:login-state", listener);
     return () => ipcRenderer.removeListener("browser:login-state", listener);
+  },
+  otpState: (tabId) => ipcRenderer.invoke("browser:otp-state", tabId),
+  fillOtp: (code, tabId) => ipcRenderer.invoke("browser:fill-otp", code, tabId),
+  onOtpState: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("browser:otp-state", listener);
+    return () => ipcRenderer.removeListener("browser:otp-state", listener);
   },
 });
 

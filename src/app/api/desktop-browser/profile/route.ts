@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/session";
+import { atsFamilyFor, mergeMappingsWithAtsFallback } from "@/lib/ats-family";
 import { PERSONAL_FIELDS, SOCIAL_FIELDS, describeApplicationProfile, englishFromLanguages, parseApplicationProfile, resolveProfileVariant } from "@/lib/application-profile";
 import { db } from "@/lib/db";
 import { MEMORY_CATEGORIES, profileWithMemories, toMemoryView, type MemoryCategory, type MemoryView } from "@/lib/application-memory";
@@ -14,6 +15,7 @@ export async function GET(request: Request) {
   const user = await requireUser();
   const params = new URL(request.url).searchParams;
   const contextKey = params.get("contextKey") || null;
+  const pageUrl = params.get("url") || null;
   if (contextKey && contextKey.length > 16384) return NextResponse.json({ error: "页面地址过长" }, { status: 400 });
   const fieldMemories = await db.autofillAnswer.findMany({
     where: { userId: user.id, kind: "field", confirmed: true, OR: [{ contextKey: null }, { contextKey }] },
@@ -38,7 +40,8 @@ export async function GET(request: Request) {
   const exp = structured.experiences[0];
   return NextResponse.json({
     fieldMemories,
-    mappings: Array.isArray(user.autofillMappings) ? user.autofillMappings.filter((m) => m && typeof m === "object" && !Array.isArray(m) && m.contextKey === contextKey) : [],
+    mappings: contextKey ? mergeMappingsWithAtsFallback(user.autofillMappings, contextKey, pageUrl) : [],
+    atsFamily: atsFamilyFor(pageUrl || contextKey),
     variantName: variant?.name ?? null,
     name: user.name,
     phone: user.phone,

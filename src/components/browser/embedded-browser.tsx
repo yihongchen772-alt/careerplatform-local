@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ClipboardCheck, Download, Pause, Play, RefreshCw, SquareDashedMousePointer, ArrowRight, Bookmark, Camera, Check, ChevronDown, ChevronUp, Copy, Eraser, ExternalLink, FileCode, ListChecks, Loader2, KeyRound, LogOut, Maximize2, Minus, MoreVertical, NotebookPen, PanelRight, PanelRightClose, Plus, Radar, RotateCw, ScanSearch, Search, Send, Settings2, Sparkles, Trash2, TriangleAlert, Undo2, X, Bug, Wand2 } from "lucide-react";
+import { ArrowLeft, ClipboardCheck, Download, Pause, Play, RefreshCw, SquareDashedMousePointer, ArrowRight, Bookmark, Camera, Check, ChevronDown, ChevronUp, Copy, Eraser, ExternalLink, FileCode, ListChecks, Loader2, KeyRound, LogOut, MailCheck, Maximize2, Minus, MoreVertical, NotebookPen, PanelRight, PanelRightClose, Plus, Radar, RotateCw, ScanSearch, Search, Send, Settings2, Sparkles, Trash2, TriangleAlert, Undo2, X, Bug, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { AiProgress } from "@/components/ui/ai-progress";
@@ -32,7 +32,8 @@ import { PositionFormDialog, type PositionFormInitial } from "@/components/pool/
 import { PortalSyncDialog, type PortalCompany } from "@/components/browser/portal-sync-dialog";
 import { MarkAppliedFromBrowserDialog, type PoolPosition } from "@/components/browser/mark-applied-from-browser";
 import { recognizeApplication, type Recognition } from "@/components/browser/recognize-application";
-import { siteKey } from "@/lib/site-key";
+import { looksLikeCandidateCenter, matchKnownSite, siteKey } from "@/lib/site-key";
+import { analyzeEligibilityAndQuota, recommendSetupForPage, type EligibilityWarning, type SetupRecommendation } from "@/lib/browser-intelligence";
 import { ScreenshotDialog, type ApplicationOption } from "@/components/browser/screenshot-dialog";
 import { ApplicationAssistant, panelSelect, type AssistantTab } from "@/components/browser/application-assistant";
 import { SiteBanner, type KnownSite } from "@/components/browser/site-banner";
@@ -43,7 +44,7 @@ import { LoginOfferInfobar, PasswordKeyButton, PasswordManagerDialog, useSavedLo
 import { NewTabPage } from "@/components/browser/new-tab-page";
 import { PendingConfirmDialog, isConfirmCandidate } from "@/components/browser/pending-confirm-dialog";
 import { BATCH_APPLY_STORAGE_KEY } from "@/lib/batch-apply";
-import { AgentChat, type AgentPageContext } from "@/components/assistant/agent-chat";
+import { AgentChat, type AgentPageContext, type PageDraft } from "@/components/assistant/agent-chat";
 import type {
   DesktopBridgeAutofillModule,
   DesktopBridgeAutofillOptions,
@@ -55,7 +56,7 @@ import type {
 } from "@/types/desktop-bridge";
 
 export type { QuickLinks };
-type ResumeOption = { id: string; name: string; isDefault: boolean };
+type ResumeOption = { id: string; name: string; isDefault: boolean; digest?: string | null };
 
 export { sourceFromUrl } from "@/lib/source-from-url";
 import { sourceFromUrl } from "@/lib/source-from-url";
@@ -145,6 +146,7 @@ function ToolbarIcon({ label, shortcut, className, ...props }: React.ComponentPr
 export function EmbeddedBrowser({
   initialUrl, initialPositionId, initialResumeVersionId, initialVariantId,
   knownSites,
+  profileFacts,
   profileVariants,
   resumeVersions,
   tailoredResumes = [],
@@ -155,14 +157,15 @@ export function EmbeddedBrowser({
 }: {
   initialUrl?: string; initialPositionId?: string; initialResumeVersionId?: string; initialVariantId?: string;
   knownSites: KnownSite[];
+  profileFacts?: { graduationYear?: number | null; degree?: string | null };
   profileVariants: { id: string; name: string; resumeVersionId: string | null }[];
   resumeVersions: ResumeOption[];
   /** 定制 versions saved lately, by the site of the job they were made for. */
   tailoredResumes?: { resumeVersionId: string; name: string; label: string; site: string }[];
   portalCompanies: PortalCompany[];
   quickLinks: QuickLinks;
-  poolPositions: PoolPosition[];
-  applications: ApplicationOption[];
+  poolPositions: (PoolPosition & { jdText?: string | null; applicationRules?: string | null })[];
+  applications: (ApplicationOption & { title?: string; stage?: string })[];
 }) {
   const router = useRouter();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -173,6 +176,7 @@ export function EmbeddedBrowser({
   const [autofilling, setAutofilling] = useState(false);
   const [savingCorrections, setSavingCorrections] = useState(false);
   const [pendingChangeCount, setPendingChangeCount] = useState(0);
+  const [pendingRefreshToken, setPendingRefreshToken] = useState(0);
   const [pageDraftStatus, setPageDraftStatus] = useState({ context: "", message: "" });
   const [jobBindings, setJobBindings] = useState<Record<number, string>>({});
   const [history, setHistory] = useState<DesktopBridgeHistoryEntry[]>([]);
@@ -195,7 +199,7 @@ export function EmbeddedBrowser({
   const [markOpen, setMarkOpen] = useState(false);
   const [pendingListOpen, setPendingListOpen] = useState(false);
   const [shotOpen, setShotOpen] = useState(false);
-  const [shot, setShot] = useState<{ dataUrl: string; title: string } | null>(null);
+  const [shot, setShot] = useState<{ dataUrl: string; title: string; url?: string } | null>(null);
   // App-drawn menus and the address suggestions render in the DOM, which
   // the native page view is composited *above* — while any is open the
   // view steps aside and a still of the page stands in for it.
@@ -314,19 +318,64 @@ export function EmbeddedBrowser({
   }, [positionId, resumeVersionId, autoFill, autofilling, expandBlocks, variantChoice, fillModules]);
 
   const bridge = useDesktopBridge();
-  // What 小欧 sees of the open page: title, address, visible text and the open questions on it.
+  const [pageIntel, setPageIntel] = useState<{
+    url: string;
+    recommendation: SetupRecommendation | null;
+    warnings: EligibilityWarning[];
+  } | null>(null);
+  const [dismissedIntel, setDismissedIntel] = useState<Set<string>>(() => new Set());
+  const [otpPrompt, setOtpPrompt] = useState<{ tabId: number; emailLikely: boolean } | null>(null);
+  const [otpBusy, setOtpBusy] = useState(false);
+  const [otpChoices, setOtpChoices] = useState<{ code: string; subject: string; from: string; matchedSite: boolean }[]>([]);
+
+  // What 小欧 sees of the open page: full form schema, validation errors, upload state, JD & portal metadata.
   const agentPageContext = useCallback(async (): Promise<AgentPageContext | null> => {
-    const snapshot = await bridge?.applicationSnapshot().catch(() => null);
+    const snapshot = await bridge?.applicationSnapshot({ detailed: true }).catch(() => null);
     if (!snapshot?.url || !/^https?:/i.test(snapshot.url)) return null;
-    const questions = snapshot.fields
+    const schemaQuestions = (snapshot.formFields || [])
       .filter((field) => field.label.length >= 6 && OPEN_QUESTION.test(field.label))
       .slice(0, 20)
       .map((field) => ({ label: field.label.slice(0, 500), value: (field.value || "").slice(0, 3000) }));
-    return { url: snapshot.url.slice(0, 2000), title: (snapshot.title || "").slice(0, 300), text: (snapshot.text || "").slice(0, 6000), questions, positionId: positionId || snapshot.positionId || undefined };
-  }, [bridge, positionId]);
+    const fallbackQuestions = snapshot.fields
+      .filter((field) => field.label.length >= 6 && OPEN_QUESTION.test(field.label))
+      .slice(0, 20)
+      .map((field) => ({ label: field.label.slice(0, 500), value: (field.value || "").slice(0, 3000) }));
+    const questions = schemaQuestions.length ? schemaQuestions : fallbackQuestions;
+    const isPortalPage = looksLikeCandidateCenter(snapshot.url, snapshot.title || "", snapshot.text || "");
+    const portalMatch = isPortalPage ? matchKnownSite(knownSites, snapshot.url, snapshot.title || "") : null;
+    const portalAlreadySet = !!portalMatch && !!siteKey(snapshot.url) && portalMatch.portalKeys.includes(siteKey(snapshot.url)!);
+    return {
+      url: snapshot.url.slice(0, 2000),
+      title: (snapshot.title || "").slice(0, 300),
+      text: (snapshot.text || "").slice(0, 6000),
+      questions,
+      formFields: snapshot.formFields,
+      uploadSlots: snapshot.uploadSlots,
+      jdPage: snapshot.jdPage ? { url: snapshot.jdPage.url, title: snapshot.jdPage.title, text: snapshot.jdPage.text.slice(0, 6000) } : null,
+      positionId: positionId || snapshot.positionId || undefined,
+      contextKey: snapshot.contextKey,
+      ...(portalMatch ? { portalCompanyId: portalMatch.companyId, portalCompanyName: portalMatch.companyName, portalAlreadySet } : {}),
+    };
+  }, [bridge, knownSites, positionId]);
+
+  const persistApprovedDrafts = useCallback((items: { label: string; value: string; section?: string }[], contextKey?: string) => {
+    const url = currentUrlRef.current;
+    if (!url || !items.length) return;
+    void fetch("/api/desktop-browser/save-ai-draft", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url,
+        contextKey,
+        positionId: liveRef.current.positionId || undefined,
+        resumeVersionId: liveRef.current.resumeVersionId || undefined,
+        items,
+      }),
+    }).catch(() => {});
+  }, []);
 
   // 小欧's 「填进这一栏」: text already in that box is replaced only after asking.
-  const fillDraft = useCallback(async (draft: { question: string; answer: string }) => {
+  const fillDraft = useCallback(async (draft: PageDraft) => {
     if (!bridge?.fillField) return false;
     try {
       let res = await bridge.fillField(draft.question, draft.answer);
@@ -335,13 +384,42 @@ export function EmbeddedBrowser({
         res = await bridge.fillField(draft.question, draft.answer, true);
       }
       if (!res.ok) { toast.error(res.reason || "没填进去，可以复制后自己粘贴"); return false; }
+      persistApprovedDrafts([{ label: res.label || draft.question, value: draft.answer, section: res.section || draft.section }], res.contextKey);
       toast.success("已填进去（紫框标出），提交前再看一眼");
       return true;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "没填进去");
       return false;
     }
-  }, [bridge]);
+  }, [bridge, persistApprovedDrafts]);
+
+  const fillMultipleDrafts = useCallback(async (drafts: PageDraft[]): Promise<number[]> => {
+    if (!drafts.length) return [];
+    if (bridge?.fillFields) {
+      try {
+        const res = await bridge.fillFields(drafts.map((d) => ({ label: d.question, value: d.answer })));
+        const filledIndices: number[] = [];
+        const savedItems: { label: string; value: string; section?: string }[] = [];
+        for (const item of res.filled) {
+          const idx = drafts.findIndex((d, i) => !filledIndices.includes(i) && (d.question === item.label || d.answer === item.value));
+          if (idx >= 0) filledIndices.push(idx);
+          savedItems.push(item);
+        }
+        if (savedItems.length) persistApprovedDrafts(savedItems, res.contextKey);
+        if (filledIndices.length) toast.success(`已填入 ${filledIndices.length} 栏（紫框标出）`);
+        if (res.skipped.length) toast.info(`${res.skipped.length} 栏跳过（已有内容或未找到），可点单条卡片单独处理`);
+        return filledIndices;
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "批量填写失败");
+        return [];
+      }
+    }
+    const indices: number[] = [];
+    for (let i = 0; i < drafts.length; i++) {
+      if (await fillDraft(drafts[i])) indices.push(i);
+    }
+    return indices;
+  }, [bridge, fillDraft, persistApprovedDrafts]);
 
   // 「接着问小欧」 from elsewhere opens 小欧 here, beside the page.
   useEffect(() => {
@@ -364,6 +442,52 @@ export function EmbeddedBrowser({
   // Back on the site of a job a 简历 was tailored for: offer that version for 一键填写,
   // so the tailored file is what gets uploaded (and then recorded with the 投递).
   const [skippedTailored, setSkippedTailored] = useState<string[]>([]);
+  const activeTabId = tabsState.activeId;
+  const activeTabLoading = !!activeTab?.loading;
+  useEffect(() => {
+    if (!bridge || !currentUrl || activeTabLoading) return;
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        const snapshot = await bridge.applicationSnapshot();
+        if (cancelled || !snapshot?.url || snapshot.url !== currentUrl) return;
+        const boundPos = positionId ? poolPositions.find((p) => p.id === positionId) : undefined;
+        const siteMatch = matchKnownSite(knownSites, snapshot.url, snapshot.title || "");
+        const recommendation = recommendSetupForPage({
+          url: snapshot.url,
+          pageText: snapshot.text,
+          jdTitle: boundPos?.title || snapshot.jdPage?.title,
+          jdText: boundPos?.jdText || snapshot.jdPage?.text,
+          tailoredResumes,
+          resumeVersions,
+          profileVariants,
+          currentResumeVersionId: resumeVersionId,
+          currentVariantChoice: variantChoice,
+        });
+        const { warnings } = analyzeEligibilityAndQuota({
+          profile: profileFacts || {},
+          companyName: boundPos?.companyName || siteMatch?.companyName,
+          applications: applications.map((a) => ({
+            id: a.id,
+            companyName: a.companyName,
+            title: a.title || a.label,
+            stage: a.stage || "进行中",
+          })),
+          position: boundPos,
+          jdPage: snapshot.jdPage,
+          pageText: snapshot.text,
+        });
+        if (!cancelled) setPageIntel({ url: snapshot.url, recommendation, warnings });
+      } catch {
+        // Non-critical pre-fill guidance; never block browsing.
+      }
+    }, 1200);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [bridge, activeTabId, currentUrl, activeTabLoading, positionId, poolPositions, knownSites, tailoredResumes, resumeVersions, profileVariants, resumeVersionId, variantChoice, profileFacts, applications]);
+
   const currentSite = currentUrl ? siteKey(currentUrl) : null;
   const tailoredHere = currentSite ? tailoredResumes.find((t) => t.site === currentSite && resumeVersions.some((r) => r.id === t.resumeVersionId)) : undefined;
   // 「只填所选模块」 used to stay on for every site afterwards: picking 获奖 once
@@ -538,6 +662,9 @@ export function EmbeddedBrowser({
     });
     const offFind = bridge.onFindResult((r) => setFindResult({ active: r.active, total: r.total }));
     const offProblem = bridge.onPageProblem?.((problem) => setPageProblem((current) => problem.kind ? problem : current?.tabId === problem.tabId ? null : current));
+    const offOtp = bridge.onOtpState?.(({ tabId, state }) => {
+      setOtpPrompt((current) => (state?.visible ? { tabId, emailLikely: state.emailLikely } : current?.tabId === tabId ? null : current));
+    });
     const offForm = bridge.onFormDetected((payload) => {
       const live = liveRef.current;
       if (live.autofilling || payload.tabId !== activeIdRef.current) return;
@@ -616,13 +743,40 @@ export function EmbeddedBrowser({
       offProblem?.();
       offForm();
       offSubmitted();
+      offOtp?.();
     };
     // Only wire this up once per mount — re-running on every initialUrl
     // change would re-navigate away from wherever the user has since clicked.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bridge]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/desktop-browser/pending-changes", { cache: "no-store", signal: controller.signal })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { total?: number } | null) => {
+        if (typeof data?.total === "number") setPendingChangeCount(data.total);
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, []);
+
   const lastInitialUrlRef = useRef<string | undefined>(initialUrl);
+  useEffect(() => {
+    if (!bridge || tabsState.activeId == null) return;
+    const tabId = tabsState.activeId;
+    let cancelled = false;
+    void Promise.resolve(bridge.otpState?.(tabId))
+      .then((st) => {
+        if (cancelled) return;
+        setOtpChoices([]);
+        setOtpPrompt(st?.visible ? { tabId, emailLikely: st.emailLikely } : null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [bridge, tabsState.activeId, currentUrl]);
   useEffect(() => {
     if (!bridge || !initialUrl || initialUrl === lastInitialUrlRef.current) return;
     lastInitialUrlRef.current = initialUrl;
@@ -801,8 +955,9 @@ export function EmbeddedBrowser({
       if (autoSavingRef.current) return;
       autoSavingRef.current = true;
       try {
-        const { pendingTotal, draftSaved, learned } = await bridge.saveCorrections(resumeVersionId || undefined, true, positionId || undefined, variantChoice, autoRemember);
+        const { pending = 0, pendingTotal, draftSaved, learned } = await bridge.saveCorrections(resumeVersionId || undefined, true, positionId || undefined, variantChoice, autoRemember);
         if (pendingTotal !== undefined) setPendingChangeCount(pendingTotal);
+        if (pending > 0) setPendingRefreshToken((t) => t + 1);
         if (learned?.length) announceLearned(learned, currentUrl);
         if (draftSaved) setPageDraftStatus({ context: draftContext, message: `${new Date().toLocaleTimeString("zh-CN")} 扫描的网页内容已保存到 App` });
         autoSaveErrorRef.current = false;
@@ -962,10 +1117,11 @@ export function EmbeddedBrowser({
     try {
       const { pending = 0, pendingTotal, draftSaved, unchanged, learned } = await bridge.saveCorrections(resumeVersionId || undefined, false, positionId || "", variantChoice);
       if (pendingTotal !== undefined) setPendingChangeCount(pendingTotal);
+      if (pending > 0) setPendingRefreshToken((t) => t + 1);
       if (draftSaved) setPageDraftStatus({ context: draftContext, message: `${new Date().toLocaleTimeString("zh-CN")} 扫描的网页内容已保存到 App` });
       // What was written into 网申资料 gets its own notice (with 撤销).
       if (learned?.length && currentUrl) announceLearned(learned, currentUrl);
-      if (pending > 0) toast.success(`发现 ${pending} 项可保存内容，已放进「设置 → 网申资料 → 待核对」`);
+      if (pending > 0) toast.success(`发现 ${pending} 项可保存内容，已放入「待核对」`, { action: { label: "立即核对", onClick: () => openPanel("pending") } });
       else if (!learned?.length) toast.info(unchanged ? "这些变化已经在待核对列表中" : "没有发现完整的新内容；未修改的 AI 草稿不会进入待核对列表");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "保存修改失败");
@@ -1014,6 +1170,64 @@ export function EmbeddedBrowser({
       toast.error(err instanceof Error ? err.message : "读取页面失败");
     } finally {
       setCapturing(false);
+    }
+  }
+
+  async function fillEmailOtp(chosenCode?: string) {
+    if (!bridge?.fillOtp || otpBusy) return;
+    const applyCode = async (code: string, meta?: { from?: string }) => {
+      const filled = await bridge.fillOtp!(code, tabsState.activeId ?? undefined);
+      if (filled.filled) {
+        toast.success(`已填入验证码 ${code}${meta?.from ? `（来自 ${meta.from}）` : ""}`);
+        setOtpPrompt(null);
+      } else {
+        await bridge.copyText?.(code);
+        toast.info(`已复制验证码 ${code}，直接粘贴即可（${filled.message || "网页输入框未自动定位"}）`);
+      }
+    };
+    if (chosenCode) {
+      await applyCode(chosenCode);
+      setOtpChoices([]);
+      return;
+    }
+    setOtpBusy(true);
+    try {
+      const boundPos = positionId ? poolPositions.find((p) => p.id === positionId) : undefined;
+      const hostSite = currentUrl ? siteKey(currentUrl) : null;
+      const matchedSiteCompany = hostSite ? knownSites.find((s) => s.keys.includes(hostSite))?.companyName : undefined;
+      const res = await fetch("/api/desktop-browser/email-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: currentUrl || undefined,
+          companyName: boundPos?.companyName || matchedSiteCompany || undefined,
+          title: activeTab?.title || undefined,
+        }),
+      });
+      const data = await res.json().catch(() => null) as {
+        available?: boolean;
+        reason?: string;
+        candidates?: { code: string; subject: string; from: string; matchedSite: boolean }[];
+      } | null;
+      if (!res.ok || !data) {
+        toast.error("读取邮箱验证码失败，请稍后重试");
+        return;
+      }
+      if (!data.available) {
+        toast.info(data.reason || "请先在「设置 → 邮箱」绑定开启扫描的邮箱");
+        return;
+      }
+      const list = data.candidates ?? [];
+      if (!list.length) {
+        toast.info("最近 15 分钟邮件里还没看到新验证码（刚点击发送的话稍等几秒再试）");
+        return;
+      }
+      await applyCode(list[0].code, list[0]);
+      setOtpChoices(list.length > 1 ? list : []);
+    } catch {
+      toast.error("读取邮箱验证码失败，请检查网络连接");
+    } finally {
+      setOtpBusy(false);
     }
   }
 
@@ -1135,7 +1349,7 @@ export function EmbeddedBrowser({
     if (!bridge) return;
     try {
       const result = await bridge.screenshot();
-      setShot({ dataUrl: result.dataUrl, title: result.title });
+      setShot({ dataUrl: result.dataUrl, title: result.title, url: result.url });
       setShotOpen(true);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "截图失败");
@@ -1263,7 +1477,7 @@ export function EmbeddedBrowser({
         <p className="leading-relaxed text-muted-foreground">{currentUrl ? pageDraftState : "打开网申页面后，填写内容会自动保存为草稿。"}{autoRemember ? "" : " · 自动发现已关闭，草稿仍自动保存"}</p>
         <div className="flex flex-wrap gap-1.5">
           <Button size="xs" variant="outline" disabled={savingCorrections || busy || !currentUrl} onClick={handleSaveCorrections}><Check />{savingCorrections ? "检测中…" : "核对本页变化"}</Button>
-          <Button size="xs" variant="ghost" onClick={() => router.push("/settings?tab=autofill#pending-application-changes")}><NotebookPen />待核对变化{pendingChangeCount ? `（${pendingChangeCount}）` : ""}</Button>
+          <Button size="xs" variant="ghost" onClick={() => openPanel("pending")}><NotebookPen />打开待核对变化{pendingChangeCount ? `（${pendingChangeCount}）` : ""}</Button>
         </div>
       </section>
     </div>
@@ -1315,7 +1529,17 @@ export function EmbeddedBrowser({
           )}
 
           {pendingChangeCount > 0 && (
-            <button type="button" onClick={() => router.push("/settings?tab=autofill#pending-application-changes")} title="你在网页上手填或修改的内容，确认后才会用于以后填写" className="flex h-7 shrink-0 items-center gap-1 rounded-full bg-amber-500/12 px-2.5 text-xs font-medium text-amber-700 hover:bg-amber-500/20 dark:text-amber-400">
+            <button
+              type="button"
+              onClick={() => (assistantOpen && assistantTab === "pending" ? closePanel() : openPanel("pending"))}
+              title="你在网页上手填或修改的内容，点击直接在侧边栏核对确认"
+              className={cn(
+                "flex h-7 shrink-0 items-center gap-1 rounded-full px-2.5 text-xs font-medium transition-colors",
+                assistantOpen && assistantTab === "pending"
+                  ? "bg-amber-500/25 text-amber-800 dark:text-amber-300"
+                  : "bg-amber-500/12 text-amber-700 hover:bg-amber-500/20 dark:text-amber-400"
+              )}
+            >
               <NotebookPen className="size-3.5" />待核对 {pendingChangeCount}
             </button>
           )}
@@ -1452,7 +1676,7 @@ export function EmbeddedBrowser({
               <DropdownMenuItem disabled={!currentUrl} onClick={handleScreenshot}><Camera />截图存到投递附件…</DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem disabled={savingCorrections || busy || !currentUrl} onClick={handleSaveCorrections}><Check />{savingCorrections ? "检测中…" : "核对本页变化"}</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => router.push("/settings?tab=autofill#pending-application-changes")}><NotebookPen />打开待核对变化{pendingChangeCount ? `（${pendingChangeCount}）` : ""}</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => openPanel("pending")}><NotebookPen />打开待核对变化{pendingChangeCount ? `（${pendingChangeCount}）` : ""}</DropdownMenuItem>
               <DropdownMenuItem onClick={() => bridge.clearMarks()}><Eraser />清除填写标记</DropdownMenuItem>
               <DropdownMenuItem
                 disabled={!currentUrl}
@@ -1483,6 +1707,7 @@ export function EmbeddedBrowser({
               <DropdownMenuItem disabled={!currentUrl} onClick={() => { void bridge.copyUrl(); toast.success("链接已复制"); }}><Copy />复制链接</DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => setPasswordsOpen(true)}><KeyRound />密码管理…</DropdownMenuItem>
+              <DropdownMenuItem disabled={!currentUrl || otpBusy} onClick={() => void fillEmailOtp()}><MailCheck />读取邮箱验证码并填入</DropdownMenuItem>
               <DropdownMenuItem onClick={async () => { await bridge.clearHistory(); setHistory([]); toast.success("最近访问已清空"); }}><Trash2 />清空最近访问</DropdownMenuItem>
               <DropdownMenuItem
                 variant="destructive"
@@ -1634,6 +1859,53 @@ export function EmbeddedBrowser({
             你为「{tailoredHere.label}」定制了简历「{tailoredHere.name}」。这个网站一键填写要用它吗？
           </Infobar>
         )}
+        {!(tailoredHere && resumeVersionId !== tailoredHere.resumeVersionId && !skippedTailored.includes(tailoredHere.site)) &&
+          pageIntel?.url === currentUrl &&
+          pageIntel.recommendation &&
+          !dismissedIntel.has(`rec:${currentUrl}`) &&
+          !submitted &&
+          !recordedBar && (
+            <Infobar
+              icon={<Wand2 />}
+              onClose={() => setDismissedIntel((prev) => new Set(prev).add(`rec:${currentUrl}`))}
+              closeLabel="保持当前设置"
+              actions={
+                <Button
+                  size="xs"
+                  onClick={() => {
+                    const rec = pageIntel.recommendation!;
+                    if (rec.resumeVersionId) setResumeVersionId(rec.resumeVersionId);
+                    if (rec.variantId) setVariantChoice(rec.variantId);
+                    toast.success(
+                      `已切换${rec.resumeName ? `简历「${rec.resumeName}」` : ""}${rec.resumeName && rec.variantName ? " · " : ""}${rec.variantName ? `方案「${rec.variantName}」` : ""}`
+                    );
+                  }}
+                >
+                  一键切换匹配配置
+                </Button>
+              }
+            >
+              {pageIntel.recommendation.reason}，建议改用
+              {pageIntel.recommendation.resumeName ? `简历「${pageIntel.recommendation.resumeName}」` : ""}
+              {pageIntel.recommendation.resumeName && pageIntel.recommendation.variantName ? "、" : ""}
+              {pageIntel.recommendation.variantName ? `资料方案「${pageIntel.recommendation.variantName}」` : ""}。
+            </Infobar>
+          )}
+        {pageIntel?.url === currentUrl &&
+          pageIntel.warnings.length > 0 &&
+          !dismissedIntel.has(`warn:${currentUrl}`) &&
+          !submitted &&
+          !recordedBar && (
+            <Infobar
+              tone="warning"
+              icon={<TriangleAlert />}
+              onClose={() => setDismissedIntel((prev) => new Set(prev).add(`warn:${currentUrl}`))}
+              closeLabel="知道了"
+            >
+              <span className="font-medium">投递前提醒：</span>
+              {pageIntel.warnings.map((w) => w.message).join("；")}。
+            </Infobar>
+          )}
         {submitted && submitted.tabId === tabsState.activeId && (
           <Infobar
             tone="success"
@@ -1672,6 +1944,32 @@ export function EmbeddedBrowser({
         )}
         {savedLogins.offer && savedLogins.offer.tabId === tabsState.activeId && (
           <LoginOfferInfobar bridge={bridge} offer={savedLogins.offer} onDone={savedLogins.clearOffer} />
+        )}
+        {((otpPrompt && otpPrompt.tabId === tabsState.activeId) || otpChoices.length > 0) && (
+          <Infobar
+            icon={otpBusy ? <Loader2 className="animate-spin" /> : <MailCheck />}
+            onClose={() => { setOtpPrompt(null); setOtpChoices([]); }}
+            closeLabel="关闭"
+            actions={
+              <div className="flex flex-wrap items-center gap-1.5">
+                {otpChoices.length > 1 ? (
+                  otpChoices.slice(0, 3).map((c) => (
+                    <Button key={c.code} size="xs" variant="outline" onClick={() => void fillEmailOtp(c.code)}>
+                      填 {c.code}（{c.from.split("@")[0]}）
+                    </Button>
+                  ))
+                ) : (
+                  <Button size="xs" disabled={otpBusy} onClick={() => void fillEmailOtp()}>
+                    {otpBusy ? "读取邮箱中…" : "读取邮箱并一键填入"}
+                  </Button>
+                )}
+              </div>
+            }
+          >
+            {otpChoices.length > 1
+              ? `发现多封近期验证码邮件，已优先填入「${otpChoices[0].code}」，也可点击右侧切换：`
+              : `检测到当前页面需要填写${otpPrompt?.emailLikely ? "邮箱" : ""}验证码，可直接从绑定邮箱提取最新验证码并填入。`}
+          </Infobar>
         )}
         <SiteBanner
           bridge={bridge}
@@ -1718,6 +2016,7 @@ export function EmbeddedBrowser({
               onAskConsumed={() => setAgentAsk(null)}
               pageContext={agentPageContext}
               onFillField={fillDraft}
+              onFillFields={fillMultipleDrafts}
               quickQuestions={AGENT_PAGE_QUESTIONS}
               suggestions={AGENT_PAGE_SUGGESTIONS}
               intro={<p className="text-sm text-muted-foreground">我能看到你正在看的这个页面：问我这个岗位值不值得投、这家公司怎么样，或者让我按你的经历写这页的开放题（写好点复制，粘贴进去）。</p>}
@@ -1758,6 +2057,10 @@ export function EmbeddedBrowser({
               onApply={(options) => handleAutofill(options)}
               settings={settingsPanel}
               onOpenProfile={() => router.push("/settings?tab=autofill")}
+              pendingCount={pendingChangeCount}
+              pendingRefreshToken={pendingRefreshToken}
+              onPendingCountChange={setPendingChangeCount}
+              onOpenSettingsPending={() => router.push("/settings?tab=autofill#pending-application-changes")}
             />
           </div>
         )}
