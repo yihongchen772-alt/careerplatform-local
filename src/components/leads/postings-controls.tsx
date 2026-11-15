@@ -3,10 +3,65 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Check, Loader2, Plus, RefreshCw, Search, Sparkles, Unlink } from "lucide-react";
+import { Check, Layers, Loader2, Plus, RefreshCw, Search, Sparkles, Unlink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { addPostingToPool, enableBuiltinPostingFeed, removePostingSource, savePostingSource, syncAllPostingSources, syncPostingSource, syncStalePostingSources, type SyncSummary } from "@/lib/actions/campus-postings";
+import { DEFAULT_BUILTIN_SHARDS, FEED_SHARD_DEFS } from "@/lib/builtin-feed-shards";
+import {
+  addPostingToPool,
+  enableBuiltinPostingFeed,
+  removePostingSource,
+  savePostingSource,
+  syncAllPostingSources,
+  syncPostingSource,
+  syncStalePostingSources,
+  updateBuiltinFeedShards,
+  type SyncSummary,
+} from "@/lib/actions/campus-postings";
+
+function toggleShardId(current: string[], shardId: string): string[] {
+  if (current.includes(shardId)) {
+    return current.length > 1 ? current.filter((id) => id !== shardId) : current;
+  }
+  return [...current, shardId];
+}
+
+function ShardSelectorGrid({
+  selected,
+  onToggle,
+}: {
+  selected: string[];
+  onToggle: (shardId: string) => void;
+}) {
+  return (
+    <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+      {FEED_SHARD_DEFS.map((shard) => {
+        const checked = selected.includes(shard.id);
+        return (
+          <label
+            key={shard.id}
+            className={`flex cursor-pointer items-start gap-2 rounded-lg border px-2.5 py-2 text-xs transition-colors ${
+              checked
+                ? "border-primary/45 bg-primary/[0.06] text-foreground"
+                : "border-border/70 bg-background/80 text-muted-foreground hover:border-border"
+            }`}
+          >
+            <input
+              type="checkbox"
+              className="mt-0.5 accent-primary"
+              checked={checked}
+              onChange={() => onToggle(shard.id)}
+            />
+            <span className="min-w-0">
+              <span className="block font-medium text-foreground">{shard.name}</span>
+              <span className="block text-[11px] text-muted-foreground">{shard.description}</span>
+            </span>
+          </label>
+        );
+      })}
+    </div>
+  );
+}
 
 function summaryText(result: SyncSummary) {
   const parts = [`共 ${result.total} 条`];
@@ -20,6 +75,7 @@ function summaryText(result: SyncSummary) {
 export function SubscribeCard() {
   const router = useRouter();
   const [link, setLink] = useState("");
+  const [selectedShards, setSelectedShards] = useState<string[]>(DEFAULT_BUILTIN_SHARDS);
   const [pending, startTransition] = useTransition();
   const [enablingFeed, startEnableFeed] = useTransition();
   function subscribe() {
@@ -32,7 +88,7 @@ export function SubscribeCard() {
   }
   function enableBuiltin() {
     startEnableFeed(async () => {
-      const result = await enableBuiltinPostingFeed();
+      const result = await enableBuiltinPostingFeed(selectedShards);
       if (!result.ok) { toast.error(result.message); return; }
       toast.success(`已开启「${result.data.name || "内置名企官网每日直招池"}」：${summaryText(result.data)}`);
       router.refresh();
@@ -40,19 +96,25 @@ export function SubscribeCard() {
   }
   return (
     <div className="space-y-4">
-      <div className="flex flex-col justify-between gap-3 rounded-xl border border-primary/30 bg-primary/[0.04] p-5 sm:flex-row sm:items-center">
-        <div className="space-y-1">
-          <p className="inline-flex items-center gap-1.5 font-medium">
-            <Sparkles className="size-4 text-primary" />
-            Moka · 北森 · 飞书 每日官网直招池（免配置 · 一键填表直达）
-          </p>
-          <p className="text-sm text-muted-foreground">
-            精选接入 <strong>Moka（mokahr.com）</strong>、<strong>北森（zhiye.com）</strong> 与 <strong>飞书招聘（jobs.feishu.cn / 字节）</strong> 三大标准网申系统的名企直招池（涵盖字节、蔚来、智元机器人、非夕、光轮、DeepSeek、月之暗面、智谱、MiniMax、远景、思谋、讯飞、越疆、石头、海柔、埃夫特、中科曙光、迈瑞等），点「投递」直接进入标准网申页并支持一键自动填表。
-          </p>
+      <div className="space-y-3 rounded-xl border border-primary/30 bg-primary/[0.04] p-5">
+        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+          <div className="space-y-1">
+            <p className="inline-flex items-center gap-1.5 font-medium">
+              <Sparkles className="size-4 text-primary" />
+              名企官网每日直招池（分片订阅 · 免配置 · 一键填表直达）
+            </p>
+            <p className="text-sm text-muted-foreground">
+              内置 <strong>350+ 家</strong> 官网直招站点：核心池默认开启 <strong>Moka / 北森 / 飞书招聘</strong> 三大标准系统；可按需勾选 <strong>大易 Dayee / 腾讯阿里美团 / 全球前沿 AI &amp; 机器人外企</strong> 分片。
+            </p>
+          </div>
+          <Button type="button" onClick={enableBuiltin} disabled={enablingFeed || pending} className="shrink-0">
+            {enablingFeed ? <><Loader2 className="animate-spin" />正在拉取直招池…</> : `开启所选 ${selectedShards.length} 个分片`}
+          </Button>
         </div>
-        <Button type="button" onClick={enableBuiltin} disabled={enablingFeed || pending} className="shrink-0">
-          {enablingFeed ? <><Loader2 className="animate-spin" />正在拉取直招池…</> : "一键开启每日直招池"}
-        </Button>
+        <ShardSelectorGrid
+          selected={selectedShards}
+          onToggle={(id) => setSelectedShards((prev) => toggleShardId(prev, id))}
+        />
       </div>
 
       <div className="space-y-3 rounded-xl border border-dashed p-5">
@@ -76,17 +138,23 @@ export function SyncControls({
   sources,
   stale,
   hasBuiltinFeed = false,
+  builtinShards,
   hasFeishuSheet = true,
 }: {
   sourceId: string;
   sources?: { id: string; name: string }[];
   stale: boolean;
   hasBuiltinFeed?: boolean;
+  builtinShards?: string[];
   hasFeishuSheet?: boolean;
 }) {
   const router = useRouter();
   const [syncing, setSyncing] = useState(false);
   const [enablingFeed, startEnableFeed] = useTransition();
+  const [editingShards, setEditingShards] = useState(false);
+  const activeShards = builtinShards?.length ? builtinShards : DEFAULT_BUILTIN_SHARDS;
+  const [draftShards, setDraftShards] = useState<string[]>(activeShards);
+  const [savingShards, startSaveShards] = useTransition();
   const [addingSheet, setAddingSheet] = useState(false);
   const [sheetLink, setSheetLink] = useState("");
   const [savingSheet, startSaveSheet] = useTransition();
@@ -115,84 +183,134 @@ export function SyncControls({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stale]);
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      {!hasBuiltinFeed && (
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={syncing || enablingFeed}
-          onClick={() =>
-            startEnableFeed(async () => {
-              const result = await enableBuiltinPostingFeed();
-              if (!result.ok) { toast.error(result.message); return; }
-              toast.success(`已开启「${result.data.name || "内置名企官网每日直招池"}」：${summaryText(result.data)}`);
-              router.refresh();
-            })
-          }
-        >
-          {enablingFeed ? <Loader2 className="animate-spin" /> : <Sparkles />}
-          {enablingFeed ? "正在开启…" : "+ 开启名企直招池"}
-        </Button>
-      )}
-      {!hasFeishuSheet && !addingSheet && (
-        <Button size="sm" variant="outline" disabled={syncing} onClick={() => setAddingSheet(true)}>
-          <Plus />
-          叠加飞书校招表
-        </Button>
-      )}
-      {addingSheet && (
-        <form
-          className="flex items-center gap-1.5"
-          onSubmit={(e) => {
-            e.preventDefault();
-            startSaveSheet(async () => {
-              const result = await savePostingSource(sheetLink);
-              if (!result.ok) { toast.error(result.message); return; }
-              toast.success(`已同步「${result.data.name || "校招信息表"}」：${summaryText(result.data)}`);
-              setAddingSheet(false);
-              setSheetLink("");
-              router.refresh();
-            });
-          }}
-        >
-          <Input
-            value={sheetLink}
-            onChange={(e) => setSheetLink(e.target.value)}
-            placeholder="https://xxxx.feishu.cn/base/……"
-            className="h-8 w-56 text-xs"
-          />
-          <Button size="sm" type="submit" disabled={savingSheet || !sheetLink.trim()}>
-            {savingSheet ? <Loader2 className="animate-spin" /> : "订阅"}
-          </Button>
-          <Button size="sm" type="button" variant="ghost" onClick={() => setAddingSheet(false)}>
-            取消
-          </Button>
-        </form>
-      )}
-      <Button size="sm" variant="outline" disabled={syncing} onClick={() => void sync(false)}>{syncing ? <Loader2 className="animate-spin" /> : <RefreshCw />}{syncing ? "同步中…" : sourceList.length > 1 ? "全部同步" : "立即同步"}</Button>
-      {sourceList.length === 1 ? (
-        <Button size="sm" variant="ghost" disabled={syncing} title="取消订阅并清掉该源同步来的信息（已加入候选池的岗位保留）" onClick={async () => {
-          if (!window.confirm("取消订阅这个数据源？同步来的招聘信息会清掉，已加入候选岗位池的不受影响。")) return;
-          const result = await removePostingSource(sourceId);
-          if (!result.ok) toast.error(result.message); else router.refresh();
-        }}><Unlink />取消订阅</Button>
-      ) : (
-        sourceList.map((s) => (
+    <div className="flex flex-col items-end gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        {!hasBuiltinFeed && (
           <Button
-            key={s.id}
             size="sm"
-            variant="ghost"
-            disabled={syncing}
-            title={`移除数据源「${s.name}」`}
-            onClick={async () => {
-              if (!window.confirm(`移除数据源「${s.name}」？它同步来的信息会清掉，已加入候选池的保留。`)) return;
-              const result = await removePostingSource(s.id);
-              if (!result.ok) toast.error(result.message); else router.refresh();
+            variant="outline"
+            disabled={syncing || enablingFeed}
+            onClick={() =>
+              startEnableFeed(async () => {
+                const result = await enableBuiltinPostingFeed();
+                if (!result.ok) { toast.error(result.message); return; }
+                toast.success(`已开启「${result.data.name || "内置名企官网每日直招池"}」：${summaryText(result.data)}`);
+                router.refresh();
+              })
+            }
+          >
+            {enablingFeed ? <Loader2 className="animate-spin" /> : <Sparkles />}
+            {enablingFeed ? "正在开启…" : "+ 开启名企直招池"}
+          </Button>
+        )}
+        {hasBuiltinFeed && (
+          <Button
+            size="sm"
+            variant={editingShards ? "secondary" : "outline"}
+            disabled={syncing || savingShards}
+            onClick={() => {
+              if (!editingShards) setDraftShards(activeShards);
+              setEditingShards((v) => !v);
             }}
           >
-            <Unlink />移除{s.name.slice(0, 6)}
+            <Layers />
+            直招赛道分片 ({activeShards.length}/{FEED_SHARD_DEFS.length})
           </Button>
-        ))
+        )}
+        {!hasFeishuSheet && !addingSheet && (
+          <Button size="sm" variant="outline" disabled={syncing} onClick={() => setAddingSheet(true)}>
+            <Plus />
+            叠加飞书校招表
+          </Button>
+        )}
+        {addingSheet && (
+          <form
+            className="flex items-center gap-1.5"
+            onSubmit={(e) => {
+              e.preventDefault();
+              startSaveSheet(async () => {
+                const result = await savePostingSource(sheetLink);
+                if (!result.ok) { toast.error(result.message); return; }
+                toast.success(`已同步「${result.data.name || "校招信息表"}」：${summaryText(result.data)}`);
+                setAddingSheet(false);
+                setSheetLink("");
+                router.refresh();
+              });
+            }}
+          >
+            <Input
+              value={sheetLink}
+              onChange={(e) => setSheetLink(e.target.value)}
+              placeholder="https://xxxx.feishu.cn/base/……"
+              className="h-8 w-56 text-xs"
+            />
+            <Button size="sm" type="submit" disabled={savingSheet || !sheetLink.trim()}>
+              {savingSheet ? <Loader2 className="animate-spin" /> : "订阅"}
+            </Button>
+            <Button size="sm" type="button" variant="ghost" onClick={() => setAddingSheet(false)}>
+              取消
+            </Button>
+          </form>
+        )}
+        <Button size="sm" variant="outline" disabled={syncing} onClick={() => void sync(false)}>{syncing ? <Loader2 className="animate-spin" /> : <RefreshCw />}{syncing ? "同步中…" : sourceList.length > 1 ? "全部同步" : "立即同步"}</Button>
+        {sourceList.length === 1 ? (
+          <Button size="sm" variant="ghost" disabled={syncing} title="取消订阅并清掉该源同步来的信息（已加入候选池的岗位保留）" onClick={async () => {
+            if (!window.confirm("取消订阅这个数据源？同步来的招聘信息会清掉，已加入候选岗位池的不受影响。")) return;
+            const result = await removePostingSource(sourceId);
+            if (!result.ok) toast.error(result.message); else router.refresh();
+          }}><Unlink />取消订阅</Button>
+        ) : (
+          sourceList.map((s) => (
+            <Button
+              key={s.id}
+              size="sm"
+              variant="ghost"
+              disabled={syncing}
+              title={`移除数据源「${s.name}」`}
+              onClick={async () => {
+                if (!window.confirm(`移除数据源「${s.name}」？它同步来的信息会清掉，已加入候选池的保留。`)) return;
+                const result = await removePostingSource(s.id);
+                if (!result.ok) toast.error(result.message); else router.refresh();
+              }}
+            >
+              <Unlink />移除{s.name.slice(0, 6)}
+            </Button>
+          ))
+        )}
+      </div>
+      {hasBuiltinFeed && editingShards && (
+        <div className="w-full max-w-3xl space-y-2.5 rounded-xl border bg-background/95 p-3 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-medium text-foreground">
+              按赛道与平台选择同步分片（勾选越多岗位越全，仅拉取所选分片，同步更快）
+            </p>
+            <div className="flex items-center gap-1.5">
+              <Button size="xs" variant="ghost" disabled={savingShards} onClick={() => setEditingShards(false)}>
+                收起
+              </Button>
+              <Button
+                size="xs"
+                disabled={savingShards || draftShards.length === 0}
+                onClick={() =>
+                  startSaveShards(async () => {
+                    const result = await updateBuiltinFeedShards(draftShards);
+                    if (!result.ok) { toast.error(result.message); return; }
+                    setEditingShards(false);
+                    toast.success(`分片配置已更新并同步：${summaryText(result.data)}`);
+                    router.refresh();
+                  })
+                }
+              >
+                {savingShards ? <Loader2 className="animate-spin" /> : null}
+                保存分片并同步
+              </Button>
+            </div>
+          </div>
+          <ShardSelectorGrid
+            selected={draftShards}
+            onToggle={(id) => setDraftShards((prev) => toggleShardId(prev, id))}
+          />
+        </div>
       )}
     </div>
   );

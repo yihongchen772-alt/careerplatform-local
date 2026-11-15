@@ -17,7 +17,7 @@ jobs:
   build-and-publish-feed:
     name: Aggregate Official Boards & Update Cloud Mirror
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -37,9 +37,9 @@ jobs:
             gh release create "$TAG" \
               --prerelease \
               --title "每日名企直招岗位池镜像 (自动更新)" \
-              --notes "由 GitHub Actions 每日定时聚合名企官网直招岗位生成的云端快照，供求职罗盘客户端免配置一键拉取（标记为 prerelease，不影响桌面端版本更新检测）。"
+              --notes "由 GitHub Actions 每日定时聚合名企官网直招岗位生成的云端分片快照，供求职罗盘客户端按赛道免配置一键拉取（标记为 prerelease，不影响桌面端版本更新检测）。"
           fi
           gh release upload "$TAG" \
-            .local-run/postings-feed/postings-feed.json.gz \
+            .local-run/postings-feed/*.json.gz \
             .local-run/postings-feed/postings-feed-meta.json \
             --clobber

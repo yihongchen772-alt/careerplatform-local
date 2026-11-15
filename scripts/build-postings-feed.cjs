@@ -4,34 +4,52 @@ const zlib = require("node:zlib");
 const crypto = require("node:crypto");
 const { spawn } = require("node:child_process");
 
-const BOARDS = [
-  // 飞书招聘 (Feishu ATSX: jobs.bytedance.com / *.jobs.feishu.cn)
-  { name: "字节跳动校招", careers_url: "https://jobs.bytedance.com/campus/position", industry: "互联网/AI" },
-  { name: "字节跳动", careers_url: "https://jobs.bytedance.com", industry: "互联网/AI" },
-  { name: "蔚来校招", careers_url: "https://nio.jobs.feishu.cn/campus/position", industry: "智能汽车/智驾/具身" },
-  { name: "蔚来汽车", careers_url: "https://nio.jobs.feishu.cn", industry: "智能汽车/智驾" },
-  { name: "MiniMax", careers_url: "https://vrfi1sk8a0.jobs.feishu.cn", industry: "AI大模型" },
-  { name: "智元机器人", careers_url: "https://agirobot.jobs.feishu.cn", industry: "具身智能/机器人" },
-  { name: "非夕机器人", careers_url: "https://flexivrobotics.jobs.feishu.cn", industry: "具身智能/机器人" },
-  { name: "光轮智能", careers_url: "https://lightwheel.jobs.feishu.cn", industry: "具身智能/仿真合成数据" },
-  // Moka (app.mokahr.com)
-  { name: "DeepSeek", careers_url: "https://app.mokahr.com/social-recruitment/high-flyer/140576", industry: "AI大模型/量化" },
-  { name: "月之暗面", careers_url: "https://app.mokahr.com/apply/moonshot/148506", industry: "AI大模型" },
-  { name: "智谱AI", careers_url: "https://app.mokahr.com/social-recruitment/zphz/148983", industry: "AI大模型" },
-  { name: "远景科技校招", careers_url: "https://app.mokahr.com/campus-recruitment/envisiongroup/43123", industry: "新能源/智能控制/AI" },
-  { name: "思谋科技校招", careers_url: "https://app.mokahr.com/campus-recruitment/smartmore/40506", industry: "视觉AI/智能制造" },
-  // 北森 Beisen (*.zhiye.com)
-  { name: "科大讯飞", careers_url: "https://iflytek.zhiye.com/campus", industry: "AI大模型/语音" },
-  { name: "越疆机器人", careers_url: "https://dobot.zhiye.com/campus", industry: "具身智能/机器人" },
-  { name: "石头科技", careers_url: "https://roborock.zhiye.com/campus", industry: "智能硬件/机器人" },
-  { name: "海柔创新", careers_url: "https://hairobotics.zhiye.com/campus", industry: "物流机器人/运控" },
-  { name: "埃夫特机器人", careers_url: "https://efort.zhiye.com/campus", industry: "工业/人形机器人" },
-  { name: "中科曙光", careers_url: "https://sugon.zhiye.com/campus", industry: "算力基础设施/芯片/系统" },
-  { name: "京东方BOE", careers_url: "https://boe.zhiye.com/campus", industry: "半导体/显示/硬件" },
-  { name: "大华股份", careers_url: "https://dahua.zhiye.com/campus", industry: "智能物联/视觉AI" },
-  { name: "迈瑞医疗", careers_url: "https://mindray.zhiye.com/campus", industry: "医疗器械/研发" },
-  { name: "奇瑞汽车", careers_url: "https://chery.zhiye.com/campus", industry: "智能汽车/智驾" },
-  { name: "信捷电气", careers_url: "https://xinje.zhiye.com/campus", industry: "工业自动化/运动控制" },
+const CATALOG_PATH = path.resolve(__dirname, "..", "electron", "career-ops", "boards-catalog.json");
+const BOARDS = JSON.parse(fs.readFileSync(CATALOG_PATH, "utf8"));
+
+const FEED_SHARDS = [
+  {
+    id: "core-ai-tech",
+    name: "AI大模型 · 互联网 · 软件",
+    description: "Moka / 飞书 / 北森（支持标准一键填表）",
+    defaultEnabled: true,
+    allowOverseas: false,
+  },
+  {
+    id: "core-robotics-hardtech",
+    name: "具身机器人 · 智驾 · 芯片硬件",
+    description: "Moka / 飞书 / 北森（支持标准一键填表）",
+    defaultEnabled: true,
+    allowOverseas: false,
+  },
+  {
+    id: "core-enterprise-fintech",
+    name: "央国企 · 金融量化 · 医疗信创",
+    description: "Moka / 飞书 / 北森（支持标准一键填表）",
+    defaultEnabled: true,
+    allowOverseas: false,
+  },
+  {
+    id: "ext-dayee",
+    name: "大易 Dayee 国央企 & 车企券商",
+    description: "中国中车 / 地平线 / 上海电气 / 中信华泰广发等（支持大易填表）",
+    defaultEnabled: false,
+    allowOverseas: false,
+  },
+  {
+    id: "ext-majors",
+    name: "腾讯 · 阿里 · 美团 全量直招",
+    description: "大厂全系校招与社招补充池",
+    defaultEnabled: false,
+    allowOverseas: false,
+  },
+  {
+    id: "ext-global",
+    name: "全球前沿 AI & 机器人外企",
+    description: "Anthropic / OpenAI / Figure / Waymo / Databricks / Stripe 等",
+    defaultEnabled: false,
+    allowOverseas: true,
+  },
 ];
 
 const OVERSEAS_LOCATION_RE =
@@ -40,12 +58,16 @@ const OVERSEAS_LOCATION_RE =
 const DOMESTIC_CITY_IN_TITLE_RE =
   /(?:[（(【\-\s·/]|^)(北京|上海|深圳|广州|杭州|成都|武汉|南京|苏州|西安|合肥|重庆|长沙|郑州|天津|青岛|厦门|无锡|宁波|珠海|东莞|佛山|福州|济南|大连|沈阳|哈尔滨|长春|南昌|石家庄|太原|昆明|贵阳|南宁|海口|兰州|香港|澳门)(?:市|[）)】\-\s·/]|$)/;
 
-function cleanCities(location, title = "") {
+function cleanCities(location, title = "", allowOverseas = false) {
   const rawParts = String(location || "")
     .replace(/中国[-/·]?/g, "")
     .split(/[/,，、;|]+/)
     .map((s) => s.trim().replace(/^(?:中国|大陆)[-·\s]*/, "").replace(/市$/, "").replace(/总部$/, ""))
-    .filter((s) => s && s.length <= 24 && !/^(远程|不限|全國|全国)$/i.test(s));
+    .filter((s) => s && s.length <= 28 && !/^(远程|不限|全國|全国)$/i.test(s));
+  if (allowOverseas) {
+    const unique = [...new Set(rawParts)].slice(0, 6);
+    return { cities: unique.length ? unique.join("、") : "全球/远程", overseasOnly: false };
+  }
   const domesticParts = rawParts.filter((s) => !OVERSEAS_LOCATION_RE.test(s));
   if (rawParts.length > 0 && domesticParts.length === 0) {
     return { cities: null, overseasOnly: true };
@@ -67,7 +89,7 @@ function inferKind(title, description, careersUrl = "") {
   if (/春招|春季校园/.test(text)) return "春招";
   if (/人才计划|天才少年|青云|筋斗云|北斗|星火|未来星|管培生/.test(text)) return "人才计划";
   if (
-    /校招|校园招聘|应届|毕业生|campus|\d{2,4}\s*届/i.test(text) ||
+    /校招|校园招聘|应届|毕业生|campus|\/school\.html|\d{2,4}\s*届/i.test(text) ||
     /(?:\/campus\b|campus-recruitment|join\.qq\.com)/i.test(careersUrl)
   ) {
     return "秋招";
@@ -93,7 +115,7 @@ function inferCohort(title, description) {
 function inferDegree(description) {
   const head = String(description || "").slice(0, 2000);
   if (/博士及以上|博士学历/.test(head)) return "博士";
-  if (/硕士及以上|研究生及以上|硕士学历/.test(head)) return "硕士及以上";
+  if (/硕士及以上|研究生及以上|硕士研究生及以上|硕士学历/.test(head)) return "硕士及以上";
   if (/本科及以上|本科学历|统招本科|bachelor/i.test(head)) return "本科及以上";
   return null;
 }
@@ -111,7 +133,7 @@ function formatYmd(date) {
   return `${y}-${m}-${d}`;
 }
 
-function runCareerOps(boards, maxPages = 4, timeoutMs = 35000) {
+function runCareerOpsBatch(boards, { maxPages = 10, timeoutMs = 35000, maxJobsPerBoard = 1200, concurrency = 10 } = {}) {
   const runner = path.resolve(__dirname, "..", "electron", "career-ops", "run.mjs");
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [runner], {
@@ -119,7 +141,7 @@ function runCareerOps(boards, maxPages = 4, timeoutMs = 35000) {
       stdio: ["pipe", "pipe", "ignore"],
     });
     let out = "";
-    const timer = setTimeout(() => child.kill(), timeoutMs + 10000);
+    const timer = setTimeout(() => child.kill(), Math.max(timeoutMs * 4, 120000));
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk) => {
       out += chunk;
@@ -140,27 +162,55 @@ function runCareerOps(boards, maxPages = 4, timeoutMs = 35000) {
         reject(new Error(`Failed to parse career-ops output: ${err.message}`));
       }
     });
-    child.stdin.end(JSON.stringify({ boards, maxPages, timeoutMs }));
+    child.stdin.end(JSON.stringify({
+      boards,
+      maxBoards: boards.length,
+      maxPages,
+      timeoutMs,
+      maxJobsPerBoard,
+      concurrency,
+    }));
   });
+}
+
+async function runCareerOps(boards, options = {}) {
+  const BATCH_SIZE = 55;
+  const all = [];
+  for (let i = 0; i < boards.length; i += BATCH_SIZE) {
+    const slice = boards.slice(i, i + BATCH_SIZE);
+    const part = await runCareerOpsBatch(slice, options);
+    all.push(...part);
+    console.log(`Batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(boards.length / BATCH_SIZE)}: ${part.length} boards finished`);
+  }
+  return all;
 }
 
 async function buildFeed() {
   const now = new Date();
   const todayIso = formatYmd(now);
-  const metaByName = new Map(BOARDS.map((b) => [b.name, b]));
+  const shardDefById = new Map(FEED_SHARDS.map((s) => [s.id, s]));
+  const metaByKey = new Map();
+  for (const b of BOARDS) {
+    metaByKey.set(`${b.name}||${b.careers_url}`, b);
+  }
+
   const results = await runCareerOps(
     BOARDS.map((b) => ({ name: b.name, careers_url: b.careers_url, keywords: [] })),
-    4,
-    35000
+    { maxPages: 12, timeoutMs: 35000, maxJobsPerBoard: 1500, concurrency: 10 }
   );
 
-  const seen = new Map();
+  const shardBuckets = new Map(FEED_SHARDS.map((s) => [s.id, new Map()]));
   const summary = [];
 
-  for (const board of results) {
-    const meta = metaByName.get(board.name);
+  for (let idx = 0; idx < results.length; idx++) {
+    const board = results[idx];
+    const meta = metaByKey.get(`${board.name}||${BOARDS[idx]?.careers_url || ""}`) || BOARDS[idx];
+    const shardId = meta?.track && shardBuckets.has(meta.track) ? meta.track : "core-ai-tech";
+    const shardDef = shardDefById.get(shardId);
+    const seen = shardBuckets.get(shardId);
     const jobs = Array.isArray(board.jobs) ? board.jobs : [];
-    summary.push({ name: board.name, count: jobs.length, error: board.error || null });
+    summary.push({ name: board.name, track: shardId, count: jobs.length, error: board.error || null });
+
     for (const job of jobs) {
       const company = String(job.company || board.name || "")
         .replace(/(?:校招|校园招聘|社招)$/, "")
@@ -176,7 +226,7 @@ async function buildFeed() {
 
       const desc = String(job.description || "").trim();
       if (/第三方派遣|Third-party Associate/i.test(`${title} ${desc}`)) continue;
-      const { cities, overseasOnly } = cleanCities(job.location, title);
+      const { cities, overseasOnly } = cleanCities(job.location, title, shardDef?.allowOverseas);
       if (overseasOnly) continue;
 
       let startDate = todayIso;
@@ -208,42 +258,82 @@ async function buildFeed() {
     }
   }
 
-  const items = [...seen.values()];
-  if (items.length === 0) {
-    throw new Error(`No postings collected across ${BOARDS.length} boards: ${JSON.stringify(summary)}`);
-  }
-
+  const outDir = path.resolve(__dirname, "..", ".local-run", "postings-feed");
+  fs.mkdirSync(outDir, { recursive: true });
   const rev = Math.floor(now.getTime() / 1000);
   const generatedAt = now.toISOString();
-  const payload = {
-    version: 1,
+
+  const shardsMeta = [];
+  const defaultCoreItems = new Map();
+  let totalAll = 0;
+
+  for (const shard of FEED_SHARDS) {
+    const items = [...shardBuckets.get(shard.id).values()];
+    totalAll += items.length;
+    if (shard.defaultEnabled) {
+      for (const item of items) {
+        if (!defaultCoreItems.has(item.externalId)) defaultCoreItems.set(item.externalId, item);
+      }
+    }
+    const file = `postings-feed-shard-${shard.id}.json.gz`;
+    const shardPayload = {
+      version: 2,
+      rev,
+      generatedAt,
+      shard: shard.id,
+      name: shard.name,
+      total: items.length,
+      items,
+    };
+    const gzBuf = zlib.gzipSync(Buffer.from(JSON.stringify(shardPayload), "utf8"), { level: 9 });
+    fs.writeFileSync(path.join(outDir, file), gzBuf);
+    shardsMeta.push({
+      id: shard.id,
+      name: shard.name,
+      description: shard.description,
+      defaultEnabled: shard.defaultEnabled,
+      file,
+      total: items.length,
+      gzBytes: gzBuf.length,
+      boardsCount: summary.filter((s) => s.track === shard.id && s.count > 0).length,
+    });
+  }
+
+  const coreItems = [...defaultCoreItems.values()];
+  if (coreItems.length === 0) {
+    throw new Error(`No core postings collected across ${BOARDS.length} boards`);
+  }
+
+  const legacyPayload = {
+    version: 2,
     rev,
     generatedAt,
     name: "内置名企官网每日直招池",
-    total: items.length,
+    total: coreItems.length,
     boards: summary,
-    items,
+    items: coreItems,
   };
+  const legacyGz = zlib.gzipSync(Buffer.from(JSON.stringify(legacyPayload), "utf8"), { level: 9 });
+  fs.writeFileSync(path.join(outDir, "postings-feed.json.gz"), legacyGz);
+
   const metaPayload = {
-    version: 1,
+    version: 2,
     rev,
     generatedAt,
-    total: items.length,
+    name: "内置名企官网每日直招池",
+    total: totalAll,
+    coreTotal: coreItems.length,
+    shards: shardsMeta,
     boards: summary,
   };
-
-  const outDir = path.resolve(__dirname, "..", ".local-run", "postings-feed");
-  fs.mkdirSync(outDir, { recursive: true });
-  const jsonText = JSON.stringify(payload);
-  const gzBuf = zlib.gzipSync(Buffer.from(jsonText, "utf8"), { level: 9 });
-
-  fs.writeFileSync(path.join(outDir, "postings-feed.json"), jsonText, "utf8");
-  fs.writeFileSync(path.join(outDir, "postings-feed.json.gz"), gzBuf);
   fs.writeFileSync(path.join(outDir, "postings-feed-meta.json"), JSON.stringify(metaPayload, null, 2), "utf8");
 
   console.log(
-    `Built postings feed: ${items.length} jobs from ${summary.filter((s) => s.count > 0).length}/${BOARDS.length} boards (${(gzBuf.length / 1024).toFixed(1)} KiB gzipped)`
+    `Built sharded feed: core=${coreItems.length}, total=${totalAll} jobs across ${summary.filter((s) => s.count > 0).length}/${BOARDS.length} boards`
   );
+  for (const s of shardsMeta) {
+    console.log(`  - ${s.id} (${s.name}): ${s.total} jobs from ${s.boardsCount} boards (${(s.gzBytes / 1024).toFixed(1)} KiB gz)`);
+  }
 }
 
 if (require.main === module) {
@@ -253,4 +343,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { BOARDS, buildFeed };
+module.exports = { BOARDS, FEED_SHARDS, buildFeed };

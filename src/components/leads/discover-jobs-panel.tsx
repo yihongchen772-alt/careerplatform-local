@@ -174,9 +174,9 @@ export function DiscoverJobsPanel({
       <div className="space-y-3 rounded-xl border bg-muted/25 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <p className="text-sm font-medium">全网 Moka · 北森 · 飞书 官网直招实时检索</p>
+            <p className="text-sm font-medium">全网 Moka · 北森 · 飞书 · 大易 官网直招实时检索</p>
             <p className="text-xs text-muted-foreground">
-              一次穿透 24 家精选名企官网（Moka / 北森 / 飞书招聘：字节、蔚来、智元、非夕、光轮、DeepSeek、智谱、越疆、石头等）、已订阅招聘表与全网 ATS 直招链接，自动过滤已投岗位并按匹配度排序
+              一次穿透 300+ 家名企官网（Moka / 北森 / 飞书 / 大易及腾讯阿里美团等直招站点）、已订阅招聘表与全网 ATS 直招链接，自动过滤已投岗位并按匹配度排序
             </p>
           </div>
           {defaultTrack && (

@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { db } from "@/lib/db";
@@ -23,45 +24,44 @@ export type BoardJob = {
 
 type BoardResult = { name: string; provider: string | null; jobs: BoardJob[]; error?: string };
 
+export type CatalogBoard = {
+  name: string;
+  careers_url: string;
+  industry?: string;
+  tier?: "core" | "dayee" | "extended";
+  track?: string;
+};
+
+function loadCatalogBoards(): CatalogBoard[] {
+  try {
+    const dir = process.env.CAREERPLATFORM_CAREER_OPS_DIR || path.join(process.cwd(), "electron", "career-ops");
+    const raw = fs.readFileSync(path.join(dir, "boards-catalog.json"), "utf8");
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) return parsed as CatalogBoard[];
+  } catch { /* fall back to inline seed */ }
+  return [
+    { name: "字节跳动校招", careers_url: "https://jobs.bytedance.com/campus/position", industry: "互联网/AI", tier: "core" },
+    { name: "DeepSeek", careers_url: "https://app.mokahr.com/social-recruitment/high-flyer/140576", industry: "AI大模型/量化", tier: "core" },
+    { name: "科大讯飞", careers_url: "https://iflytek.zhiye.com/campus", industry: "AI大模型/语音", tier: "core" },
+  ];
+}
+
+const ALL_CATALOG_BOARDS = loadCatalogBoards();
+
 /**
- * Built-in boards focused exclusively on the three standardized domestic ATS
+ * Core built-in boards focused exclusively on the three standardized domestic ATS
  * platforms that work seamlessly with one-click autofill:
  *   1. 飞书招聘 (jobs.bytedance.com / *.jobs.feishu.cn)
  *   2. Moka (app.mokahr.com)
  *   3. 北森 Beisen (*.zhiye.com)
  */
-export const BUILT_IN_BOARDS: { name: string; careers_url: string; industry?: string }[] = [
-  // 飞书招聘 (Feishu ATSX)
-  { name: "字节跳动校招", careers_url: "https://jobs.bytedance.com/campus/position", industry: "互联网/AI" },
-  { name: "字节跳动", careers_url: "https://jobs.bytedance.com", industry: "互联网/AI" },
-  { name: "蔚来校招", careers_url: "https://nio.jobs.feishu.cn/campus/position", industry: "智能汽车/智驾/具身" },
-  { name: "蔚来汽车", careers_url: "https://nio.jobs.feishu.cn", industry: "智能汽车/智驾" },
-  { name: "MiniMax", careers_url: "https://vrfi1sk8a0.jobs.feishu.cn", industry: "AI大模型" },
-  { name: "智元机器人", careers_url: "https://agirobot.jobs.feishu.cn", industry: "具身智能/机器人" },
-  { name: "非夕机器人", careers_url: "https://flexivrobotics.jobs.feishu.cn", industry: "具身智能/机器人" },
-  { name: "光轮智能", careers_url: "https://lightwheel.jobs.feishu.cn", industry: "具身智能/仿真合成数据" },
-  // Moka (app.mokahr.com)
-  { name: "DeepSeek", careers_url: "https://app.mokahr.com/social-recruitment/high-flyer/140576", industry: "AI大模型/量化" },
-  { name: "月之暗面", careers_url: "https://app.mokahr.com/apply/moonshot/148506", industry: "AI大模型" },
-  { name: "智谱AI", careers_url: "https://app.mokahr.com/social-recruitment/zphz/148983", industry: "AI大模型" },
-  { name: "远景科技校招", careers_url: "https://app.mokahr.com/campus-recruitment/envisiongroup/43123", industry: "新能源/智能控制/AI" },
-  { name: "思谋科技校招", careers_url: "https://app.mokahr.com/campus-recruitment/smartmore/40506", industry: "视觉AI/智能制造" },
-  // 北森 Beisen (*.zhiye.com)
-  { name: "科大讯飞", careers_url: "https://iflytek.zhiye.com/campus", industry: "AI大模型/语音" },
-  { name: "越疆机器人", careers_url: "https://dobot.zhiye.com/campus", industry: "具身智能/机器人" },
-  { name: "石头科技", careers_url: "https://roborock.zhiye.com/campus", industry: "智能硬件/机器人" },
-  { name: "海柔创新", careers_url: "https://hairobotics.zhiye.com/campus", industry: "物流机器人/运控" },
-  { name: "埃夫特机器人", careers_url: "https://efort.zhiye.com/campus", industry: "工业/人形机器人" },
-  { name: "中科曙光", careers_url: "https://sugon.zhiye.com/campus", industry: "算力基础设施/芯片/系统" },
-  { name: "京东方BOE", careers_url: "https://boe.zhiye.com/campus", industry: "半导体/显示/硬件" },
-  { name: "大华股份", careers_url: "https://dahua.zhiye.com/campus", industry: "智能物联/视觉AI" },
-  { name: "迈瑞医疗", careers_url: "https://mindray.zhiye.com/campus", industry: "医疗器械/研发" },
-  { name: "奇瑞汽车", careers_url: "https://chery.zhiye.com/campus", industry: "智能汽车/智驾" },
-  { name: "信捷电气", careers_url: "https://xinje.zhiye.com/campus", industry: "工业自动化/运动控制" },
-];
+export const BUILT_IN_BOARDS: CatalogBoard[] = ALL_CATALOG_BOARDS.filter((b) => (b.tier ?? "core") === "core");
+
+/** Extended boards (Step 2: Dayee 大易 + 腾讯/阿里/美团 + Global Frontier AI ATS). */
+export const EXTENDED_BOARDS: CatalogBoard[] = ALL_CATALOG_BOARDS.filter((b) => (b.tier ?? "core") !== "core");
 
 /** Hosts the vendored fetchers can read (what each provider's detect() claims). */
-const SUPPORTED_HOST = /(^|\.)(jobs\.bytedance\.com|jobs\.feishu\.cn|careers\.tencent\.com|join\.qq\.com|talent\.alibaba\.com|careers\.aliyun\.com|talent\.taotian\.com|talent-holding\.alibaba\.com|zhaopin\.meituan\.com|mokahr\.com|zhiye\.com|myworkdayjobs\.com|successfactors\.(com|eu)|jobs2web\.com|smartrecruiters\.com|greenhouse\.io|lever\.co|ashbyhq\.com)$/i;
+const SUPPORTED_HOST = /(^|\.)(jobs\.bytedance\.com|jobs\.feishu\.cn|careers\.tencent\.com|join\.qq\.com|talent\.alibaba\.com|careers\.aliyun\.com|talent\.taotian\.com|talent-holding\.alibaba\.com|zhaopin\.meituan\.com|mokahr\.com|zhiye\.com|hotjob\.cn|dayee\.com|myworkdayjobs\.com|successfactors\.(com|eu)|jobs2web\.com|smartrecruiters\.com|greenhouse\.io|lever\.co|ashbyhq\.com)$/i;
 
 export function supportedBoard(url: string | null | undefined): boolean {
   if (!url) return false;
@@ -95,7 +95,12 @@ export async function runBoards(boards: { name: string; careers_url: string; key
         reject(new Error("找岗位超时或没有结果"));
       }
     });
-    child.stdin.end(JSON.stringify({ boards, maxPages: 2, timeoutMs: Math.min(timeoutMs, 30000) }));
+    child.stdin.end(JSON.stringify({
+      boards,
+      maxBoards: Math.max(boards.length, 32),
+      maxPages: 2,
+      timeoutMs: Math.min(timeoutMs, 30000),
+    }));
   });
 }
 
@@ -142,7 +147,7 @@ export async function discoverWebCampusJobs(
         : jobKind === "campus"
           ? "校招 校园招聘"
           : "招聘";
-  const atsFilter = "(site:app.mokahr.com OR site:zhiye.com OR site:jobs.feishu.cn OR site:jobs.bytedance.com)";
+  const atsFilter = "(site:app.mokahr.com OR site:zhiye.com OR site:jobs.feishu.cn OR site:jobs.bytedance.com OR site:hotjob.cn)";
   const searchBing = async (searchTerms: string): Promise<BoardJob[]> => {
     const endpoint = `https://cn.bing.com/search?q=${encodeURIComponent(searchTerms)}&count=15`;
     try {
@@ -173,7 +178,9 @@ export async function discoverWebCampusJobs(
             ? "北森直招"
             : /feishu\.cn|bytedance\.com/i.test(url)
               ? "飞书直招"
-              : "全网检索";
+              : /hotjob\.cn|dayee\.com/i.test(url)
+                ? "大易直招"
+                : "全网检索";
         out.push({
           company,
           title: title.slice(0, 120),
@@ -256,10 +263,11 @@ export async function findJobs(
         return raw;
       }
     };
-    const all = [...directory, ...BUILT_IN_BOARDS.filter((board) => !directory.some((entry) => boardKey(entry.careers_url) === boardKey(board.careers_url))).map((board) => ({ ...board, aliases: [] as string[] }))];
-    const named = all.filter((board) => terms.some((term) => [board.name, ...board.aliases].some((name) => normal(name).includes(normal(term)) || normal(term).includes(normal(name)))));
+    const allCore = [...directory, ...BUILT_IN_BOARDS.filter((board) => !directory.some((entry) => boardKey(entry.careers_url) === boardKey(board.careers_url))).map((board) => ({ ...board, aliases: [] as string[] }))];
+    const allSearchable = [...allCore, ...EXTENDED_BOARDS.filter((board) => !allCore.some((entry) => boardKey(entry.careers_url) === boardKey(board.careers_url))).map((board) => ({ ...board, aliases: [] as string[] }))];
+    const named = allSearchable.filter((board) => terms.some((term) => [board.name, ...board.aliases].some((name) => normal(name).includes(normal(term)) || normal(term).includes(normal(name)))));
     keywords = named.length ? terms.filter((term) => !named.some((board) => [board.name, ...board.aliases].some((name) => normal(name).includes(normal(term)) || normal(term).includes(normal(name))))) : terms;
-    const boards = (named.length ? named : all).slice(0, 32).map((board) => ({ name: board.name, careers_url: board.careers_url, keywords: keywords.slice(0, 3) }));
+    const boards = (named.length ? named : allCore).slice(0, 32).map((board) => ({ name: board.name, careers_url: board.careers_url, keywords: keywords.slice(0, 3) }));
     try {
       boardResults = await runBoards(boards);
     } catch (err) {

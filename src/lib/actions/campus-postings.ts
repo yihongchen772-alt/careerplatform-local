@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
 import { checkPostingSources, syncSource, type SyncSummary } from "@/lib/campus-sync";
-import { BUILTIN_FEED_NAME, BUILTIN_FEED_URL } from "@/lib/builtin-feed";
+import { BUILTIN_FEED_NAME, BUILTIN_FEED_URL, formatBuiltinFeedUrl } from "@/lib/builtin-feed";
 import { resolveCompanyId } from "@/lib/company-resolver";
 import { computeInterestScore } from "@/lib/scoring";
 
@@ -34,17 +34,27 @@ export async function savePostingSource(rawUrl: string): Promise<ActionResult<Sy
 }
 
 /** Enables the built-in daily official boards feed (cloud mirror + local career-ops fallback) with zero config. */
-export async function enableBuiltinPostingFeed(): Promise<ActionResult<SyncSummary>> {
+export async function enableBuiltinPostingFeed(shards?: string[]): Promise<ActionResult<SyncSummary>> {
   return toActionResult(async () => {
     const user = await requireUser();
-    const existing = await db.postingSource.findFirst({ where: { userId: user.id, url: BUILTIN_FEED_URL } });
-    const source =
-      existing ??
-      (await db.postingSource.create({
-        data: { userId: user.id, url: BUILTIN_FEED_URL, name: BUILTIN_FEED_NAME },
-      }));
+    const existing = await db.postingSource.findFirst({
+      where: { userId: user.id, url: { startsWith: BUILTIN_FEED_URL } },
+    });
+    const targetUrl = shards?.length ? formatBuiltinFeedUrl(shards) : (existing?.url ?? BUILTIN_FEED_URL);
+    const source = existing
+      ? existing.url !== targetUrl
+        ? await db.postingSource.update({ where: { id: existing.id }, data: { url: targetUrl } })
+        : existing
+      : await db.postingSource.create({
+          data: { userId: user.id, url: targetUrl, name: BUILTIN_FEED_NAME },
+        });
     return syncSource(user.id, source.id);
   });
+}
+
+/** Updates subscribed shards on the built-in feed source and triggers an immediate sync. */
+export async function updateBuiltinFeedShards(shards: string[]): Promise<ActionResult<SyncSummary>> {
+  return enableBuiltinPostingFeed(shards);
 }
 
 export async function syncPostingSource(sourceId: string): Promise<ActionResult<SyncSummary>> {

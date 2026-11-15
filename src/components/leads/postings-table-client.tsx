@@ -196,9 +196,20 @@ export function PostingsTableClient({
                             ? "bg-blue-500/10 text-blue-600 dark:text-blue-400"
                             : row.atsLabel === "Moka"
                               ? "bg-violet-500/10 text-violet-600 dark:text-violet-400"
-                              : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                              : row.atsLabel === "北森"
+                                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                                : row.atsLabel === "大易"
+                                  ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                                  : "bg-sky-500/10 text-sky-600 dark:text-sky-400"
                         )}
-                        title={`${row.atsLabel}标准化网申系统 · 支持内置浏览器一键填表`}
+                        title={
+                          row.atsLabel === "飞书" ||
+                          row.atsLabel === "Moka" ||
+                          row.atsLabel === "北森" ||
+                          row.atsLabel === "大易"
+                            ? `${row.atsLabel}标准化网申系统 · 支持内置浏览器一键填表`
+                            : `${row.atsLabel}官方直招站点`
+                        }
                       >
                         {row.atsLabel}
                       </span>

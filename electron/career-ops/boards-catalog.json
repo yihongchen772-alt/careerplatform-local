@@ -1,0 +1,2515 @@
+[
+  {
+    "name": "智元机器人",
+    "careers_url": "https://agirobot.jobs.feishu.cn",
+    "industry": "具身智能/机器人",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "非夕机器人",
+    "careers_url": "https://flexivrobotics.jobs.feishu.cn",
+    "industry": "具身智能/机器人",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "光轮智能",
+    "careers_url": "https://lightwheel.jobs.feishu.cn",
+    "industry": "具身智能/仿真合成数据",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "远景科技校招",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/envisiongroup/43123",
+    "industry": "新能源/智能控制/AI",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "思谋科技校招",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/smartmore/40506",
+    "industry": "视觉AI/智能制造",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "埃夫特机器人",
+    "careers_url": "https://efort.zhiye.com/campus",
+    "industry": "工业/人形机器人",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "中科曙光",
+    "careers_url": "https://sugon.zhiye.com/campus",
+    "industry": "算力基础设施/芯片/系统",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "京东方BOE",
+    "careers_url": "https://boe.zhiye.com/campus",
+    "industry": "半导体/显示/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "大华股份",
+    "careers_url": "https://dahua.zhiye.com/campus",
+    "industry": "智能物联/视觉AI",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "迈瑞医疗",
+    "careers_url": "https://mindray.zhiye.com/campus",
+    "industry": "医疗器械/研发",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "奇瑞汽车",
+    "careers_url": "https://chery.zhiye.com/campus",
+    "industry": "智能汽车/智驾",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "信捷电气",
+    "careers_url": "https://xinje.zhiye.com/campus",
+    "industry": "工业自动化/运动控制",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "小鹏汽车",
+    "careers_url": "https://xiaopeng.jobs.feishu.cn",
+    "industry": "智能汽车/智驾/机器人",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "零一汽车",
+    "careers_url": "https://zeron.jobs.feishu.cn",
+    "industry": "商用车自动驾驶",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "中科创达",
+    "careers_url": "https://thundersoft.jobs.feishu.cn",
+    "industry": "智能操作系统/汽车软件",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "面壁智能",
+    "careers_url": "https://modelbest.jobs.feishu.cn",
+    "industry": "AI大模型/端侧AI",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "生数科技",
+    "careers_url": "https://shengshu.jobs.feishu.cn",
+    "industry": "多模态AI大模型",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "莉莉丝游戏",
+    "careers_url": "https://lilithgames.jobs.feishu.cn",
+    "industry": "游戏/AI",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "鹰角网络",
+    "careers_url": "https://hypergryph.jobs.feishu.cn",
+    "industry": "游戏/图形",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "得物",
+    "careers_url": "https://poizon.jobs.feishu.cn",
+    "industry": "互联网/电商",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "正浩创新",
+    "careers_url": "https://ecoflow.jobs.feishu.cn",
+    "industry": "储能/智能硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "拓竹科技",
+    "careers_url": "https://bambulab.jobs.feishu.cn",
+    "industry": "消费级机器人/3D打印",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "商汤科技",
+    "careers_url": "https://sensetime.jobs.feishu.cn",
+    "industry": "AI大模型/视觉",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "零一万物",
+    "careers_url": "https://01ai.jobs.feishu.cn",
+    "industry": "AI大模型",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "涛思数据",
+    "careers_url": "https://taosdata.jobs.feishu.cn",
+    "industry": "时序数据库",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "汇川技术校招",
+    "careers_url": "https://inovance.zhiye.com/campus",
+    "industry": "工业自动化/运控",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "汇川技术",
+    "careers_url": "https://inovance.zhiye.com/social",
+    "industry": "工业自动化/运控",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "长安汽车校招",
+    "careers_url": "https://changan.zhiye.com/campus",
+    "industry": "智能汽车/研发",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "长安汽车",
+    "careers_url": "https://changan.zhiye.com/social",
+    "industry": "智能汽车/研发",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "恒生电子校招",
+    "careers_url": "https://hundsun.zhiye.com/campus",
+    "industry": "金融科技/系统",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "传音控股校招",
+    "careers_url": "https://transsion.zhiye.com/campus",
+    "industry": "智能终端/出海",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "传音控股",
+    "careers_url": "https://transsion.zhiye.com/social",
+    "industry": "智能终端/出海",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "新华三校招",
+    "careers_url": "https://h3c.zhiye.com/campus",
+    "industry": "ICT/云计算/网络",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "新华三",
+    "careers_url": "https://h3c.zhiye.com/social",
+    "industry": "ICT/云计算/网络",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "联影医疗校招",
+    "careers_url": "https://united-imaging.zhiye.com/campus",
+    "industry": "高端医疗器械/AI",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "联影医疗",
+    "careers_url": "https://united-imaging.zhiye.com/social",
+    "industry": "高端医疗器械/AI",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "华大基因校招",
+    "careers_url": "https://genomics.zhiye.com/campus",
+    "industry": "生物科技",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "华大基因",
+    "careers_url": "https://genomics.zhiye.com/social",
+    "industry": "生物科技",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "三一重工校招",
+    "careers_url": "https://sany.zhiye.com/campus",
+    "industry": "工程机械/自动驾驶",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "三一重工",
+    "careers_url": "https://sany.zhiye.com/social",
+    "industry": "工程机械/自动驾驶",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "科大讯飞",
+    "careers_url": "https://iflytek.zhiye.com/social",
+    "industry": "AI大模型/语音",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "越疆机器人",
+    "careers_url": "https://dobot.zhiye.com/social",
+    "industry": "具身智能/机器人",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "石头科技",
+    "careers_url": "https://roborock.zhiye.com/social",
+    "industry": "智能硬件/机器人",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "海柔创新",
+    "careers_url": "https://hairobotics.zhiye.com/social",
+    "industry": "物流机器人/运控",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "埃夫特机器人",
+    "careers_url": "https://efort.zhiye.com/social",
+    "industry": "工业/人形机器人",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "中科曙光",
+    "careers_url": "https://sugon.zhiye.com/social",
+    "industry": "算力基础设施/芯片/系统",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "京东方BOE",
+    "careers_url": "https://boe.zhiye.com/social",
+    "industry": "半导体/显示/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "大华股份",
+    "careers_url": "https://dahua.zhiye.com/social",
+    "industry": "智能物联/视觉AI",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "迈瑞医疗",
+    "careers_url": "https://mindray.zhiye.com/social",
+    "industry": "医疗器械/研发",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "奇瑞汽车",
+    "careers_url": "https://chery.zhiye.com/social",
+    "industry": "智能汽车/智驾",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "信捷电气",
+    "careers_url": "https://xinje.zhiye.com/social",
+    "industry": "工业自动化/运动控制",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "轻舟智航",
+    "careers_url": "https://qcraft.jobs.feishu.cn",
+    "industry": "自动驾驶/智驾",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "XREAL",
+    "careers_url": "https://xreal.jobs.feishu.cn",
+    "industry": "AR眼镜/空间计算",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "后摩智能",
+    "careers_url": "https://houmo.jobs.feishu.cn",
+    "industry": "存算一体AI芯片",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "TapTap/心动",
+    "careers_url": "https://xd.jobs.feishu.cn",
+    "industry": "游戏/社区",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "中船集团校招",
+    "careers_url": "https://cssc.zhiye.com/campus",
+    "industry": "高端装备/央企",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "中船集团",
+    "careers_url": "https://cssc.zhiye.com/social",
+    "industry": "高端装备/央企",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "优必选校招",
+    "careers_url": "https://ubtrobot.zhiye.com/campus",
+    "industry": "人形机器人",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "优必选",
+    "careers_url": "https://ubtrobot.zhiye.com/social",
+    "industry": "人形机器人",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "恒玄科技校招",
+    "careers_url": "https://bestechnic.zhiye.com/campus",
+    "industry": "智能音频SoC芯片",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "恒玄科技",
+    "careers_url": "https://bestechnic.zhiye.com/social",
+    "industry": "智能音频SoC芯片",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "卓胜微校招",
+    "careers_url": "https://maxscend.zhiye.com/campus",
+    "industry": "射频芯片",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "卓胜微",
+    "careers_url": "https://maxscend.zhiye.com/social",
+    "industry": "射频芯片",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "拓荆科技校招",
+    "careers_url": "https://piotech.zhiye.com/campus",
+    "industry": "半导体薄膜设备",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "拓荆科技",
+    "careers_url": "https://piotech.zhiye.com/social",
+    "industry": "半导体薄膜设备",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "中金公司校招",
+    "careers_url": "https://cicc.zhiye.com/campus",
+    "industry": "投行/量化科技",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "中金公司",
+    "careers_url": "https://cicc.zhiye.com/social",
+    "industry": "投行/量化科技",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "中望软件",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/zwcad/28356",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "绿盟科技",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/nsfocus/29118",
+    "industry": "信创/安全/硬科技央国企",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "最右",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/xiaochuankeji/3518",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "柠檬微趣",
+    "careers_url": "https://app.mokahr.com/apply/microfunhr/75944",
+    "industry": "游戏/图形",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "主线科技",
+    "careers_url": "https://app.mokahr.com/social-recruitment/trunk/39504",
+    "industry": "智能汽车/智驾",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "东方财富",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/eastmoney/57971",
+    "industry": "金融科技/量化",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "智加",
+    "careers_url": "https://app.mokahr.com/social-recruitment/plus/73958",
+    "industry": "智能汽车/智驾",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "安谋科技",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/armchina/68023",
+    "industry": "芯片/半导体/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "斗鱼直播",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/douyu/7623",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "SHEIN",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/shein/2932",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "珠海智融科技",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/ismartware/69961",
+    "industry": "芯片/半导体/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "科华数据",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/kehua/92510",
+    "industry": "新能源/智能制造/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "作业帮",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/zuoyebang/39595",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "博世",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/bosch/73873",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "北京云道智造",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/ibe/37870",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "搜狐",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/sohu/5682",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "踏歌智行",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/i-tage/1999",
+    "industry": "智能汽车/智驾",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "阳光电源",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/sungrow/94416",
+    "industry": "新能源/智能制造/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "韶音科技",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/aftershokzhr/36940",
+    "industry": "新能源/智能制造/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "鸿芯微纳",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/giga-da/26752",
+    "industry": "芯片/半导体/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "九坤投资",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/ubiquantrecruit/37031",
+    "industry": "金融科技/量化",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "天王星量化",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/uranus-research/54175",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "速腾聚创科技",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/robosense/69887",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "文远知行",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/jingchi/2137",
+    "industry": "智能汽车/智驾",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "星环科技",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/transwarp/3196",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "新浪集团",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/sina/43536",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "途游游戏",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/tuyoogame/71965",
+    "industry": "游戏/图形",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "中兴通讯校招",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/zte/46903",
+    "industry": "ICT/芯片/算力",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "特斯拉",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/tesla/41460",
+    "industry": "智能汽车/智驾",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "超参数科技",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/chaocanshu/45562",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "剑心互娱",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/ijianxin/94578",
+    "industry": "游戏/图形",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "携程集团",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/trip/37757",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "Metabit Trading",
+    "careers_url": "https://app.mokahr.com/apply/metabit-trading/26108",
+    "industry": "金融科技/量化",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "思勰投资",
+    "careers_url": "https://app.mokahr.com/social-recruitment/sixiecapital/42909",
+    "industry": "金融科技/量化",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "XYZ Robotics",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/xyzrobotics/26847",
+    "industry": "具身智能/机器人",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "壁仞科技",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/biren/44727",
+    "industry": "芯片/半导体/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "国微芯",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/gwxeda/101935",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "深圳市思远半导体",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/tkplusemi/42650",
+    "industry": "智能汽车/智驾",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "搜狐畅游",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/cyou-inc/42233",
+    "industry": "游戏/图形",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "星辉游戏",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/rastar/96229",
+    "industry": "游戏/图形",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "电科莱斯、二十八",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/cetcles/40889",
+    "industry": "信创/安全/硬科技央国企",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "中国网安",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/cetc30/36270",
+    "industry": "信创/安全/硬科技央国企",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "沐曦",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/metax-tech/58131",
+    "industry": "芯片/半导体/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "上海人工智能实验室",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/pjlab/39255",
+    "industry": "AI大模型/视觉",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "星辉游戏",
+    "careers_url": "https://app.mokahr.com/apply/rastar/96230",
+    "industry": "游戏/图形",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "巨人网络",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/ztgame/92438",
+    "industry": "游戏/图形",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "开立生物",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/sonoscape/94392",
+    "industry": "生物医疗/高端器械",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "游卡",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/yokagames/41940",
+    "industry": "游戏/图形",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "云和恩墨",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/enmotech/47098",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "度小满",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/duxiaoman/74050",
+    "industry": "金融科技/量化",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "芯驰科技",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/semidrive/42941",
+    "industry": "芯片/半导体/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "西云数据",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/nwcdcloud/4047",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "无锡奥特维",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/wxautowell/45558",
+    "industry": "新能源/智能制造/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "睿能集团",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/raynen/115955",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "翱捷科技",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/asrmicro/71887",
+    "industry": "芯片/半导体/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "华勤集团",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/hq/44757",
+    "industry": "新能源/智能制造/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "北京易控智驾",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/eqhr/39786",
+    "industry": "智能汽车/智驾",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "赢合科技",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/yhwins/72072",
+    "industry": "新能源/智能制造/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "途虎养车",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/tuhu/28398",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "国科天迅",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/tasson/69872",
+    "industry": "芯片/半导体/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "NVIDIA",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/nvidia/47111",
+    "industry": "芯片/半导体/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "上海为旌",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/visinextek/41636",
+    "industry": "芯片/半导体/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "北京涵德投资",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/handetouzi/46040",
+    "industry": "金融科技/量化",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "知乎",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/zhihu/68321",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "虎牙直播",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/huya/4112",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "苏州同元软控信息",
+    "careers_url": "https://app.mokahr.com/apply/tongyuan/45782",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "纵横股份",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/jouav/43415",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "得力集团",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/nbdeli/70019",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "白鹭",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/hzbailu/36104",
+    "industry": "AI大模型/视觉",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "阿丘科技",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/aqrose/38322",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "广联达",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/glodon/91966",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "乐元素游戏",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/leyuansu/2357",
+    "industry": "游戏/图形",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "寒武纪",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/cambricon/44201",
+    "industry": "芯片/半导体/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "竞技世界",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/jjworld/94602",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "中微AMEC",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/amec/4362",
+    "industry": "芯片/半导体/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "欧派家居",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/oppein/78240",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "SG质优生",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/sgs/74104",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "北京极智嘉科技",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/geekplus/77928",
+    "industry": "具身智能/机器人",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "小天才",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/eebbk/37594",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "西山居",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/xishanju/37430",
+    "industry": "游戏/图形",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "杭州行芯科技",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/phlexing/100123",
+    "industry": "芯片/半导体/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "深圳光峰科技",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/appotronics/47058",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "金山办公",
+    "careers_url": "https://app.mokahr.com/apply/wps/29466",
+    "industry": "办公软件/AI",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "卓望数码",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/aspire/100261",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "金山云",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/kingsoft/39364",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "巨鲨医疗",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/jusha/101949",
+    "industry": "生物医疗/高端器械",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "政采云",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/cai-inc/1103",
+    "industry": "AI大模型/视觉",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "北京格灵深瞳信息",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/deepglint/76185",
+    "industry": "AI大模型/视觉",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "万兴科技",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/wanxingkeji/41591",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "烽火通信科技",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/whfhtx/73922",
+    "industry": "信创/安全/硬科技央国企",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "太极计算机股份",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/taiji/43573",
+    "industry": "AI大模型/视觉",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "人大金仓",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/kingbase/47259",
+    "industry": "信创/安全/硬科技央国企",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "杭州禾迈电力",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/hoymiles/70377",
+    "industry": "新能源/智能制造/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "虹科",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/hkaco/68043",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "北京正定私募基金",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/zding/117879",
+    "industry": "金融科技/量化",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "Shopee虾皮",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/shopee/2962",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "BIGAI北京通用AI",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/bigai-ai/102640",
+    "industry": "AI大模型/视觉",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "北京长亭科技",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/chaitin/92701",
+    "industry": "AI大模型/视觉",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "统信软件",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/uniontech/39124",
+    "industry": "信创/安全/硬科技央国企",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "瑞幸咖啡",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/lkcoffee/45257",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "上海擎朗智能科技",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/keenon/24673",
+    "industry": "具身智能/机器人",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "奇安信",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/qianxin/29182",
+    "industry": "信创/安全/硬科技央国企",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "旷视科技",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/megviihr/38642",
+    "industry": "计算机视觉/AI",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "杭州群核",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/qunhemail/2832",
+    "industry": "AI大模型/视觉",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "沃尔沃",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/volvocars/56034",
+    "industry": "智能汽车/智驾",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "华勤集团",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/hq/45417",
+    "industry": "新能源/智能制造/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "一零跃动",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/zhenrongbao/4074",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "滴滴校招",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/didiglobal/96064",
+    "industry": "智慧出行/AI",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "牧原",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/muyuan/96293",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "卓识基金",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/zsquant/36544",
+    "industry": "金融科技/量化",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "嘉实基金",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/jsfund/43906",
+    "industry": "金融科技/量化",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "电魂网络",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/dianhun/55953",
+    "industry": "游戏/图形",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "博世软件",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/bosch/75909",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "虹科",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/hkaco/68258",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "昆仑万维",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/klww/67963",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "沃尔沃",
+    "careers_url": "https://app.mokahr.com/social-recruitment/volvocars/67891",
+    "industry": "智能汽车/智驾",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "DolphinDB智臾",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/dolphindb/101962",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "深信服",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/sangfor/6146",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "图森未来",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/tusenweilai/72214",
+    "industry": "AI大模型/视觉",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "搜狐社招",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/sohu/28313",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "依图科技",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/yitu-inc/3700",
+    "industry": "AI大模型/视觉",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "龙湖集团",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/longfor/74084",
+    "industry": "地产/数字化",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "沪江网校",
+    "careers_url": "https://app.mokahr.com/apply/hjsd/48",
+    "industry": "互联网/教育",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "滴滴",
+    "careers_url": "https://app.mokahr.com/apply/didiglobal/6222",
+    "industry": "智慧出行/AI",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "金山办公校招",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/wps/41436",
+    "industry": "办公软件/AI",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "中科星图",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/zkxx/72098",
+    "industry": "空天信息/AI",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "欣旺达",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/evtech/47503",
+    "industry": "新能源/电池",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "新时达",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/step/94905",
+    "industry": "工业机器人/运动控制",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "月之暗面校招",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/moonshot/148507",
+    "industry": "AI大模型",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "月之暗面",
+    "careers_url": "https://app.mokahr.com/apply/moonshot/148506",
+    "industry": "AI大模型",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "追一科技",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/wezhuiyi/3440",
+    "industry": "AI大模型/NLP",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "旷视科技校招",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/megviihr/146855",
+    "industry": "计算机视觉/AI",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "DeepSeek",
+    "careers_url": "https://app.mokahr.com/social-recruitment/high-flyer/140576",
+    "industry": "AI大模型/量化",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "元戎启行",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/deeproute/145894",
+    "industry": "自动驾驶/AI",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "银河通用机器人",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/yinhetongyong/165930",
+    "industry": "具身智能/机器人",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "智谱AI校招",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/zphz/148984",
+    "industry": "AI大模型",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "智谱AI",
+    "careers_url": "https://app.mokahr.com/social-recruitment/zphz/148983",
+    "industry": "AI大模型",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "中兴通讯社招",
+    "careers_url": "https://app.mokahr.com/social-recruitment/zte/47588",
+    "industry": "ICT/芯片/算力",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "金蝶软件",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/kingdeehr/166565",
+    "industry": "企业服务/SaaS",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "作业帮校招",
+    "careers_url": "https://app.mokahr.com/campus-recruitment/zuoyebang/144908",
+    "industry": "互联网/AI",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "安克创新",
+    "careers_url": "https://anker-in.jobs.feishu.cn/campus/position",
+    "industry": "新能源/智能制造/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "北醒科技",
+    "careers_url": "https://benewake.jobs.feishu.cn",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "蔚来校招",
+    "careers_url": "https://nio.jobs.feishu.cn/campus/position",
+    "industry": "智能汽车/智驾/具身",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "识渊科技",
+    "careers_url": "https://sailyond.jobs.feishu.cn",
+    "industry": "AI大模型/视觉",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "禾赛科技",
+    "careers_url": "https://kwh0jtf778.jobs.feishu.cn",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "蓝箭航天",
+    "careers_url": "https://uq1h428xyc.jobs.feishu.cn",
+    "industry": "信创/安全/硬科技央国企",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "字节跳动校招",
+    "careers_url": "https://jobs.bytedance.com/campus/position",
+    "industry": "互联网/AI",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "拓竹",
+    "careers_url": "https://bambulab.jobs.feishu.cn/campus/position",
+    "industry": "新能源/智能制造/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "沐瞳科技",
+    "careers_url": "https://moonton.jobs.feishu.cn/campus/position",
+    "industry": "游戏/图形",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "小马智行",
+    "careers_url": "https://ponyai.jobs.feishu.cn/campus/position",
+    "industry": "智能汽车/智驾",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "莉莉丝游戏校招",
+    "careers_url": "https://lilithgames.jobs.feishu.cn/campus/position",
+    "industry": "游戏/AI",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "Momenta校招",
+    "careers_url": "https://momenta.jobs.feishu.cn/campus/position",
+    "industry": "自动驾驶/AI",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "水滴",
+    "careers_url": "https://wdh.jobs.feishu.cn",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "中科创达",
+    "careers_url": "https://thundersoft.jobs.feishu.cn/campus/position",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "蓝色光标",
+    "careers_url": "https://bluefocus.jobs.feishu.cn/campus/position",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "叠纸游戏",
+    "careers_url": "https://papergames.jobs.feishu.cn/campus/position",
+    "industry": "游戏/图形",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "和而泰",
+    "careers_url": "https://salcje7shg.jobs.feishu.cn",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "百川智能校招",
+    "careers_url": "https://cq6qe6bvfr6.jobs.feishu.cn/campus/position",
+    "industry": "AI大模型",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "上海智元新创技术",
+    "careers_url": "https://agirobot.jobs.feishu.cn/campus/position",
+    "industry": "具身智能/机器人",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "北京智明星通",
+    "careers_url": "https://elex-work.jobs.feishu.cn/campus/position",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "MetaApp",
+    "careers_url": "https://meta.jobs.feishu.cn",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "芯盟科技",
+    "careers_url": "https://icleague.jobs.feishu.cn",
+    "industry": "芯片/半导体/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "Whale 帷幄",
+    "careers_url": "https://whales.jobs.feishu.cn",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "MiniMax",
+    "careers_url": "https://vrfi1sk8a0.jobs.feishu.cn",
+    "industry": "AI大模型/视觉",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "Aibee",
+    "careers_url": "https://aibee.jobs.feishu.cn",
+    "industry": "AI大模型/视觉",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "光源资本",
+    "careers_url": "https://q77z9b9zvw.jobs.feishu.cn",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "Momenta",
+    "careers_url": "https://momenta.jobs.feishu.cn",
+    "industry": "自动驾驶/AI",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "Cider",
+    "careers_url": "https://ciderglobal.jobs.feishu.cn",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "理想汽车",
+    "careers_url": "https://li.jobs.feishu.cn/campus/position",
+    "industry": "智能汽车/智驾",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "LIZHI",
+    "careers_url": "https://lizhi2021.jobs.feishu.cn/campus/position",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "蔚来汽车",
+    "careers_url": "https://nio.jobs.feishu.cn",
+    "industry": "智能汽车/智驾",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "小鹏汽车校招",
+    "careers_url": "https://xiaopeng.jobs.feishu.cn/campus/position",
+    "industry": "智能汽车/智驾/机器人",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "字节跳动",
+    "careers_url": "https://jobs.bytedance.com",
+    "industry": "互联网/AI",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "百川智能",
+    "careers_url": "https://cq6qe6bvfr6.jobs.feishu.cn",
+    "industry": "AI大模型",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "智谱AI飞书校招",
+    "careers_url": "https://zhipu-ai.jobs.feishu.cn/campus/position",
+    "industry": "AI大模型",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "无问芯穹",
+    "careers_url": "https://infinigence.jobs.feishu.cn",
+    "industry": "AI算力基础设施",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "轻舟智航校招",
+    "careers_url": "https://qcraft.jobs.feishu.cn/campus/position",
+    "industry": "自动驾驶/智驾",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "面壁智能校招",
+    "careers_url": "https://modelbest.jobs.feishu.cn/campus/position",
+    "industry": "AI大模型/端侧AI",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "影石创新",
+    "careers_url": "https://arashivision.jobs.feishu.cn/campus/position",
+    "industry": "智能硬件/影像AI",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "诺瓦星云",
+    "careers_url": "https://novastar.zhiye.com/campus",
+    "industry": "新能源/智能制造/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "康尼机电",
+    "careers_url": "https://kangni.zhiye.com/campus",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "重庆长安汽车",
+    "careers_url": "https://changanqiche.zhiye.com/campus",
+    "industry": "智能汽车/智驾",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "高测",
+    "careers_url": "https://gxck.zhiye.com/campus",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "神州数码",
+    "careers_url": "https://digitalchina.zhiye.com/campus",
+    "industry": "信创/安全/硬科技央国企",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "思必驰",
+    "careers_url": "https://aispeech1.zhiye.com/campus",
+    "industry": "AI大模型/视觉",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "康冠科技",
+    "careers_url": "https://careerktc.zhiye.com/campus",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "海柔创新",
+    "careers_url": "https://hairobotics.zhiye.com/campus",
+    "industry": "具身智能/机器人",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "华宇信息技术",
+    "careers_url": "https://thunisoft.zhiye.com/campus",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "赛意校招",
+    "careers_url": "https://gzsie.zhiye.com/campus",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "黑芝麻",
+    "careers_url": "https://bsthr.zhiye.com/campus",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "星宸科技",
+    "careers_url": "https://sigmastar.zhiye.com/campus",
+    "industry": "芯片/半导体/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "三一集团",
+    "careers_url": "https://sanycampus.zhiye.com/campus",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "点点互动",
+    "careers_url": "https://centurygame.zhiye.com/campus",
+    "industry": "游戏/图形",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "成都新易盛通信",
+    "careers_url": "https://eoptolink.zhiye.com/campus",
+    "industry": "信创/安全/硬科技央国企",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "联发科",
+    "careers_url": "https://mediatek.zhiye.com/campus",
+    "industry": "芯片/半导体/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "芯动科技",
+    "careers_url": "https://innosilicon.zhiye.com/campus",
+    "industry": "芯片/半导体/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "越疆",
+    "careers_url": "https://dobot.zhiye.com/campus",
+    "industry": "具身智能/机器人",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "亿联网络",
+    "careers_url": "https://yealink.zhiye.com/campus",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "西安铂力特增材技术",
+    "careers_url": "https://xablt.zhiye.com/campus",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "中国人民保险",
+    "careers_url": "https://picc.zhiye.com/campus",
+    "industry": "金融科技/量化",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "海天集团",
+    "careers_url": "https://haitian.zhiye.com/campus",
+    "industry": "AI大模型/视觉",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "上海银行",
+    "careers_url": "https://bosc.zhiye.com/campus",
+    "industry": "金融科技/量化",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "360集团",
+    "careers_url": "https://360campus.zhiye.com/campus",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "国科微电子",
+    "careers_url": "https://goke1.zhiye.com/campus",
+    "industry": "芯片/半导体/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "蒙牛",
+    "careers_url": "https://mengniu.zhiye.com/campus",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "中海达",
+    "careers_url": "https://zhdgps.zhiye.com/campus",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "赛力斯集团",
+    "careers_url": "https://sokon.zhiye.com/campus",
+    "industry": "智能汽车/智驾",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "奇瑞控股",
+    "careers_url": "https://cheryholding.zhiye.com/campus",
+    "industry": "智能汽车/智驾",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "上海航天控制技术研究所",
+    "careers_url": "https://sast.zhiye.com/campus",
+    "industry": "信创/安全/硬科技央国企",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "杭州迪普科技",
+    "careers_url": "https://dptech.zhiye.com/campus",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "泰隆银行",
+    "careers_url": "https://zjtlcb.zhiye.com/campus",
+    "industry": "金融科技/量化",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "零跑汽车",
+    "careers_url": "https://leapmotor.zhiye.com/campus",
+    "industry": "智能汽车/智驾",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "鼎桥通信",
+    "careers_url": "https://td-tech.zhiye.com/campus",
+    "industry": "信创/安全/硬科技央国企",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "中国交建",
+    "careers_url": "https://ccccltd.zhiye.com/campus",
+    "industry": "信创/安全/硬科技央国企",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "锐明技术",
+    "careers_url": "https://streamax.zhiye.com/campus",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "光大证券",
+    "careers_url": "https://ebscn.zhiye.com/campus",
+    "industry": "金融科技/量化",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "三维通信",
+    "careers_url": "https://sunwave.zhiye.com/campus",
+    "industry": "信创/安全/硬科技央国企",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "卡斯柯信号",
+    "careers_url": "https://casco.zhiye.com/campus",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "公牛集团",
+    "careers_url": "https://gongniu.zhiye.com/campus",
+    "industry": "新能源/智能制造/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "陕西汽车控股集团",
+    "careers_url": "https://sxqc.zhiye.com/campus",
+    "industry": "智能汽车/智驾",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "集创北方",
+    "careers_url": "https://chipone.zhiye.com/campus",
+    "industry": "芯片/半导体/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "广汽研究院",
+    "careers_url": "https://gacrnd.zhiye.com/campus",
+    "industry": "智能汽车/智驾",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "中国太平",
+    "careers_url": "https://cntp.zhiye.com/campus",
+    "industry": "金融科技/量化",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "长园深瑞",
+    "careers_url": "https://sznari.zhiye.com/campus",
+    "industry": "新能源/智能制造/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "友山科技",
+    "careers_url": "https://youshan.zhiye.com/campus",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "江西江铃",
+    "careers_url": "https://jmc.zhiye.com/campus",
+    "industry": "智能汽车/智驾",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "东方国信",
+    "careers_url": "https://bonczp.zhiye.com/campus",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "VeSync",
+    "careers_url": "https://vesync.zhiye.com/campus",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "中信科移动",
+    "careers_url": "https://cictmobile.zhiye.com/campus",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "先导智能",
+    "careers_url": "https://leadchina.zhiye.com/campus",
+    "industry": "AI大模型/视觉",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "启元",
+    "careers_url": "https://qiyuanzp.zhiye.com/campus",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "大华",
+    "careers_url": "https://dahua1.zhiye.com/campus",
+    "industry": "新能源/智能制造/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "芯讯通",
+    "careers_url": "https://simcom.zhiye.com/campus",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "摩尔线程",
+    "careers_url": "https://mthreads.zhiye.com/campus",
+    "industry": "芯片/半导体/硬件",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "成都飞机设计研究所",
+    "careers_url": "https://611.zhiye.com/campus",
+    "industry": "信创/安全/硬科技央国企",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "挚途",
+    "careers_url": "https://zhito.zhiye.com/campus",
+    "industry": "智能汽车/智驾",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "联友科技",
+    "careers_url": "https://szly.zhiye.com/campus",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "贝壳",
+    "careers_url": "https://ke.zhiye.com/campus",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "东北证券",
+    "careers_url": "https://nesc.zhiye.com/campus",
+    "industry": "金融科技/量化",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "太平保险",
+    "careers_url": "https://cntaiping.zhiye.com/campus",
+    "industry": "AI大模型/视觉",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "景顺长城",
+    "careers_url": "https://invescogreatwall.zhiye.com/campus",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "中国银河证券",
+    "careers_url": "https://chinastock.zhiye.com/campus",
+    "industry": "金融科技/量化",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "联通数科",
+    "careers_url": "https://cudt.zhiye.com/campus",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "思为科技",
+    "careers_url": "https://ideamake.zhiye.com/campus",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "51WORLD",
+    "careers_url": "https://51world.zhiye.com/campus",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "北森科技",
+    "careers_url": "https://beisen.zhiye.com/campus",
+    "industry": "互联网/软件科技",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "泡泡玛特",
+    "careers_url": "https://popmart.zhiye.com/campus",
+    "industry": "新消费/互联网",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "泰康保险",
+    "careers_url": "https://jobtaikang.zhiye.com/campus",
+    "industry": "金融科技/保险",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "科大讯飞",
+    "careers_url": "https://iflytek.zhiye.com/campus",
+    "industry": "AI大模型/语音",
+    "tier": "core",
+    "track": "core-ai-tech"
+  },
+  {
+    "name": "麒麟软件",
+    "careers_url": "https://kylinos.zhiye.com/campus",
+    "industry": "操作系统/信创",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "普渡科技",
+    "careers_url": "https://pudutech.zhiye.com/campus",
+    "industry": "商用服务机器人",
+    "tier": "core",
+    "track": "core-robotics-hardtech"
+  },
+  {
+    "name": "神州信息",
+    "careers_url": "https://dcits.zhiye.com/campus",
+    "industry": "金融科技/软件",
+    "tier": "core",
+    "track": "core-enterprise-fintech"
+  },
+  {
+    "name": "中国中车",
+    "careers_url": "https://crrc.hotjob.cn",
+    "industry": "高端装备/轨交央企",
+    "tier": "dayee",
+    "track": "ext-dayee"
+  },
+  {
+    "name": "地平线",
+    "careers_url": "https://horizon-campus.hotjob.cn",
+    "industry": "智驾芯片/AI",
+    "tier": "dayee",
+    "track": "ext-dayee"
+  },
+  {
+    "name": "中国电信天翼云",
+    "careers_url": "https://wecruit.hotjob.cn/SU62b2ae672f9d24458d72f9cc/pb/index.html",
+    "industry": "云计算/AI算力",
+    "tier": "dayee",
+    "track": "ext-dayee"
+  },
+  {
+    "name": "上海电气",
+    "careers_url": "https://wecruit.hotjob.cn/SU60de8350bef57c519874bd36/pb/index.html",
+    "industry": "高端装备/智能制造",
+    "tier": "dayee",
+    "track": "ext-dayee"
+  },
+  {
+    "name": "中国航信",
+    "careers_url": "https://wecruit.hotjob.cn/SU6358e2600dcad448466b5464/pb/index.html",
+    "industry": "民航信息/软件央企",
+    "tier": "dayee",
+    "track": "ext-dayee"
+  },
+  {
+    "name": "台积电",
+    "careers_url": "https://wecruit.hotjob.cn/SU6232b78f2f9d244b1b501e1c/pb/index.html",
+    "industry": "晶圆制造/半导体",
+    "tier": "dayee",
+    "track": "ext-dayee"
+  },
+  {
+    "name": "麦格米特",
+    "careers_url": "https://wecruit.hotjob.cn/SU6282075e0dcad413c09efe26/pb/index.html",
+    "industry": "电力电子/工业自动化",
+    "tier": "dayee",
+    "track": "ext-dayee"
+  },
+  {
+    "name": "ATL新能源",
+    "careers_url": "https://wecruit.hotjob.cn/SU5ff30f5b9b0d78e6f4283a0b/pb/index.html",
+    "industry": "锂电池/新能源",
+    "tier": "dayee",
+    "track": "ext-dayee"
+  },
+  {
+    "name": "Ampace新能安",
+    "careers_url": "https://ampace.hotjob.cn",
+    "industry": "储能电池/新能源",
+    "tier": "dayee",
+    "track": "ext-dayee"
+  },
+  {
+    "name": "上汽通用五菱",
+    "careers_url": "https://wecruit.hotjob.cn/SU611bbe3c2f9d24229e014abb/pb/index.html",
+    "industry": "智能汽车/研发",
+    "tier": "dayee",
+    "track": "ext-dayee"
+  },
+  {
+    "name": "固德威",
+    "careers_url": "https://wecruit.hotjob.cn/SU630a3a0e2f9d2406b4f6c5f1/pb/index.html",
+    "industry": "光伏逆变器/储能",
+    "tier": "dayee",
+    "track": "ext-dayee"
+  },
+  {
+    "name": "中信证券",
+    "careers_url": "https://wecruit.hotjob.cn/SU60867bdc2f9d2403ab74fbf7/pb/index.html",
+    "industry": "券商/金融科技",
+    "tier": "dayee",
+    "track": "ext-dayee"
+  },
+  {
+    "name": "华泰证券",
+    "careers_url": "https://wecruit.hotjob.cn/SU6419745cbef57c635fe10142/pb/index.html",
+    "industry": "券商/金融科技",
+    "tier": "dayee",
+    "track": "ext-dayee"
+  },
+  {
+    "name": "广发证券",
+    "careers_url": "https://gf.hotjob.cn/SU625527c30dcad4021443cdda/pb/index.html",
+    "industry": "券商/金融科技",
+    "tier": "dayee",
+    "track": "ext-dayee"
+  },
+  {
+    "name": "华夏银行",
+    "careers_url": "https://wecruit.hotjob.cn/SU645b0d18bef57c0907e9fbc8/pb/index.html",
+    "industry": "银行/金融科技",
+    "tier": "dayee",
+    "track": "ext-dayee"
+  },
+  {
+    "name": "宝时得科技",
+    "careers_url": "https://positec.hotjob.cn",
+    "industry": "智能割草机器人/电动工具",
+    "tier": "dayee",
+    "track": "ext-dayee"
+  },
+  {
+    "name": "辰安科技",
+    "careers_url": "https://gsafety.hotjob.cn",
+    "industry": "公共安全/大数据AI",
+    "tier": "dayee",
+    "track": "ext-dayee"
+  },
+  {
+    "name": "中国中化",
+    "careers_url": "https://sinochem.hotjob.cn/SU610b91ee0dcad4106ff11c21/pb/index.html",
+    "industry": "化工新材料/央企",
+    "tier": "dayee",
+    "track": "ext-dayee"
+  },
+  {
+    "name": "美亚光电",
+    "careers_url": "https://wecruit.hotjob.cn/SU600f83f45d83dc11e4a54ed4/pb/index.html",
+    "industry": "智能光电识别",
+    "tier": "dayee",
+    "track": "ext-dayee"
+  },
+  {
+    "name": "华友钴业",
+    "careers_url": "https://wecruit.hotjob.cn/SU6465f3d9bef57c0907f3bb58/pb/index.html",
+    "industry": "新能源材料",
+    "tier": "dayee",
+    "track": "ext-dayee"
+  },
+  {
+    "name": "顶点软件",
+    "careers_url": "https://wecruit.hotjob.cn/SU62d669e0bef57c0f7dbabacf/pb/index.html",
+    "industry": "金融科技/软件",
+    "tier": "dayee",
+    "track": "ext-dayee"
+  },
+  {
+    "name": "腾讯校招",
+    "careers_url": "https://join.qq.com",
+    "industry": "互联网/AI/游戏",
+    "tier": "extended",
+    "track": "ext-majors"
+  },
+  {
+    "name": "腾讯",
+    "careers_url": "https://careers.tencent.com/search.html",
+    "industry": "互联网/AI/游戏",
+    "tier": "extended",
+    "track": "ext-majors"
+  },
+  {
+    "name": "阿里巴巴",
+    "careers_url": "https://talent.alibaba.com/off-campus/position-list",
+    "industry": "互联网/AI/云计算",
+    "tier": "extended",
+    "track": "ext-majors"
+  },
+  {
+    "name": "阿里云",
+    "careers_url": "https://careers.aliyun.com",
+    "industry": "云计算/AI大模型",
+    "tier": "extended",
+    "track": "ext-majors"
+  },
+  {
+    "name": "美团校招",
+    "careers_url": "https://zhaopin.meituan.com/web/campus",
+    "industry": "互联网/本地生活/无人配送",
+    "tier": "extended",
+    "track": "ext-majors"
+  },
+  {
+    "name": "美团",
+    "careers_url": "https://zhaopin.meituan.com/web/social",
+    "industry": "互联网/本地生活/AI",
+    "tier": "extended",
+    "track": "ext-majors"
+  },
+  {
+    "name": "Anthropic",
+    "careers_url": "https://job-boards.greenhouse.io/anthropic",
+    "industry": "AI大模型/前沿外企",
+    "tier": "extended",
+    "track": "ext-global"
+  },
+  {
+    "name": "OpenAI",
+    "careers_url": "https://jobs.ashbyhq.com/openai",
+    "industry": "AI大模型/前沿外企",
+    "tier": "extended",
+    "track": "ext-global"
+  },
+  {
+    "name": "Figure AI",
+    "careers_url": "https://job-boards.greenhouse.io/figureai",
+    "industry": "人形机器人/外企",
+    "tier": "extended",
+    "track": "ext-global"
+  },
+  {
+    "name": "Agility Robotics",
+    "careers_url": "https://job-boards.greenhouse.io/agilityrobotics",
+    "industry": "人形机器人/外企",
+    "tier": "extended",
+    "track": "ext-global"
+  },
+  {
+    "name": "Waymo",
+    "careers_url": "https://job-boards.greenhouse.io/waymo",
+    "industry": "自动驾驶/外企",
+    "tier": "extended",
+    "track": "ext-global"
+  },
+  {
+    "name": "Zoox",
+    "careers_url": "https://jobs.lever.co/zoox",
+    "industry": "自动驾驶/外企",
+    "tier": "extended",
+    "track": "ext-global"
+  },
+  {
+    "name": "Databricks",
+    "careers_url": "https://job-boards.greenhouse.io/databricks",
+    "industry": "大数据/AI基础设施",
+    "tier": "extended",
+    "track": "ext-global"
+  },
+  {
+    "name": "Stripe",
+    "careers_url": "https://job-boards.greenhouse.io/stripe",
+    "industry": "金融科技/外企",
+    "tier": "extended",
+    "track": "ext-global"
+  },
+  {
+    "name": "Cloudflare",
+    "careers_url": "https://job-boards.greenhouse.io/cloudflare",
+    "industry": "云基础设施/外企",
+    "tier": "extended",
+    "track": "ext-global"
+  },
+  {
+    "name": "Vercel",
+    "careers_url": "https://job-boards.greenhouse.io/vercel",
+    "industry": "前端/AI基础设施",
+    "tier": "extended",
+    "track": "ext-global"
+  },
+  {
+    "name": "Perplexity",
+    "careers_url": "https://jobs.ashbyhq.com/perplexity",
+    "industry": "AI搜索/外企",
+    "tier": "extended",
+    "track": "ext-global"
+  },
+  {
+    "name": "Cohere",
+    "careers_url": "https://jobs.ashbyhq.com/cohere",
+    "industry": "AI大模型/外企",
+    "tier": "extended",
+    "track": "ext-global"
+  },
+  {
+    "name": "Scale AI",
+    "careers_url": "https://job-boards.greenhouse.io/scaleai",
+    "industry": "AI数据/外企",
+    "tier": "extended",
+    "track": "ext-global"
+  }
+]

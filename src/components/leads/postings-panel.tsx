@@ -9,7 +9,7 @@ import { PostingSearch, SubscribeCard, SyncControls } from "@/components/leads/p
 import { PostingsTableClient, type PostingTableRow } from "@/components/leads/postings-table-client";
 import type { BatchVariantOption } from "@/components/leads/batch-profile-select";
 import { extractProfileSignal, scorePostingMatch } from "@/lib/posting-match";
-import { isBuiltinFeedUrl } from "@/lib/builtin-feed";
+import { isBuiltinFeedUrl, parseBuiltinFeedShards } from "@/lib/builtin-feed";
 
 const STALE_MS = 12 * 3600_000;
 
@@ -36,6 +36,11 @@ function atsLabelForUrl(url: string | null | undefined): string | null {
   if (/mokahr\.com/i.test(url)) return "Moka";
   if (/zhiye\.com/i.test(url)) return "北森";
   if (/jobs\.feishu\.cn|jobs\.bytedance\.com/i.test(url)) return "飞书";
+  if (/hotjob\.cn|dayee\.com/i.test(url)) return "大易";
+  if (/careers\.tencent\.com|join\.qq\.com/i.test(url)) return "腾讯直招";
+  if (/alibaba\.com|aliyun\.com/i.test(url)) return "阿里直招";
+  if (/zhaopin\.meituan\.com/i.test(url)) return "美团直招";
+  if (/greenhouse\.io|lever\.co|ashbyhq\.com/i.test(url)) return "外企ATS";
   return null;
 }
 
@@ -72,7 +77,9 @@ export async function PostingsPanel({
   ]);
   const source = sources[0] ?? null;
   if (!source) return <SubscribeCard />;
-  const hasBuiltinFeed = sources.some((s) => isBuiltinFeedUrl(s.url));
+  const builtinSource = sources.find((s) => isBuiltinFeedUrl(s.url)) ?? null;
+  const hasBuiltinFeed = !!builtinSource;
+  const builtinShards = builtinSource ? parseBuiltinFeedShards(builtinSource.url) : undefined;
   const hasFeishuSheet = sources.some((s) => !isBuiltinFeedUrl(s.url));
   const combinedTotal = sources.reduce((sum, s) => sum + (s.total || 0), 0);
   const displayTitle = sources.map((s) => s.name || (isBuiltinFeedUrl(s.url) ? "内置名企官网每日直招池" : "校招信息表")).join(" + ");
@@ -226,6 +233,7 @@ export async function PostingsPanel({
           }))}
           stale={sources.some((s) => !s.lastSyncedAt || now.getTime() - (s.lastCheckedAt ?? s.lastSyncedAt).getTime() > STALE_MS)}
           hasBuiltinFeed={hasBuiltinFeed}
+          builtinShards={builtinShards}
           hasFeishuSheet={hasFeishuSheet}
         />
       </div>

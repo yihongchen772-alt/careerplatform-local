@@ -44,7 +44,7 @@ export async function syncSource(userId: string, sourceId: string): Promise<Sync
 
     if (isBuiltinFeedUrl(source.url)) {
       try {
-        const feed = await readBuiltinFeed(now);
+        const feed = await readBuiltinFeed(now, source.url);
         sourceName = feed.name;
         sourceRev = feed.rev;
         for (const fields of feed.postings) {

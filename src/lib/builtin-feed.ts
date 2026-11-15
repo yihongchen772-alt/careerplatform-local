@@ -1,11 +1,29 @@
 import { createHash } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 import { applyProxy } from "@/lib/proxy-agent";
-import { BUILT_IN_BOARDS, runBoards, type BoardJob } from "@/lib/career-ops";
+import { BUILT_IN_BOARDS, EXTENDED_BOARDS, runBoards, type BoardJob, type CatalogBoard } from "@/lib/career-ops";
+import {
+  BUILTIN_FEED_NAME,
+  BUILTIN_FEED_URL,
+  DEFAULT_BUILTIN_SHARDS,
+  FEED_SHARD_DEFS,
+  formatBuiltinFeedUrl,
+  isBuiltinFeedUrl,
+  parseBuiltinFeedShards,
+  type FeedShardDef,
+} from "@/lib/builtin-feed-shards";
 import type { PostingFields } from "@/lib/campus-sheet";
 
-export const BUILTIN_FEED_URL = "builtin://official-feed";
-export const BUILTIN_FEED_NAME = "内置名企官网每日直招池";
+export {
+  BUILTIN_FEED_NAME,
+  BUILTIN_FEED_URL,
+  DEFAULT_BUILTIN_SHARDS,
+  FEED_SHARD_DEFS,
+  formatBuiltinFeedUrl,
+  isBuiltinFeedUrl,
+  parseBuiltinFeedShards,
+  type FeedShardDef,
+};
 
 export const CLOUD_FEED_TAG = "postings-feed";
 export const CLOUD_FEED_META_URL =
@@ -34,6 +52,26 @@ export type SerializedFeedPosting = {
   salary: string | null;
 };
 
+export type CloudShardMeta = {
+  id: string;
+  name?: string;
+  description?: string;
+  defaultEnabled?: boolean;
+  file: string;
+  total: number;
+  gzBytes?: number;
+  boardsCount?: number;
+};
+
+export type CloudFeedMeta = {
+  version?: number;
+  rev?: number;
+  generatedAt?: string;
+  total?: number;
+  coreTotal?: number;
+  shards?: CloudShardMeta[];
+};
+
 export type CloudFeedPayload = {
   version: number;
   rev: number;
@@ -43,22 +81,27 @@ export type CloudFeedPayload = {
   items: SerializedFeedPosting[];
 };
 
-export function isBuiltinFeedUrl(url: string | null | undefined): boolean {
-  return url === BUILTIN_FEED_URL;
-}
-
 const OVERSEAS_LOCATION_RE =
   /^(?:新加坡|东京|大阪|首尔|西雅图|圣何塞|山景城|旧金山|纽约|洛杉矶|奥斯汀|波士顿|芝加哥|多伦多|温哥华|伦敦|都柏林|阿姆斯特丹|慕尼黑|柏林|法兰克福|巴黎|苏黎世|华沙|斯德哥尔摩|马德里|米兰|迪拜|利雅得|开罗|雅加达|吉隆坡|曼谷|胡志明市?|河内|马尼拉|悉尼|墨尔本|孟买|班加罗尔|新德里|墨西哥城?|圣保罗|布宜诺斯艾利斯|圣地亚哥|Singapore|Tokyo|Osaka|Seoul|Seattle|San\s*Jose|Mountain\s*View|San\s*Francisco|New\s*York|Los\s*Angeles|Austin|Boston|Toronto|Vancouver|London|Dublin|Amsterdam|Munich|Berlin|Paris|Warsaw|Dubai|Jakarta|Kuala\s*Lumpur|Bangkok|Ho\s*Chi\s*Minh|Manila|Sydney|Melbourne|Mumbai|Bangalore|Bengaluru|Mexico|Sao\s*Paulo|US|USA|UK|Germany|Japan|Korea|India|Indonesia|Thailand|Vietnam|Malaysia|Philippines|Australia|Brazil|Canada|France)$/i;
 
 const DOMESTIC_CITY_IN_TITLE_RE =
   /(?:[（(【\-\s·/]|^)(北京|上海|深圳|广州|杭州|成都|武汉|南京|苏州|西安|合肥|重庆|长沙|郑州|天津|青岛|厦门|无锡|宁波|珠海|东莞|佛山|福州|济南|大连|沈阳|哈尔滨|长春|南昌|石家庄|太原|昆明|贵阳|南宁|海口|兰州|香港|澳门)(?:市|[）)】\-\s·/]|$)/;
 
-function cleanCities(location: string | null | undefined, title = ""): { cities: string | null; overseasOnly: boolean } {
+function cleanCities(
+  location: string | null | undefined,
+  title = "",
+  allowOverseas = false
+): { cities: string | null; overseasOnly: boolean } {
   const rawParts = (location || "")
     .replace(/中国[-/·]?/g, "")
     .split(/[/,，、;|]+/)
     .map((s) => s.trim().replace(/^(?:中国|大陆)[-·\s]*/, "").replace(/市$/, "").replace(/总部$/, ""))
-    .filter((s) => s && s.length <= 24 && !/^(远程|不限|全國|全国)$/i.test(s));
+    .filter((s) => s && s.length <= 28 && !/^(远程|不限|全國|全国)$/i.test(s));
+
+  if (allowOverseas) {
+    const unique = [...new Set(rawParts)].slice(0, 6);
+    return { cities: unique.length ? unique.join("、") : "全球/远程", overseasOnly: false };
+  }
 
   const domesticParts = rawParts.filter((s) => !OVERSEAS_LOCATION_RE.test(s));
   if (rawParts.length > 0 && domesticParts.length === 0) {
@@ -81,7 +124,7 @@ function inferKind(title: string, description: string, careersUrl = ""): string 
   if (/春招|春季校园/.test(text)) return "春招";
   if (/人才计划|天才少年|青云|筋斗云|北斗|星火|未来星|管培生/.test(text)) return "人才计划";
   if (
-    /校招|校园招聘|应届|毕业生|campus|\d{2,4}\s*届/i.test(text) ||
+    /校招|校园招聘|应届|毕业生|campus|\/school\.html|\d{2,4}\s*届/i.test(text) ||
     /(?:\/campus\b|campus-recruitment|join\.qq\.com)/i.test(careersUrl)
   ) {
     return "秋招";
@@ -107,7 +150,7 @@ function inferCohort(title: string, description: string): string | null {
 function inferDegree(description: string): string | null {
   const head = description.slice(0, 2000);
   if (/博士及以上|博士学历/.test(head)) return "博士";
-  if (/硕士及以上|研究生及以上|硕士学历/.test(head)) return "硕士及以上";
+  if (/硕士及以上|研究生及以上|硕士研究生及以上|硕士学历/.test(head)) return "硕士及以上";
   if (/本科及以上|本科学历|统招本科|bachelor/i.test(head)) return "本科及以上";
   return null;
 }
@@ -120,7 +163,7 @@ function inferSalary(title: string, description: string): string | null {
 
 export function boardJobToPostingFields(
   job: BoardJob,
-  meta?: { industry?: string; careers_url?: string },
+  meta?: { industry?: string; careers_url?: string; allowOverseas?: boolean },
   now = new Date()
 ): PostingFields | null {
   const company = (job.company || "").replace(/(?:校招|校园招聘|社招)$/, "").trim().slice(0, 120);
@@ -131,7 +174,7 @@ export function boardJobToPostingFields(
   const hash = createHash("sha1").update(url).digest("hex").slice(0, 20);
   const desc = (job.description || "").trim();
   if (/第三方派遣|Third-party Associate/i.test(`${title} ${desc}`)) return null;
-  const { cities, overseasOnly } = cleanCities(job.location, title);
+  const { cities, overseasOnly } = cleanCities(job.location, title, meta?.allowOverseas);
   if (overseasOnly) return null;
 
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -191,76 +234,133 @@ export function deserializeFeedPosting(item: SerializedFeedPosting, now = new Da
   };
 }
 
-/**
- * Checks the lightweight cloud feed metadata (~100 bytes) to see if a newer
- * daily snapshot is available without downloading the full gzip archive.
- */
-export async function builtinFeedRevision(): Promise<number | null> {
+async function fetchCloudGzPayload(url: string): Promise<CloudFeedPayload | null> {
+  const res = await fetch(url, {
+    headers: { Accept: "application/octet-stream, application/json", "User-Agent": "JobCompass-Desktop" },
+    signal: AbortSignal.timeout(20000),
+    cache: "no-store",
+  });
+  if (!res.ok) return null;
+  const buf = Buffer.from(await res.arrayBuffer());
+  const rawText = buf[0] === 0x1f && buf[1] === 0x8b ? gunzipSync(buf).toString("utf8") : buf.toString("utf8");
+  return JSON.parse(rawText) as CloudFeedPayload;
+}
+
+export async function readBuiltinFeedMeta(): Promise<CloudFeedMeta | null> {
   try {
-    applyProxy(process.env.HTTPS_PROXY || process.env.HTTP_PROXY || null);
+    await applyProxy(process.env.HTTPS_PROXY || process.env.HTTP_PROXY || null);
     const res = await fetch(CLOUD_FEED_META_URL, {
       headers: { Accept: "application/json", "User-Agent": "JobCompass-Desktop" },
       signal: AbortSignal.timeout(8000),
       cache: "no-store",
     });
     if (!res.ok) return null;
-    const data = (await res.json().catch(() => null)) as { rev?: unknown } | null;
-    return typeof data?.rev === "number" && Number.isFinite(data.rev) ? data.rev : null;
+    const data = (await res.json().catch(() => null)) as CloudFeedMeta | null;
+    return data && typeof data === "object" ? data : null;
   } catch {
     return null;
   }
 }
 
 /**
- * Reads the daily postings feed:
- * 1. Tries downloading the pre-aggregated GitHub Actions `postings-feed.json.gz` mirror (~1s).
- * 2. Falls back to running local `career-ops` board fetchers directly if cloud mirror is unreachable.
+ * Checks the lightweight cloud feed metadata (~1 KB) to see if a newer
+ * daily snapshot is available without downloading the full gzip archive.
  */
-export async function readBuiltinFeed(now = new Date()): Promise<{
+export async function builtinFeedRevision(): Promise<number | null> {
+  const data = await readBuiltinFeedMeta();
+  return typeof data?.rev === "number" && Number.isFinite(data.rev) ? data.rev : null;
+}
+
+function cloudAssetUrl(file: string): string {
+  const lastSlash = CLOUD_FEED_GZ_URL.lastIndexOf("/");
+  if (lastSlash > 0) return `${CLOUD_FEED_GZ_URL.slice(0, lastSlash + 1)}${file}`;
+  return `https://github.com/yihongchen772-alt/careerplatform-local/releases/download/${CLOUD_FEED_TAG}/${file}`;
+}
+
+/**
+ * Reads the daily postings feed for the chosen shard set:
+ * 1. Reads cloud metadata and downloads only the chosen shard archives in parallel.
+ * 2. Falls back to the single combined cloud archive if shard metadata is absent.
+ * 3. Falls back to local `career-ops` board fetchers if the cloud mirror is unreachable.
+ */
+export async function readBuiltinFeed(
+  now = new Date(),
+  sourceUrl = BUILTIN_FEED_URL
+): Promise<{
   name: string;
   rev: number | null;
   postings: PostingFields[];
   mode: "cloud" | "local";
 }> {
+  const selectedShards = parseBuiltinFeedShards(sourceUrl);
+  const selectedSet = new Set(selectedShards);
+
   try {
-    applyProxy(process.env.HTTPS_PROXY || process.env.HTTP_PROXY || null);
-    const res = await fetch(CLOUD_FEED_GZ_URL, {
-      headers: { Accept: "application/octet-stream, application/json", "User-Agent": "JobCompass-Desktop" },
-      signal: AbortSignal.timeout(15000),
-      cache: "no-store",
-    });
-    if (res.ok) {
-      const buf = Buffer.from(await res.arrayBuffer());
-      const rawText = buf[0] === 0x1f && buf[1] === 0x8b ? gunzipSync(buf).toString("utf8") : buf.toString("utf8");
-      const payload = JSON.parse(rawText) as CloudFeedPayload;
-      if (Array.isArray(payload?.items) && payload.items.length > 0) {
-        const postings = payload.items
-          .map((item) => deserializeFeedPosting(item, now))
-          .filter((item): item is PostingFields => item !== null);
-        if (postings.length > 0) {
-          return {
-            name: BUILTIN_FEED_NAME,
-            rev: typeof payload.rev === "number" ? payload.rev : Math.floor(now.getTime() / 1000),
-            postings,
-            mode: "cloud",
-          };
+    await applyProxy(process.env.HTTPS_PROXY || process.env.HTTP_PROXY || null);
+    const meta = await readBuiltinFeedMeta();
+    const availableShards = Array.isArray(meta?.shards) ? meta.shards : [];
+    const targetShards = availableShards.filter((s) => selectedSet.has(s.id) && s.file);
+
+    if (targetShards.length > 0) {
+      const settled = await Promise.allSettled(
+        targetShards.map((shard) => fetchCloudGzPayload(cloudAssetUrl(shard.file)))
+      );
+      const dedup = new Map<string, PostingFields>();
+      for (const entry of settled) {
+        if (entry.status !== "fulfilled" || !Array.isArray(entry.value?.items)) continue;
+        for (const raw of entry.value.items) {
+          const item = deserializeFeedPosting(raw, now);
+          if (item && !dedup.has(item.externalId)) dedup.set(item.externalId, item);
         }
+      }
+      if (dedup.size > 0) {
+        return {
+          name: BUILTIN_FEED_NAME,
+          rev: typeof meta?.rev === "number" ? meta.rev : Math.floor(now.getTime() / 1000),
+          postings: [...dedup.values()],
+          mode: "cloud",
+        };
+      }
+    }
+
+    const legacy = await fetchCloudGzPayload(CLOUD_FEED_GZ_URL);
+    if (Array.isArray(legacy?.items) && legacy.items.length > 0) {
+      const postings = legacy.items
+        .map((item) => deserializeFeedPosting(item, now))
+        .filter((item): item is PostingFields => item !== null);
+      if (postings.length > 0) {
+        return {
+          name: BUILTIN_FEED_NAME,
+          rev: typeof legacy.rev === "number" ? legacy.rev : Math.floor(now.getTime() / 1000),
+          postings,
+          mode: "cloud",
+        };
       }
     }
   } catch {
     // Fall through to local live board fetch
   }
 
-  const metaByName = new Map(BUILT_IN_BOARDS.map((b) => [b.name, b]));
+  const allBoards: CatalogBoard[] = [...BUILT_IN_BOARDS, ...(Array.isArray(EXTENDED_BOARDS) ? EXTENDED_BOARDS : [])];
+  const filteredBoards = allBoards.filter((b) => (b.track ? selectedSet.has(b.track) : true));
+  const localBoards = (filteredBoards.length ? filteredBoards : BUILT_IN_BOARDS).slice(0, 48);
+  const shardAllowOverseas = new Map(FEED_SHARD_DEFS.map((s) => [s.id, !!s.allowOverseas]));
+  const metaByName = new Map(localBoards.map((b) => [b.name, b]));
+
   const boardResults = await runBoards(
-    BUILT_IN_BOARDS.map((b) => ({ name: b.name, careers_url: b.careers_url, keywords: [] })),
+    localBoards.map((b) => ({ name: b.name, careers_url: b.careers_url, keywords: [] })),
     45000
   );
   const seen = new Map<string, PostingFields>();
   for (const result of boardResults) {
     const meta = metaByName.get(result.name);
+    const allowOverseas = meta?.track ? shardAllowOverseas.get(meta.track) : false;
     for (const job of result.jobs || []) {
-      const fields = boardJobToPostingFields({ ...job, company: job.company || result.name }, meta, now);
+      const fields = boardJobToPostingFields(
+        { ...job, company: job.company || result.name },
+        { ...meta, allowOverseas },
+        now
+      );
       if (fields && !seen.has(fields.externalId)) {
         seen.set(fields.externalId, fields);
       }

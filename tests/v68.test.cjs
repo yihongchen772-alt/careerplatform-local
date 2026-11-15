@@ -36,6 +36,7 @@ function loadTs(relFile, mocks = {}) {
     Error,
     Buffer,
     URL,
+    URLSearchParams,
     Intl,
     process,
     Set,
@@ -537,4 +538,109 @@ test("v1.69.4: background batch prefill survives tab switch, extension per-item 
     sig
   );
   assert.ok(masterMatch.score > phdOnly.score, `Expected master match (${masterMatch.score}) > phd-only (${phdOnly.score})`);
+});
+
+test("v1.69.5: 300+ core Moka/Beisen/Feishu catalog, Dayee provider & extended boards, and sharded cloud feed sync", async () => {
+  const careerOps = loadTs("src/lib/career-ops.ts", {
+    "@/lib/db": { prisma: {}, db: {} },
+    "@/lib/proxy-agent": { applyProxy: async () => {} },
+  });
+  assert.ok(careerOps.BUILT_IN_BOARDS.length >= 250, `Expected >=250 BUILT_IN_BOARDS, got ${careerOps.BUILT_IN_BOARDS.length}`);
+  for (const board of careerOps.BUILT_IN_BOARDS) {
+    const host = new URL(board.careers_url).hostname.toLowerCase();
+    const isStandardThree =
+      host === "app.mokahr.com" ||
+      host.endsWith(".zhiye.com") ||
+      host.endsWith(".jobs.feishu.cn") ||
+      host === "jobs.bytedance.com";
+    assert.equal(isStandardThree, true, `BUILT_IN_BOARDS must remain Moka/Beisen/Feishu only, got ${host}`);
+  }
+  assert.ok(careerOps.EXTENDED_BOARDS.length >= 30, `Expected >=30 EXTENDED_BOARDS, got ${careerOps.EXTENDED_BOARDS.length}`);
+  assert.equal(careerOps.supportedBoard("https://crrc.hotjob.cn/SU6422b1880be58c17921e7808/pb/index.html"), true);
+
+  const dayee = await import("../electron/career-ops/providers/dayee.mjs");
+  const parsed = dayee.parseDayeeUrl("https://crrc.hotjob.cn/SU6422b1880be58c17921e7808/pb/index.html");
+  assert.equal(parsed.suiteCode, "6422b1880be58c17921e7808");
+  assert.ok(dayee.default.detect({ careers_url: "https://crrc.hotjob.cn/SU6422b1880be58c17921e7808/pb/index.html" }));
+  const sample = dayee.parseDayeeResponse(
+    {
+      data: {
+        pageForm: {
+          totalPage: 1,
+          pageData: [
+            {
+              postId: "12345",
+              postName: "机器人控制算法工程师",
+              workPlaceStr: "北京,上海",
+              projectName: "2026秋招",
+              endDate: "2026-12-31",
+            },
+          ],
+        },
+      },
+    },
+    "中国中车",
+    "https://crrc.hotjob.cn",
+    "6422b1880be58c17921e7808",
+    1
+  );
+  assert.equal(sample.jobs.length, 1);
+  assert.match(sample.jobs[0].url, /posDetail\.html\?postId=12345&postType=campus/);
+  assert.equal(sample.jobs[0].location, "北京,上海");
+
+  const shardsMod = loadTs("src/lib/builtin-feed-shards.ts");
+  assert.equal(shardsMod.isBuiltinFeedUrl("builtin://official-feed?shards=core-ai-tech,ext-dayee"), true);
+  assert.deepEqual(
+    [...shardsMod.parseBuiltinFeedShards("builtin://official-feed?shards=core-ai-tech,ext-dayee,invalid-id")],
+    ["core-ai-tech", "ext-dayee"]
+  );
+  assert.equal(
+    shardsMod.formatBuiltinFeedUrl(["core-ai-tech", "core-robotics-hardtech", "core-enterprise-fintech"]),
+    shardsMod.BUILTIN_FEED_URL
+  );
+  assert.equal(
+    shardsMod.formatBuiltinFeedUrl(["core-ai-tech", "ext-dayee"]),
+    "builtin://official-feed?shards=core-ai-tech,ext-dayee"
+  );
+
+  const zlib = require("node:zlib");
+  const requestedUrls = [];
+  const builtinFeed = loadTs("src/lib/builtin-feed.ts", {
+    "@/lib/db": { db: {} },
+    "@/lib/proxy-agent": { applyProxy: async () => {} },
+    __fetch: async (url) => {
+      const target = String(url);
+      requestedUrls.push(target);
+      if (target.endsWith("postings-feed-meta.json")) {
+        return new Response(
+          JSON.stringify({
+            version: 2,
+            generatedAt: "2026-11-15T00:00:00Z",
+            shards: [
+              { id: "core-ai-tech", file: "postings-feed-shard-core-ai-tech.json.gz", count: 1 },
+              { id: "ext-dayee", file: "postings-feed-shard-ext-dayee.json.gz", count: 1 },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+      if (target.endsWith("postings-feed-shard-core-ai-tech.json.gz")) {
+        const gz = zlib.gzipSync(Buffer.from(JSON.stringify({ generatedAt: "2026-11-15T00:00:00Z", items: [{ externalId: "ai-1", company: "DeepSeek", roles: "AI算法", applyUrl: "https://deepseek.jobs.feishu.cn/1" }] })));
+        return new Response(gz, { status: 200 });
+      }
+      if (target.endsWith("postings-feed-shard-ext-dayee.json.gz")) {
+        const gz = zlib.gzipSync(Buffer.from(JSON.stringify({ generatedAt: "2026-11-15T00:00:00Z", items: [{ externalId: "dayee-1", company: "中国中车", roles: "控制工程师", applyUrl: "https://crrc.hotjob.cn/1" }] })));
+        return new Response(gz, { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    },
+  });
+  const res = await builtinFeed.readBuiltinFeed(
+    new Date("2026-11-15T08:00:00Z"),
+    "builtin://official-feed?shards=core-ai-tech,ext-dayee"
+  );
+  assert.equal(res.mode, "cloud");
+  assert.equal(res.postings.length, 2);
+  assert.equal(requestedUrls.some((u) => u.endsWith("postings-feed-shard-core-ai-tech.json.gz")), true);
+  assert.equal(requestedUrls.some((u) => u.endsWith("postings-feed-shard-ext-dayee.json.gz")), true);
 });

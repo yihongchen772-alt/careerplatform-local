@@ -19,9 +19,10 @@ import greenhouse from './providers/greenhouse.mjs';
 import lever from './providers/lever.mjs';
 import ashby from './providers/ashby.mjs';
 import zhiye from './providers/zhiye.mjs';
+import dayee from './providers/dayee.mjs';
 import { makeHttpCtx } from './providers/_http.mjs';
 
-export const PROVIDERS = [feishuJobs, mokahr, zhiye, tencent, alibaba, meituan, workday, successfactors, smartrecruiters, greenhouse, lever, ashby];
+export const PROVIDERS = [feishuJobs, mokahr, zhiye, dayee, tencent, alibaba, meituan, workday, successfactors, smartrecruiters, greenhouse, lever, ashby];
 
 export function providerFor(entry) {
   for (const provider of PROVIDERS) {
@@ -32,9 +33,9 @@ export function providerFor(entry) {
   return null;
 }
 
-const MAX_JOBS_PER_BOARD = 400;
+const DEFAULT_MAX_JOBS_PER_BOARD = 400;
 
-async function runBoard(board, { maxPages, timeoutMs }) {
+async function runBoard(board, { maxPages, timeoutMs, maxJobsPerBoard }) {
   const entry = { name: board.name, careers_url: board.careers_url, keywords: board.keywords?.length ? board.keywords : undefined, search_text: board.keywords?.[0] ?? '', max_pages: maxPages };
   const provider = providerFor(entry);
   if (!provider) return { name: board.name, provider: null, jobs: [], error: 'unsupported' };
@@ -48,7 +49,7 @@ async function runBoard(board, { maxPages, timeoutMs }) {
     return {
       name: board.name,
       provider: provider.id,
-      jobs: (Array.isArray(jobs) ? jobs : []).slice(0, MAX_JOBS_PER_BOARD).map((job) => ({
+      jobs: (Array.isArray(jobs) ? jobs : []).slice(0, maxJobsPerBoard).map((job) => ({
         title: String(job.title || '').slice(0, 200),
         url: String(job.url || ''),
         location: String(job.location || '').slice(0, 120),
@@ -68,15 +69,21 @@ async function main() {
   let input = '';
   for await (const chunk of process.stdin) input += chunk;
   const request = JSON.parse(input || '{}');
-  const boards = Array.isArray(request.boards) ? request.boards.slice(0, 30) : [];
-  const options = { maxPages: Math.min(Math.max(Number(request.maxPages) || 3, 1), 10), timeoutMs: Math.min(Number(request.timeoutMs) || 25000, 60000) };
+  const maxBoards = Math.min(Math.max(Number(request.maxBoards) || 60, 1), 500);
+  const boards = Array.isArray(request.boards) ? request.boards.slice(0, maxBoards) : [];
+  const options = {
+    maxPages: Math.min(Math.max(Number(request.maxPages) || 3, 1), 30),
+    timeoutMs: Math.min(Math.max(Number(request.timeoutMs) || 25000, 1000), 60000),
+    maxJobsPerBoard: Math.min(Math.max(Number(request.maxJobsPerBoard) || DEFAULT_MAX_JOBS_PER_BOARD, 1), 3000),
+  };
+  const concurrency = Math.min(Math.max(Number(request.concurrency) || 4, 1), 12);
   // Quiet: providers report truncation on stderr, which is not an error here.
   console.error = () => {};
   console.warn = () => {};
   const results = [];
   // A few at a time: polite to the boards, quick enough for a chat reply.
-  for (let i = 0; i < boards.length; i += 4) {
-    results.push(...await Promise.all(boards.slice(i, i + 4).map((board) => runBoard(board, options))));
+  for (let i = 0; i < boards.length; i += concurrency) {
+    results.push(...await Promise.all(boards.slice(i, i + concurrency).map((board) => runBoard(board, options))));
   }
   // Exit only once the pipe has taken all of it (a large result is
   // written in pieces; exiting right away cuts it off).
