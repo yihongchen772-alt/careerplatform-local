@@ -10,7 +10,9 @@ import {
   formatBuiltinFeedUrl,
   isBuiltinFeedUrl,
   parseBuiltinFeedShards,
+  type FeedMetaSummary,
   type FeedShardDef,
+  type FeedShardStat,
 } from "@/lib/builtin-feed-shards";
 import type { PostingFields } from "@/lib/campus-sheet";
 
@@ -22,7 +24,9 @@ export {
   formatBuiltinFeedUrl,
   isBuiltinFeedUrl,
   parseBuiltinFeedShards,
+  type FeedMetaSummary,
   type FeedShardDef,
+  type FeedShardStat,
 };
 
 export const CLOUD_FEED_TAG = "postings-feed";
@@ -246,12 +250,12 @@ async function fetchCloudGzPayload(url: string): Promise<CloudFeedPayload | null
   return JSON.parse(rawText) as CloudFeedPayload;
 }
 
-export async function readBuiltinFeedMeta(): Promise<CloudFeedMeta | null> {
+export async function readBuiltinFeedMeta(timeoutMs = 8000): Promise<CloudFeedMeta | null> {
   try {
     await applyProxy(process.env.HTTPS_PROXY || process.env.HTTP_PROXY || null);
     const res = await fetch(CLOUD_FEED_META_URL, {
       headers: { Accept: "application/json", "User-Agent": "JobCompass-Desktop" },
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(timeoutMs),
       cache: "no-store",
     });
     if (!res.ok) return null;
@@ -260,6 +264,42 @@ export async function readBuiltinFeedMeta(): Promise<CloudFeedMeta | null> {
   } catch {
     return null;
   }
+}
+
+let cachedMetaSummary: { value: FeedMetaSummary; expiresAt: number } | null = null;
+const META_CACHE_TTL_MS = 30 * 60_000;
+
+/**
+ * Lightweight 30-min cached summary of cloud shard counts & generatedAt for UI display.
+ * Uses a short timeout so offline environments render `/leads` without noticeable delay.
+ */
+export async function readBuiltinFeedMetaCached(timeoutMs = 2500): Promise<FeedMetaSummary | null> {
+  const now = Date.now();
+  if (cachedMetaSummary && cachedMetaSummary.expiresAt > now) {
+    return cachedMetaSummary.value;
+  }
+  const meta = await readBuiltinFeedMeta(timeoutMs);
+  if (!meta) return cachedMetaSummary?.value ?? null;
+  const shards: Record<string, FeedShardStat> = {};
+  if (Array.isArray(meta.shards)) {
+    for (const entry of meta.shards) {
+      if (!entry || typeof entry.id !== "string") continue;
+      shards[entry.id] = {
+        id: entry.id,
+        total: Number(entry.total) || 0,
+        boardsCount: Number(entry.boardsCount) || 0,
+        gzBytes: typeof entry.gzBytes === "number" ? entry.gzBytes : undefined,
+      };
+    }
+  }
+  const summary: FeedMetaSummary = {
+    generatedAt: typeof meta.generatedAt === "string" ? meta.generatedAt : null,
+    rev: typeof meta.rev === "number" && Number.isFinite(meta.rev) ? meta.rev : null,
+    total: Number(meta.total) || 0,
+    shards,
+  };
+  cachedMetaSummary = { value: summary, expiresAt: now + META_CACHE_TTL_MS };
+  return summary;
 }
 
 /**

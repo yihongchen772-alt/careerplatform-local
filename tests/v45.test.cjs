@@ -83,7 +83,9 @@ test("the sheet is read in the desktop app only from 飞书 base links, and neve
 
 test("the background check asks only the revision, and syncs a sheet only when it moved", () => {
   const sync = read("src/lib/campus-sync.ts");
-  assert.match(sync, /const rev = source\.rev == null \? null : await feishuBaseRevision\(source\.url\);\s*if \(rev != null && rev === source\.rev\)/);
+  assert.match(sync, /await builtinFeedRevision\(\)/);
+  assert.match(sync, /await feishuBaseRevision\(source\.url\)/);
+  assert.match(sync, /if \(rev != null && rev === source\.rev\)/);
   assert.match(sync, /const fresh = source\.firstSyncedAt \? toCreate : \[\]/, "the first sync is not news");
   const reader = read("electron/feishu-base.js");
   assert.match(reader, /const SHEET_PARTITION = "persist:cp-sheets"/);

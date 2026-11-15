@@ -170,7 +170,7 @@ function degreeRank(raw: string | null | undefined): number {
   return 0;
 }
 
-export function scorePostingMatch(
+function evaluatePostingScore(
   item: {
     companyName?: string | null;
     title?: string | null;
@@ -181,7 +181,8 @@ export function scorePostingMatch(
     degree?: string | null;
     description?: string | null;
   },
-  signal: ProfileMatchSignal
+  signal: ProfileMatchSignal,
+  withReasons: boolean
 ): PostingMatchResult {
   if (!signal.hasSignal) return { score: 0, tier: "low", reasons: [] };
 
@@ -198,34 +199,61 @@ export function scorePostingMatch(
 
   if (signal.trackTerms.length > 0) {
     maxPossible += 50;
-    const baseHits = signal.baseTrackTerms.filter((t) => hasTerm(directionText, t));
-    const synHits = signal.trackTerms.filter((t) => !baseHits.includes(t) && hasTerm(directionText, t));
-    if (baseHits.length > 0 || synHits.length > 0) {
-      const weightedHits = baseHits.length * 1.5 + Math.min(3, synHits.length) * 0.7;
+    let baseCount = 0;
+    let firstBaseHit = "";
+    for (const t of signal.baseTrackTerms) {
+      if (hasTerm(directionText, t)) {
+        baseCount += 1;
+        if (!firstBaseHit) firstBaseHit = t;
+      }
+    }
+    let synCount = 0;
+    let firstSynHit = "";
+    for (const t of signal.trackTerms) {
+      if (!signal.baseTrackTerms.includes(t) && hasTerm(directionText, t)) {
+        synCount += 1;
+        if (!firstSynHit) firstSynHit = t;
+      }
+    }
+    if (baseCount > 0 || synCount > 0) {
+      const weightedHits = baseCount * 1.5 + Math.min(3, synCount) * 0.7;
       const ratio = Math.min(1, weightedHits / Math.min(2.5, Math.max(1.5, signal.baseTrackTerms.length * 1.5)));
       earned += Math.round(30 + ratio * 20);
-      reasons.push(`方向命中:${baseHits[0] || synHits[0]}`);
+      if (withReasons) reasons.push(`方向命中:${firstBaseHit || firstSynHit}`);
     }
   }
 
   if (signal.cities.length > 0) {
     maxPossible += 25;
-    const hitCity = signal.cities.find((c) => cityText.includes(c.toLowerCase()));
+    let hitCity = "";
+    for (const c of signal.cities) {
+      if (cityText.includes(c.toLowerCase())) {
+        hitCity = c;
+        break;
+      }
+    }
     if (hitCity) {
       earned += 25;
-      reasons.push(`城市:${hitCity}`);
+      if (withReasons) reasons.push(`城市:${hitCity}`);
     } else if (/全国|不限|多地|remote/i.test(cityText)) {
       earned += 14;
-      reasons.push("多地可选");
+      if (withReasons) reasons.push("多地可选");
     }
   }
 
   if (signal.skillTerms.length > 0) {
     maxPossible += 15;
-    const skillHits = signal.skillTerms.filter((t) => hasTerm(directionText, t));
-    if (skillHits.length > 0) {
-      earned += Math.min(15, skillHits.length * 6);
-      reasons.push(`技能:${skillHits[0]}`);
+    let skillCount = 0;
+    let firstSkill = "";
+    for (const t of signal.skillTerms) {
+      if (hasTerm(directionText, t)) {
+        skillCount += 1;
+        if (!firstSkill) firstSkill = t;
+      }
+    }
+    if (skillCount > 0) {
+      earned += Math.min(15, skillCount * 6);
+      if (withReasons) reasons.push(`技能:${firstSkill}`);
     }
   }
 
@@ -235,7 +263,7 @@ export function scorePostingMatch(
     if (!mentionedYears || mentionedYears.includes(signal.graduationYear) || /不限|应届/.test(gradText)) {
       if (mentionedYears?.includes(signal.graduationYear)) {
         earned += 10;
-        reasons.push(`${signal.graduationYear}届`);
+        if (withReasons) reasons.push(`${signal.graduationYear}届`);
       } else {
         earned += 5;
       }
@@ -252,5 +280,38 @@ export function scorePostingMatch(
 
   const normalized = maxPossible > 0 ? Math.max(0, Math.min(100, Math.round((earned / maxPossible) * 100))) : 0;
   const tier = normalized >= 70 ? "high" : normalized >= 40 ? "medium" : "low";
-  return { score: normalized, tier, reasons: reasons.slice(0, 3) };
+  return { score: normalized, tier, reasons: withReasons ? reasons.slice(0, 3) : [] };
+}
+
+export function scorePostingMatch(
+  item: {
+    companyName?: string | null;
+    title?: string | null;
+    tracks?: string | null;
+    cities?: string | null;
+    industry?: string | null;
+    graduation?: string | null;
+    degree?: string | null;
+    description?: string | null;
+  },
+  signal: ProfileMatchSignal
+): PostingMatchResult {
+  return evaluatePostingScore(item, signal, true);
+}
+
+/** Fast numeric-only match scorer for bulk ranking thousands of postings without allocating reason arrays. */
+export function scorePostingNumeric(
+  item: {
+    companyName?: string | null;
+    title?: string | null;
+    tracks?: string | null;
+    cities?: string | null;
+    industry?: string | null;
+    graduation?: string | null;
+    degree?: string | null;
+    description?: string | null;
+  },
+  signal: ProfileMatchSignal
+): number {
+  return evaluatePostingScore(item, signal, false).score;
 }

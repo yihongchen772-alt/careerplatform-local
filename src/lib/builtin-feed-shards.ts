@@ -9,6 +9,20 @@ export type FeedShardDef = {
   allowOverseas?: boolean;
 };
 
+export type FeedShardStat = {
+  id: string;
+  total: number;
+  boardsCount: number;
+  gzBytes?: number;
+};
+
+export type FeedMetaSummary = {
+  generatedAt: string | null;
+  rev: number | null;
+  total: number;
+  shards: Record<string, FeedShardStat>;
+};
+
 export const FEED_SHARD_DEFS: FeedShardDef[] = [
   {
     id: "core-ai-tech",

@@ -644,3 +644,119 @@ test("v1.69.5: 300+ core Moka/Beisen/Feishu catalog, Dayee provider & extended b
   assert.equal(requestedUrls.some((u) => u.endsWith("postings-feed-shard-core-ai-tech.json.gz")), true);
   assert.equal(requestedUrls.some((u) => u.endsWith("postings-feed-shard-ext-dayee.json.gz")), true);
 });
+
+test("v1.69.6: builtinFeedRevision skip-resync, ATS platform & hideAdded filters, smart 359-board discovery, custom Dayee domains, and cached shard stats", async () => {
+  const atsPlatform = loadTs("src/lib/ats-platform.ts");
+  assert.equal(atsPlatform.isDayeeUrl("https://careers.example.com/SU6422b1880be58c17921e7808/pb/posDetail.html?postId=1"), true);
+  assert.equal(atsPlatform.isDayeeUrl("https://127.0.0.1/SU6422b1880be58c17921e7808/pb/index.html"), false);
+  assert.equal(atsPlatform.atsLabelForUrl("https://careers.example.com/SU6422b1880be58c17921e7808/pb/posDetail.html?postId=1"), "大易");
+
+  const queryMod = loadTs("src/lib/campus-postings-query.ts", {
+    "@/lib/campus-sheet": { cohortLabel: (y) => (y ? `${y}届` : null) },
+  });
+  const parsedFilters = queryMod.readPostingFilters({ platform: "autofill", unadded: "1" });
+  assert.equal(parsedFilters.platform, "autofill");
+  assert.equal(parsedFilters.hideAdded, true);
+  const whereClause = queryMod.baseWhere("u1", parsedFilters, 2027, new Date("2026-11-15T00:00:00Z"));
+  const whereJson = JSON.stringify(whereClause);
+  assert.match(whereJson, /"positionId":null/);
+  assert.match(whereJson, /mokahr\.com/);
+  assert.match(whereJson, /\/pb\/posDetail/);
+  assert.match(queryMod.postingsHref(parsedFilters, { page: 2 }), /platform=autofill/);
+  assert.match(queryMod.postingsHref(parsedFilters, { page: 2 }), /unadded=1/);
+
+  let feishuCalled = 0;
+  let builtinRevCalled = 0;
+  let updatedCheckedAt = 0;
+  const syncMod = loadTs("src/lib/campus-sync.ts", {
+    "next/cache": { revalidatePath: () => {} },
+    "@/lib/db": {
+      db: {
+        postingSource: {
+          findMany: async () => [{ id: "src-builtin", url: "builtin://official-feed", rev: 1794700000, lastCheckedAt: null, lastSyncedAt: null }],
+          update: async () => { updatedCheckedAt += 1; },
+        },
+      },
+    },
+    "@/lib/render-bridge-client": {
+      feishuBaseRevision: async () => { feishuCalled += 1; return 999; },
+      readFeishuBase: async () => { throw new Error("should not read feishu"); },
+    },
+    "@/lib/builtin-feed": {
+      builtinFeedRevision: async () => { builtinRevCalled += 1; return 1794700000; },
+      isBuiltinFeedUrl: (u) => String(u).startsWith("builtin://official-feed"),
+      readBuiltinFeed: async () => { throw new Error("should not resync when rev matches"); },
+    },
+    "@/lib/campus-sheet": { cohortLabel: () => null, mapSheetRow: () => null, samePosting: () => true },
+  });
+  const checkRes = await syncMod.checkPostingSources("u1");
+  assert.equal(checkRes.checked, 1);
+  assert.equal(checkRes.synced.length, 0);
+  assert.equal(feishuCalled, 0);
+  assert.equal(builtinRevCalled, 1);
+  assert.equal(updatedCheckedAt, 1);
+
+  const matchMod = loadTs("src/lib/posting-match.ts");
+  const sig = matchMod.extractProfileSignal({ targetTrack: "具身智能 运动控制", preferredCities: "上海", graduationYear: 2027, degree: "硕士" }, "C++ ROS2 MPC");
+  const fullScore = matchMod.scorePostingMatch({ companyName: "智元", title: "运动控制算法", cities: "上海", graduation: "2027届", degree: "硕士及以上" }, sig);
+  const fastScore = matchMod.scorePostingNumeric({ companyName: "智元", title: "运动控制算法", cities: "上海", graduation: "2027届", degree: "硕士及以上" }, sig);
+  assert.equal(fastScore, fullScore.score);
+
+  const careerOps = loadTs("src/lib/career-ops.ts", {
+    "@/lib/db": { prisma: {}, db: {} },
+    "@/lib/proxy-agent": { applyProxy: async () => {} },
+  });
+  assert.equal(careerOps.supportedBoard("https://careers.example.com/SU6422b1880be58c17921e7808/pb/index.html"), true);
+  const allCatalog = [...careerOps.BUILT_IN_BOARDS, ...careerOps.EXTENDED_BOARDS].map((b) => ({ ...b, aliases: [] }));
+  const dayeeSelection = careerOps.selectBoardsForDiscovery(allCatalog, ["大易"], "大易", sig, 20);
+  assert.ok(dayeeSelection.selected.some((b) => b.track === "ext-dayee"), "大易 query should prioritize ext-dayee boards");
+  const globalSelection = careerOps.selectBoardsForDiscovery(allCatalog, ["Anthropic"], "Anthropic", sig, 20);
+  assert.ok(globalSelection.named.some((b) => /Anthropic/i.test(b.name)));
+  const roboticsSelection = careerOps.selectBoardsForDiscovery(allCatalog, ["具身智能", "运动控制"], "具身智能 运动控制", sig, 25);
+  const roboticsHits = roboticsSelection.selected.filter((b) => b.track === "core-robotics-hardtech").length;
+  assert.ok(roboticsHits >= 15, `Expected robotics query to pick >=15 robotics boards, got ${roboticsHits}`);
+
+  const dayee = await import("../electron/career-ops/providers/dayee.mjs");
+  const customParsed = dayee.parseDayeeUrl("https://careers.example.com/SU6422b1880be58c17921e7808/pb/index.html");
+  assert.equal(customParsed.suiteCode, "6422b1880be58c17921e7808");
+  assert.equal(dayee.parseDayeeUrl("https://127.0.0.1/SU6422b1880be58c17921e7808/pb/index.html"), null);
+
+  const savedLogins = require("../electron/saved-logins.js");
+  assert.equal(
+    savedLogins.loginRealm("https://careers.example.com/SU6422b1880be58c17921e7808/pb/school.html"),
+    "https://careers.example.com/SU6422b1880be58c17921e7808"
+  );
+
+  const coreSrc = fs.readFileSync(path.resolve(__dirname, "../electron/autofill-core.js"), "utf8");
+  const coreCtx = { URL, URLSearchParams };
+  vm.runInNewContext(coreSrc.slice(coreSrc.indexOf("function portalContext("), coreSrc.indexOf("function attachResumeFile(")), coreCtx);
+  const step1 = coreCtx.portalContext("https://careers.example.com/SUaaa11122233344455566677/pb/school.html");
+  const step2 = coreCtx.portalContext("https://careers.example.com/SUaaa11122233344455566677/pb/resume.html");
+  const otherTenant = coreCtx.portalContext("https://careers.example.com/SUbbb11122233344455566677/pb/school.html");
+  assert.equal(step1, step2);
+  assert.notEqual(step1, otherTenant);
+
+  let metaCalls = 0;
+  const cachedFeedMod = loadTs("src/lib/builtin-feed.ts", {
+    "@/lib/db": { db: {} },
+    "@/lib/proxy-agent": { applyProxy: async () => {} },
+    __fetch: async () => {
+      metaCalls += 1;
+      return new Response(
+        JSON.stringify({
+          version: 2,
+          rev: 1794700123,
+          generatedAt: "2026-11-15T05:00:00Z",
+          total: 39232,
+          shards: [{ id: "core-ai-tech", total: 9534, boardsCount: 163 }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    },
+  });
+  const m1 = await cachedFeedMod.readBuiltinFeedMetaCached(1000);
+  const m2 = await cachedFeedMod.readBuiltinFeedMetaCached(1000);
+  assert.equal(metaCalls, 1);
+  assert.equal(m1.shards["core-ai-tech"].boardsCount, 163);
+  assert.equal(m2.shards["core-ai-tech"].total, 9534);
+});

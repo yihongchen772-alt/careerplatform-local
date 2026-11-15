@@ -14,10 +14,11 @@ function scanPageFields(prefix, readOnly = false, preserveIds = false) {
   const results = [];
   const nodes = new Map();
   const host = typeof location !== "undefined" ? location.hostname : "";
+  const pathname = typeof location !== "undefined" ? location.pathname : "";
   // Portal families keep their own wrappers; common DOM rules remain the fallback.
   const portal = /(^|\.)mokahr\.com$/.test(host) ? { name: "Moka", wrapper: /question|formItem|form-item|apply-field/i, label: "[class*='title-'], [class*='questionTitle'], [class*='label'], label" }
     : /(^|\.)(zhiye\.com|beisen\.com|italent\.cn)$/.test(host) ? { name: "北森", wrapper: /resume-item|form-item|field|question/i, label: "[class*='field-name'], [class*='label'], label" }
-    : /(^|\.)(dayee\.com|hotjob\.cn)$/.test(host) ? { name: "大易", wrapper: /form-group|resume-item|field|item-row/i, label: "[class*='title'], [class*='label'], label" } : null;
+    : /(^|\.)(dayee\.com|hotjob\.cn)$/.test(host) || (/\/SU[a-f0-9]{16,40}(?:\/|$)/i.test(pathname) && /\/(?:pb|wecruit)\//i.test(pathname)) ? { name: "大易", wrapper: /form-group|resume-item|field|item-row/i, label: "[class*='title'], [class*='label'], label" } : null;
   let counter = 0;
   const seenRadioGroups = new Map();
   const radioMembers = new Map();
@@ -4226,6 +4227,10 @@ function isNeverGuessField(field) {
 
 function portalContext(rawUrl) {
   const url = new URL(rawUrl);
+  const suMatch = /\/SU([a-f0-9]{16,40})(?:\/|$)/i.exec(url.pathname);
+  if (suMatch && (/(^|\.)(dayee\.com|hotjob\.cn)$/i.test(url.hostname) || /\/(?:pb|wecruit)\//i.test(url.pathname))) {
+    return `tenant:v2:${url.origin}/SU${suMatch[1]}`;
+  }
   const sharedHost = /(?:^|\.)(?:mokahr\.com|beisen\.com|zhiye\.com|italent\.cn|dayee\.com|hotjob\.cn|feishu\.cn|jobs\.feishu\.cn|zhaopin\.com|zhipin\.com|liepin\.com|51job\.com|lagou\.com|nowcoder\.com|shixiseng\.com)$/i.test(url.hostname);
   const tenant = [...url.searchParams].filter(([key]) => /^(?:company|companyId|tenant|tenantId|organization|orgid|brand|recruitment)$/i.test(key)).sort(([a], [b]) => a.localeCompare(b));
   // An explicit tenant on a recognised shared portal is stable across steps.

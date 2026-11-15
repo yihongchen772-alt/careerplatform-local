@@ -8,10 +8,32 @@ import { KIND_OPTIONS, PAGE_SIZE, baseWhere, chipWhere, freshSince, postingsHref
 import { PostingSearch, SubscribeCard, SyncControls } from "@/components/leads/postings-controls";
 import { PostingsTableClient, type PostingTableRow } from "@/components/leads/postings-table-client";
 import type { BatchVariantOption } from "@/components/leads/batch-profile-select";
-import { extractProfileSignal, scorePostingMatch } from "@/lib/posting-match";
-import { isBuiltinFeedUrl, parseBuiltinFeedShards } from "@/lib/builtin-feed";
+import { ATS_PLATFORM_OPTIONS, atsLabelForUrl } from "@/lib/ats-platform";
+import { extractProfileSignal, scorePostingMatch, scorePostingNumeric } from "@/lib/posting-match";
+import { isBuiltinFeedUrl, parseBuiltinFeedShards, readBuiltinFeedMetaCached } from "@/lib/builtin-feed";
 
 const STALE_MS = 12 * 3600_000;
+const RANK_CACHE_TTL_MS = 10 * 60_000;
+const RANK_CACHE_MAX = 24;
+const rankCache = new Map<string, { rankedIds: string[]; expiresAt: number }>();
+
+function getCachedRanking(key: string): string[] | null {
+  const hit = rankCache.get(key);
+  if (!hit) return null;
+  if (hit.expiresAt <= Date.now()) {
+    rankCache.delete(key);
+    return null;
+  }
+  return hit.rankedIds;
+}
+
+function setCachedRanking(key: string, rankedIds: string[]) {
+  if (rankCache.size >= RANK_CACHE_MAX) {
+    const oldest = rankCache.keys().next().value;
+    if (oldest !== undefined) rankCache.delete(oldest);
+  }
+  rankCache.set(key, { rankedIds, expiresAt: Date.now() + RANK_CACHE_TTL_MS });
+}
 
 function monthDay(date: Date) {
   return `${date.getMonth() + 1}-${String(date.getDate()).padStart(2, "0")}`;
@@ -31,19 +53,6 @@ function syncedText(at: Date | null) {
   return `${at.getMonth() + 1} 月 ${at.getDate()} 日同步`;
 }
 
-function atsLabelForUrl(url: string | null | undefined): string | null {
-  if (!url) return null;
-  if (/mokahr\.com/i.test(url)) return "Moka";
-  if (/zhiye\.com/i.test(url)) return "北森";
-  if (/jobs\.feishu\.cn|jobs\.bytedance\.com/i.test(url)) return "飞书";
-  if (/hotjob\.cn|dayee\.com/i.test(url)) return "大易";
-  if (/careers\.tencent\.com|join\.qq\.com/i.test(url)) return "腾讯直招";
-  if (/alibaba\.com|aliyun\.com/i.test(url)) return "阿里直招";
-  if (/zhaopin\.meituan\.com/i.test(url)) return "美团直招";
-  if (/greenhouse\.io|lever\.co|ashbyhq\.com/i.test(url)) return "外企ATS";
-  return null;
-}
-
 function profileHighestDegree(applicationProfile: unknown): string | null {
   if (!applicationProfile || typeof applicationProfile !== "object") return null;
   const edu = (applicationProfile as { education?: Array<{ degree?: unknown }> }).education;
@@ -53,9 +62,9 @@ function profileHighestDegree(applicationProfile: unknown): string | null {
 }
 
 /**
- * 订阅的招聘信息: a subscribed 校招信息表, filtered on the server (a sheet can
- * hold 10k+ rows). Chips with counts on top like the sheets' own 今日新增 /
- * 快截止 views; each row opens in the 网申浏览器 or goes into the 候选岗位池.
+ * 订阅的招聘信息: a subscribed 校招信息表, filtered on the server (up to 39k+ rows).
+ * Chips with counts on top like the sheets' own 今日新增 / 快截止 views;
+ * each row opens in the 网申浏览器 or goes into the 候选岗位池.
  */
 export async function PostingsPanel({
   userId,
@@ -66,7 +75,7 @@ export async function PostingsPanel({
   filters: PostingFilters;
   profileVariants?: BatchVariantOption[];
 }) {
-  const [sources, profile, allResumes] = await Promise.all([
+  const [sources, profile, allResumes, inPoolCount, feedMeta] = await Promise.all([
     db.postingSource.findMany({ where: { userId }, orderBy: { createdAt: "asc" } }),
     db.user.findUnique({ where: { id: userId }, select: { graduationYear: true, targetTrack: true, preferredCities: true, skills: true, applicationProfile: true } }),
     db.resumeVersion.findMany({
@@ -74,9 +83,11 @@ export async function PostingsPanel({
       orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }],
       select: { id: true, name: true, isDefault: true, extractedText: true, structured: true },
     }),
+    filters.hideAdded ? db.campusPosting.count({ where: { userId, positionId: { not: null } } }) : Promise.resolve(0),
+    readBuiltinFeedMetaCached(),
   ]);
   const source = sources[0] ?? null;
-  if (!source) return <SubscribeCard />;
+  if (!source) return <SubscribeCard feedMeta={feedMeta} />;
   const builtinSource = sources.find((s) => isBuiltinFeedUrl(s.url)) ?? null;
   const hasBuiltinFeed = !!builtinSource;
   const builtinShards = builtinSource ? parseBuiltinFeedShards(builtinSource.url) : undefined;
@@ -116,36 +127,76 @@ export async function PostingsPanel({
   ]);
 
   let rows: Awaited<ReturnType<typeof db.campusPosting.findMany>> = [];
-  const scoreMap = new Map<string, ReturnType<typeof scorePostingMatch>>();
   if (matchSorting) {
-    const candidates = await db.campusPosting.findMany({
-      where,
-      select: { id: true, company: true, roles: true, cities: true, industry: true, cohort: true, degree: true, kind: true, note: true, startDate: true },
+    const sourceStamp = sources.map((s) => `${s.id}:${s.url}:${s.rev ?? ""}:${s.lastSyncedAt?.getTime() ?? 0}:${s.total}`).join(",");
+    const filterKey = JSON.stringify({
+      q: filters.q,
+      chip: filters.chip,
+      kind: filters.kind,
+      industry: filters.industry,
+      platform: filters.platform,
+      hideAdded: filters.hideAdded,
+      allCohorts: filters.allCohorts,
+      withClosed: filters.withClosed,
+      fresh: filters.fresh,
+      sort: filters.sort,
     });
-    const rawRanked = candidates
-      .map((item) => {
-        const match = signal.hasSignal
-          ? scorePostingMatch(
-              { companyName: item.company, tracks: item.roles, cities: item.cities, industry: item.industry, graduation: item.cohort, degree: item.degree, description: item.note },
-              signal
-            )
-          : null;
-        if (match) scoreMap.set(item.id, match);
-        const campusBonus = item.kind && item.kind !== "社招" ? (signal.hasSignal ? 6 : 20) : 0;
-        return { id: item.id, company: item.company, score: (match?.score ?? 50) + campusBonus, startMs: item.startDate?.getTime() ?? 0 };
-      })
-      .sort((a, b) => b.score - a.score || b.startMs - a.startMs);
-    // Diversify same-tier companies so no single company floods page 1
-    const byCompanyCount = new Map<string, number>();
-    const ranked = rawRanked
-      .map((item) => {
-        const seenCount = byCompanyCount.get(item.company) ?? 0;
-        byCompanyCount.set(item.company, seenCount + 1);
-        const diversityPenalty = Math.floor(seenCount / 2) * 3;
-        return { ...item, effectiveScore: item.score - diversityPenalty };
-      })
-      .sort((a, b) => b.effectiveScore - a.effectiveScore || b.score - a.score || b.startMs - a.startMs);
-    const pageIds = ranked.slice((filters.page - 1) * PAGE_SIZE, filters.page * PAGE_SIZE).map((r) => r.id);
+    const signalKey = signal.hasSignal
+      ? `${activeResume?.id ?? ""}|${signal.baseTrackTerms.join(",")}|${signal.cities.join(",")}|${signal.degree ?? ""}|${signal.graduationYear ?? ""}|${signal.skillTerms.slice(0, 6).join(",")}`
+      : "none";
+    const cacheKey = `${userId}|${sourceStamp}|${inPoolCount}|${filterKey}|${signalKey}`;
+    let rankedIds = getCachedRanking(cacheKey);
+
+    if (!rankedIds) {
+      let rawRanked: { id: string; company: string; score: number; startMs: number }[];
+      if (signal.hasSignal) {
+        const candidates = await db.campusPosting.findMany({
+          where,
+          select: { id: true, company: true, roles: true, cities: true, industry: true, cohort: true, degree: true, kind: true, note: true, startDate: true },
+        });
+        rawRanked = candidates.map((item) => {
+          const matchScore = scorePostingNumeric(
+            {
+              companyName: item.company,
+              tracks: item.roles,
+              cities: item.cities,
+              industry: item.industry,
+              graduation: item.cohort,
+              degree: item.degree,
+              description: item.note,
+            },
+            signal
+          );
+          const campusBonus = item.kind && item.kind !== "社招" ? 6 : 0;
+          return { id: item.id, company: item.company, score: matchScore + campusBonus, startMs: item.startDate?.getTime() ?? 0 };
+        });
+      } else {
+        const candidates = await db.campusPosting.findMany({
+          where,
+          select: { id: true, company: true, kind: true, startDate: true },
+        });
+        rawRanked = candidates.map((item) => {
+          const campusBonus = item.kind && item.kind !== "社招" ? 20 : 0;
+          return { id: item.id, company: item.company, score: 50 + campusBonus, startMs: item.startDate?.getTime() ?? 0 };
+        });
+      }
+      rawRanked.sort((a, b) => b.score - a.score || b.startMs - a.startMs);
+
+      // Diversify same-tier companies so no single company floods page 1
+      const byCompanyCount = new Map<string, number>();
+      rankedIds = rawRanked
+        .map((item) => {
+          const seenCount = byCompanyCount.get(item.company) ?? 0;
+          byCompanyCount.set(item.company, seenCount + 1);
+          const diversityPenalty = Math.floor(seenCount / 2) * 3;
+          return { id: item.id, effectiveScore: item.score - diversityPenalty, score: item.score, startMs: item.startMs };
+        })
+        .sort((a, b) => b.effectiveScore - a.effectiveScore || b.score - a.score || b.startMs - a.startMs)
+        .map((item) => item.id);
+      setCachedRanking(cacheKey, rankedIds);
+    }
+
+    const pageIds = rankedIds.slice((filters.page - 1) * PAGE_SIZE, filters.page * PAGE_SIZE);
     if (pageIds.length > 0) {
       const fetched = await db.campusPosting.findMany({ where: { id: { in: pageIds } } });
       const byId = new Map(fetched.map((row) => [row.id, row]));
@@ -176,6 +227,8 @@ export async function PostingsPanel({
   if (filters.chip) hidden.chip = filters.chip;
   if (filters.kind) hidden.kind = filters.kind;
   if (filters.industry) hidden.industry = filters.industry;
+  if (filters.platform) hidden.platform = filters.platform;
+  if (filters.hideAdded) hidden.unadded = "1";
   if (filters.allCohorts) hidden.cohort = "all";
   if (filters.withClosed) hidden.closed = "1";
   if (filters.fresh) hidden.fresh = "1";
@@ -186,8 +239,7 @@ export async function PostingsPanel({
   const tableRows: PostingTableRow[] = rows.map((row) => {
     const daysLeft = row.deadline ? Math.round((row.deadline.getTime() - today.getTime()) / 86400_000) : null;
     const match = signal.hasSignal
-      ? scoreMap.get(row.id) ??
-        scorePostingMatch(
+      ? scorePostingMatch(
           { companyName: row.company, tracks: row.roles, cities: row.cities, industry: row.industry, graduation: row.cohort, degree: row.degree, description: row.note },
           signal
         )
@@ -234,6 +286,7 @@ export async function PostingsPanel({
           stale={sources.some((s) => !s.lastSyncedAt || now.getTime() - (s.lastCheckedAt ?? s.lastSyncedAt).getTime() > STALE_MS)}
           hasBuiltinFeed={hasBuiltinFeed}
           builtinShards={builtinShards}
+          feedMeta={feedMeta}
           hasFeishuSheet={hasFeishuSheet}
         />
       </div>
@@ -259,9 +312,25 @@ export async function PostingsPanel({
             去填求职意向解锁推荐 →
           </Link>
         )}
+        <Link href={postingsHref(filters, { hideAdded: !filters.hideAdded })} className={pill(filters.hideAdded)} title="隐藏已经「加入」候选岗位池的条目">
+          仅看未加池
+        </Link>
         {cohort && <Link href={postingsHref(filters, { allCohorts: !filters.allCohorts })} className={pill(!filters.allCohorts)} title="只看写着你这一届、或没写届次的">只看{cohort}</Link>}
         <Link href={postingsHref(filters, { withClosed: !filters.withClosed })} className={pill(filters.withClosed)}>含已截止</Link>
         {(freshCount > 0 || filters.fresh) && <Link href={postingsHref(filters, { fresh: !filters.fresh })} className={pill(filters.fresh)} title="表主最近几天新加进表里的">新加的 {freshCount}</Link>}
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="mr-1 text-xs text-muted-foreground">招聘系统</span>
+        {ATS_PLATFORM_OPTIONS.map((opt) => (
+          <Link
+            key={opt.id}
+            href={postingsHref(filters, { platform: filters.platform === opt.id ? "" : opt.id })}
+            className={pill(filters.platform === opt.id)}
+            title={opt.description}
+          >
+            {opt.label}
+          </Link>
+        ))}
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
         <span className="mr-1 text-xs text-muted-foreground">类型</span>

@@ -14,8 +14,12 @@ const PAGE_SIZE = 50;
 const DEFAULT_MAX_PAGES = 10;
 const INTER_PAGE_DELAY_MS = 280;
 
+const PRIVATE_OR_LOCAL_HOST_RE =
+  /^(?:localhost|.*\.local|.*\.internal|127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+|\[::1\])$/i;
+
 /**
  * Validate and extract origin + optional suite code from a Dayee / HotJob URL.
+ * Supports both `*.hotjob.cn` / `*.dayee.com` and custom company domains carrying `/SU<hex>/pb/` or `/wecruit/`.
  * @param {unknown} value
  * @returns {{ origin: string, host: string, pathname: string, suiteCode: string | null } | null}
  */
@@ -25,8 +29,11 @@ export function parseDayeeUrl(value) {
   try { u = new URL(value); } catch { return null; }
   if (u.protocol !== 'https:') return null;
   const host = u.hostname.toLowerCase();
-  if (!host.endsWith('.hotjob.cn') && !host.endsWith('.dayee.com')) return null;
+  if (!host || PRIVATE_OR_LOCAL_HOST_RE.test(host)) return null;
+  const isDayeeHost = host.endsWith('.hotjob.cn') || host.endsWith('.dayee.com');
   const suiteMatch = /\/SU([a-f0-9]{16,40})\b/i.exec(u.pathname);
+  const isCustomDayeePath = !!(suiteMatch && /\/(?:pb|wecruit)\//i.test(u.pathname));
+  if (!isDayeeHost && !isCustomDayeePath) return null;
   if ((host === 'www.hotjob.cn' || host === 'www.dayee.com') && !suiteMatch) {
     return null;
   }
@@ -134,7 +141,11 @@ async function resolveTenantSuite(parsed, ctx) {
   try {
     const targetUrl = new URL(link);
     const th = targetUrl.hostname.toLowerCase();
-    if (targetUrl.protocol === 'https:' && (th.endsWith('.hotjob.cn') || th.endsWith('.dayee.com'))) {
+    if (
+      targetUrl.protocol === 'https:' &&
+      !PRIVATE_OR_LOCAL_HOST_RE.test(th) &&
+      (th.endsWith('.hotjob.cn') || th.endsWith('.dayee.com') || th === parsed.host)
+    ) {
       targetOrigin = targetUrl.origin;
     }
   } catch { /* keep parsed.origin */ }

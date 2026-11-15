@@ -30,7 +30,13 @@ function loginRealm(rawUrl) {
     const at = segments.findIndex((segment) => /^(?:campus-recruitment|social-recruitment|recommendation-apply|campus_apply|apply)$/i.test(segment));
     if (at >= 0 && segments[at + 1]) return `${url.origin}/${segments[at + 1].toLowerCase()}`;
   }
-  if (/(^|\.)hotjob\.cn$/i.test(url.hostname) && segments[0] && /^SU[0-9a-z]{6,}$/i.test(segments[0])) return `${url.origin}/${segments[0]}`;
+  if (
+    (/(^|\.)(hotjob\.cn|dayee\.com)$/i.test(url.hostname) || /\/(?:pb|wecruit)\//i.test(url.pathname)) &&
+    segments[0] &&
+    /^SU[0-9a-z]{6,}$/i.test(segments[0])
+  ) {
+    return `${url.origin}/${segments[0]}`;
+  }
   const tenant = [...url.searchParams].filter(([key]) => /^(?:company|companyId|tenant|tenantId|orgId|orgid)$/i.test(key)).sort(([a], [b]) => a.localeCompare(b));
   if (tenant.length && /(?:mokahr|beisen|zhiye|hotjob|zhaopin|nowcoder|51job|liepin)\./i.test(url.hostname)) return `${url.origin}?${new URLSearchParams(tenant)}`;
   return url.origin;

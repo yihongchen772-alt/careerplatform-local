@@ -2,6 +2,7 @@ import fs from "node:fs";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { db } from "@/lib/db";
+import { isDayeeUrl } from "@/lib/ats-platform";
 import { extractProfileSignal, scorePostingMatch, type PostingMatchResult, type ProfileMatchSignal } from "@/lib/posting-match";
 
 /**
@@ -67,7 +68,7 @@ export function supportedBoard(url: string | null | undefined): boolean {
   if (!url) return false;
   try {
     const parsed = new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`);
-    return SUPPORTED_HOST.test(parsed.hostname);
+    return SUPPORTED_HOST.test(parsed.hostname) || isDayeeUrl(parsed.href);
   } catch {
     return false;
   }
@@ -97,7 +98,7 @@ export async function runBoards(boards: { name: string; careers_url: string; key
     });
     child.stdin.end(JSON.stringify({
       boards,
-      maxBoards: Math.max(boards.length, 32),
+      maxBoards: Math.max(boards.length, 40),
       maxPages: 2,
       timeoutMs: Math.min(timeoutMs, 30000),
     }));
@@ -178,7 +179,7 @@ export async function discoverWebCampusJobs(
             ? "北森直招"
             : /feishu\.cn|bytedance\.com/i.test(url)
               ? "飞书直招"
-              : /hotjob\.cn|dayee\.com/i.test(url)
+              : isDayeeUrl(url)
                 ? "大易直招"
                 : "全网检索";
         out.push({
@@ -203,6 +204,105 @@ export async function discoverWebCampusJobs(
   const fallback = await searchBing(`${query} ${kindSuffix} ${atsFilter}`.trim());
   const seen = new Set(primary.map((item) => item.url));
   return [...primary, ...fallback.filter((item) => !seen.has(item.url))];
+}
+
+const TRACK_HINT_RULES: { pattern: RegExp; tracks: string[]; industries: RegExp }[] = [
+  {
+    pattern: /机器人|具身|灵巧手|人形|运动控制|运控|伺服|plc|自动驾驶|智驾|slam|ros|飞控|无人机|激光雷达|传感器|芯片|半导体|ic|fpga|嵌入式|mcu|rtos|硬件|电源|光学|汽车/i,
+    tracks: ["core-robotics-hardtech", "ext-global"],
+    industries: /机器人|具身|智驾|自动驾驶|汽车|芯片|半导体|硬件|装备|无人机|激光|光电|能源|锂电|工业/,
+  },
+  {
+    pattern: /ai|大模型|llm|rag|agent|算法|机器学习|深度学习|nlp|cv|多模态|算力|后端|前端|全栈|开发|java|golang|python|c\+\+|rust|测试|产品|数据|云|安全|运维/i,
+    tracks: ["core-ai-tech", "ext-majors", "ext-global"],
+    industries: /ai|大模型|互联网|软件|云|安全|数据|算力|游戏|电商|出海/i,
+  },
+  {
+    pattern: /央企|国企|电网|电力|通信|航空|航天|轨交|军工|证券|券商|基金|量化|银行|保险|金融|医疗|器械|医药|生物|信创|大易|dayee/i,
+    tracks: ["core-enterprise-fintech", "ext-dayee"],
+    industries: /央企|国企|金融|券商|量化|银行|保险|医疗|医药|航空|航天|轨交|电力|装备|信创/,
+  },
+];
+
+export type SearchableBoard = CatalogBoard & { aliases: string[]; fromDirectory?: boolean };
+
+/** Scores how relevant a board catalog entry is for `terms` / `query` / `signal`. */
+export function scoreBoardRelevance(
+  board: SearchableBoard,
+  terms: string[],
+  query: string,
+  signal?: ProfileMatchSignal
+): number {
+  let score = board.fromDirectory ? 20 : (board.tier ?? "core") === "core" ? 10 : 0;
+  const nameHay = normal([board.name, ...(board.aliases || [])].join(" "));
+  const metaHay = `${board.name} ${board.industry ?? ""} ${board.track ?? ""} ${board.careers_url}`.toLowerCase();
+
+  for (const term of terms) {
+    const nt = normal(term);
+    if (!nt) continue;
+    if (nameHay.includes(nt)) score += 100;
+    if (board.industry && board.industry.toLowerCase().includes(term.toLowerCase())) score += 40;
+  }
+
+  for (const rule of TRACK_HINT_RULES) {
+    if (rule.pattern.test(query)) {
+      if (board.track && rule.tracks.includes(board.track)) score += 28;
+      if (board.industry && rule.industries.test(board.industry)) score += 22;
+    }
+  }
+
+  if (/大易|dayee|hotjob/i.test(query) && (board.track === "ext-dayee" || isDayeeUrl(board.careers_url))) score += 60;
+  if (/moka/i.test(query) && /mokahr\.com/i.test(metaHay)) score += 50;
+  if (/北森|zhiye/i.test(query) && /zhiye\.com/i.test(metaHay)) score += 50;
+  if (/飞书|feishu|bytedance/i.test(query) && /feishu\.cn|bytedance\.com/i.test(metaHay)) score += 50;
+  if (/外企|出海|global|english|海外|anthropic|openai|figure|waymo|databricks|stripe/i.test(query) && board.track === "ext-global") {
+    score += 45;
+  }
+
+  if (signal?.baseTrackTerms?.length && board.industry) {
+    for (const track of signal.baseTrackTerms) {
+      if (board.industry.toLowerCase().includes(track)) score += 12;
+    }
+  }
+  return score;
+}
+
+/** Picks the top-scoring `limit` boards across all 359+ core and extended portals instead of blind slicing. */
+export function selectBoardsForDiscovery(
+  allBoards: SearchableBoard[],
+  terms: string[],
+  query: string,
+  signal?: ProfileMatchSignal,
+  limit = 40
+): { selected: SearchableBoard[]; named: SearchableBoard[] } {
+  const named = allBoards.filter((board) =>
+    terms.some((term) => [board.name, ...board.aliases].some((name) => normal(name).includes(normal(term)) || normal(term).includes(normal(name))))
+  );
+  if (named.length > 0) {
+    return { selected: named.slice(0, limit), named };
+  }
+  const ranked = allBoards
+    .map((board, index) => ({
+      board,
+      index,
+      score: scoreBoardRelevance(board, terms, query, signal),
+    }))
+    .sort((a, b) => b.score - a.score || a.index - b.index);
+  return {
+    selected: ranked.slice(0, limit).map((entry) => entry.board),
+    named: [],
+  };
+}
+
+function matchesDiscoveryKind(text: string, jobKind: JobDiscoveryKind): boolean {
+  if (jobKind === "intern") return /实习|intern/i.test(text);
+  if (jobKind === "campus") {
+    if (/社会招聘|类型:\s*社招|第三方派遣|Third-party Associate/i.test(text)) return false;
+    if (/经验:\s*(?:[3-9]|\d{2,}|[三四五六七八九十])年以上/i.test(text)) return false;
+    return true;
+  }
+  if (jobKind === "social") return !/实习生|日常实习|暑期实习/i.test(text);
+  return true;
 }
 
 const normal = (text: string) => text.toLowerCase().replace(/[\s（）()【】\[\]·\-—_/|,，、]/g, "");
@@ -254,7 +354,14 @@ export async function findJobs(
   let keywords = terms;
 
   if (options.includeBoards !== false) {
-    const directory = companies.filter((company) => supportedBoard(company.careerUrl)).map((company) => ({ name: company.name, careers_url: company.careerUrl!, aliases: company.aliases.map((entry) => entry.alias) }));
+    const directory: SearchableBoard[] = companies
+      .filter((company) => supportedBoard(company.careerUrl))
+      .map((company) => ({
+        name: company.name,
+        careers_url: company.careerUrl!,
+        aliases: company.aliases.map((entry) => entry.alias),
+        fromDirectory: true,
+      }));
     const boardKey = (raw: string) => {
       try {
         const u = new URL(raw.startsWith("http") ? raw : `https://${raw}`);
@@ -263,11 +370,19 @@ export async function findJobs(
         return raw;
       }
     };
-    const allCore = [...directory, ...BUILT_IN_BOARDS.filter((board) => !directory.some((entry) => boardKey(entry.careers_url) === boardKey(board.careers_url))).map((board) => ({ ...board, aliases: [] as string[] }))];
-    const allSearchable = [...allCore, ...EXTENDED_BOARDS.filter((board) => !allCore.some((entry) => boardKey(entry.careers_url) === boardKey(board.careers_url))).map((board) => ({ ...board, aliases: [] as string[] }))];
-    const named = allSearchable.filter((board) => terms.some((term) => [board.name, ...board.aliases].some((name) => normal(name).includes(normal(term)) || normal(term).includes(normal(name)))));
-    keywords = named.length ? terms.filter((term) => !named.some((board) => [board.name, ...board.aliases].some((name) => normal(name).includes(normal(term)) || normal(term).includes(normal(name))))) : terms;
-    const boards = (named.length ? named : allCore).slice(0, 32).map((board) => ({ name: board.name, careers_url: board.careers_url, keywords: keywords.slice(0, 3) }));
+    const seenKeys = new Set(directory.map((d) => boardKey(d.careers_url)));
+    const allSearchable: SearchableBoard[] = [...directory];
+    for (const board of [...BUILT_IN_BOARDS, ...EXTENDED_BOARDS]) {
+      const k = boardKey(board.careers_url);
+      if (seenKeys.has(k)) continue;
+      seenKeys.add(k);
+      allSearchable.push({ ...board, aliases: [] });
+    }
+    const { selected, named } = selectBoardsForDiscovery(allSearchable, terms, query, signal, 40);
+    keywords = named.length
+      ? terms.filter((term) => !named.some((board) => [board.name, ...board.aliases].some((name) => normal(name).includes(normal(term)) || normal(term).includes(normal(name)))))
+      : terms;
+    const boards = selected.map((board) => ({ name: board.name, careers_url: board.careers_url, keywords: keywords.slice(0, 3) }));
     try {
       boardResults = await runBoards(boards);
     } catch (err) {
@@ -283,40 +398,32 @@ export async function findJobs(
         }))
       )
       .filter((job) => !keywords.length || keywords.some((term) => normal(`${job.title} ${job.location} ${job.description}`).includes(normal(term))))
-      .filter((job) => {
-        const text = `${job.title} ${job.description} ${job.sourceLabel || ""}`;
-        if (jobKind === "intern") return /实习|intern/i.test(text);
-        if (jobKind === "campus") {
-          if (/社会招聘|类型:\s*社招|第三方派遣|Third-party Associate/i.test(text)) return false;
-          if (/经验:\s*(?:[3-9]|\d{2,}|[三四五六七八九十])年以上/i.test(text)) return false;
-          return true;
-        }
-        if (jobKind === "social") return !/实习生|日常实习|暑期实习/i.test(job.title);
-        return true;
-      });
+      .filter((job) => matchesDiscoveryKind(`${job.title} ${job.description} ${job.sourceLabel || ""}`, jobKind));
   }
 
   let sheetJobs: BoardJob[] = [];
   if (options.includeSheets !== false && terms.length > 0) {
+    const wordClauses = terms.slice(0, 3).map((word) => ({
+      OR: [
+        { company: { contains: word } },
+        { roles: { contains: word } },
+        { cities: { contains: word } },
+        { industry: { contains: word } },
+        { note: { contains: word } },
+      ],
+    }));
     const sheetRows = await db.campusPosting.findMany({
       where: {
         userId,
         positionId: null,
-        AND: terms.slice(0, 3).map((word) => ({
-          OR: [
-            { company: { contains: word } },
-            { roles: { contains: word } },
-            { cities: { contains: word } },
-            { industry: { contains: word } },
-            { note: { contains: word } },
-          ],
-        })),
+        AND: wordClauses,
       },
       orderBy: [{ startDate: { sort: "desc", nulls: "last" } }],
-      take: 30,
+      take: 45,
     });
     sheetJobs = sheetRows
       .filter((row) => !!(row.applyUrl || row.noticeUrl))
+      .filter((row) => matchesDiscoveryKind(`${row.kind || ""} ${row.roles || ""} ${row.note || ""}`, jobKind))
       .map((row) => {
         const title = (row.roles || "").split(/[\n、,，;；]+/).find((s) => s.trim())?.trim() || `${row.cohort || ""}${row.kind || "校招"}`;
         return {
@@ -327,7 +434,7 @@ export async function findJobs(
           postedAt: row.startDate?.getTime() ?? null,
           description: [row.roles, row.industry, row.note].filter(Boolean).join(" · ").slice(0, 260),
           sourceType: "sheet" as const,
-          sourceLabel: "已订阅校招表",
+          sourceLabel: "直招池/信息表",
         };
       });
   }

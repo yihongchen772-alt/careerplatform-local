@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Check, Layers, Loader2, Plus, RefreshCw, Search, Sparkles, Unlink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { DEFAULT_BUILTIN_SHARDS, FEED_SHARD_DEFS } from "@/lib/builtin-feed-shards";
+import { DEFAULT_BUILTIN_SHARDS, FEED_SHARD_DEFS, type FeedMetaSummary, type FeedShardStat } from "@/lib/builtin-feed-shards";
 import {
   addPostingToPool,
   enableBuiltinPostingFeed,
@@ -26,17 +26,34 @@ function toggleShardId(current: string[], shardId: string): string[] {
   return [...current, shardId];
 }
 
+function formatCloudUpdatedAt(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(d);
+}
+
 function ShardSelectorGrid({
   selected,
   onToggle,
+  shardStats,
 }: {
   selected: string[];
   onToggle: (shardId: string) => void;
+  shardStats?: Record<string, FeedShardStat>;
 }) {
   return (
     <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
       {FEED_SHARD_DEFS.map((shard) => {
         const checked = selected.includes(shard.id);
+        const stat = shardStats?.[shard.id];
         return (
           <label
             key={shard.id}
@@ -52,9 +69,16 @@ function ShardSelectorGrid({
               checked={checked}
               onChange={() => onToggle(shard.id)}
             />
-            <span className="min-w-0">
-              <span className="block font-medium text-foreground">{shard.name}</span>
-              <span className="block text-[11px] text-muted-foreground">{shard.description}</span>
+            <span className="min-w-0 flex-1">
+              <span className="flex flex-wrap items-center justify-between gap-1">
+                <span className="font-medium text-foreground">{shard.name}</span>
+                {stat && stat.total > 0 && (
+                  <span className="rounded bg-primary/10 px-1.5 py-px text-[10px] font-medium tabular-nums text-primary">
+                    {stat.boardsCount}家 · {stat.total.toLocaleString()}岗
+                  </span>
+                )}
+              </span>
+              <span className="mt-0.5 block text-[11px] text-muted-foreground">{shard.description}</span>
             </span>
           </label>
         );
@@ -72,12 +96,13 @@ function summaryText(result: SyncSummary) {
 }
 
 /** No sheet yet: enable the built-in daily cloud feed with one click, or paste a 飞书 link. */
-export function SubscribeCard() {
+export function SubscribeCard({ feedMeta = null }: { feedMeta?: FeedMetaSummary | null }) {
   const router = useRouter();
   const [link, setLink] = useState("");
   const [selectedShards, setSelectedShards] = useState<string[]>(DEFAULT_BUILTIN_SHARDS);
   const [pending, startTransition] = useTransition();
   const [enablingFeed, startEnableFeed] = useTransition();
+  const updatedText = formatCloudUpdatedAt(feedMeta?.generatedAt);
   function subscribe() {
     startTransition(async () => {
       const result = await savePostingSource(link);
@@ -99,9 +124,14 @@ export function SubscribeCard() {
       <div className="space-y-3 rounded-xl border border-primary/30 bg-primary/[0.04] p-5">
         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
           <div className="space-y-1">
-            <p className="inline-flex items-center gap-1.5 font-medium">
+            <p className="inline-flex flex-wrap items-center gap-1.5 font-medium">
               <Sparkles className="size-4 text-primary" />
-              名企官网每日直招池（分片订阅 · 免配置 · 一键填表直达）
+              <span>名企官网每日直招池（分片订阅 · 免配置 · 一键填表直达）</span>
+              {feedMeta && feedMeta.total > 0 && (
+                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium tabular-nums text-primary">
+                  云端在招 {feedMeta.total.toLocaleString()} 岗{updatedText ? ` · ${updatedText} 更新` : ""}
+                </span>
+              )}
             </p>
             <p className="text-sm text-muted-foreground">
               内置 <strong>350+ 家</strong> 官网直招站点：核心池默认开启 <strong>Moka / 北森 / 飞书招聘</strong> 三大标准系统；可按需勾选 <strong>大易 Dayee / 腾讯阿里美团 / 全球前沿 AI &amp; 机器人外企</strong> 分片。
@@ -113,6 +143,7 @@ export function SubscribeCard() {
         </div>
         <ShardSelectorGrid
           selected={selectedShards}
+          shardStats={feedMeta?.shards}
           onToggle={(id) => setSelectedShards((prev) => toggleShardId(prev, id))}
         />
       </div>
@@ -139,6 +170,7 @@ export function SyncControls({
   stale,
   hasBuiltinFeed = false,
   builtinShards,
+  feedMeta = null,
   hasFeishuSheet = true,
 }: {
   sourceId: string;
@@ -146,8 +178,10 @@ export function SyncControls({
   stale: boolean;
   hasBuiltinFeed?: boolean;
   builtinShards?: string[];
+  feedMeta?: FeedMetaSummary | null;
   hasFeishuSheet?: boolean;
 }) {
+  const cloudUpdatedText = formatCloudUpdatedAt(feedMeta?.generatedAt);
   const router = useRouter();
   const [syncing, setSyncing] = useState(false);
   const [enablingFeed, startEnableFeed] = useTransition();
@@ -282,7 +316,7 @@ export function SyncControls({
         <div className="w-full max-w-3xl space-y-2.5 rounded-xl border bg-background/95 p-3 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs font-medium text-foreground">
-              按赛道与平台选择同步分片（勾选越多岗位越全，仅拉取所选分片，同步更快）
+              按赛道与平台选择同步分片（勾选越多岗位越全，仅拉取所选分片，同步更快{cloudUpdatedText ? ` · 云端更新：${cloudUpdatedText}` : ""}）
             </p>
             <div className="flex items-center gap-1.5">
               <Button size="xs" variant="ghost" disabled={savingShards} onClick={() => setEditingShards(false)}>
@@ -308,6 +342,7 @@ export function SyncControls({
           </div>
           <ShardSelectorGrid
             selected={draftShards}
+            shardStats={feedMeta?.shards}
             onToggle={(id) => setDraftShards((prev) => toggleShardId(prev, id))}
           />
         </div>

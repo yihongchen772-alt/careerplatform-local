@@ -2,7 +2,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { UserFacingError } from "@/lib/action-result";
 import { feishuBaseRevision, readFeishuBase } from "@/lib/render-bridge-client";
-import { isBuiltinFeedUrl, readBuiltinFeed } from "@/lib/builtin-feed";
+import { builtinFeedRevision, isBuiltinFeedUrl, readBuiltinFeed } from "@/lib/builtin-feed";
 import { cohortLabel, mapSheetRow, samePosting, type PostingFields } from "@/lib/campus-sheet";
 
 /**
@@ -73,7 +73,29 @@ export async function syncSource(userId: string, sourceId: string): Promise<Sync
       if (!rows.size) throw new UserFacingError("这个表格里没认出公司列，确认是校招信息表的链接");
     }
 
-    const stored = await db.campusPosting.findMany({ where: { sourceId: source.id } });
+    const stored = await db.campusPosting.findMany({
+      where: { sourceId: source.id },
+      select: {
+        id: true,
+        externalId: true,
+        positionId: true,
+        company: true,
+        roles: true,
+        cohort: true,
+        kind: true,
+        cities: true,
+        industry: true,
+        degree: true,
+        writtenTest: true,
+        applyUrl: true,
+        noticeUrl: true,
+        startDate: true,
+        deadline: true,
+        deadlineText: true,
+        note: true,
+        salary: true,
+      },
+    });
     const byExternal = new Map(stored.map((row) => [row.externalId, row]));
     const toCreate: PostingFields[] = [];
     const toUpdate: { id: string; data: Omit<PostingFields, "externalId"> }[] = [];
@@ -86,14 +108,14 @@ export async function syncSource(userId: string, sourceId: string): Promise<Sync
     }
     const gone = stored.filter((row) => !rows.has(row.externalId) && !row.positionId).map((row) => row.id);
 
-    for (let at = 0; at < toCreate.length; at += 500) {
-      await db.campusPosting.createMany({ data: toCreate.slice(at, at + 500).map((fields) => ({ ...fields, userId, sourceId: source.id, firstSeenAt: now })) });
+    for (let at = 0; at < toCreate.length; at += 800) {
+      await db.campusPosting.createMany({ data: toCreate.slice(at, at + 800).map((fields) => ({ ...fields, userId, sourceId: source.id, firstSeenAt: now })) });
     }
-    for (let at = 0; at < toUpdate.length; at += 200) {
-      await db.$transaction(toUpdate.slice(at, at + 200).map(({ id, data }) => db.campusPosting.update({ where: { id }, data })));
+    for (let at = 0; at < toUpdate.length; at += 400) {
+      await db.$transaction(toUpdate.slice(at, at + 400).map(({ id, data }) => db.campusPosting.update({ where: { id }, data })));
     }
-    for (let at = 0; at < gone.length; at += 500) {
-      await db.campusPosting.deleteMany({ where: { id: { in: gone.slice(at, at + 500) } } });
+    for (let at = 0; at < gone.length; at += 800) {
+      await db.campusPosting.deleteMany({ where: { id: { in: gone.slice(at, at + 800) } } });
     }
     const total = await db.campusPosting.count({ where: { sourceId: source.id } });
     await db.postingSource.update({ where: { id: source.id }, data: { lastSyncedAt: now, lastCheckedAt: now, firstSyncedAt: source.firstSyncedAt ?? now, rev: sourceRev, lastError: null, total, name: sourceName?.slice(0, 120) || source.name } });
@@ -125,7 +147,12 @@ export async function checkPostingSources(userId: string, staleBefore?: Date): P
     const lastLook = source.lastCheckedAt ?? source.lastSyncedAt;
     if (staleBefore && lastLook && lastLook >= staleBefore) continue;
     checked += 1;
-    const rev = source.rev == null ? null : await feishuBaseRevision(source.url);
+    const rev =
+      source.rev == null
+        ? null
+        : isBuiltinFeedUrl(source.url)
+          ? await builtinFeedRevision()
+          : await feishuBaseRevision(source.url);
     if (rev != null && rev === source.rev) {
       await db.postingSource.update({ where: { id: source.id }, data: { lastCheckedAt: new Date() } });
       continue;
