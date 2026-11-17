@@ -1,5 +1,6 @@
-import { mailTime, mailTimeOver } from "@/lib/mail-time";
+import { mailDraftMeta, mailTime, mailTimeOver } from "@/lib/mail-time";
 import { EXAM_OR_INTERVIEW, mailIsAfterthought } from "@/lib/mail-time-extract";
+import { overlapping, type Slot } from "@/lib/interview-schedule";
 import { sameMailCompany } from "@/lib/mail-company";
 
 /**
@@ -12,18 +13,28 @@ export type PendingTask = {
   note: string | null;
   mailEventDraft: unknown;
   applicationId: string | null;
+  positionId?: string | null;
+  positionLabel?: string | null;
   createdAt: Date;
 };
 
 export type PendingRow = {
   id: string;
+  applicationId: string | null;
+  positionId: string | null;
+  positionLabel: string | null;
   type: string;
   company: string | null;
   summary: string;
   subject: string | null;
   draft: unknown;
-  time: { startsAt: string; hasTime: boolean; booking: boolean } | null;
+  time: { startsAt: string; endsAt: string | null; hasTime: boolean; booking: boolean } | null;
   evidence: string | null;
+  meetingInfo: string | null;
+  accessCode: string;
+  actionRequired: string;
+  actionDeadline: string;
+  clashWith: string | null;
   /** 「预约面试成功」: a slot is booked, but the mail does not say which. */
   booked: boolean;
   /** 「具体时间另行通知」: the mail itself says no time yet, so nothing is missing. */
@@ -38,7 +49,7 @@ const MAIL_TITLE = /^([^：]+)：(.+)$/;
  * `scheduledApps`: 投递 that already have a time ahead. A mail without a time
  * for one of them is an older notice of the same round, not a gap.
  */
-export function pendingMailRows(tasks: PendingTask[], now: number, scheduledApps: Set<string>): PendingRow[] {
+export function pendingMailRows(tasks: PendingTask[], now: number, scheduledApps: Set<string>, existingSlots: Slot[] = []): PendingRow[] {
   const rows: PendingRow[] = [];
   const seenNoTime = new Set<string>();
   const seenSlots = new Set<string>();
@@ -62,15 +73,25 @@ export function pendingMailRows(tasks: PendingTask[], now: number, scheduledApps
       seenSlots.add(slot);
     }
     const lines = (task.note ?? "").split("\n").map((line) => line.trim());
+    const meta = mailDraftMeta(task.mailEventDraft, task.note);
+    const clashWith = time?.hasTime && existingSlots.length > 0 ? overlapping(existingSlots, time.startsAt, time.endsAt)[0]?.label ?? null : null;
     rows.push({
       id: task.id,
+      applicationId: task.applicationId,
+      positionId: task.positionId ?? null,
+      positionLabel: task.positionLabel ?? null,
       type: parts?.[1]?.trim() || task.title,
       company,
       summary: lines[0] ?? "",
       subject: lines.find((line) => line.startsWith("邮件主题："))?.slice(5) ?? null,
       draft: task.mailEventDraft ?? null,
-      time: time ? { startsAt: time.startsAt.toISOString(), hasTime: time.hasTime, booking: time.booking } : null,
+      time: time ? { startsAt: time.startsAt.toISOString(), endsAt: time.endsAt?.toISOString() ?? null, hasTime: time.hasTime, booking: time.booking } : null,
       evidence: time?.evidence || null,
+      meetingInfo: time?.meetingInfo ?? meta.meetingInfo,
+      accessCode: meta.accessCode,
+      actionRequired: meta.actionRequired,
+      actionDeadline: meta.actionDeadline,
+      clashWith,
       booked: !time && BOOKED.test(`${task.title} ${lines[0] ?? ""} ${lines.find((line) => line.startsWith("邮件主题：")) ?? ""}`),
       waiting: !time && WAITING.test(`${lines[0] ?? ""} ${evidenceOf(task.mailEventDraft)}`),
     });

@@ -119,21 +119,32 @@ export async function mergeDuplicateMailEvents(tx: Prisma.TransactionClient, use
   return gone.size;
 }
 
-/**
- * The applicant said a mail's sender is this company (linked or moved it): the
- * name it signs with is remembered, so the next mail from it finds the 投递.
- */
-export async function learnMailCompany(tx: Prisma.TransactionClient, userId: string, mailEventId: string, companyId: string) {
+async function rememberMailTitles(tx: Prisma.TransactionClient, companyId: string, titles: string[]) {
+  if (!titles.length) return;
   const company = await tx.company.findUnique({ where: { id: companyId }, select: { name: true, aliases: { select: { alias: true } } } });
   if (!company) return;
-  const mails = await tx.personalTask.findMany({ where: { userId, mailEventId, sourceMailKey: { not: null } }, select: { title: true } });
-  for (const mail of mails) {
-    const name = companyOf(mail.title)?.replace(/[（(][^）)]*[）)]/g, "").trim();
+  for (const title of titles) {
+    const name = companyOf(title)?.replace(/[（(][^）)]*[）)]/g, "").trim();
     if (!name || name.length < 2 || name.length > 40) continue;
     if ([company.name, ...company.aliases.map((entry) => entry.alias)].some((known) => mentions(fold(name), known) || fold(known) === fold(name))) continue;
     if ((await tx.companyAlias.findUnique({ where: { alias: name } })) || (await tx.company.findFirst({ where: { name } }))) continue;
     await tx.companyAlias.create({ data: { companyId, alias: name } });
   }
+}
+
+/**
+ * The applicant said a mail's sender is this company (linked or moved it): the
+ * name it signs with is remembered, so the next mail from it finds the 投递.
+ */
+export async function learnMailCompany(tx: Prisma.TransactionClient, userId: string, mailEventId: string, companyId: string) {
+  const mails = await tx.personalTask.findMany({ where: { userId, mailEventId, sourceMailKey: { not: null } }, select: { title: true } });
+  await rememberMailTitles(tx, companyId, mails.map((m) => m.title));
+}
+
+/** Learn company alias directly from a linked PersonalTask before it even becomes a CalendarEvent. */
+export async function learnMailCompanyFromTask(tx: Prisma.TransactionClient, userId: string, taskId: string, companyId: string) {
+  const mail = await tx.personalTask.findFirst({ where: { id: taskId, userId, sourceMailKey: { not: null } }, select: { title: true } });
+  if (mail) await rememberMailTitles(tx, companyId, [mail.title]);
 }
 
 /**

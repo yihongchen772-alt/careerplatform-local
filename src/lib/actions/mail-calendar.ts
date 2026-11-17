@@ -4,7 +4,7 @@ import { requireUser } from "@/lib/session";
 import { toActionResult, UserFacingError } from "@/lib/action-result";
 import { mailEventDraftSchema, confirmedWallTime, type MailEventDraft } from "@/lib/mail-calendar";
 import { isTerminalStage, targetStageFor, SCHEDULE_STAGES } from "@/lib/interview-schedule";
-import { learnMailCompany } from "@/lib/mail-schedule";
+import { learnMailCompany, learnMailCompanyFromTask } from "@/lib/mail-schedule";
 import { STAGE_LABELS } from "@/lib/stage-labels";
 import { RECRUIT_EVENT } from "@/lib/mail-time-extract";
 import { rowForSchedule } from "@/lib/schedule-target";
@@ -46,7 +46,7 @@ export async function confirmMailCalendar(taskId: string, draft: MailEventDraft,
     let startsAt: Date, endsAt: Date | null;
     try { startsAt = confirmedWallTime(data.localStart, data.timeZone); endsAt = data.localEnd ? confirmedWallTime(data.localEnd, data.timeZone) : null; } catch (e) { throw new UserFacingError(e instanceof Error ? e.message : "请核对日期和时区"); }
     if (endsAt && endsAt < startsAt) throw new UserFacingError("结束时间不能早于开始时间");
-    const meetingInfo = [data.location.trim(), data.meetingUrl.trim()].filter(Boolean).join(" ").slice(0, 2000) || null;
+    const meetingInfo = [data.location.trim(), data.meetingUrl.trim(), data.accessCode?.trim() ? `口令：${data.accessCode.trim()}` : ""].filter(Boolean).join(" ").slice(0, 2000) || null;
     const result = await db.$transaction(async (tx) => {
       const task = await tx.personalTask.findFirst({
         where: { id: taskId, userId: user.id },
@@ -86,6 +86,104 @@ export async function confirmMailCalendar(taskId: string, draft: MailEventDraft,
     });
     revalidatePath("/dashboard"); revalidatePath("/calendar"); revalidatePath("/applications");
     if (result.applicationId) revalidatePath(`/applications/${result.applicationId}`);
+    return result;
+  });
+}
+
+const bindTargetSchema = z.object({
+  kind: z.enum(["application", "position"]),
+  id: z.string().min(1).max(100),
+});
+
+/** Lists open applications and candidate-pool positions that a mail task can bind to. */
+export async function mailBindChoices(taskId: string) {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const task = await db.personalTask.findFirst({
+      where: { id: taskId, userId: user.id },
+      select: { applicationId: true, positionId: true },
+    });
+    if (!task) throw new UserFacingError("这条邮件待办已经不在了，请刷新");
+    const [applications, positions] = await Promise.all([
+      db.application.findMany({
+        where: { userId: user.id },
+        select: { id: true, title: true, currentStage: true, company: { select: { name: true } } },
+        orderBy: { appliedDate: "desc" },
+        take: 200,
+      }),
+      db.position.findMany({
+        where: { userId: user.id, status: { in: ["EVALUATING", "PLANNED"] }, applications: { none: {} } },
+        select: { id: true, title: true, company: { select: { name: true } } },
+        orderBy: { createdAt: "desc" },
+        take: 100,
+      }),
+    ]);
+    const open = applications.filter((app) => !isTerminalStage(app.currentStage));
+    return {
+      applicationId: task.applicationId,
+      positionId: task.positionId,
+      applications: open.map((app) => ({ id: app.id, label: `${app.company.name} · ${app.title}（${STAGE_LABELS[app.currentStage]}）` })),
+      positions: positions.map((pos) => ({ id: pos.id, label: `${pos.company.name} · ${pos.title}` })),
+    };
+  });
+}
+
+/**
+ * Manually links a recognized email task to an existing application (or promotes a
+ * candidate-pool position into a new APPLIED application) and learns the company alias.
+ */
+export async function bindMailTask(taskId: string, target: z.infer<typeof bindTargetSchema>) {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const choice = bindTargetSchema.parse(target);
+    const result = await db.$transaction(async (tx) => {
+      const task = await tx.personalTask.findFirst({
+        where: { id: taskId, userId: user.id },
+        select: { id: true, createdAt: true },
+      });
+      if (!task) throw new UserFacingError("这条邮件待办已经不在了，请刷新");
+      if (choice.kind === "application") {
+        const app = await tx.application.findFirst({
+          where: { id: choice.id, userId: user.id },
+          select: { id: true, companyId: true, currentStage: true, title: true, company: { select: { name: true } } },
+        });
+        if (!app) throw new UserFacingError("选中的投递已经不在了，请刷新");
+        if (isTerminalStage(app.currentStage)) throw new UserFacingError("这条投递已结束，请选择进行中的投递");
+        await tx.personalTask.update({ where: { id: task.id }, data: { applicationId: app.id } });
+        await learnMailCompanyFromTask(tx, user.id, task.id, app.companyId);
+        return { applicationId: app.id, label: `${app.company.name} · ${app.title}`, promoted: false };
+      }
+      const pos = await tx.position.findFirst({
+        where: { id: choice.id, userId: user.id },
+        select: { id: true, companyId: true, title: true, company: { select: { name: true } } },
+      });
+      if (!pos) throw new UserFacingError("该候选岗位已经不在了，请刷新");
+      const portals = await tx.applicationPortal.findMany({ where: { companyId: pos.companyId }, select: { id: true }, take: 2 });
+      const created = await tx.application.create({
+        data: {
+          userId: user.id,
+          companyId: pos.companyId,
+          positionId: pos.id,
+          portalId: portals.length === 1 ? portals[0].id : null,
+          title: pos.title,
+          appliedDate: task.createdAt,
+          source: "候选池邮件匹配",
+          currentStage: "APPLIED",
+          currentStageDate: task.createdAt,
+          stageHistory: { create: { stage: "APPLIED", enteredAt: task.createdAt, note: "收到相关求职邮件，由候选池转为投递" } },
+        },
+        select: { id: true },
+      });
+      await tx.position.update({ where: { id: pos.id }, data: { status: "APPLIED" } });
+      await tx.personalTask.update({ where: { id: task.id }, data: { applicationId: created.id, positionId: pos.id } });
+      await learnMailCompanyFromTask(tx, user.id, task.id, pos.companyId);
+      return { applicationId: created.id, label: `${pos.company.name} · ${pos.title}`, promoted: true };
+    });
+    revalidatePath("/dashboard");
+    revalidatePath("/calendar");
+    revalidatePath("/applications");
+    revalidatePath("/pool");
+    revalidatePath(`/applications/${result.applicationId}`);
     return result;
   });
 }

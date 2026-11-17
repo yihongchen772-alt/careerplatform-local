@@ -2,7 +2,23 @@ import { z } from "zod";
 // deadline / windowStart: a 笔试 / 测评 notice usually gives a cut-off (or an
 // open window), not a start time — 「请于 10 月 20 日 23:59 前完成」.
 // booking: the deadline is for picking an interview slot (自主预约), not an interview time.
-export const mailEventDraftSchema = z.object({ title: z.string().max(200).default(""), localStart: z.string().max(50).default(""), localEnd: z.string().max(50).default(""), timeZone: z.string().max(100).default(""), location: z.string().max(1000).default(""), meetingUrl: z.string().max(2000).default(""), evidence: z.string().max(2000).default(""), deadline: z.string().max(50).default(""), windowStart: z.string().max(50).default(""), booking: z.boolean().default(false) });
+// accessCode: 笔试/测评作答口令、准考证号或会议密码。
+// actionRequired / actionDeadline: 限期必做动作（「回复确认参加」「填写问卷」「签约截止」）及其截止时间。
+export const mailEventDraftSchema = z.object({
+  title: z.string().max(200).default(""),
+  localStart: z.string().max(50).default(""),
+  localEnd: z.string().max(50).default(""),
+  timeZone: z.string().max(100).default(""),
+  location: z.string().max(1000).default(""),
+  meetingUrl: z.string().max(2000).default(""),
+  evidence: z.string().max(2000).default(""),
+  deadline: z.string().max(50).default(""),
+  windowStart: z.string().max(50).default(""),
+  booking: z.boolean().default(false),
+  accessCode: z.string().max(120).default(""),
+  actionRequired: z.string().max(200).default(""),
+  actionDeadline: z.string().max(50).default(""),
+});
 export type MailEventDraft = z.infer<typeof mailEventDraftSchema>;
 /** Convert a user-confirmed wall time, then round-trip to reject DST gaps/invalid dates. */
 export function confirmedWallTime(local: string, zone: string): Date {

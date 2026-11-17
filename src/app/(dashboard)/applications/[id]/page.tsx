@@ -19,9 +19,10 @@ import { AUTO_NOTE_PREFIXES, STAGE_LABELS } from "@/lib/stage-labels";
 import { applicationStageStyle } from "@/lib/application-stage-style";
 import { PortalReviewBanner } from "@/components/applications/portal-review-banner";
 import { AutoProgressBanner } from "@/components/applications/auto-progress-banner";
+import { ApplicationMailTimeline } from "@/components/applications/application-mail-timeline";
 import { QuickStageMenu } from "@/components/applications/quick-stage-menu";
 import { DeleteApplicationButton } from "@/components/applications/delete-application-button";
-import { loadAutoProgressItems, loadAutoScheduleItems } from "@/lib/auto-progress";
+import { loadAutoProgressItems, loadAutoScheduleItems, loadMailScheduleConflicts } from "@/lib/auto-progress";
 import { PortalAssignmentCard } from "@/components/applications/portal-assignment-card";
 import { ApplicationPager } from "@/components/applications/application-pager";
 import { InterviewHub, type HubRow } from "@/components/applications/interview-hub";
@@ -78,7 +79,7 @@ export default async function ApplicationDetailPage({
 
   if (!application) notFound();
   application.stageHistory = orderStageHistory(application.stageHistory, application.appliedDate);
-  const [portals, autoUpdates, autoSchedules, schedule, notesCount, order] = await Promise.all([
+  const [portals, autoUpdates, autoSchedules, mailConflicts, schedule, linkedMails, notesCount, order] = await Promise.all([
     db.applicationPortal.findMany({
       where: { companyId: application.companyId },
       select: { id: true, label: true, url: true },
@@ -86,7 +87,14 @@ export default async function ApplicationDetailPage({
     }),
     loadAutoProgressItems(user.id, application.id),
     loadAutoScheduleItems(user.id, application.id),
+    loadMailScheduleConflicts(user.id, application.id),
     loadApplicationSchedule(user.id, application.id, new Date(now)),
+    db.personalTask.findMany({
+      where: { userId: user.id, applicationId: application.id, sourceMailKey: { not: null } },
+      select: { id: true, title: true, note: true, dueDate: true, mailEventDraft: true, mailEventId: true, mailAppliedAt: true, done: true, createdAt: true },
+      orderBy: { createdAt: "desc" },
+      take: 25,
+    }),
     // Same rule as 面经库: a step with notes, an interviewer or a format,
     // not just the App's own note from a mail / portal update.
     db.stageHistory.count({
@@ -157,7 +165,7 @@ export default async function ApplicationDetailPage({
         </div>
       </div>
 
-      <AutoProgressBanner items={autoUpdates} schedules={autoSchedules} showApplication={false} />
+      <AutoProgressBanner items={autoUpdates} schedules={autoSchedules} conflicts={mailConflicts} showApplication={false} />
 
       {application.portalSuggestedStage && (
         <PortalReviewBanner items={[{
@@ -200,6 +208,7 @@ export default async function ApplicationDetailPage({
       </nav>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <div className="space-y-6">
         <Card id="timeline" className="scroll-mt-20">
           <CardHeader>
             <CardTitle className="font-semibold">进展时间线</CardTitle>
@@ -235,6 +244,8 @@ export default async function ApplicationDetailPage({
             />
           </CardContent>
         </Card>
+        <ApplicationMailTimeline items={linkedMails} />
+        </div>
 
         <div className="space-y-6">
           <AddStageForm

@@ -11,7 +11,7 @@ import { CompanyNameBanner } from "@/components/applications/company-name-banner
 import { tidyCompanyName } from "@/lib/application-identity";
 import { ScanHealthBanner } from "@/components/applications/scan-health-banner";
 import { getScanHealth } from "@/lib/scan-health";
-import { loadAutoProgressItems, loadAutoScheduleItems } from "@/lib/auto-progress";
+import { loadAutoProgressItems, loadAutoScheduleItems, loadMailScheduleConflicts } from "@/lib/auto-progress";
 import { JustFinishedStrip } from "@/components/schedule/just-finished";
 import { loadJustFinished } from "@/lib/schedule-loader";
 import { applicationScheduleItems, currentStageRow, isTerminalStage, nextScheduleItem, stepView } from "@/lib/interview-schedule";
@@ -30,7 +30,7 @@ export default async function ApplicationsPage() {
   const scanHealth = await getScanHealth(user.id);
 
   const now = currentTimeMs();
-  const [applications, resumeVersions, portals, settings, autoUpdates, autoSchedules, justFinished] = await Promise.all([
+  const [applications, resumeVersions, portals, settings, autoUpdates, autoSchedules, mailConflicts, justFinished] = await Promise.all([
     db.application.findMany({
       where: { userId: user.id },
       include: {
@@ -65,6 +65,7 @@ export default async function ApplicationsPage() {
     getAppSettings(),
     loadAutoProgressItems(user.id),
     loadAutoScheduleItems(user.id),
+    loadMailScheduleConflicts(user.id),
     loadJustFinished(user.id, new Date(now)),
   ]);
   const untidyNames = [...new Set(applications.map((app) => app.company.name))].flatMap((from) => {
@@ -100,7 +101,7 @@ export default async function ApplicationsPage() {
       <ModuleTabs items={MODULE_CLUSTERS.applications} activeHref="/applications" />
 
       {scanHealth.failing && <ScanHealthBanner error={scanHealth.error} since={scanHealth.since?.toISOString() ?? null} lastOkAt={scanHealth.lastOkAt?.toISOString() ?? null} />}
-      <AutoProgressBanner items={autoUpdates} schedules={autoSchedules} />
+      <AutoProgressBanner items={autoUpdates} schedules={autoSchedules} conflicts={mailConflicts} />
       <CompanyNameBanner pairs={untidyNames} />
 
       <JustFinishedStrip items={justFinished} now={now} />

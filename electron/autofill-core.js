@@ -115,9 +115,11 @@ function scanPageFields(prefix, readOnly = false, preserveIds = false) {
   // A 「必填」 validation message or a 「0/2000」 character counter sits inside the
   // same form item as the box and is not its name. (A real label stays, even
   // when the portal marks it red.)
-  const MESSAGE_CLASS = /(?:^|[_\s-])(?:error|explain|feedback|bottombar|baritem|currentcount|counter)(?![a-z])/i;
+  const MESSAGE_CLASS = /(?:^|[_\s-])(?:error|err-msg|error-msg|explain|feedback|bottombar|baritem|currentcount|counter|Input-message)(?![a-z])/i;
+  const VALIDATION_TEXT = /^(?:此项|该项|本项)?必填(?:项)?(?:未填写|不能为空)?$|^(?:不能为空|格式不正确|格式错误)$/;
   function isValidationOrCounter(node, container) {
-    if (/^\d+\s*\/\s*\d+$|^\d+$/.test(clean(node.textContent))) return true;
+    const txt = clean(node.textContent);
+    if (/^\d+\s*\/\s*\d+$|^\d+$/.test(txt) || VALIDATION_TEXT.test(txt)) return true;
     if (node.matches?.("label, [class*='label']")) return false;
     for (let current = node; current && current !== container; current = parentOf(current)) {
       if (MESSAGE_CLASS.test((current.className || "").toString()) || current.getAttribute?.("role") === "alert") return true;
@@ -197,8 +199,8 @@ function scanPageFields(prefix, readOnly = false, preserveIds = false) {
         if (sibling.matches("input, select, textarea, button, script, style") || sibling.querySelector("input, select, textarea, button")) break;
         const text = labelText(sibling);
         // A block heading (<h3>教育经历</h3>) titles the section, not this box.
-        if (text && text.length <= 30 && /[\p{L}\p{N}]/u.test(text)) return /^(?:H[1-6]|LEGEND)$/.test(sibling.tagName) ? "" : text;
-        if (text) break;
+        if (text && text.length <= 30 && !NON_LABEL_TOKEN.test(text) && !VALIDATION_TEXT.test(text) && /[\p{L}\p{N}]/u.test(text)) return /^(?:H[1-6]|LEGEND)$/.test(sibling.tagName) ? "" : text;
+        if (text && !NON_LABEL_TOKEN.test(text) && !VALIDATION_TEXT.test(text)) break;
       }
       const parent = parentOf(node);
       if (!parent || parent === document.body) break;
@@ -252,7 +254,7 @@ function scanPageFields(prefix, readOnly = false, preserveIds = false) {
       // Another control's text (a 年 dropdown before a 月 one) is not this label.
       if (node.matches("input, select, textarea, button") || node.querySelector("input, select, textarea")) break;
       const text = clean(node.textContent);
-      if (text) return text.slice(0, 60);
+      if (text && !NON_LABEL_TOKEN.test(text) && !VALIDATION_TEXT.test(text)) return text.slice(0, 60);
       node = node.previousElementSibling;
       hops++;
     }
@@ -490,6 +492,12 @@ function scanPageFields(prefix, readOnly = false, preserveIds = false) {
     if (!box && el.readOnly && !/日期|时间|年月|生日|date|birth|calendar/i.test(`${el.getAttribute("placeholder") || ""} ${labelFor(el)}`) && PLACEHOLDER_TEXT.test(clean(el.getAttribute("placeholder")))) {
       const wrap = parentOf(el);
       if (wrap && wrap.querySelectorAll("input:not([type='hidden']), textarea").length === 1 && wrap.querySelector("svg, i, [class*='arrow' i], [class*='caret' i], [class*='icon' i]")) box = wrap;
+    }
+    // Wind-style jQuery custom dropdowns pair <input id="gender"> with #<id>-area-info ul li.
+    if (!box && el.id) {
+      const escapedId = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(el.id) : el.id;
+      const areaMenu = rootOf(el).querySelector(`#${escapedId}-area-info ul li`);
+      if (areaMenu) box = parentOf(el) || el;
     }
     if (!box) return;
     const id = assignId(box, "s");
@@ -1330,8 +1338,12 @@ async function fillFields(pairs, taskId) {
     const queries = [want];
     const bareWant = bare(want);
     if (bareWant && bareWant !== want) queries.push(bareWant);
+    // Chinese ATS school search boxes list "剑桥大学" without "英国" prefix.
+    const noForeignCountry = /^(?:英国|美国|加拿大|澳大利亚|澳洲|日本|韩国|德国|法国|瑞士|荷兰|俄罗斯|意大利|西班牙|爱尔兰|瑞典|丹麦|比利时|马来西亚|新西兰)[·\s-]*(.{2,}(?:大学|学院|University|College|Institute|School))$/i.exec(bareWant || want);
+    if (noForeignCountry?.[1] && !queries.includes(noForeignCountry[1].trim())) queries.push(noForeignCountry[1].trim());
     let hit = null;
     for (const query of queries) {
+      const bareQ = bare(query) || query;
       el.focus();
       setControlValue(el, query, nativeInputSetter);
       el.dispatchEvent(typeof InputEvent === "function" ? new InputEvent("input", { bubbles: true, inputType: "insertText", data: query }) : new Event("input", { bubbles: true }));
@@ -1340,7 +1352,7 @@ async function fillFields(pairs, taskId) {
         const items = findAll(ITEM_SEL).filter(shown);
         if (!items.length) continue;
         sawList += 100;
-        hit = items.find((item) => clean(item.textContent) === want) || items.find((item) => bare(clean(item.textContent)) === bareWant) || items.find((item) => clean(item.textContent).startsWith(bareWant)) || null;
+        hit = items.find((item) => clean(item.textContent) === query) || items.find((item) => bare(clean(item.textContent)) === bareQ) || items.find((item) => clean(item.textContent).startsWith(bareQ)) || null;
       }
       if (hit) break;
     }
@@ -1434,6 +1446,14 @@ async function fillCustomSelects(pairs, taskId) {
       const own = Array.from(list.querySelectorAll("[role='option']:not([aria-disabled='true'])")).filter(visible);
       if (own.length) return own;
     }
+    const inner = container?.matches?.("input") ? container : container?.querySelector?.("input[id]");
+    if (inner?.id) {
+      const area = findById(`${inner.id}-area-info`);
+      if (area && visible(area)) {
+        const items = Array.from(area.querySelectorAll("ul li")).filter(visible);
+        if (items.length) return items;
+      }
+    }
     const nodes = qAll(
       ".ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option:not(.ant-select-item-option-disabled), " +
         ".ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-dropdown-menu-item:not(.ant-select-dropdown-menu-item-disabled), " +
@@ -1499,6 +1519,60 @@ async function fillCustomSelects(pairs, taskId) {
     const inner = n.querySelector(".ant-select-item-option-content, .semi-select-option-text, .arco-select-option-content, .n-base-select-option__content, [data-key='sugar.select.label'], [class*='sd-Menu-content-item'] > div:first-child");
     return clean((inner || n).textContent);
   }
+  const CITY_TO_PROVINCE = {
+    南京: "江苏", 无锡: "江苏", 苏州: "江苏", 常州: "江苏", 徐州: "江苏", 南通: "江苏", 扬州: "江苏", 盐城: "江苏", 镇江: "江苏",
+    杭州: "浙江", 宁波: "浙江", 温州: "浙江", 嘉兴: "浙江", 绍兴: "浙江", 金华: "浙江", 台州: "浙江", 湖州: "浙江",
+    广州: "广东", 深圳: "广东", 珠海: "广东", 佛山: "广东", 东莞: "广东", 中山: "广东", 惠州: "广东", 江门: "广东",
+    成都: "四川", 绵阳: "四川", 德阳: "四川", 宜宾: "四川", 泸州: "四川",
+    武汉: "湖北", 襄阳: "湖北", 宜昌: "湖北", 荆州: "湖北",
+    长沙: "湖南", 株洲: "湖南", 湘潭: "湖南", 衡阳: "湖南", 岳阳: "湖南",
+    合肥: "安徽", 芜湖: "安徽", 蚌埠: "安徽", 马鞍山: "安徽",
+    郑州: "河南", 洛阳: "河南", 新乡: "河南", 南阳: "河南",
+    济南: "山东", 青岛: "山东", 烟台: "山东", 威海: "山东", 潍坊: "山东", 临沂: "山东", 淄博: "山东",
+    福州: "福建", 厦门: "福建", 泉州: "福建", 漳州: "福建", 莆田: "福建",
+    西安: "陕西", 咸阳: "陕西", 宝鸡: "陕西",
+    沈阳: "辽宁", 大连: "辽宁", 鞍山: "辽宁", 抚顺: "辽宁",
+    长春: "吉林", 吉林: "吉林", 哈尔滨: "黑龙江", 大庆: "黑龙江",
+    石家庄: "河北", 唐山: "河北", 保定: "河北", 秦皇岛: "河北", 廊坊: "河北",
+    太原: "山西", 大同: "山西", 南昌: "江西", 九江: "江西", 赣州: "江西",
+    昆明: "云南", 贵阳: "贵州", 南宁: "广西", 桂林: "广西", 柳州: "广西",
+    海口: "海南", 三亚: "海南", 兰州: "甘肃", 银川: "宁夏", 西宁: "青海", 乌鲁木齐: "新疆", 呼和浩特: "内蒙古", 拉萨: "西藏",
+    香港: "香港", 澳门: "澳门", 台北: "台湾", 高雄: "台湾",
+    北京: "北京", 上海: "上海", 天津: "天津", 重庆: "重庆",
+  };
+  const PROVINCE_NAMES = /^(?:北京市?|上海市?|天津市?|重庆市?|河北省?|山西省?|辽宁省?|吉林省?|黑龙江省?|江苏省?|浙江省?|安徽省?|福建省?|江西省?|山东省?|河南省?|湖北省?|湖南省?|广东省?|海南省?|四川省?|贵州省?|云南省?|陕西省?|甘肃省?|青海省?|台湾省?|内蒙古(?:自治区)?|广西(?:壮族自治区)?|西藏(?:自治区)?|宁夏(?:回族自治区)?|新疆(?:维吾尔自治区)?|香港(?:特别行政区)?|澳门(?:特别行政区)?)$/;
+  function parseMoneyValue(raw) {
+    const m = /(\d+(?:\.\d+)?)\s*(k|千|w|万)?/i.exec(String(raw || "").replace(/,/g, ""));
+    if (!m) return null;
+    const n = Number(m[1]);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    const unit = (m[2] || "").toLowerCase();
+    return unit === "w" || unit === "万" ? n * 10000 : unit === "k" || unit === "千" ? n * 1000 : n < 100 ? n * 1000 : n;
+  }
+  function pickSalaryOption(options, value) {
+    const valText = String(value || "").trim();
+    if (!/\d/.test(valText)) return null;
+    const rangeTarget = /(\d+(?:\.\d+)?\s*(?:k|千|w|万)?)\s*[-~～至到]\s*(\d+(?:\.\d+)?\s*(?:k|千|w|万)?)/i.exec(valText);
+    const num = rangeTarget ? (parseMoneyValue(rangeTarget[1]) + parseMoneyValue(rangeTarget[2])) / 2 : parseMoneyValue(valText);
+    if (!num) return null;
+    for (const o of options) {
+      const t = optionText(o).replace(/,/g, "");
+      if (!/(?:k|千|万|元|以上|以下|[-~～])/.test(t)) continue;
+      const range = /(\d+(?:\.\d+)?\s*(?:k|千|w|万)?)\s*[-~～至到]\s*(\d+(?:\.\d+)?\s*(?:k|千|w|万)?)/i.exec(t);
+      if (range) {
+        const lo = parseMoneyValue(range[1]);
+        const hi = parseMoneyValue(range[2]);
+        if (lo && hi && num >= lo && num <= hi) return o;
+      }
+      const single = /(\d+(?:\.\d+)?\s*(?:k|千|w|万)?)/i.exec(t);
+      if (single) {
+        const bound = parseMoneyValue(single[1]);
+        if (bound && /以下|低于|小于/.test(t) && num <= bound) return o;
+        if (bound && /以上|大于|高于/.test(t) && num >= bound) return o;
+      }
+    }
+    return null;
+  }
   function pickOne(options, value) {
     const v = clean(value);
     const exact = options.find((o) => optionText(o) === v);
@@ -1508,7 +1582,25 @@ async function fillCustomSelects(pairs, taskId) {
     if (new Set(fuzzy.map(optionText)).size === 1) return fuzzy[0];
     // 「全日制」在「全国普通高等院校全日制 / …非全日制」里：选没有否定它的那个。
     const plain = /^[非不]/.test(v) ? [] : fuzzy.filter((o) => !optionText(o).includes(`非${v}`) && !optionText(o).includes(`不${v}`));
-    return new Set(plain.map(optionText)).size === 1 ? plain[0] : null;
+    if (new Set(plain.map(optionText)).size === 1) return plain[0];
+    // Paired province + city cascader: province list needs province from city name; municipality child offers 市辖区.
+    if (options.filter((o) => PROVINCE_NAMES.test(optionText(o))).length >= 8) {
+      const strippedCity = v.replace(/[市省区县]$/g, "");
+      const prov = CITY_TO_PROVINCE[strippedCity] || Object.entries(CITY_TO_PROVINCE).find(([city]) => v.includes(city))?.[1];
+      if (prov) {
+        const hit = options.find((o) => optionText(o).startsWith(prov));
+        if (hit) return hit;
+      }
+    }
+    if (/^(?:北京市?|上海市?|天津市?|重庆市?)$/.test(v) && options.length <= 5) {
+      const child = options.find((o) => /^(?:市辖区|城区|县)$/.test(optionText(o)));
+      if (child) return child;
+    }
+    if (/(?:k|千|万|元|\d{3,})/i.test(v)) {
+      const sal = pickSalaryOption(options, v);
+      if (sal) return sal;
+    }
+    return null;
   }
   // `alternatives` carries synonyms such as 学士 → 本科 for degree dropdowns.
   function pick(options, p) {
@@ -1833,7 +1925,7 @@ async function fillCustomSelects(pairs, taskId) {
     open(container);
     await sleep(300);
     assertActive();
-    let options = await waitFor(() => visibleOptions(container), 600);
+    let options = await waitFor(() => visibleOptions(container), container.closest(".cascader-plugins-wrap") ? 900 : 600);
     if (hasExistingValue(container) && !siteDefault()) { close(); skipped.push(p.id); continue; }
     if (!options.length && container.matches(".phoenix-select") && areaPanel()) {
       let ok = false;
@@ -1884,10 +1976,14 @@ async function fillCustomSelects(pairs, taskId) {
     // Searchable selects (and virtual lists that only render a screenful):
     // type the value to narrow the list, then look again.
     const searchInput = container.querySelector("input:not([readonly]):not([type='hidden'])");
-    if (!target && searchInput) {
+    const maySearch = !offeredAtFirst.length || offeredAtFirst.length > 20 || /学校|学院|院校|专业|城市|地区|国籍|民族|地点|籍贯|生源|户口|school|major|city/i.test(p.label || "");
+    if (!target && searchInput && maySearch) {
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
       const bareQuery = clean(p.value).replace(/[（(][^）)]*[）)]/g, "").trim();
-      const searchQueries = bareQuery && bareQuery !== clean(p.value) ? [String(p.value), bareQuery] : [String(p.value)];
+      const searchQueries = [String(p.value)];
+      if (bareQuery && bareQuery !== clean(p.value)) searchQueries.push(bareQuery);
+      const noForeignCountry = /^(?:英国|美国|加拿大|澳大利亚|澳洲|日本|韩国|德国|法国|瑞士|荷兰|俄罗斯|意大利|西班牙|爱尔兰|瑞典|丹麦|比利时|马来西亚|新西兰)[·\s-]*(.{2,}(?:大学|学院|University|College|Institute|School))$/i.exec(bareQuery || clean(p.value));
+      if (noForeignCountry?.[1] && !searchQueries.includes(noForeignCountry[1].trim())) searchQueries.push(noForeignCountry[1].trim());
       for (const query of searchQueries) {
         const prev = searchInput.value;
         setter.call(searchInput, query);
@@ -1896,13 +1992,13 @@ async function fillCustomSelects(pairs, taskId) {
         await sleep(450);
         assertActive();
         options = await waitFor(() => visibleOptions(container), 600);
-        target = pick(options, p);
+        target = pick(options, { ...p, value: query });
         // 学校、专业、城市列表可能是联网远程搜的，网慢时再多等一会儿。
         for (let waited = 0; !target && container.matches("[class*='sd-Select-container'], .ud__select__selector, .ant-select, .atsx-select, .el-select, .phoenix-select") && waited < 2400; waited += 300) {
           await sleep(300);
           assertActive();
           options = visibleOptions(container);
-          target = pick(options, p);
+          target = pick(options, { ...p, value: query });
         }
         if (target) break;
       }
@@ -1937,6 +2033,10 @@ async function fillCustomSelects(pairs, taskId) {
       if (!target) {
         setter.call(searchInput, "");
         searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+        await sleep(120);
+        assertActive();
+        const restored = visibleOptions(container);
+        if (restored.length) options = restored;
       }
     }
     if (target) {
@@ -2891,6 +2991,7 @@ function experienceFieldKind(haystack, inSection, bare = "") {
   if (!inSection) return null;
   if (/部门|department/i.test(haystack)) return "department";
   if (/公司|单位|企业|机构|company|employer|organi[sz]ation/i.test(haystack)) return ABOUT_EMPLOYER.test(haystack) ? null : "company";
+  if (/^(?:岗位|职位|工作|任职|经历)(?:类型|类别|性质)$|^employment[\s_-]*type$/i.test(bare)) return "jobType";
   if (/职位|岗位|职务|角色|title|position|role/i.test(haystack)) return "role";
   if (START_LABEL.test(haystack) && !NOT_A_DATE.test(haystack)) return "start";
   if (END_LABEL.test(haystack) && !NOT_A_DATE.test(haystack)) return "end";
@@ -3306,14 +3407,22 @@ function repeatFieldValue(field, info, profile) {
   if (info.group === "project") {
     const project = profile.projects?.[info.row];
     if (!project) return null;
-    const value = ["start", "end", "range"].includes(info.kind) ? rowDateValue(field, info.kind, project) : info.kind === "summary"
+    const rawVal = info.kind === "summary"
       ? [project.name, project.role, project.description, project.responsibilities].filter(Boolean).join("；")
-      : project[info.kind];
+      : info.kind === "responsibilities" && !project.responsibilities && info.fallbackDescription
+        ? project.description
+        : project[info.kind];
+    const value = ["start", "end", "range"].includes(info.kind) ? rowDateValue(field, info.kind, project) : rawVal;
     return matchFieldOption(field, value);
   }
   if (info.group === "experience") {
     const experience = (profile.experiences || [])[info.row];
-    return experience ? matchFieldOption(field, info.kind === "summary" ? [experience.company, experience.role, [experience.start, experience.end].filter(Boolean).join(" 至 "), experience.description].filter(Boolean).join("；") : rowDateValue(field, info.kind, experience)) : null;
+    if (!experience) return null;
+    if (info.kind === "jobType") {
+      const text = `${field.section || ""} ${experience.company || ""} ${experience.role || ""} ${experience.description || ""}`;
+      return matchFieldOption(field, /实习|intern/i.test(text) ? "实习" : "全职");
+    }
+    return matchFieldOption(field, info.kind === "summary" ? [experience.company, experience.role, [experience.start, experience.end].filter(Boolean).join(" 至 "), experience.description].filter(Boolean).join("；") : rowDateValue(field, info.kind, experience));
   }
   const rows = educationRows(profile);
   // "本科院校" must never receive the 硕士 row just because it came first.
@@ -3895,9 +4004,42 @@ function repeatFieldGoesToAi(info, profile) {
   // A missing fact is not a prompt to invent an experience. Open questions
   // remain eligible for AI in their separate pass.
   if (info.unmatched || info.record || info.group === "award" || info.group === "campus" || info.group === "skill" || info.group === "language") return false;
+  if (info.group === "project" && info.kind === "responsibilities") {
+    const row = (profile.projects || [])[info.row];
+    return !!(row && !row.responsibilities && row.description);
+  }
   if (["description", "responsibilities", "summary", "link", "teamSize"].includes(info.kind)) return false;
   const saved = info.group === "education" ? educationRows(profile) : info.group === "experience" ? profile.experiences || [] : profile.projects || [];
   return saved.length === 0 && info.row === 0 && !info.degreeHint;
+}
+
+const SCHOOL_TIER_SYNONYMS = {
+  海外: ["海外院校", "海外高校", "境外院校", "国外院校", "国外高校", "QS100", "QS前100", "海外", "留学"],
+  985: ["985", "985高校", "985院校", "985工程", "985/211", "985/211/双一流", "双一流"],
+  211: ["211", "211高校", "211院校", "211工程", "双一流"],
+  双一流: ["双一流", "双一流院校", "双一流高校", "一流大学"],
+};
+
+function customValueAlternatives(value, kind = "", field = null) {
+  const v = String(value || "").trim();
+  if (!v) return [];
+  const out = [...(field ? degreeAlternatives(field, v) || [] : []), ...yesNoAlternatives(v)];
+  if (kind === "mode") {
+    const extras = /海外|留学|境外|国外/i.test(v)
+      ? ["海外留学", "海外留学生", "境外学历", "国外学历", "留学归国", "海外", "留学", "全日制", "统招全日制", "普通全日制", "全国普通高等院校全日制"]
+      : ["全日制", "统招全日制", "普通全日制", "全国普通高等院校全日制", "普通高等教育"];
+    for (const item of extras) if (item !== v && !out.includes(item)) out.push(item);
+  }
+  if (kind === "jobType") {
+    const extras = /实习|intern/i.test(v) ? ["实习", "实习生", "兼职/实习"] : ["全职", "正式", "正职", "社招/全职"];
+    for (const item of extras) if (item !== v && !out.includes(item)) out.push(item);
+  }
+  for (const [key, list] of Object.entries(SCHOOL_TIER_SYNONYMS)) {
+    if (v.includes(key) || /境外|国外|qs/i.test(v) && key === "海外") {
+      for (const item of list) if (item !== v && !out.includes(item)) out.push(item);
+    }
+  }
+  return out;
 }
 
 // 年 / 月 / 日 一个下拉一段：Moka 的月份写 1、2 …，别家写 01、1月。
@@ -4760,10 +4902,21 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       }
       // Saved 网申资料 rows are the source of truth for repeated blocks. A
       // remembered "学校" is one value and would otherwise fill every row.
-      const structured = repeat ? repeatFieldValue(field, repeat, profile) : null;
+      const blockHasDescription = repeat?.group === "project" && repeat.kind === "responsibilities"
+        ? fields.some((other) => repeats.get(other.id)?.blockKey === repeat.blockKey && repeats.get(other.id)?.kind === "description")
+        : true;
+      const repeatCtx = repeat?.group === "project" && repeat.kind === "responsibilities" && !blockHasDescription
+        ? { ...repeat, fallbackDescription: true }
+        : repeat;
+      const structured = repeatCtx ? repeatFieldValue(field, repeatCtx, profile) : null;
       if (structured) {
         const row = repeat.record || (repeat.degreeHint ? educationRows(profile).find((item) => degreeLevel(item.degree) === repeat.degreeHint) : rowsForGroup(profile, repeat.group)[repeat.row]);
-        pairs.push({ id: field.id, value: structured, source: "profile", label: field.label, tag: field.tag, ref: repeat.all && (repeat.summaryText || !rowsForGroup(profile, repeat.group).length) ? repeat.summaryRef || `summary:${repeat.group}` : row && !repeat.all ? `${recordReference(repeat.group, row)}:${repeat.kind}` : "", alternatives: repeat.group === "skill" && repeat.kind === "level" ? skillLevelAlternatives(structured) : degreeAlternatives(field, structured) });
+        const alts = repeat.group === "skill" && repeat.kind === "level"
+          ? skillLevelAlternatives(structured)
+          : field.tag === "custom-select" || field.tag === "select"
+            ? customValueAlternatives(structured, repeat.kind, field)
+            : degreeAlternatives(field, structured);
+        pairs.push({ id: field.id, value: structured, source: "profile", label: field.label, tag: field.tag, ref: repeat.all && (repeat.summaryText || !rowsForGroup(profile, repeat.group).length) ? repeat.summaryRef || `summary:${repeat.group}` : row && !repeat.all ? `${recordReference(repeat.group, row)}:${repeat.kind}` : "", alternatives: alts });
         continue;
       }
       const rememberedValue = repeat && (repeat.group !== "education" || repeat.row > 0 || repeat.degreeHint || repeat.unmatched) ? null : matchRememberedField(field, profile.fieldMemories, pageContext);
@@ -4936,7 +5089,19 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
             const field = fields.find((f) => f.id === a.id);
             if (!field || !kind) continue;
             seenAnswers.add(a.id);
-            pairs.push({ id: a.id, value: a.answer, source: a.remembered ? "remembered" : "ai", label: field.label || field.placeholder || field.name, tag: field.tag, answerId: a.answerId, reused: a.reused, remembered: a.remembered });
+            pairs.push({
+              id: a.id,
+              value: a.answer,
+              source: a.remembered ? "remembered" : "ai",
+              label: field.label || field.placeholder || field.name,
+              tag: field.tag,
+              answerId: a.answerId,
+              reused: a.reused,
+              remembered: a.remembered,
+              ...(field.tag === "custom-select" || field.tag === "select"
+                ? { alternatives: customValueAlternatives(a.answer, "", field) }
+                : {}),
+            });
           }
         } else {
           const body = await answerRes.json().catch(() => ({}));

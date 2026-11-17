@@ -4,7 +4,7 @@ import { Copy, ExternalLink, Video } from "lucide-react";
 import { toast } from "sonner";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { extractMeetingNumber, extractMeetingUrl } from "@/lib/interview-schedule";
+import { extractAccessCode, extractMeetingNumber, extractMeetingUrl } from "@/lib/interview-schedule";
 import { copyText as writeClipboard } from "@/lib/copy-text";
 
 /**
@@ -25,6 +25,7 @@ export function MeetingActions({ info, size = "sm", className, compact = false, 
   if (!info?.trim()) return null;
   const url = extractMeetingUrl(info);
   const number = extractMeetingNumber(info);
+  const accessCode = extractAccessCode(info);
   const copyText = number ?? info.trim();
   const height = size === "xs" ? "h-6 px-2 text-xs" : "h-7 px-2.5 text-xs";
   return (
@@ -34,6 +35,24 @@ export function MeetingActions({ info, size = "sm", className, compact = false, 
           {exam ? <ExternalLink className="size-3.5" /> : <Video className="size-3.5" />}
           {exam ? "打开测评" : "进入会议"}
         </a>
+      )}
+      {accessCode && (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className={cn("gap-1 rounded-full", height)}
+          title={`复制口令：${accessCode}`}
+          onClick={() => {
+            void writeClipboard(accessCode).then(
+              () => toast.success(`已复制口令 ${accessCode}`),
+              () => toast.error("复制失败，请手动选中复制")
+            );
+          }}
+        >
+          <Copy className="size-3.5" />
+          {compact ? `口令 ${accessCode}` : `复制口令 ${accessCode}`}
+        </Button>
       )}
       {(copy || !url) && <Button
         type="button"

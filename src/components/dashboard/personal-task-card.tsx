@@ -231,7 +231,7 @@ function TaskRow({
 
 // Tasks made from a mail carry the mail's subject / sender / inbox below the
 // summary; on the card only the summary shows, the rest on hover.
-const MAIL_META = /^(?:邮件主题|来自|收件箱|发件人)[：:]/;
+const MAIL_META = /^(?:邮件主题|来自|收件箱|发件人|待办|口令)[：:]/;
 
 function TaskNote({ note }: { note: string }) {
   const lines = note.split("\n").map((line) => line.trim());

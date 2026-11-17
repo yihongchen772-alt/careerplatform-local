@@ -27,7 +27,7 @@ import { duplicateImportedTaskIds } from "@/lib/inbox-identity";
 import { AutoProgressBanner } from "@/components/applications/auto-progress-banner";
 import { ScanHealthBanner } from "@/components/applications/scan-health-banner";
 import { getScanHealth } from "@/lib/scan-health";
-import { loadAutoProgressItems, loadAutoScheduleItems } from "@/lib/auto-progress";
+import { loadAutoProgressItems, loadAutoScheduleItems, loadMailScheduleConflicts } from "@/lib/auto-progress";
 import { UpcomingSchedule } from "@/components/schedule/upcoming-schedule";
 import { JustFinishedStrip } from "@/components/schedule/just-finished";
 import { AgentBriefCard } from "@/components/dashboard/agent-brief-card";
@@ -48,9 +48,10 @@ export default async function DashboardPage() {
   const now = currentTimeMs();
   // 待核对 captures that fill a blank in 网申资料 are learned here too (with 撤销).
   const backlog = await db.$transaction((tx) => learnFromBacklog(tx, user.id)).catch((error) => { console.error("[backlog]", error); return []; }).then(() => loadBacklogNotices(user.id));
-  const [autoUpdates, autoSchedules, upcoming, justFinished, briefs, inferred] = await Promise.all([
+  const [autoUpdates, autoSchedules, mailConflicts, upcoming, justFinished, briefs, inferred] = await Promise.all([
     loadAutoProgressItems(user.id),
     loadAutoScheduleItems(user.id),
+    loadMailScheduleConflicts(user.id),
     loadUpcomingSchedule(user.id, new Date(now)),
     loadJustFinished(user.id, new Date(now)),
     loadBriefState(user.id, new Date(now)),
@@ -216,7 +217,7 @@ export default async function DashboardPage() {
       <InferredProfileBanner due={inferred.due} initial={inferred.record} />
       <LearnedBacklogBanner notices={backlog} showLink />
       {scanHealth.failing && <ScanHealthBanner error={scanHealth.error} since={scanHealth.since?.toISOString() ?? null} lastOkAt={scanHealth.lastOkAt?.toISOString() ?? null} />}
-      <AutoProgressBanner items={autoUpdates} schedules={autoSchedules} />
+      <AutoProgressBanner items={autoUpdates} schedules={autoSchedules} conflicts={mailConflicts} />
 
       <JustFinishedStrip items={justFinished} now={now} />
 

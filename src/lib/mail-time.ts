@@ -15,6 +15,9 @@ export type MailTime = {
   booking: boolean;
   /** A cut-off with its clock time (「11 月 11 日 17:00 前」): the moment it is over. */
   deadlineAt?: Date | null;
+  accessCode?: string;
+  actionRequired?: string;
+  actionDeadline?: string;
 };
 
 const LOCAL_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
@@ -34,7 +37,10 @@ export function mailTime(draft: unknown, fallbackZone = systemTimeZone()): MailT
   const parsed = mailEventDraftSchema.safeParse(draft);
   if (!parsed.success) return null;
   const value = parsed.data;
-  const meetingInfoOf = (extra = "") => [value.location.trim(), value.meetingUrl.trim(), extra].filter(Boolean).join(" ").slice(0, 2000) || null;
+  const code = value.accessCode.trim();
+  const baseText = `${value.location} ${value.meetingUrl}`;
+  const codeNote = code && !baseText.includes(code) ? `口令：${code}` : "";
+  const meetingInfoOf = (extra = "") => [value.location.trim(), value.meetingUrl.trim(), codeNote, extra].filter(Boolean).join(" ").slice(0, 2000) || null;
   if (!LOCAL_TIME.test(value.localStart)) {
     // A 笔试 / 测评 with a cut-off (and maybe an opening day) instead of a slot:
     // a date-only step, its window from windowStart to the deadline.
@@ -67,6 +73,9 @@ export function mailTime(draft: unknown, fallbackZone = systemTimeZone()): MailT
       title: value.title.trim(),
       evidence: value.evidence.trim(),
       booking: value.booking,
+      ...(code ? { accessCode: code } : {}),
+      ...(value.actionRequired.trim() ? { actionRequired: value.actionRequired.trim() } : {}),
+      ...(value.actionDeadline.trim() ? { actionDeadline: value.actionDeadline.trim() } : {}),
     };
   }
   const zone = isValidTimeZone(value.timeZone.trim()) ? value.timeZone.trim() : fallbackZone;
@@ -85,7 +94,59 @@ export function mailTime(draft: unknown, fallbackZone = systemTimeZone()): MailT
       endsAt = null;
     }
   }
-  return { startsAt, endsAt, hasTime: true, timeZone: zone, meetingInfo: meetingInfoOf(), title: value.title.trim(), evidence: value.evidence.trim(), booking: false };
+  return {
+    startsAt,
+    endsAt,
+    hasTime: true,
+    timeZone: zone,
+    meetingInfo: meetingInfoOf(),
+    title: value.title.trim(),
+    evidence: value.evidence.trim(),
+    booking: false,
+    ...(code ? { accessCode: code } : {}),
+    ...(value.actionRequired.trim() ? { actionRequired: value.actionRequired.trim() } : {}),
+    ...(value.actionDeadline.trim() ? { actionDeadline: value.actionDeadline.trim() } : {}),
+  };
+}
+
+/** Parses an action deadline string (YYYY-MM-DD or YYYY-MM-DDTHH:mm) into a Date for PersonalTask.dueDate. */
+export function parseActionDeadlineDate(raw: string | null | undefined, fallbackZone = systemTimeZone()): Date | null {
+  const clean = (raw ?? "").trim();
+  const match = DAY.exec(clean);
+  if (!match) return null;
+  if (match[2]) {
+    try {
+      return confirmedWallTime(`${match[1]}T${match[2]}`, isValidTimeZone(fallbackZone) ? fallbackZone : "UTC");
+    } catch {
+      return utcDay(match[1]);
+    }
+  }
+  return utcDay(match[1]);
+}
+
+/**
+ * Extracts passcode / action item metadata from mailEventDraft and/or the
+ * task note lines appended by inbox-scan (`待办：...`, `口令：...`).
+ */
+export function mailDraftMeta(
+  draft: unknown,
+  note?: string | null,
+): { accessCode: string; actionRequired: string; actionDeadline: string; meetingInfo: string | null } {
+  const parsed = mailEventDraftSchema.safeParse(draft);
+  const val = parsed.success ? parsed.data : null;
+  const noteLines = (note ?? "").split("\n").map((l) => l.trim());
+  const codeLine = noteLines.find((l) => l.startsWith("口令："))?.slice(3).trim() ?? "";
+  const actionLine = noteLines.find((l) => l.startsWith("待办："))?.slice(3).trim() ?? "";
+  const actionMatch = actionLine ? /^(.*?)(?:（截止\s*(.+?)）)?$/.exec(actionLine) : null;
+  const accessCode = val?.accessCode.trim() || codeLine;
+  const actionRequired = val?.actionRequired.trim() || actionMatch?.[1]?.trim() || "";
+  const actionDeadline = val?.actionDeadline.trim() || actionMatch?.[2]?.trim() || val?.deadline.trim() || "";
+  const meetingInfo =
+    [val?.location.trim(), val?.meetingUrl.trim(), accessCode ? `口令：${accessCode}` : ""]
+      .filter(Boolean)
+      .join(" ")
+      .slice(0, 2000) || null;
+  return { accessCode, actionRequired, actionDeadline, meetingInfo };
 }
 
 /** The last moment a mail time still matters: the slot's start, or the end of a deadline's last day. */

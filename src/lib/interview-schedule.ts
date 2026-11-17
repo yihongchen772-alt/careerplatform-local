@@ -100,6 +100,15 @@ export function extractMeetingNumber(text: string | null | undefined): string | 
   return match ? match[1].replace(/[\s-]+/g, " ").trim() : null;
 }
 
+/** 考试口令 / 准考证号 / 入会密码，支持一键复制进作答平台。 */
+export function extractAccessCode(text: string | null | undefined): string | null {
+  if (!text) return null;
+  const match = /(?:考试口令|作答口令|测评口令|口令|考试码|作答码|测评码|通行码|通行证号|准考证号|入会密码|会议密码|密码|Passcode|Access\s*Code)[：:\s]*([A-Za-z0-9\-_]{3,28})/i.exec(text);
+  if (!match) return null;
+  const token = match[1].trim();
+  return /^(?:19|20)\d{2}$/.test(token) ? null : token;
+}
+
 // Where a meeting link goes, by its address (or the name written beside it).
 const MEETING_PLATFORMS: [RegExp, string][] = [
   [/webex\.com|webex/i, "Webex 会议"],
@@ -127,19 +136,22 @@ export function meetingSummary(info: string | null | undefined, exam = false): s
   if (!text) return "";
   const url = extractMeetingUrl(text);
   const digits = extractMeetingNumber(text);
+  const code = extractAccessCode(text);
   // 「834753287」 reads as 834 753 287, the way meeting apps show it.
   const number = digits && /^\d{9}$/.test(digits) ? digits.replace(/(\d{3})(?=\d)/g, "$1 ") : digits;
   const platform = MEETING_PLATFORMS.find(([pattern]) => pattern.test(url ?? "") || pattern.test(text))?.[1];
   const rest = text
     .replace(/https?:\/\/[^\s<>"'，。；、！？）】」『』（【「]+/gi, " ")
     .replace(/(?:会议号|会议 ID|会议ID|Meeting ID|入会码)[：:\s]*[0-9][0-9 \-]{5,16}[0-9]/gi, " ")
+    .replace(/(?:考试口令|作答口令|测评口令|口令|考试码|作答码|测评码|通行码|通行证号|准考证号|入会密码|会议密码|Passcode|Access\s*Code)[：:\s]*[A-Za-z0-9\-_]{3,28}/gi, " ")
     .replace(/(?:Webex|腾讯会议|飞书|钉钉|Zoom|牛客|北森)(?:会议|视频面试)?/gi, " ")
     // 「截止 24:00」 keeps the colon a clock needs.
     .replace(/(?<!\d)[:：]|[:：](?!\d)/g, " ")
     .replace(/[\s·,，;；|]+/g, " ")
     .replace(/^[\s()（）【】]+|[\s()（）【】]+$/g, "")
     .trim();
-  const head = [platform ?? (url ? (exam ? "测评链接" : "会议链接") : ""), number].filter(Boolean).join(" ");
+  const base = [platform ?? (url ? (exam ? "测评链接" : "会议链接") : ""), number].filter(Boolean).join(" ");
+  const head = [base, code ? `口令 ${code}` : ""].filter(Boolean).join(" · ");
   const tail = rest.length > 24 ? `${rest.slice(0, 24)}…` : rest;
   return [head, tail].filter(Boolean).join(" · ");
 }
@@ -551,4 +563,58 @@ export function stepView(row: StepRow & { id: string }, now: number): StepView |
   if (state.phase === "waiting") return { rowId: row.id, stage: row.stage, phase: "waiting", text: waitingText(row.stage, state), followUp: state.followUp, completed: !!row.completedAt };
   if (state.phase === "due") return { rowId: row.id, stage: row.stage, phase: "due", text: `截止已过 ${state.daysPast} 天 · 做完了吗？`, followUp: false, completed: false };
   return { rowId: row.id, stage: row.stage, phase: "open", text: "", followUp: false, completed: false };
+}
+
+export type MailNextAction = { label: string; href: string };
+
+/**
+ * Contextual next-step shortcuts derived from an email's recognized stage/kind
+ * so interview, OA/assessment, or offer notices lead straight into preparation tools.
+ */
+export function nextActionsForMail(input: {
+  text: string;
+  stage?: ApplicationStage | null;
+  applicationId?: string | null;
+  companyName?: string | null;
+}): MailNextAction[] {
+  const { text, stage, applicationId, companyName } = input;
+  const actions: MailNextAction[] = [];
+  const isOffer = stage === "OFFER" || /offer|录用意向|录用通知|待签约|三方/i.test(text);
+  const isInterview =
+    stage === "AI_INTERVIEW" ||
+    stage === "INTERVIEW_1" ||
+    stage === "INTERVIEW_2" ||
+    stage === "INTERVIEW_3" ||
+    stage === "HR_INTERVIEW" ||
+    (!isOffer && kindFromText(text) === "interview");
+  const isAssessment = stage === "ASSESSMENT" || (!isOffer && !isInterview && /性格|测评|assessment|性格测试/i.test(text));
+  const isExam = stage === "OA" || (!isOffer && !isInterview && kindFromText(text) === "exam");
+
+  if (isOffer) {
+    if (applicationId) actions.push({ label: "补充薪资对比", href: `/applications/${applicationId}#offer` });
+    actions.push({ label: "Offer 横向对比", href: "/compare" });
+    return actions.slice(0, 2);
+  }
+  if (isInterview) {
+    if (applicationId) actions.push({ label: "备面攻略", href: `/applications/${applicationId}#interview-qa` });
+    actions.push({
+      label: "模拟面试",
+      href: applicationId ? `/mock-interview?application=${applicationId}` : "/mock-interview",
+    });
+    if (!applicationId && companyName) {
+      actions.push({ label: "查公司面经", href: `/interviews?company=${encodeURIComponent(companyName)}` });
+    }
+    return actions.slice(0, 2);
+  }
+  if (isAssessment) {
+    actions.push({ label: "性格测评准备", href: "/personality" });
+    if (applicationId) actions.push({ label: "投递资料", href: `/applications/${applicationId}#materials` });
+    return actions.slice(0, 2);
+  }
+  if (isExam) {
+    actions.push({ label: "笔试题库", href: "/question-banks" });
+    if (applicationId) actions.push({ label: "投递资料", href: `/applications/${applicationId}#materials` });
+    return actions.slice(0, 2);
+  }
+  return actions;
 }

@@ -4,7 +4,43 @@
  * 投递 says 「德赛西威」: a company counts when its name, or one of its aliases,
  * appears in the subject, the company the AI read, or the top of the body.
  */
-export type MatchableApplication = { id: string; companyName: string; aliases?: string[]; title: string };
+export type MatchableApplication = { id: string; companyName: string; aliases?: string[]; careerUrls?: string[]; title: string };
+
+const SHARED_MAIL_OR_ATS_DOMAINS = new Set([
+  "qq.com", "foxmail.com", "163.com", "126.com", "yeah.net", "sina.com", "sohu.com",
+  "gmail.com", "outlook.com", "hotmail.com", "live.com", "icloud.com", "me.com", "yahoo.com", "proton.me", "protonmail.com",
+  "mokahr.com", "beisen.com", "zhiye.com", "italent.cn", "dayee.com", "hotjob.cn",
+  "feishu.cn", "larksuite.com", "dingtalk.com", "nowcoder.com", "lagou.com", "liepin.com",
+  "zhaopin.com", "51job.com", "bosszhipin.com", "zhipin.com", "shixiseng.com", "wjx.cn", "mikecrm.com",
+  "greenhouse.io", "lever.co", "workday.com", "myworkdayjobs.com", "ashbyhq.com", "smartrecruiters.com", "icims.com",
+]);
+
+const MULTI_PART_TLDS = new Set(["com.cn", "org.cn", "net.cn", "edu.cn", "gov.cn", "co.uk", "co.jp", "com.hk", "com.tw"]);
+
+export function rootDomainFromHost(rawHost: string): string | null {
+  const host = rawHost.trim().toLowerCase().replace(/^\.+|\.+$/g, "").replace(/^www\./, "");
+  if (!host || !host.includes(".")) return null;
+  const parts = host.split(".").filter(Boolean);
+  if (parts.length < 2) return null;
+  const lastTwo = parts.slice(-2).join(".");
+  const root = parts.length >= 3 && MULTI_PART_TLDS.has(lastTwo) ? parts.slice(-3).join(".") : lastTwo;
+  return SHARED_MAIL_OR_ATS_DOMAINS.has(root) ? null : root;
+}
+
+export function senderRootDomain(from: string | null | undefined): string | null {
+  if (!from) return null;
+  const match = /@([a-z0-9.-]+\.[a-z]{2,})/i.exec(from);
+  return match ? rootDomainFromHost(match[1]) : null;
+}
+
+export function urlRootDomain(rawUrl: string | null | undefined): string | null {
+  if (!rawUrl) return null;
+  try {
+    return rootDomainFromHost(new URL(rawUrl).hostname);
+  } catch {
+    return null;
+  }
+}
 
 export const fold = (value: string) => value.normalize("NFKC").toLowerCase().replace(/\s+/g, "");
 
@@ -46,7 +82,7 @@ export function correctMailApplication(mail: { subject: string; summary?: string
 const GENERIC_ENDING = /^(?:\(.*|[!。.·]+|股份.*|集团.*|有限.*|公司|科技.*|技术.*|中国|电子.*|微电子.*|控股.*|[a-z][a-z&.\-]*)$/;
 
 export function matchMailApplication(
-  mail: { subject: string; company?: string | null; body?: string },
+  mail: { subject: string; company?: string | null; body?: string; from?: string | null },
   apps: MatchableApplication[]
 ): string | null {
   const haystack = fold(`${mail.subject} ${mail.company ?? ""} ${(mail.body ?? "").slice(0, 400)}`);
@@ -63,6 +99,13 @@ export function matchMailApplication(
     for (const app of apps) {
       const name = fold(app.companyName);
       if (name.startsWith(signed) && GENERIC_ENDING.test(name.slice(signed.length))) hits.push({ app, length: signed.length });
+    }
+  }
+  // Sender corporate domain fallback against Company.careerUrl (ignoring webmail/ATS hosts).
+  const senderRoot = !hits.length ? senderRootDomain(mail.from) : null;
+  if (senderRoot) {
+    for (const app of apps) {
+      if (app.careerUrls?.some((u) => urlRootDomain(u) === senderRoot)) hits.push({ app, length: senderRoot.length });
     }
   }
   if (!hits.length) return null;
@@ -101,8 +144,11 @@ export function jobConflicts(mailJob: string | null | undefined, recordTitle: st
   return true;
 }
 
-function companyNamed(haystack: string, app: MatchableApplication) {
-  return [app.companyName, ...(app.aliases ?? [])].some((name) => mentions(haystack, name));
+function companyNamed(haystack: string, app: MatchableApplication, senderRoot: string | null = null) {
+  return (
+    [app.companyName, ...(app.aliases ?? [])].some((name) => mentions(haystack, name)) ||
+    (!!senderRoot && (app.careerUrls?.some((u) => urlRootDomain(u) === senderRoot) ?? false))
+  );
 }
 
 /**
@@ -115,17 +161,18 @@ function companyNamed(haystack: string, app: MatchableApplication) {
  * - a record of another kind of job than the one the mail names is not it.
  */
 export function resolveMailApplication(
-  mail: { subject: string; company?: string | null; summary?: string; body?: string; jobTitle?: string | null },
+  mail: { subject: string; company?: string | null; summary?: string; body?: string; jobTitle?: string | null; from?: string | null },
   picked: string | null,
   active: MatchableApplication[],
   all: MatchableApplication[] = active
 ): string | null {
-  const text = { subject: mail.subject, company: mail.company, body: `${mail.summary ?? ""} ${mail.body ?? ""}` };
+  const text = { subject: mail.subject, company: mail.company, body: `${mail.summary ?? ""} ${mail.body ?? ""}`, from: mail.from };
   const haystack = fold(`${mail.subject} ${mail.company ?? ""} ${mail.summary ?? ""} ${(mail.body ?? "").slice(0, 400)}`);
+  const senderRoot = senderRootDomain(mail.from);
   let chosen = picked && active.some((app) => app.id === picked) ? picked : null;
   if (chosen) {
     const app = active.find((entry) => entry.id === chosen)!;
-    if (!companyNamed(haystack, app) && all.some((other) => other.companyName !== app.companyName && companyNamed(haystack, other))) {
+    if (!companyNamed(haystack, app, senderRoot) && all.some((other) => other.companyName !== app.companyName && companyNamed(haystack, other, senderRoot))) {
       chosen = matchMailApplication(text, active);
     }
   } else {

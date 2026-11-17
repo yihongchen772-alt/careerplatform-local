@@ -130,7 +130,7 @@ const SLOT_LABEL = new RegExp(
 const BOOKING_LABEL = /(?:可预约期限时间|预约(?:面试|笔试|测评)?截止(?:时间|日期)?|预约期限|选择截止(?:时间)?|反馈截止(?:时间)?|Appointment\s+Deadline(?:\s+Time)?|Booking\s+Deadline|select\s+(?:a\s+)?(?:slot|time)\s+(?:before|by))/gi;
 const DEADLINE_LABEL = /(?:截止(?:时间|日期)?|完成期限|有效期至?|最晚|deadline|due\s+(?:date|by)|(?:before|until|by))\s*[：:（(]?\s*/gi;
 const DEADLINE_VERB = /完成|参加|反馈|作答|提交|回复|预约|确认|登录|答题|测评|考试|笔试|complete|submit|respond|finish/i;
-const URL_RE = /https?:\/\/[^\s<>()（）\]\[|"'，。；]+/i;
+const URL_RE = /https?:\/\/[^\s<>()（）\]\[|"',;，。；\u4e00-\u9fff]+/i;
 
 function snippet(text: string, from: number, to: number): string {
   return text.slice(Math.max(0, from), Math.min(text.length, to)).replace(/\s+/g, " ").trim().slice(0, 160);
@@ -221,14 +221,8 @@ export function extractMailTime(input: { subject?: string; body: string; mailDat
   }
 
   // 2. The last moment to pick a slot (自主预约).
-  BOOKING_LABEL.lastIndex = 0;
-  for (let label = BOOKING_LABEL.exec(text); label; label = BOOKING_LABEL.exec(text)) {
-    const from = label.index + label[0].length;
-    const moment = momentAt(text.slice(0, from + 60), from, input.mailDate);
-    if (!moment || moment.start - from > 24) continue;
-    const { shift } = zoneFor(moment.offsetMinutes);
-    return { kind: "booking", localStart: "", localEnd: "", timeZone: "", deadline: deadlineValue(moment, shift), windowStart: "", evidence: snippet(text, label.index, moment.end), meetingUrl };
-  }
+  const booked = findBooking(text, input.mailDate);
+  if (booked) return { kind: "booking", localStart: "", localEnd: "", timeZone: "", deadline: booked.value, windowStart: "", evidence: booked.evidence, meetingUrl };
 
   // 3. A cut-off for finishing a 笔试 / 测评.
   const cutoff = findDeadline(text, input.mailDate);
@@ -332,6 +326,18 @@ function findRelativeSlot(text: string, mailDate: Date): { start: string; eviden
   return null;
 }
 
+function findBooking(text: string, mailDate: Date): { value: string; evidence: string } | null {
+  BOOKING_LABEL.lastIndex = 0;
+  for (let label = BOOKING_LABEL.exec(text); label; label = BOOKING_LABEL.exec(text)) {
+    const from = label.index + label[0].length;
+    const moment = momentAt(text.slice(0, from + 60), from, mailDate);
+    if (!moment || moment.start - from > 24) continue;
+    const { shift } = zoneFor(moment.offsetMinutes);
+    return { value: deadlineValue(moment, shift), evidence: snippet(text, label.index, moment.end) };
+  }
+  return null;
+}
+
 function findDeadline(text: string, mailDate: Date): { value: string; evidence: string } | null {
   // 「2026-10-30 00:00:00 之前完成」: a date, then 前 / 之前 / 止.
   const dates: Moment[] = [];
@@ -390,6 +396,47 @@ const BOOK_BY = /前[^。；;\n]{0,24}(?:预约|选择[^。；;\n]{0,8}时间)|�
 
 const clean = (value: string | null | undefined) => (value ?? "").trim();
 
+const ACCESS_CODE_RE = /(?<!验证|动态|校验)(?:入会密码|参会密码|会议密码|会议口令|笔试口令|考试口令|测试密码|测试口令|口令|密码|密码为|考试码|测评码|准考证号|Meeting\s*(?:Password|Passcode)|Passcode|Access\s*Code|Exam\s*Code|PIN)\s*[：:为是]?\s*([A-Za-z0-9#*_.-]{3,32})/gi;
+const ACTION_CLAUSE_RE = /(确认(?:是否)?(?:参加|接受|入职|Offer|offer|意向|面试|时间)|回复(?:确认|邮件|可面试时间)?|反馈(?:结果|时间|意愿|选择)?|上传(?:材料|资料|证明|成绩单|身份证|简历)?|补充(?:资料|材料|信息|简历)|签署(?:三方|协议|合同|Offer|offer)?|填写(?:问卷|信息表|调研|登记|确认)?|提交(?:材料|资料|信息|登记表)?|预约(?:面试|时间|场次)?|完成(?:测评|笔试|确认|问卷|登记)|confirm|accept|decline|reply|upload|submit|sign|complete)/i;
+
+/** Extract an explicit meeting/exam passcode or access code (never login OTPs). */
+export function extractMailAccessCode(text: string): string {
+  const norm = normalize(text).slice(0, 3000);
+  if (!norm) return "";
+  ACCESS_CODE_RE.lastIndex = 0;
+  for (let m = ACCESS_CODE_RE.exec(norm); m; m = ACCESS_CODE_RE.exec(norm)) {
+    const code = m[1].replace(/[.,;:。；，）)]+$/, "");
+    // Require at least one digit so English prose words after "passcode/pin" are skipped.
+    if (code.length >= 3 && /\d/.test(code)) return code.slice(0, 60);
+  }
+  return "";
+}
+
+/**
+ * Extract a concrete candidate action requirement + deadline from mail text when
+ * the sender asks the applicant to reply, confirm, upload docs, or fill a form.
+ */
+export function extractMailActionItem(
+  subject: string,
+  body: string,
+  mailDate: Date,
+): { actionRequired: string; actionDeadline: string } | null {
+  const norm = normalize(`${subject} ${body.slice(0, 2000)}`);
+  if (!norm.trim() || NEGATIVE.test(`${subject} ${body.slice(0, 200)}`)) return null;
+  const dl = findDeadline(norm, mailDate);
+  const booking = !dl ? findBooking(norm, mailDate) : null;
+  const deadline = dl?.value || booking?.value || "";
+  const context = dl?.evidence || booking?.evidence || norm.slice(0, 600);
+  const match = ACTION_CLAUSE_RE.exec(context) || ACTION_CLAUSE_RE.exec(norm.slice(0, 800));
+  if (!match && !dl) return null;
+  const clauseSource = match ? context : dl?.evidence ?? "";
+  const start = Math.max(0, (match?.index ?? 0) - 6);
+  const rawClause = clauseSource.slice(start, start + 48).replace(/https?:\/\/\S+/g, "").replace(/[。！？；;\n].*$/, "").trim();
+  const actionRequired = rawClause.slice(0, 80) || (match ? match[1] : "请在截止前查看邮件并处理");
+  if (!deadline && !match) return null;
+  return { actionRequired, actionDeadline: deadline };
+}
+
 /**
  * The draft to keep for a mail: the AI's when it already names a usable time,
  * else one completed from what the mail's text says. null = nothing to add.
@@ -404,9 +451,14 @@ export function completeMailDraft(input: {
 }): MailEventDraft | null {
   const { ai } = input;
   if (mailIsAfterthought(input.subject, input.type)) return null;
+  const extractedCode = extractMailAccessCode(`${input.subject} ${input.body}`);
+  const extractedAction = extractMailActionItem(input.subject, input.body, input.mailDate);
   const base: MailEventDraft = {
     title: clean(ai?.title), localStart: clean(ai?.localStart), localEnd: clean(ai?.localEnd), timeZone: clean(ai?.timeZone), location: clean(ai?.location),
     meetingUrl: clean(ai?.meetingUrl), evidence: clean(ai?.evidence), deadline: clean(ai?.deadline), windowStart: clean(ai?.windowStart), booking: !!ai?.booking,
+    accessCode: clean(ai?.accessCode) || extractedCode,
+    actionRequired: clean(ai?.actionRequired) || extractedAction?.actionRequired || "",
+    actionDeadline: clean(ai?.actionDeadline) || extractedAction?.actionDeadline || "",
   };
   // The AI already got a time the app can use.
   if (ai && mailTime(base)) {
@@ -435,6 +487,7 @@ export function completeMailDraft(input: {
     meetingUrl: base.meetingUrl || found.meetingUrl,
     evidence: found.evidence || base.evidence,
     booking: found.kind === "booking",
+    actionDeadline: base.actionDeadline || found.deadline,
   };
   // A slot has no deadline of its own; a deadline has no slot.
   if (found.kind !== "slot") merged.localStart = merged.localEnd = "";

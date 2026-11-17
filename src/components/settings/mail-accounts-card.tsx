@@ -45,11 +45,11 @@ export function MailAccountsCard({ accounts, health }: { accounts: MailAccountOv
         toast.error(res.message);
         return;
       }
-      const { found, scanned, failures, progressUpdated, scheduled, recorded } = res.data;
+      const { found, scanned, failures, progressUpdated, scheduled, recorded, conflicts } = res.data;
       if (failures.length > 0) toast.error(failures.join("；"));
       toast.success(
         found > 0
-          ? `扫了 ${scanned} 封新邮件，${found} 封求职相关已加入日程${progressUpdated ? `，自动更新了 ${progressUpdated} 条投递进度` : ""}${scheduled ? `，${scheduled} 个面试/笔试时间已写进投递和日历` : ""}${recorded ? `，新记了 ${recorded} 条之前没记的投递` : ""}`
+          ? `扫了 ${scanned} 封新邮件，${found} 封求职相关已加入日程${progressUpdated ? `，自动更新了 ${progressUpdated} 条投递进度` : ""}${scheduled ? `，${scheduled} 个面试/笔试时间已写进投递和日历` : ""}${recorded ? `，新记了 ${recorded} 条之前没记的投递` : ""}${conflicts ? `，另有 ${conflicts} 条与原手动安排时间不一致待确认` : ""}`
           : `扫了 ${scanned} 封新邮件，没有求职相关的`
       );
     } finally {
