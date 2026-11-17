@@ -9,7 +9,6 @@ import { InferredProfileBanner } from "@/components/dashboard/inferred-profile-b
 import { loadInferredNotice } from "@/lib/agent/infer-profile";
 import { LearnedBacklogBanner } from "@/components/settings/learned-backlog-banner";
 import { learnFromBacklog, loadBacklogNotices } from "@/lib/profile-backlog";
-import { computeFunnel, computeOutcomes } from "@/lib/funnel";
 import { computeShareStats } from "@/lib/share-card";
 import { isCalendarMailTask } from "@/lib/pending-mail";
 import { mailTime, mailTimeOver } from "@/lib/mail-time";
@@ -17,7 +16,6 @@ import { loadPendingMail } from "@/lib/pending-mail-loader";
 import { loadJourneyEvents } from "@/lib/journey-loader";
 import { nudgeEvent } from "@/lib/journey";
 import { ShareCardDialog } from "@/components/dashboard/share-card-dialog";
-import { FunnelCard } from "@/components/insights/funnel-card";
 import { PersonalTaskCard } from "@/components/dashboard/personal-task-card";
 import { DailyDigestCard } from "@/components/dashboard/daily-digest-card";
 import { getTodayDigest } from "@/lib/actions/daily-digest";
@@ -101,8 +99,6 @@ export default async function DashboardPage() {
   const closed = applications.filter((a) => ["REJECTED", "ACCEPTED", "DECLINED", "WITHDRAWN", "CANCELLED"].includes(a.currentStage)).length;
   const inProgress = total - closed;
 
-  const { levels } = computeFunnel(funnelApps);
-  const outcomes = computeOutcomes(funnelApps);
   const shareStats = computeShareStats(funnelApps.map((a) => ({ currentStage: a.currentStage, stageHistory: a.stageHistory, companyName: a.company.name, industry: a.company.industry })));
   const calendarEvents = await db.calendarEvent.findMany({ where: { userId: user.id, completedAt: null } });
   const todos = buildTodos(applications, positions, stageHistories, personalTasks, contacts, calendarEvents);
@@ -294,16 +290,22 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      <div className="space-y-4">
-        <div className="flex items-end justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold tracking-[-0.025em]">进展回顾</h2>
-            <p className="mt-1 text-xs text-muted-foreground">用阶段转化看清求职节奏。</p>
+      {total > 0 && (
+        <section className="surface-card flex flex-wrap items-center justify-between gap-4 rounded-2xl px-5 py-4">
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold tracking-tight">阶段转化概览</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              共 {total} 条投递 · {inProgress} 条进行中 · {offers} 个 Offer · 完整漏斗与简历/渠道转化见「转化率」
+            </p>
           </div>
-          {total > 0 && <ShareCardDialog stats={shareStats} />}
-        </div>
-        <FunnelCard levels={levels} total={total} outcomes={outcomes} />
-      </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href="/insights" className="inline-flex h-8 items-center gap-1 rounded-full border border-border/70 bg-card/80 px-3 text-xs font-medium hover:bg-muted">
+              查看转化分析 <ArrowUpRight className="size-3.5" />
+            </Link>
+            <ShareCardDialog stats={shareStats} />
+          </div>
+        </section>
+      )}
 
       {total > 0 && <OnboardingCard steps={onboardingSteps} />}
     </div>

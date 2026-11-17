@@ -133,7 +133,7 @@ export type DesktopBridgePageProblem = { tabId: number; kind: "load" | "crash" |
 export type DesktopBridgeHistoryEntry = { url: string; title: string; at: number };
 
 export type DesktopBridgeShortcut = {
-  action: "new-tab" | "close-tab" | "focus-address" | "find";
+  action: "new-tab" | "close-tab" | "focus-address" | "find" | "autofill" | "toggle-assistant";
   tabId: number;
 };
 

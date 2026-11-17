@@ -7,6 +7,7 @@ import { computeConversion, type ConversionRow } from "@/lib/analytics";
 import { parseApplicationProfile } from "@/lib/application-profile";
 import type { InterviewPrep, GroupInterviewPrep } from "@/lib/validation";
 import { PageHero } from "@/components/layout/page-hero";
+import { MODULE_CLUSTERS, ModuleTabs } from "@/components/layout/module-tabs";
 import { ListChecks } from "lucide-react";
 
 export default async function PoolPage({ searchParams }: { searchParams: Promise<{ position?: string; prep?: string; from?: string }> }) {
@@ -55,6 +56,7 @@ export default async function PoolPage({ searchParams }: { searchParams: Promise
   return (
     <div className="space-y-6">
       <PageHero title="候选岗位池" icon={ListChecks} description="还没投的岗位放在这里：比较匹配度和截止，准备好就一键去网申" actions={<><AddPositionDialog /></>} />
+      <ModuleTabs items={MODULE_CLUSTERS.jobs} activeHref="/pool" />
 
       {selected && <div className="flex flex-wrap gap-4 text-sm">{backTo && <a href={`/applications/${backTo}#interview`} className="text-primary underline">← 回到这条投递</a>}<a href="/pool" className="text-primary underline">返回全部候选岗位</a></div>}
       <Card>

@@ -19,6 +19,7 @@ import { applicationCities } from "@/lib/application-city";
 import { industryLabel } from "@/lib/company-industry";
 import { currentTimeMs } from "@/lib/dates";
 import { PageHero } from "@/components/layout/page-hero";
+import { MODULE_CLUSTERS, ModuleTabs } from "@/components/layout/module-tabs";
 import { FunnelCard } from "@/components/insights/funnel-card";
 import { computeFunnel, computeOutcomes } from "@/lib/funnel";
 import { furthestInterview } from "@/lib/application-filters";
@@ -95,6 +96,8 @@ export default async function ApplicationsPage() {
         description="从发出申请到收到 Offer，每一次进展都在这里。"
         actions={<><PortalSyncButton configuredCount={portals.length} /><ImportApplicationsDialog /><AddApplicationDialog resumeVersions={resumeVersions} defaultResumeVersionId={defaultResumeVersionId} /></>}
       />
+
+      <ModuleTabs items={MODULE_CLUSTERS.applications} activeHref="/applications" />
 
       {scanHealth.failing && <ScanHealthBanner error={scanHealth.error} since={scanHealth.since?.toISOString() ?? null} lastOkAt={scanHealth.lastOkAt?.toISOString() ?? null} />}
       <AutoProgressBanner items={autoUpdates} schedules={autoSchedules} />

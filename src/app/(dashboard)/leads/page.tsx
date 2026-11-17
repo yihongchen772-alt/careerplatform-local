@@ -6,6 +6,7 @@ import { LeadsTable } from "@/components/leads/leads-table";
 import { RadarEventsCard } from "@/components/leads/radar-events-card";
 import { daysAgo } from "@/lib/dates";
 import { PageHero } from "@/components/layout/page-hero";
+import { MODULE_CLUSTERS, ModuleTabs } from "@/components/layout/module-tabs";
 import { Database } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -66,6 +67,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     return (
       <div className="space-y-6">
         <PageHero title="秋招信息库" icon={Database} description="实时检索企业官网直招、订阅信息表与全网招聘公告，按你的求职意向排序，一键批量打开预填" />
+        <ModuleTabs items={MODULE_CLUSTERS.jobs} activeHref="/leads" />
         {tabs}
         <Card>
           <CardContent className="pt-6">
@@ -84,6 +86,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     return (
       <div className="space-y-6">
         <PageHero title="秋招信息库" icon={Database} description="内置名企每日直招池与飞书校招表自动同步；筛完点「投递」直接网申，想投的加入候选岗位池" />
+        <ModuleTabs items={MODULE_CLUSTERS.jobs} activeHref="/leads" />
         {tabs}
         <Suspense><ListPositionKeeper /></Suspense>
         <Card><CardContent className="pt-6"><PostingsPanel userId={user.id} filters={readPostingFilters(params)} profileVariants={profileVariants} /></CardContent></Card>
@@ -133,6 +136,8 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         description="群里那种大而全的秋招信息表放这里，筛完再把想投的挑进候选岗位池"
         actions={<ImportSheetDialog resumeVersions={resumeVersions.map((r) => ({ id: r.id, name: r.name }))} defaultResumeVersionId={defaultResumeVersionId} />}
       />
+
+      <ModuleTabs items={MODULE_CLUSTERS.jobs} activeHref="/leads" />
 
       {tabs}
 

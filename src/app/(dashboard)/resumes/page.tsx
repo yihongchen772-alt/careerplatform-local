@@ -4,6 +4,7 @@ import { AddResumeDialog } from "@/components/resumes/add-resume-dialog";
 import { ResumeList } from "@/components/resumes/resume-list";
 import type { ResumeCheck } from "@/lib/validation";
 import { PageHero } from "@/components/layout/page-hero";
+import { MODULE_CLUSTERS, ModuleTabs } from "@/components/layout/module-tabs";
 import { FileText, Wand2 } from "lucide-react";
 import Link from "next/link";
 import type { ApplicationStage } from "@prisma/client";
@@ -59,6 +60,7 @@ export default async function ResumesPage() {
         description="不同方向用不同版本的简历，网申和小欧会按岗位选用。也可以按某个岗位的 JD，在现有简历上微调出一份。"
         actions={<><Link href="/resumes/tailor" className={buttonVariants({ size: "sm" })}><Wand2 />按 JD 定制一份</Link><AddResumeDialog /></>}
       />
+      <ModuleTabs items={MODULE_CLUSTERS.materials} activeHref="/resumes" />
 
       <ResumeList
         resumes={resumes.map((r) => ({

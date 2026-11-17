@@ -13,6 +13,7 @@ import { InterviewIntelligenceCard } from "@/components/interviews/interview-int
 import type { ExtractedQuestion } from "@/lib/actions/interview-note-extract";
 import type { InterviewIntelligence } from "@/lib/actions/interview-intelligence";
 import { PageHero } from "@/components/layout/page-hero";
+import { MODULE_CLUSTERS, ModuleTabs } from "@/components/layout/module-tabs";
 import { BookOpen } from "lucide-react";
 
 export default async function InterviewsPage({ searchParams }: { searchParams: Promise<{ company?: string }> }) {
@@ -64,6 +65,7 @@ export default async function InterviewsPage({ searchParams }: { searchParams: P
   return (
     <div className="space-y-6">
       <PageHero title="面经库" icon={BookOpen} description="汇总所有投递里写过的面试复盘，面试前可以按公司或阶段翻一遍" />
+      <ModuleTabs items={MODULE_CLUSTERS.prep} activeHref="/interviews" />
       <InterviewIntelligenceCard
         initial={intelligence ? (intelligence.result as InterviewIntelligence) : null}
       />

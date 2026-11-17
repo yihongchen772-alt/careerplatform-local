@@ -1,9 +1,29 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Building2, Clock, Compass, ListChecks, NotebookPen, Radar, Search, Sparkles } from "lucide-react";
+import { Building2, Clock, Compass, FileEdit, ListChecks, NotebookPen, Radar, Search, Sparkles } from "lucide-react";
 import { displayUrl, type QuickLinks } from "@/components/browser/omnibox";
+import { cn } from "@/lib/utils";
 import type { DesktopBridgeHistoryEntry } from "@/types/desktop-bridge";
+
+type DraftEntry = { id: string; name: string; url: string; updatedAt?: string };
+
+function useSavedDrafts(): DraftEntry[] {
+  const [drafts, setDrafts] = useState<DraftEntry[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/desktop-browser/application-draft")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((rows: DraftEntry[] | null) => {
+        if (!cancelled && Array.isArray(rows)) setDrafts(rows.slice(0, 3));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return drafts;
+}
 
 type ExamLink = { key: string; label: string; relative: string; meetingUrl: string };
 
@@ -62,17 +82,20 @@ export function NewTabPage({
   onOpen: (url: string, inNewTab: boolean) => void;
   onFocusAddress: () => void;
 }) {
-  const tiles: Tile[] = [
+  const [tileKind, setTileKind] = useState<"全部" | "进度页" | "候选岗位" | "企业官网">("全部");
+  const allTiles: Tile[] = [
     ...links.portals.map((p) => ({ key: `p:${p.id}`, title: p.name, url: p.url, kind: "进度页", icon: Radar })),
     ...links.positions.map((p) => ({ key: `j:${p.id}`, title: p.label, url: p.url, kind: "候选岗位", icon: ListChecks })),
     ...links.companies.map((c) => ({ key: `c:${c.id}`, title: c.name, url: c.url, kind: "企业官网", icon: Building2 })),
-  ].slice(0, 10);
+  ];
+  const tiles = (tileKind === "全部" ? allTiles.slice(0, 10) : allTiles.filter((t) => t.kind === tileKind).slice(0, 15));
   const recent = history.slice(0, 5);
   const exams = useExamLinks();
+  const drafts = useSavedDrafts();
 
   return (
     <div className="absolute inset-0 overflow-y-auto bg-card">
-      <div className="mx-auto flex max-w-3xl flex-col items-center px-6 pt-[10vh] pb-12">
+      <div className="mx-auto flex max-w-3xl flex-col items-center px-6 pt-[8vh] pb-12">
         <div className="mb-6 flex items-center gap-2.5 text-[22px] font-semibold tracking-tight">
           <span className="grid size-9 place-items-center rounded-full bg-primary/10 text-primary"><Compass className="size-5" /></span>
           网申浏览器
@@ -83,7 +106,7 @@ export function NewTabPage({
           className="flex h-11 w-full max-w-xl items-center gap-3 rounded-full border bg-muted/50 px-5 text-left text-sm text-muted-foreground shadow-sm transition-colors hover:bg-muted"
         >
           <Search className="size-4" />
-          输入网址，或搜索企业官网 / 岗位
+          输入网址，或搜索企业官网 / 岗位（⌘L 聚焦地址栏）
         </button>
         {exams.length > 0 && (
           <div className="mt-6 w-full max-w-xl rounded-2xl border border-amber-500/25 bg-amber-500/[0.06] p-3">
@@ -101,25 +124,62 @@ export function NewTabPage({
             </ul>
           </div>
         )}
-        {tiles.length > 0 && (
-          <div className="mt-8 flex w-full max-w-2xl flex-wrap justify-center gap-x-2 gap-y-3">
-            {tiles.map((tile) => (
-              <button
-                key={tile.key}
-                type="button"
-                title={`${tile.title}\n${tile.url}`}
-                onClick={(event) => onOpen(tile.url, event.metaKey || event.ctrlKey)}
-                onAuxClick={(event) => { if (event.button === 1) onOpen(tile.url, true); }}
-                className="group flex w-[7.5rem] min-w-0 flex-col items-center gap-2 rounded-xl px-2 py-3 transition-colors hover:bg-muted"
-              >
-                <span className="relative grid size-12 place-items-center rounded-full bg-muted text-base font-semibold text-foreground/80 group-hover:bg-background">
-                  {initial(tile.title)}
-                  <tile.icon className="absolute -right-0.5 -bottom-0.5 size-4 rounded-full bg-card p-0.5 text-primary" />
-                </span>
-                <span className="w-full truncate text-center text-xs">{tile.title}</span>
-                <span className="-mt-1.5 text-[10.5px] text-muted-foreground">{tile.kind}</span>
-              </button>
-            ))}
+        {drafts.length > 0 && (
+          <div className="surface-subcard mt-4 w-full max-w-xl p-3">
+            <p className="mb-1.5 flex items-center gap-1.5 px-1 text-xs font-medium text-foreground/85"><FileEdit className="size-3.5 text-primary" />未提交的填写草稿（继续网申）</p>
+            <ul className="space-y-1">
+              {drafts.map((draft) => (
+                <li key={draft.id}>
+                  <button type="button" title={draft.url} onClick={(event) => onOpen(draft.url, event.metaKey || event.ctrlKey)} className="flex w-full min-w-0 items-center gap-3 rounded-lg px-2 py-1.5 text-left text-[13px] hover:bg-foreground/[0.045]">
+                    <span className="min-w-0 flex-1 truncate font-medium">{draft.name}</span>
+                    <span className="max-w-[14rem] truncate text-xs text-muted-foreground">{displayUrl(draft.url)}</span>
+                    <span className="shrink-0 text-xs font-medium text-primary">续填</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {allTiles.length > 0 && (
+          <div className="mt-7 flex w-full max-w-2xl flex-col items-center">
+            <div className="mb-3 flex flex-wrap items-center justify-center gap-1 rounded-full bg-muted/65 p-1">
+              {(["全部", "进度页", "候选岗位", "企业官网"] as const).map((k) => {
+                const count = k === "全部" ? allTiles.length : allTiles.filter((t) => t.kind === k).length;
+                if (k !== "全部" && count === 0) return null;
+                return (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => setTileKind(k)}
+                    className={cn(
+                      "rounded-full px-3 py-1 text-xs font-medium transition-colors",
+                      tileKind === k ? "bg-card text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {k}{k !== "全部" ? ` (${count})` : ""}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex w-full flex-wrap justify-center gap-x-2 gap-y-3">
+              {tiles.map((tile) => (
+                <button
+                  key={tile.key}
+                  type="button"
+                  title={`${tile.title}\n${tile.url}`}
+                  onClick={(event) => onOpen(tile.url, event.metaKey || event.ctrlKey)}
+                  onAuxClick={(event) => { if (event.button === 1) onOpen(tile.url, true); }}
+                  className="group flex w-[7.5rem] min-w-0 flex-col items-center gap-2 rounded-xl px-2 py-3 transition-colors hover:bg-muted"
+                >
+                  <span className="relative grid size-12 place-items-center rounded-full bg-muted text-base font-semibold text-foreground/80 group-hover:bg-background">
+                    {initial(tile.title)}
+                    <tile.icon className="absolute -right-0.5 -bottom-0.5 size-4 rounded-full bg-card p-0.5 text-primary" />
+                  </span>
+                  <span className="w-full truncate text-center text-xs">{tile.title}</span>
+                  <span className="-mt-1.5 text-[10.5px] text-muted-foreground">{tile.kind}</span>
+                </button>
+              ))}
+            </div>
           </div>
         )}
         {recent.length > 0 && (
@@ -137,9 +197,9 @@ export function NewTabPage({
             </ul>
           </div>
         )}
-        <p className="mt-10 flex max-w-xl items-start gap-2 text-center text-xs leading-relaxed text-muted-foreground">
+        <p className="mt-9 flex max-w-xl items-start gap-2 text-center text-xs leading-relaxed text-muted-foreground">
           <Sparkles className="mt-0.5 size-3.5 shrink-0 text-primary" />
-          打开企业的网申页面后，点右上角「一键填写」自动填表；右侧的填写助手可以逐字段预览、定位待手填的项目。
+          打开网申页后点右上角「一键填写」或按 ⌘⇧F 自动填表；⌘1~9 快速切标签、⌘⇧A 开关填写助手。
         </p>
       </div>
     </div>

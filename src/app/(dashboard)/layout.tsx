@@ -1,6 +1,7 @@
 import { requireUser } from "@/lib/session";
 import { DashboardNav } from "@/components/dashboard/nav";
 import { AssistantWidget } from "@/components/assistant/assistant-widget";
+import { DashboardMain } from "@/components/layout/dashboard-main";
 
 // Prisma reads aren't a Next.js "dynamic API", so without this every page in
 // here would get prerendered once at `next build` time and served as frozen
@@ -58,10 +59,10 @@ export default async function DashboardLayout({
         the nav, above nothing) and would paint over page content on some
         browsers' stacking-context resolution.
       */}
-      <main className="relative z-10 min-w-0 flex-1 px-4 pb-28 pt-[calc(3.5rem+env(safe-area-inset-top)+1rem)] md:px-10 md:pb-28 md:pt-8">
+      <DashboardMain className="relative z-10 min-w-0 flex-1 px-4 pb-28 pt-[calc(3.5rem+env(safe-area-inset-top)+1rem)] md:px-10 md:pb-28 md:pt-8">
         {/* One width for every page (settings keeps its narrower form column). */}
         <div className="mx-auto w-full max-w-[110rem]">{children}</div>
-      </main>
+      </DashboardMain>
       <div className="print:hidden"><AssistantWidget /></div>
     </div>
   );

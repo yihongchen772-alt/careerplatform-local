@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/session";
 import { loadResumeDrill } from "@/lib/resume-drill";
 import { ResumeDrillWorkbench } from "@/components/resume-drill/workbench";
 import { PageHero } from "@/components/layout/page-hero";
+import { MODULE_CLUSTERS, ModuleTabs } from "@/components/layout/module-tabs";
 import { Crosshair } from "lucide-react";
 
 export default async function ResumeDrillPage({
@@ -36,6 +37,7 @@ export default async function ResumeDrillPage({
   return (
     <div className="space-y-6">
       <PageHero title="简历深挖" icon={Crosshair} description="面试官最爱盯着简历上的项目往深了问。AI 先把每段经历的三层追问列出来，你逐层作答，它按要点打分、告诉你下一句会被问什么" />
+      <ModuleTabs items={MODULE_CLUSTERS.prep} activeHref="/resume-drill" />
 
       <ResumeDrillWorkbench
         resumeVersions={resumeVersions}

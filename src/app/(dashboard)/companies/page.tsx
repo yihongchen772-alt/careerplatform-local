@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/session";
 import { AddCompanyDialog } from "@/components/companies/add-company-dialog";
 import { CompanyDirectory } from "@/components/companies/company-directory";
 import { PageHero } from "@/components/layout/page-hero";
+import { MODULE_CLUSTERS, ModuleTabs } from "@/components/layout/module-tabs";
 import { Building2 } from "lucide-react";
 
 export default async function CompaniesPage() {
@@ -16,6 +17,7 @@ export default async function CompaniesPage() {
   return (
     <div className="space-y-6">
       <PageHero title="企业名录" icon={Building2} description={<>知名企业校招入口，&ldquo;已核实&rdquo;是平台收录并验证过链接可用的条目；&ldquo;用户添加&rdquo;由用户自行提交，请自行甄别。</>} actions={<><AddCompanyDialog /></>} />
+      <ModuleTabs items={MODULE_CLUSTERS.jobs} activeHref="/companies" />
 
       <CompanyDirectory
         companies={companies

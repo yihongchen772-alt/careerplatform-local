@@ -1082,3 +1082,48 @@ main h1 {
   background-size: 14px;
 }
 .native-select[data-size="sm"] { background-position: right 0.45rem center; background-size: 12px; }
+
+/* Semantic status pills & sub-cards that adapt smoothly across all themes & palettes */
+@layer components {
+  .surface-subcard {
+    border-radius: 0.9rem;
+    background: color-mix(in oklch, var(--foreground) 3%, var(--card));
+    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--foreground) 8%, transparent);
+  }
+  .dark .surface-subcard {
+    background: rgba(255, 255, 255, 0.035);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  }
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    border-radius: 9999px;
+    padding: 0.15rem 0.55rem;
+    font-size: 0.72rem;
+    font-weight: 500;
+    line-height: 1.25;
+  }
+  .status-pill-info {
+    background: color-mix(in oklch, var(--primary) 13%, transparent);
+    color: var(--primary);
+  }
+  .status-pill-success {
+    background: rgba(16, 185, 129, 0.14);
+    color: rgb(4, 120, 87);
+  }
+  .dark .status-pill-success {
+    color: rgb(110, 231, 183);
+  }
+  .status-pill-warning {
+    background: rgba(245, 158, 11, 0.15);
+    color: rgb(180, 83, 9);
+  }
+  .dark .status-pill-warning {
+    color: rgb(252, 211, 77);
+  }
+  .status-pill-danger {
+    background: color-mix(in oklch, var(--destructive) 14%, transparent);
+    color: var(--destructive);
+  }
+}

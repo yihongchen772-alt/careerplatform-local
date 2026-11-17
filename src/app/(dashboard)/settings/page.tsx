@@ -53,8 +53,11 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       <SettingsHashRedirect />
       <PageHero title="设置" icon={Settings} description="资料、AI、提醒和外观，一组一组来" />
       <div className="mt-6 flex flex-col gap-6 md:flex-row md:gap-8">
-        <nav aria-label="设置分组" className="surface-card -mx-1 flex shrink-0 gap-1 overflow-x-auto rounded-2xl p-1.5 md:mx-0 md:w-44 md:flex-col md:self-start md:overflow-visible">
-          {SETTINGS_TABS.map((item) => (
+        <nav aria-label="设置分组" className="surface-card -mx-1 flex shrink-0 gap-1 overflow-x-auto rounded-2xl p-1.5 md:mx-0 md:w-48 md:flex-col md:gap-0.5 md:self-start md:overflow-visible md:p-2">
+          <p className="hidden px-2.5 pt-1 pb-1 text-[10.5px] font-semibold tracking-wider text-muted-foreground/60 uppercase md:block">
+            求职与网申资料
+          </p>
+          {SETTINGS_TABS.filter((item) => ["profile", "autofill", "memory"].includes(item.id)).map((item) => (
             <Link
               key={item.id}
               href={`/settings?tab=${item.id}`}
@@ -70,6 +73,30 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
               {item.id === tab && <span className="hidden size-1.5 rounded-full bg-primary md:inline-block" />}
             </Link>
           ))}
+          <p className="hidden px-2.5 pt-3 pb-1 text-[10.5px] font-semibold tracking-wider text-muted-foreground/60 uppercase md:block">
+            系统与自动化
+          </p>
+          {SETTINGS_TABS.filter((item) => !["profile", "autofill", "memory"].includes(item.id)).map((item) => (
+            <Link
+              key={item.id}
+              href={`/settings?tab=${item.id}`}
+              aria-current={item.id === tab ? "page" : undefined}
+              className={cn(
+                "flex shrink-0 items-center justify-between rounded-xl px-3 py-2 text-[13px] transition-all duration-200 ease-(--ease-apple)",
+                item.id === tab
+                  ? "nav-active font-semibold"
+                  : "text-muted-foreground hover:bg-foreground/[0.045] hover:text-foreground"
+              )}
+            >
+              <span>{item.label}</span>
+              {item.id === tab && <span className="hidden size-1.5 rounded-full bg-primary md:inline-block" />}
+            </Link>
+          ))}
+          <div className="mt-2 hidden border-t border-border/50 pt-2 md:block">
+            <p className="px-2.5 pb-1 text-[10.5px] font-medium text-muted-foreground/60">关联材料</p>
+            <Link href="/resumes" className="block rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-foreground/[0.045] hover:text-foreground">管理简历版本 →</Link>
+            <Link href="/library" className="block rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-foreground/[0.045] hover:text-foreground">附件资料库 →</Link>
+          </div>
         </nav>
         <div className="min-w-0 flex-1 space-y-6">
           <p className="text-sm text-muted-foreground">{current.description}</p>

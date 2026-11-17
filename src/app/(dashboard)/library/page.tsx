@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/session";
 import { LibraryView, type LibraryFile } from "@/components/library/library-view";
 import { parseApplicationProfile } from "@/lib/application-profile";
 import { PageHero } from "@/components/layout/page-hero";
+import { MODULE_CLUSTERS, ModuleTabs } from "@/components/layout/module-tabs";
 import { FolderOpen } from "lucide-react";
 
 export default async function LibraryPage() {
@@ -43,6 +44,7 @@ export default async function LibraryPage() {
   return (
     <div className="space-y-6">
       <PageHero title="资料库" icon={FolderOpen} description="证书、作品集、笔试真题、面试资料集中放一处，投递记录里传过的附件也会汇总到这里" />
+      <ModuleTabs items={MODULE_CLUSTERS.materials} activeHref="/library" />
       <LibraryView files={files} resumeVersions={resumes} initialPinned={pinnedAttachments} />
     </div>
   );

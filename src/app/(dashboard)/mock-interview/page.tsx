@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { MockInterviewStartForm } from "@/components/mock-interview/start-form";
 import { MockInterviewSessionList } from "@/components/mock-interview/session-list";
 import { PageHero } from "@/components/layout/page-hero";
+import { MODULE_CLUSTERS, ModuleTabs } from "@/components/layout/module-tabs";
 import Link from "next/link";
 import { CalendarClock, MessageSquare } from "lucide-react";
 import { loadUpcomingSchedule } from "@/lib/schedule-loader";
@@ -59,6 +60,7 @@ export default async function MockInterviewPage({
   return (
     <div className="space-y-6">
       <PageHero title="AI 模拟面试" icon={MessageSquare} description="选一份简历，AI 一问你一答，打字回答，大概 10-15 分钟一场" />
+      <ModuleTabs items={MODULE_CLUSTERS.prep} activeHref="/mock-interview" />
 
       {coming.length > 0 && !preset && (
         <Card>

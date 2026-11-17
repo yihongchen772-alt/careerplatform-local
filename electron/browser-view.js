@@ -699,6 +699,19 @@ function createTab(url, { activate = true } = {}) {
   wc.on("before-input-event", (event, input) => {
     if (input.type !== "keyDown" || !(input.meta || input.control)) return;
     const key = input.key.toLowerCase();
+    if (/^[1-9]$/.test(key) && !input.shift && !input.alt) {
+      const idx = key === "9" ? tabs.length - 1 : Number(key) - 1;
+      if (tabs[idx]) {
+        event.preventDefault();
+        switchTab(tabs[idx].id);
+      }
+      return;
+    }
+    if (input.shift && (key === "f" || key === "a")) {
+      event.preventDefault();
+      send("browser:shortcut", { action: key === "f" ? "autofill" : "toggle-assistant", tabId: tab.id });
+      return;
+    }
     const map = { t: "new-tab", w: "close-tab", l: "focus-address", f: "find", r: "reload", "[": "back", "]": "forward" };
     if (!map[key]) return;
     event.preventDefault();

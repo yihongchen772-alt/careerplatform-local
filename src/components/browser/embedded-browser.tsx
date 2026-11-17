@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ClipboardCheck, Download, Pause, Play, RefreshCw, SquareDashedMousePointer, ArrowRight, Bookmark, Camera, Check, ChevronDown, ChevronUp, Copy, Eraser, ExternalLink, FileCode, ListChecks, Loader2, KeyRound, LogOut, MailCheck, Maximize2, Minus, MoreVertical, NotebookPen, PanelRight, PanelRightClose, Plus, Radar, RotateCw, ScanSearch, Search, Send, Settings2, Sparkles, Trash2, TriangleAlert, Undo2, X, Bug, Wand2 } from "lucide-react";
+import { ArrowLeft, ClipboardCheck, Download, Pause, Play, RefreshCw, SquareDashedMousePointer, ArrowRight, Bookmark, Camera, Check, ChevronDown, ChevronUp, Copy, Eraser, ExternalLink, FileCode, ListChecks, Loader2, KeyRound, LogOut, MailCheck, Maximize2, Minus, MoreVertical, NotebookPen, PanelLeft, PanelRight, PanelRightClose, Plus, Radar, RotateCw, ScanSearch, Search, Send, Settings2, Sparkles, Trash2, TriangleAlert, Undo2, X, Bug, Wand2, Wrench } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { AiProgress } from "@/components/ui/ai-progress";
@@ -34,6 +34,7 @@ import { MarkAppliedFromBrowserDialog, type PoolPosition } from "@/components/br
 import { recognizeApplication, type Recognition } from "@/components/browser/recognize-application";
 import { looksLikeCandidateCenter, matchKnownSite, siteKey } from "@/lib/site-key";
 import { analyzeEligibilityAndQuota, recommendSetupForPage, type EligibilityWarning, type SetupRecommendation } from "@/lib/browser-intelligence";
+import { selectPrimaryInfobar, type BrowserBannerId } from "@/lib/browser-infobar-queue";
 import { ScreenshotDialog, type ApplicationOption } from "@/components/browser/screenshot-dialog";
 import { ApplicationAssistant, panelSelect, type AssistantTab } from "@/components/browser/application-assistant";
 import { SiteBanner, type KnownSite } from "@/components/browser/site-banner";
@@ -312,6 +313,7 @@ export function EmbeddedBrowser({
   // Latest values for the long-lived IPC listener below, updated in an
   // effect (the lint rule forbids touching refs during render).
   const positionId = tabsState.activeId === null ? "" : jobBindings[tabsState.activeId] || "";
+  const shortcutActionsRef = useRef({ toggleAssistant: () => {}, triggerAutofill: () => {} });
   const liveRef = useRef({ positionId, resumeVersionId, autoFill, autofilling, expandBlocks, variantChoice, fillModules });
   useEffect(() => {
     liveRef.current = { positionId, resumeVersionId, autoFill, autofilling, expandBlocks, variantChoice, fillModules };
@@ -324,6 +326,7 @@ export function EmbeddedBrowser({
     warnings: EligibilityWarning[];
   } | null>(null);
   const [dismissedIntel, setDismissedIntel] = useState<Set<string>>(() => new Set());
+  const [showAllInfobars, setShowAllInfobars] = useState(false);
   const [otpPrompt, setOtpPrompt] = useState<{ tabId: number; emailLikely: boolean } | null>(null);
   const [otpBusy, setOtpBusy] = useState(false);
   const [otpChoices, setOtpChoices] = useState<{ code: string; subject: string; from: string; matchedSite: boolean }[]>([]);
@@ -646,6 +649,8 @@ export function EmbeddedBrowser({
       if (action === "new-tab") void bridge.newTab();
       else if (action === "close-tab") void bridge.closeTab(tabId);
       else if (action === "focus-address") addressRef.current?.focus();
+      else if (action === "autofill") shortcutActionsRef.current.triggerAutofill();
+      else if (action === "toggle-assistant") shortcutActionsRef.current.toggleAssistant();
       else if (action === "find") {
         setFindOpen(true);
         setTimeout(() => findRef.current?.select(), 50);
@@ -979,6 +984,25 @@ export function EmbeddedBrowser({
     const handler = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey)) return;
       const key = e.key.toLowerCase();
+      if (/^[1-9]$/.test(key) && !e.shiftKey && !e.altKey) {
+        const idx = key === "9" ? tabsState.tabs.length - 1 : Number(key) - 1;
+        const target = tabsState.tabs[idx];
+        if (target) {
+          e.preventDefault();
+          void bridge.switchTab(target.id);
+        }
+        return;
+      }
+      if (e.shiftKey && key === "f") {
+        e.preventDefault();
+        shortcutActionsRef.current.triggerAutofill();
+        return;
+      }
+      if (e.shiftKey && key === "a") {
+        e.preventDefault();
+        shortcutActionsRef.current.toggleAssistant();
+        return;
+      }
       if (key === "t") {
         e.preventDefault();
         void bridge.newTab();
@@ -997,7 +1021,7 @@ export function EmbeddedBrowser({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [bridge, activeTab]);
+  }, [bridge, activeTab, tabsState.tabs]);
 
   const runFind = useCallback(
     (text: string, forward = true, findNext = false) => {
@@ -1053,6 +1077,13 @@ export function EmbeddedBrowser({
         }
       });
   }
+
+  useEffect(() => {
+    shortcutActionsRef.current = {
+      triggerAutofill: () => handleAutofill(),
+      toggleAssistant: () => (assistantOpen ? closePanel() : openPanel()),
+    };
+  });
 
   async function handleUndoAutofill() {
     if (!bridge) return;
@@ -1483,12 +1514,34 @@ export function EmbeddedBrowser({
     </div>
   );
 
+  const activeBannerIds: BrowserBannerId[] = [];
+  if (status && (status.phase === "scanning" || status.phase === "ai") && busy) activeBannerIds.push("autofillBusy");
+  if (status?.phase === "error" && status.message.startsWith("已暂停")) activeBannerIds.push("autofillPaused");
+  if (status && (status.phase === "done" || (status.phase === "error" && !status.message.startsWith("已暂停")))) activeBannerIds.push("autofillDone");
+  if (pageProblem && pageProblem.tabId === tabsState.activeId) activeBannerIds.push("pageProblem");
+  if (capturing) activeBannerIds.push("capturing");
+  if (detected && !busy && detected.tabId === tabsState.activeId) activeBannerIds.push("detectedForm");
+  if (recordedBar && recordedBar.tabId === tabsState.activeId) activeBannerIds.push("recordedBar");
+  const showTailoredBanner = !!(tailoredHere && resumeVersionId !== tailoredHere.resumeVersionId && !skippedTailored.includes(tailoredHere.site) && !submitted && !recordedBar);
+  if (showTailoredBanner) activeBannerIds.push("tailoredResume");
+  if (!showTailoredBanner && pageIntel?.url === currentUrl && pageIntel.recommendation && !dismissedIntel.has(`rec:${currentUrl}`) && !submitted && !recordedBar) {
+    activeBannerIds.push("setupRecommendation");
+  }
+  if (pageIntel?.url === currentUrl && pageIntel.warnings.length > 0 && !dismissedIntel.has(`warn:${currentUrl}`) && !submitted && !recordedBar) {
+    activeBannerIds.push("eligibilityWarning");
+  }
+  if (submitted && submitted.tabId === tabsState.activeId) activeBannerIds.push("submitted");
+  if (savedLogins.offer && savedLogins.offer.tabId === tabsState.activeId) activeBannerIds.push("loginOffer");
+  if ((otpPrompt && otpPrompt.tabId === tabsState.activeId) || otpChoices.length > 0) activeBannerIds.push("otpPrompt");
+  const { activeId: activeBannerId, queuedCount } = selectPrimaryInfobar(activeBannerIds);
+  const showBanner = (id: BrowserBannerId) => showAllInfobars || activeBannerId === id;
+
   return (
     <div
       className={cn(
         "flex flex-col overflow-hidden bg-muted dark:bg-background",
         expanded ? "fixed inset-0 z-[45]" : "rounded-xl border shadow-[0_1px_3px_rgb(0_0_0/0.06),0_8px_24px_-12px_rgb(0_0_0/0.18)]",
-        !expanded && autoHeight && "h-[calc(100dvh-6rem)] min-h-[26rem]"
+        !expanded && autoHeight && "h-[calc(100dvh-1.75rem)] min-h-[26rem]"
       )}
     >
       <div className="flex shrink-0 flex-col" onPointerEnter={refreshFrame}>
@@ -1504,6 +1557,7 @@ export function EmbeddedBrowser({
 
         {/* toolbar */}
         <div className="flex h-11 shrink-0 items-center gap-1 border-b bg-card px-2">
+          <ToolbarIcon label="收起 / 展开主侧栏" className="hidden md:inline-flex" onClick={() => window.dispatchEvent(new Event("cp:sidebar-toggle"))}><PanelLeft /></ToolbarIcon>
           <ToolbarIcon label="后退" shortcut={`${mod}[`} disabled={!activeTab?.canGoBack} onClick={() => bridge.back()}><ArrowLeft /></ToolbarIcon>
           <ToolbarIcon label="前进" shortcut={`${mod}]`} disabled={!activeTab?.canGoForward} onClick={() => bridge.forward()}><ArrowRight /></ToolbarIcon>
           <ToolbarIcon label={activeTab?.loading ? "停止加载" : "重新加载"} shortcut={activeTab?.loading ? undefined : `${mod}R`} disabled={!currentUrl} onClick={() => (activeTab?.loading ? bridge.stop() : bridge.reload())}>
@@ -1671,43 +1725,47 @@ export function EmbeddedBrowser({
               <DropdownMenuItem disabled={capturing || !currentUrl} onClick={handleCapture}><Bookmark />收藏为候选岗位</DropdownMenuItem>
               <DropdownMenuItem disabled={startingTailor || !currentUrl} onClick={() => void handleTailor()}><Wand2 />按这个岗位定制简历…</DropdownMenuItem>
               <DropdownMenuItem disabled={!currentUrl} onClick={() => { setMarkRecognition(null); setMarkOpen(true); }}><Send />记为已投递…</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setPortalOpen(true)}><Radar />设置进度同步…</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => void handleExportApplications()}><Download />导出已投企业与岗位 (.xlsx)</DropdownMenuItem>
               <DropdownMenuItem disabled={!currentUrl} onClick={handleScreenshot}><Camera />截图存到投递附件…</DropdownMenuItem>
               <DropdownMenuSeparator />
+              <DropdownMenuItem disabled={!currentUrl || otpBusy} onClick={() => void fillEmailOtp()}><MailCheck />读取邮箱验证码并填入</DropdownMenuItem>
               <DropdownMenuItem disabled={savingCorrections || busy || !currentUrl} onClick={handleSaveCorrections}><Check />{savingCorrections ? "检测中…" : "核对本页变化"}</DropdownMenuItem>
               <DropdownMenuItem onClick={() => openPanel("pending")}><NotebookPen />打开待核对变化{pendingChangeCount ? `（${pendingChangeCount}）` : ""}</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => bridge.clearMarks()}><Eraser />清除填写标记</DropdownMenuItem>
-              <DropdownMenuItem
-                disabled={!currentUrl}
-                onClick={async () => {
-                  try {
-                    const res = await bridge.captureSample();
-                    toast.success(`已存下这页的表单结构（${res.fields} 个字段，不含你填的内容），文件夹已打开——把这个文件发给开发者就能复现问题`, { duration: 8000 });
-                  } catch (error) {
-                    toast.error(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : "没存下来");
-                  }
-                }}
-              ><Bug />这页没填好？存一份表单样本</DropdownMenuItem>
-              <DropdownMenuItem
-                disabled={!currentUrl}
-                onClick={async () => {
-                  try {
-                    const result = await bridge.exportFormStructure();
-                    toast.success(`已导出表单结构（${result.fields} 个字段），文件在「下载」文件夹；已去掉填写内容和个人资料，可发给开发者排查`);
-                  } catch (err) {
-                    toast.error(err instanceof Error ? err.message : "导出失败");
-                  }
-                }}
-              >
-                <FileCode />导出表单结构（反馈填错用）
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem disabled={!currentUrl} onClick={() => bridge.openExternal()}><ExternalLink />在系统浏览器中打开</DropdownMenuItem>
-              <DropdownMenuItem disabled={!currentUrl} onClick={() => { void bridge.copyUrl(); toast.success("链接已复制"); }}><Copy />复制链接</DropdownMenuItem>
-              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setPortalOpen(true)}><Radar />设置进度同步…</DropdownMenuItem>
               <DropdownMenuItem onClick={() => setPasswordsOpen(true)}><KeyRound />密码管理…</DropdownMenuItem>
-              <DropdownMenuItem disabled={!currentUrl || otpBusy} onClick={() => void fillEmailOtp()}><MailCheck />读取邮箱验证码并填入</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger><Wrench />导出与排查工具</DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="w-60">
+                  <DropdownMenuItem onClick={() => void handleExportApplications()}><Download />导出已投企业与岗位 (.xlsx)</DropdownMenuItem>
+                  <DropdownMenuItem disabled={!currentUrl} onClick={() => bridge.openExternal()}><ExternalLink />在系统浏览器中打开</DropdownMenuItem>
+                  <DropdownMenuItem disabled={!currentUrl} onClick={() => { void bridge.copyUrl(); toast.success("链接已复制"); }}><Copy />复制链接</DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => bridge.clearMarks()}><Eraser />清除填写标记</DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={!currentUrl}
+                    onClick={async () => {
+                      try {
+                        const res = await bridge.captureSample();
+                        toast.success(`已存下这页的表单结构（${res.fields} 个字段，不含你填的内容），文件夹已打开——把这个文件发给开发者就能复现问题`, { duration: 8000 });
+                      } catch (error) {
+                        toast.error(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : "没存下来");
+                      }
+                    }}
+                  ><Bug />这页没填好？存一份表单样本</DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={!currentUrl}
+                    onClick={async () => {
+                      try {
+                        const result = await bridge.exportFormStructure();
+                        toast.success(`已导出表单结构（${result.fields} 个字段），文件在「下载」文件夹；已去掉填写内容和个人资料，可发给开发者排查`);
+                      } catch (err) {
+                        toast.error(err instanceof Error ? err.message : "导出失败");
+                      }
+                    }}
+                  ><FileCode />导出表单结构（反馈填错用）</DropdownMenuItem>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+              <DropdownMenuSeparator />
               <DropdownMenuItem onClick={async () => { await bridge.clearHistory(); setHistory([]); toast.success("最近访问已清空"); }}><Trash2 />清空最近访问</DropdownMenuItem>
               <DropdownMenuItem
                 variant="destructive"
@@ -1754,7 +1812,7 @@ export function EmbeddedBrowser({
           </div>
         )}
 
-        {status && (status.phase === "scanning" || status.phase === "ai") && busy && (
+        {showBanner("autofillBusy") && status && (status.phase === "scanning" || status.phase === "ai") && busy && (
           <Infobar
             tone="info"
             icon={<Loader2 className="animate-spin" />}
@@ -1767,7 +1825,7 @@ export function EmbeddedBrowser({
             )}
           </Infobar>
         )}
-        {status?.phase === "error" && status.message.startsWith("已暂停") && (
+        {showBanner("autofillPaused") && status?.phase === "error" && status.message.startsWith("已暂停") && (
           <Infobar
             tone="info"
             icon={<Pause />}
@@ -1778,7 +1836,7 @@ export function EmbeddedBrowser({
             已暂停，填好的内容都留着。可以先在网页上改一改、补一补，再点「继续填写」——已经有内容的框不会被覆盖。
           </Infobar>
         )}
-        {status && (status.phase === "done" || (status.phase === "error" && !status.message.startsWith("已暂停"))) && (
+        {showBanner("autofillDone") && status && (status.phase === "done" || (status.phase === "error" && !status.message.startsWith("已暂停"))) && (
           <Infobar
             tone={status.phase === "error" ? "danger" : status.summary?.manual ? "warning" : "success"}
             icon={status.phase === "error" ? <TriangleAlert /> : status.summary?.manual ? <ListChecks /> : <Check />}
@@ -1800,7 +1858,7 @@ export function EmbeddedBrowser({
             {!!status.summary?.notes?.length && <span className="block text-muted-foreground">{status.summary.notes.join("；")}</span>}
           </Infobar>
         )}
-        {pageProblem && pageProblem.tabId === tabsState.activeId && (
+        {showBanner("pageProblem") && pageProblem && pageProblem.tabId === tabsState.activeId && (
           <Infobar
             tone={pageProblem.kind === "hang" ? "warning" : "danger"}
             icon={<TriangleAlert />}
@@ -1810,12 +1868,12 @@ export function EmbeddedBrowser({
             {pageProblemText(pageProblem)}
           </Infobar>
         )}
-        {capturing && (
+        {showBanner("capturing") && capturing && (
           <Infobar tone="info" icon={<Loader2 className="animate-spin" />}>
             <AiProgress active className="space-y-1" expectedSeconds={15} stages={["正在读页面正文…", "AI 正在解析岗位…"]} />
           </Infobar>
         )}
-        {detected && !busy && detected.tabId === tabsState.activeId && (
+        {showBanner("detectedForm") && detected && !busy && detected.tabId === tabsState.activeId && (
           <Infobar
             tone="info"
             icon={<Sparkles />}
@@ -1835,7 +1893,7 @@ export function EmbeddedBrowser({
             {detected.typing ? <>你在手动填写，这页还有 {detected.count} 个空着的字段，可以一键填好（你已经填的不会动）。</> : <>这页有 {detected.count} 个可以自动填写的字段。</>}
           </Infobar>
         )}
-        {recordedBar && recordedBar.tabId === tabsState.activeId && (
+        {showBanner("recordedBar") && recordedBar && recordedBar.tabId === tabsState.activeId && (
           <Infobar
             tone="success"
             icon={<Check />}
@@ -1849,7 +1907,7 @@ export function EmbeddedBrowser({
             {recordedBar.auto ? "已自动记为投递" : "已记为投递"}：<strong className="font-medium">{recordedBar.label}</strong>{recordedBar.note ? <>。{recordedBar.note}。</> : "。"}
           </Infobar>
         )}
-        {tailoredHere && resumeVersionId !== tailoredHere.resumeVersionId && !skippedTailored.includes(tailoredHere.site) && !submitted && !recordedBar && (
+        {showBanner("tailoredResume") && tailoredHere && resumeVersionId !== tailoredHere.resumeVersionId && !skippedTailored.includes(tailoredHere.site) && !submitted && !recordedBar && (
           <Infobar
             icon={<Wand2 />}
             onClose={() => setSkippedTailored((list) => [...list, tailoredHere.site])}
@@ -1859,7 +1917,7 @@ export function EmbeddedBrowser({
             你为「{tailoredHere.label}」定制了简历「{tailoredHere.name}」。这个网站一键填写要用它吗？
           </Infobar>
         )}
-        {!(tailoredHere && resumeVersionId !== tailoredHere.resumeVersionId && !skippedTailored.includes(tailoredHere.site)) &&
+        {showBanner("setupRecommendation") && !(tailoredHere && resumeVersionId !== tailoredHere.resumeVersionId && !skippedTailored.includes(tailoredHere.site)) &&
           pageIntel?.url === currentUrl &&
           pageIntel.recommendation &&
           !dismissedIntel.has(`rec:${currentUrl}`) &&
@@ -1891,7 +1949,7 @@ export function EmbeddedBrowser({
               {pageIntel.recommendation.variantName ? `资料方案「${pageIntel.recommendation.variantName}」` : ""}。
             </Infobar>
           )}
-        {pageIntel?.url === currentUrl &&
+        {showBanner("eligibilityWarning") && pageIntel?.url === currentUrl &&
           pageIntel.warnings.length > 0 &&
           !dismissedIntel.has(`warn:${currentUrl}`) &&
           !submitted &&
@@ -1906,7 +1964,7 @@ export function EmbeddedBrowser({
               {pageIntel.warnings.map((w) => w.message).join("；")}。
             </Infobar>
           )}
-        {submitted && submitted.tabId === tabsState.activeId && (
+        {showBanner("submitted") && submitted && submitted.tabId === tabsState.activeId && (
           <Infobar
             tone="success"
             icon={<Check />}
@@ -1942,10 +2000,10 @@ export function EmbeddedBrowser({
             })()}
           </Infobar>
         )}
-        {savedLogins.offer && savedLogins.offer.tabId === tabsState.activeId && (
+        {showBanner("loginOffer") && savedLogins.offer && savedLogins.offer.tabId === tabsState.activeId && (
           <LoginOfferInfobar bridge={bridge} offer={savedLogins.offer} onDone={savedLogins.clearOffer} />
         )}
-        {((otpPrompt && otpPrompt.tabId === tabsState.activeId) || otpChoices.length > 0) && (
+        {showBanner("otpPrompt") && ((otpPrompt && otpPrompt.tabId === tabsState.activeId) || otpChoices.length > 0) && (
           <Infobar
             icon={otpBusy ? <Loader2 className="animate-spin" /> : <MailCheck />}
             onClose={() => { setOtpPrompt(null); setOtpChoices([]); }}
@@ -1980,6 +2038,22 @@ export function EmbeddedBrowser({
           onPickPortalCompany={() => setPortalOpen(true)}
           hideApplied={!!submitted || (!!currentUrl && recordedPages.includes(currentUrl))}
         />
+        {(queuedCount > 0 || (showAllInfobars && activeBannerIds.length > 1)) && (
+          <div className="flex items-center justify-between gap-2 border-b bg-muted/55 px-3 py-1 text-[11px] text-muted-foreground">
+            <span>
+              {showAllInfobars
+                ? `已展开全部 ${activeBannerIds.length} 条页面提示`
+                : `另有 ${queuedCount} 条页面提示已折叠（按重要度只显示最关键 1 条，免挡网页）`}
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowAllInfobars((prev) => !prev)}
+              className="shrink-0 font-medium text-primary hover:underline"
+            >
+              {showAllInfobars ? "只看重要 1 条" : `展开其余 ${queuedCount} 条`}
+            </button>
+          </div>
+        )}
       </div>
 
       <div className={cn("flex min-h-0 overflow-hidden", (expanded || autoHeight) && "flex-1")}>
@@ -1988,7 +2062,7 @@ export function EmbeddedBrowser({
           role="region"
           aria-label="网页内容"
           style={expanded || autoHeight ? undefined : { height: browserHeight }}
-          className={cn("relative min-w-0 flex-1 overflow-hidden bg-white", !(expanded || autoHeight) && "min-h-[26rem]")}
+          className={cn("relative min-w-0 flex-1 overflow-hidden bg-card", !(expanded || autoHeight) && "min-h-[26rem]")}
         >
           {/* App-drawn, not a page view: it can stay under an open menu. */}
           {!currentUrl && (

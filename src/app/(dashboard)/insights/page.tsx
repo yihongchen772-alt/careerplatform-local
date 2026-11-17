@@ -17,6 +17,7 @@ import {
 import { computeFunnel, computeOutcomes } from "@/lib/funnel";
 import type { SkillGapAnalysis } from "@/lib/actions/skill-gap";
 import { PageHero } from "@/components/layout/page-hero";
+import { MODULE_CLUSTERS, ModuleTabs } from "@/components/layout/module-tabs";
 import { applicationCities, cityGroup, NO_CITY } from "@/lib/application-city";
 import { industryLabel, NO_INDUSTRY } from "@/lib/company-industry";
 
@@ -73,6 +74,7 @@ export default async function InsightsPage() {
   return (
     <div className="space-y-6">
       <PageHero title="投递转化率" icon={TrendingUp} description="看看哪个渠道、哪版简历、哪个方向更容易拿到面试，好决定精力往哪放" />
+      <ModuleTabs items={MODULE_CLUSTERS.applications} activeHref="/insights" />
 
       {!hasApplications ? (
         <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed py-16 text-center text-muted-foreground">

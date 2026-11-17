@@ -8,6 +8,7 @@ import { STAGE_BADGE_VARIANT, STAGE_LABELS } from "@/lib/stage-labels";
 import { OfferCompareTable, type OfferRow } from "@/components/compare/offer-compare-table";
 import { OfferAnalysisDialog } from "@/components/compare/offer-analysis-dialog";
 import { PageHero } from "@/components/layout/page-hero";
+import { MODULE_CLUSTERS, ModuleTabs } from "@/components/layout/module-tabs";
 
 export default async function ComparePage() {
   const user = await requireUser();
@@ -30,6 +31,7 @@ export default async function ComparePage() {
   return (
     <div className="space-y-6">
       <PageHero title="Offer 对比" icon={Scale} description="汇总所有拿到 offer 或已接受的投递，方便横向比较" />
+      <ModuleTabs items={MODULE_CLUSTERS.applications} activeHref="/compare" />
 
       {applications.length === 0 ? (
         <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed py-16 text-center text-muted-foreground">
