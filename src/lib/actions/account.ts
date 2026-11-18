@@ -9,7 +9,7 @@ import { updateProfileSchema } from "@/lib/validation";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
 import { getResumeContext } from "@/lib/resume-context";
 import { callTextAi, getUserAiConfig } from "@/lib/ai-providers";
-import { applicationProfileSchema, parseApplicationProfile, type ApplicationProfile } from "@/lib/application-profile";
+import { applicationProfileSchema, customFieldSchema, parseApplicationProfile, type ApplicationProfile } from "@/lib/application-profile";
 
 export async function updateProfile(input: z.infer<typeof updateProfileSchema>) {
   const user = await requireUser();
@@ -56,6 +56,7 @@ export async function updateApplicationProfile(input: unknown): Promise<ActionRe
       languages: data.languages.filter((row) => row.name),
       family: data.family.filter((row) => Object.values(row).some(Boolean)),
       extras: Object.fromEntries(Object.entries(data.extras).filter(([, v]) => v)),
+      customFields: data.customFields.filter((f) => f.label.trim() && f.value.trim()),
       learned: existingStored.learned,
       pinnedAttachments: existingStored.pinnedAttachments,
       variants: data.variants.map((variant) => ({
@@ -75,7 +76,59 @@ export async function updateApplicationProfile(input: unknown): Promise<ActionRe
       data: { applicationProfile: cleaned as Prisma.InputJsonValue },
     });
     revalidatePath("/settings");
+    revalidatePath("/browser");
     return cleaned;
+  });
+}
+
+const quickPersonalSchema = z.object({
+  extras: z.record(z.string().max(60), z.string().trim().max(1000)).default({}),
+  customFields: z.array(customFieldSchema).max(40).optional(),
+  variantId: z.string().trim().max(40).nullish(),
+});
+
+/**
+ * Lets the applicant supplement personal facts (such as 身份证号, 证件类型, or
+ * custom key/value slots) straight from the embedded browser sidebar without leaving the form.
+ */
+export async function saveQuickPersonalProfile(input: z.infer<typeof quickPersonalSchema>): Promise<ActionResult<ApplicationProfile>> {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const parsed = quickPersonalSchema.parse(input);
+    const stored = await db.user.findUnique({ where: { id: user.id }, select: { applicationProfile: true } });
+    const current = parseApplicationProfile(stored?.applicationProfile);
+    const nextVariants = [...current.variants];
+    const targetVariantIdx = parsed.variantId ? nextVariants.findIndex((v) => v.id === parsed.variantId) : -1;
+    const nextExtras = { ...current.extras };
+    if (targetVariantIdx >= 0) {
+      const merged = { ...nextVariants[targetVariantIdx].extras };
+      for (const [k, v] of Object.entries(parsed.extras)) {
+        if (v) merged[k] = v;
+        else delete merged[k];
+      }
+      nextVariants[targetVariantIdx] = { ...nextVariants[targetVariantIdx], extras: merged };
+    } else {
+      for (const [k, v] of Object.entries(parsed.extras)) {
+        if (v) nextExtras[k] = v;
+        else delete nextExtras[k];
+      }
+    }
+    const nextCustomFields = parsed.customFields
+      ? parsed.customFields.filter((f) => f.label.trim() && f.value.trim())
+      : current.customFields;
+    const updated: ApplicationProfile = {
+      ...current,
+      extras: nextExtras,
+      customFields: nextCustomFields,
+      variants: nextVariants,
+    };
+    await db.user.update({
+      where: { id: user.id },
+      data: { applicationProfile: updated as Prisma.InputJsonValue },
+    });
+    revalidatePath("/settings");
+    revalidatePath("/browser");
+    return updated;
   });
 }
 

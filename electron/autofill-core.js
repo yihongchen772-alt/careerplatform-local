@@ -2532,6 +2532,9 @@ const BASIC_FIELD_RULES = [
   { keys: ["最高学历", "最高学位", "全日制最高学历", "全日制最高学位", "highest degree", "highest education"], not: /形式|方式|类型|性质|学校|院校|专业|时间|日期|证书|编号/, get: (p) => highestEducation(p)?.degree, degree: true },
   // `learn`: the 网申资料 field a hand-typed answer here fills while it is blank.
   { keys: ["英语", "外语", "cet", "english", "语言能力"], not: /姓名|名字|name/i, get: (p) => p.english, english: true, learn: "english" },
+  { keys: ["证件类型", "证件种类", "id type", "document type"], get: (p) => p.idType, learn: "idType" },
+  { keys: ["护照号", "护照号码", "passport no", "passport number"], not: /类型|有效期|签发|expiry/i, get: (p) => p.passportNumber, learn: "passportNumber" },
+  { keys: ["身份证号", "身份证号码", "公民身份号码", "证件号码", "证件号", "身份证", "id number", "id card", "identity card"], not: /类型|种类|有效期|正面|反面|照片|扫描|签发|机关|地址|住址|type|expiry|photo|address|父|母|配偶|紧急|推荐/i, get: (p) => p.idNumber, learn: "idNumber" },
   { keys: ["政治面貌", "politic", "political", "politics"], get: (p) => p.politics, learn: "politics" },
   // 央国企 / 银行常问的个人信息。
   { keys: ["入党时间", "入团时间", "入党日期", "入团日期", "入党（团）时间", "入党(团)时间"], get: (p) => p.partyDate, date: true, learn: "partyDate" },
@@ -2794,6 +2797,49 @@ function savedThirdPartyValue(field, profile, rows) {
   }
   const value = row?.[kind];
   return value ? (kind === "birthDate" ? formatDateForField(field, value) || value : value) : null;
+}
+
+/**
+ * Explicit user-saved sensitive/custom personal fields (idType, idNumber, passportNumber,
+ * customFields): never sent to AI or field memory, only filled when the user saved them.
+ */
+function savedExplicitPersonalValue(field, profile) {
+  if (!profile || isThirdPartyField(field)) return null;
+  const bare = bareLabel(field);
+  const haystack = fieldHaystack(field);
+  if (/^(?:证件类型|证件种类)$|\bid[\s_-]*type\b|\bdocument[\s_-]*type\b/i.test(bare)) {
+    const val = String(profile.idType || "").trim();
+    if (!val) return null;
+    const alts = /身份证/.test(val)
+      ? ["居民身份证", "二代身份证", "中国居民身份证", "身份证"]
+      : /护照/.test(val)
+        ? ["护照", "因私护照"]
+        : [];
+    return { value: val, alternatives: alts.filter((a) => a !== val) };
+  }
+  if (/护照(?:号|号码)|passport[\s_-]*(?:no\.?|number)/i.test(bare) && !/类型|有效期|签发|expiry/i.test(bare)) {
+    const val = String(profile.passportNumber || "").trim();
+    return val ? { value: val, alternatives: [] } : null;
+  }
+  if (/(?:身份证|公民身份|证件)(?:号|号码|编号)?|\bid[\s_-]*(?:number|card|no\.?)\b/i.test(bare) && !/类型|种类|有效期|正面|反面|照片|扫描|签发|机关|地址|住址|type|expiry|photo|address/i.test(bare)) {
+    const val = String(profile.idNumber || "").trim();
+    if (val) return { value: val, alternatives: [] };
+  }
+  const customs = Array.isArray(profile.customFields) ? profile.customFields : [];
+  if (customs.length) {
+    const norm = (s) => String(s || "").normalize("NFKC").toLowerCase().replace(/[\s：:*＊?？()（）【】[\]_\-]+/g, "");
+    const bareNorm = norm(bare);
+    const hayNorm = norm(haystack);
+    for (const item of customs) {
+      const keyNorm = norm(item?.label);
+      const val = String(item?.value || "").trim();
+      if (!keyNorm || !val || keyNorm.length < 2) continue;
+      if (bareNorm === keyNorm || (keyNorm.length >= 3 && (bareNorm.includes(keyNorm) || hayNorm.includes(keyNorm)))) {
+        return { value: val, alternatives: [] };
+      }
+    }
+  }
+  return null;
 }
 
 function isSplitNameField(field) {
@@ -4355,11 +4401,14 @@ function matchBasicField(field, profile, rowIndexes) {
 // The 网申资料 field a hand-typed answer in this box would fill: the same
 // rule that fills the box, so nothing is learned that would not be used.
 function learnableProfileKey(field) {
-  if (isThirdPartyField(field) || isNeverGuessField(field)) return null;
+  if (isThirdPartyField(field)) return null;
   const haystack = fieldHaystack(field);
   if (/company.?name|employer.?name|school.?name|岗位名称|公司名称|企业名称/.test(haystack)) return null;
   const rule = BASIC_FIELD_RULES.find((item) => basicRuleMatches(item, field));
   if (!rule || !rule.learn) return null;
+  // User's own 身份证 / 证件类型 / 护照 hand-typed on a form can be learned directly
+  // into their local profile; other restricted fields (password, bank, captcha) stay blocked.
+  if (isNeverGuessField(field) && !["idType", "idNumber", "passportNumber"].includes(rule.learn)) return null;
   // A score box ("英语成绩 580") holds part of the level, not the level.
   if (rule.english && /成绩|分数|得分|score/i.test(haystack)) return null;
   return rule.learn;
@@ -4736,7 +4785,7 @@ function buildAiProfile(profile) {
 }
 
 function suggestValidationRepair(field, pair, issueMessage) {
-  if (!field || !pair || !pair.value || isNeverGuessField(field) || isThirdPartyField(field) || field.readonlyPicker) return null;
+  if (!field || !pair || !pair.value || (isNeverGuessField(field) && pair.source !== "profile") || isThirdPartyField(field) || field.readonlyPicker) return null;
   const value = String(pair.value).trim();
   if (!value) return null;
   const issue = String(issueMessage || "");
@@ -4877,6 +4926,11 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
         continue;
       }
       field.module = fieldModule(field, repeat);
+      const explicitPersonal = savedExplicitPersonalValue(field, profile);
+      if (explicitPersonal?.value) {
+        pairs.push({ id: field.id, value: explicitPersonal.value, source: "profile", label: field.label, tag: field.tag, alternatives: explicitPersonal.alternatives || [] });
+        continue;
+      }
       if (isNeverGuessField(field)) { neverGuessCount++; continue; }
       // Someone else's details (家庭成员, 紧急联系人): never the applicant's, never AI.
       if (isThirdPartyField(field)) {
@@ -5119,7 +5173,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       const plan = { id: adapter.taskId || String(Date.now()), url: initialUrl, at: Date.now(), fields, pairs, frameById, profile, options, resumeVersionId };
       const proposals = fields.filter((field) => !outside.has(field.id)).map((field) => {
         const pair = pairs.find((p) => p.id === field.id);
-        const eligible = !excluded.has(field.id) && !field.hasValue && !field.userEdited && !isNeverGuessField(field) && (!isThirdPartyField(field) || pairs.some((p) => p.id === field.id)) && !field.readonlyPicker;
+        const eligible = !excluded.has(field.id) && !field.hasValue && !field.userEdited && (!isNeverGuessField(field) || pairs.some((p) => p.id === field.id)) && (!isThirdPartyField(field) || pairs.some((p) => p.id === field.id)) && !field.readonlyPicker;
         const oldField = priorPlan?.fields.find((f) => f.mappingKey === field.mappingKey);
         // A blank box the page auto-save captured is not an answer to restore;
         // only typed content or an edit made in this preview comes back.
@@ -5194,7 +5248,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       for (const issue of validation) {
         const field = fields.find((f) => f.id === issue.id);
         const pair = pairs.find((p) => p.id === issue.id);
-        if (!field || !pair || pair.healed || tooLong.has(field.id) || isNeverGuessField(field) || isThirdPartyField(field) || field.readonlyPicker) continue;
+        if (!field || !pair || pair.healed || tooLong.has(field.id) || (isNeverGuessField(field) && pair.source !== "profile") || isThirdPartyField(field) || field.readonlyPicker) continue;
         const fix = suggestValidationRepair(field, pair, issue.message);
         if (fix && fix.value !== pair.value) {
           pair.value = fix.value;
@@ -5525,7 +5579,8 @@ async function saveCorrectionsCore(adapter, resumeVersionId, onlyUserEdited = fa
   for (const field of fields) {
     const repeat = resolveRepeatField(field, rowIndexes);
     const label = field.label || field.placeholder || field.name;
-    if (!label || isForbiddenMemoryField(field)) continue;
+    const directLearnKey = !repeat ? learnableProfileKey(field) : null;
+    if (!label || (isForbiddenMemoryField(field) && !directLearnKey)) continue;
     const frame = frameById.get(field.id);
     if (frame === undefined) continue;
     const snapshot = snapshots[field.id] || {};
@@ -5550,10 +5605,10 @@ async function saveCorrectionsCore(adapter, resumeVersionId, onlyUserEdited = fa
     if (snapshot.answerId && !snapshot.userEdited) continue;
     const openEnded = isOpenEndedQuestionField(field) && !isSensitiveMemoryField(field);
     if (!openEnded && !snapshot.userEdited) continue;
-    const key = openEnded ? label : fieldMemoryKey(field);
+    const key = openEnded ? label : fieldMemoryKey(field) || (directLearnKey ? (bareLabel(field) || label) : null);
     if (!key) continue;
     // Typed by the applicant (not a default the page showed): may fill a blank in 网申资料.
-    const profileKey = snapshot.userEdited ? learnableProfileKey(field) : null;
+    const profileKey = snapshot.userEdited ? directLearnKey : null;
     answers.push({ questionLabel: key, fieldKey: field.mappingKey, answer: candidate.value, answerId: openEnded ? candidate.answerId : undefined, kind: openEnded ? field.tag === "textarea" || field.tag === "richtext" ? "essay" : "short" : "field", ...(profileKey ? { profileKey } : {}) });
     savedFields.push({ frame, id: field.id, value: candidate.value });
   }
@@ -5646,8 +5701,11 @@ async function saveCorrectionsCore(adapter, resumeVersionId, onlyUserEdited = fa
 // Values are referenced from the saved profile, never reconstructed by the model.
 function profileChoices(profile) {
   const choices = [];
-  const labels = { name: "姓名", phone: "手机", email: "邮箱", gender: "性别", birthDate: "出生日期", currentCity: "现居地", country: "所在国家 / 地区", englishName: "英文名", exchange: "交换 / 海外经历", targetRole: "期望岗位", selfIntro: "自我评价", politics: "政治面貌", hometown: "籍贯", ethnicity: "民族", english: "英语水平", wechat: "微信号", qq: "QQ 号", expectedSalary: "期望薪资", availableFrom: "最早到岗时间", internshipDuration: "可实习时长", address: "通讯地址", researchDirection: "研究方向", researchTopic: "研究方向（简短）", rank: "成绩排名", acceptAdjust: "是否接受调剂", jobSource: "招聘信息来源", courses: "主修课程", homepage: "个人主页 / 作品链接", lab: "实验室 / 课题组", hobbies: "兴趣爱好", thesis: "毕业论文", employmentStatus: "目前状态", workYears: "工作年限", currentSalary: "目前薪资", noticePeriod: "离职 / 到岗周期", leaveReason: "离职原因", managementScale: "管理团队规模", nonCompete: "竞业协议" };
+  const labels = { name: "姓名", idType: "证件类型", idNumber: "身份证号", passportNumber: "护照号", phone: "手机", email: "邮箱", gender: "性别", birthDate: "出生日期", currentCity: "现居地", country: "所在国家 / 地区", englishName: "英文名", exchange: "交换 / 海外经历", targetRole: "期望岗位", selfIntro: "自我评价", politics: "政治面貌", hometown: "籍贯", ethnicity: "民族", english: "英语水平", wechat: "微信号", qq: "QQ 号", expectedSalary: "期望薪资", availableFrom: "最早到岗时间", internshipDuration: "可实习时长", address: "通讯地址", researchDirection: "研究方向", researchTopic: "研究方向（简短）", rank: "成绩排名", acceptAdjust: "是否接受调剂", jobSource: "招聘信息来源", courses: "主修课程", homepage: "个人主页 / 作品链接", lab: "实验室 / 课题组", hobbies: "兴趣爱好", thesis: "毕业论文", employmentStatus: "目前状态", workYears: "工作年限", currentSalary: "目前薪资", noticePeriod: "离职 / 到岗周期", leaveReason: "离职原因", managementScale: "管理团队规模", nonCompete: "竞业协议" };
   for (const [ref, label] of Object.entries(labels)) if (profile[ref]) choices.push({ ref, label, value: String(profile[ref]) });
+  for (const item of profile.customFields || []) {
+    if (item?.label && item?.value) choices.push({ ref: `custom:${item.id || item.label}`, label: item.label, value: String(item.value) });
+  }
   const columns = { school: "学校", major: "专业", department: "院系 / 部门", degree: "学历", gpa: "GPA", start: "开始时间", end: "结束时间", company: "公司", role: "角色/职位", name: "名称", description: "描述", responsibilities: "职责", link: "项目链接", teamSize: "参加人数", issuer: "颁发单位", level: "等级 / 程度", category: "类别", date: "日期", language: "语种", score: "分数" };
   for (const [group, label] of [["education", "教育"], ["experience", "工作/实习"], ["project", "项目"], ["award", "获奖"], ["campus", "校园经历"], ["skill", "技能"], ["language", "语言"]]) {
     rowsForGroup(profile, group, true).forEach((row, index) => { for (const [key, text] of Object.entries(columns)) if (row[key]) choices.push({ ref: `${recordReference(group, row)}:${key}`, label: `${label} ${index + 1}（${row.school || row.company || row.name || row.degree || ""}）${row.__memoryLabel ? ` · ${row.__memoryLabel}` : ""} · ${text}`, value: String(row[key]) }); });
@@ -5828,7 +5886,7 @@ async function applyAutofillPlan(adapter, input) {
     const selected = new Set();
     for (const row of (input.approved || []).slice(0, 500)) {
       const field = plan.fields.find((f) => f.id === row.id);
-      if (!field || field.hasValue || isNeverGuessField(field) || (isThirdPartyField(field) && !plan.pairs.some((p) => p.id === row.id)) || field.readonlyPicker || selected.has(row.id)) continue;
+      if (!field || field.hasValue || (isNeverGuessField(field) && !plan.pairs.some((p) => p.id === row.id)) || (isThirdPartyField(field) && !plan.pairs.some((p) => p.id === row.id)) || field.readonlyPicker || selected.has(row.id)) continue;
       const current = liveByOldId.get(row.id);
       if (!current) throw new Error("网页表单已变化，请重新扫描预览");
       if (current.hasValue || current.userEdited) { selected.add(row.id); continue; }
@@ -5976,6 +6034,7 @@ module.exports = {
   repeatFieldValue,
   resolveRepeatField,
   rowDateValue,
+  savedExplicitPersonalValue,
   scanPageFields,
   sectionGroup,
   sectionOrdinal,

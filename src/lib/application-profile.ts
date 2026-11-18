@@ -90,6 +90,9 @@ export const familyMemberSchema = z.object({
  * filled into forms only, and never reach the AI's description of the applicant.
  */
 export const PERSONAL_FIELDS = [
+  { key: "idType", label: "证件类型", hint: "居民身份证 / 护照", private: true },
+  { key: "idNumber", label: "身份证号 / 证件号码", hint: "仅存本机用于填表，不发给 AI", private: true },
+  { key: "passportNumber", label: "护照号", hint: "仅存本机用于填表，不发给 AI", private: true },
   { key: "partyDate", label: "入党 / 入团时间", hint: "2021-06" },
   { key: "birthplace", label: "出生地", hint: "江苏南京" },
   { key: "householdPlace", label: "户籍所在地", hint: "省 市 区" },
@@ -204,6 +207,13 @@ export const profileVariantSchema = z.object({
   extras: z.record(z.string(), z.string().trim().max(1000)).default({}),
 });
 
+export const customFieldSchema = z.object({
+  id: z.string().trim().min(1).max(40),
+  label: z.string().trim().min(1).max(40),
+  value: z.string().trim().max(500).default(""),
+});
+export type CustomField = z.infer<typeof customFieldSchema>;
+
 export const applicationProfileSchema = z.object({
   education: z.array(educationSchema).max(10).default([]),
   experiences: z.array(experienceSchema).max(20).default([]),
@@ -214,6 +224,8 @@ export const applicationProfileSchema = z.object({
   languages: z.array(languageSchema).max(10).default([]),
   family: z.array(familyMemberSchema).max(10).default([]),
   extras: z.record(z.string(), z.string().trim().max(1000)).default({}),
+  /** User-defined personal slots (e.g. 银行卡号, 学号, 开户行), local-only and never sent to AI. */
+  customFields: z.array(customFieldSchema).max(40).default([]),
   variants: z.array(profileVariantSchema).max(100).default([]),
   /** What the 网申浏览器 wrote in by itself from hand-filled pages (for 撤销). */
   learned: z.array(learnedEntrySchema).max(80).default([]),
@@ -261,7 +273,7 @@ export type CampusRow = z.infer<typeof campusSchema>;
 export type SkillRow = z.infer<typeof skillSchema>;
 export type LanguageRow = z.infer<typeof languageSchema>;
 
-export const EMPTY_APPLICATION_PROFILE: ApplicationProfile = { education: [], experiences: [], projects: [], awards: [], campus: [], skills: [], languages: [], family: [], extras: {}, variants: [], learned: [] };
+export const EMPTY_APPLICATION_PROFILE: ApplicationProfile = { education: [], experiences: [], projects: [], awards: [], campus: [], skills: [], languages: [], family: [], extras: {}, customFields: [], variants: [], learned: [] };
 
 export function parseApplicationProfile(raw: unknown): ApplicationProfile {
   const parsed = applicationProfileSchema.safeParse(raw);

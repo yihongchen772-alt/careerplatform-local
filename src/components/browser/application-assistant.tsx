@@ -1,9 +1,10 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ClipboardCopy, Crosshair, FileText, ListChecks, NotebookPen, ScanSearch, Settings2, SquareDashedMousePointer, X } from "lucide-react";
+import { ClipboardCopy, Crosshair, FileText, ListChecks, NotebookPen, Plus, ScanSearch, Settings2, SquareDashedMousePointer, Trash2, UserPlus, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { InlinePendingReview } from "@/components/browser/inline-pending-review";
+import { saveQuickPersonalProfile } from "@/lib/actions/account";
 import { cn } from "@/lib/utils";
 import type { DesktopBridge, DesktopBridgeAutofillOptions, DesktopBridgeAutofillStatus, DesktopBridgeFillSource, FillPlan } from "@/types/desktop-bridge";
 import { copyText } from "@/lib/copy-text";
@@ -30,11 +31,17 @@ const FILL_SOURCES: { source: DesktopBridgeFillSource; label: string; dot: strin
 ];
 
 type Card = { group: string; label: string; value: string };
+type CustomFieldItem = { id: string; label: string; value: string };
 
 function copyChoices(profile: Record<string, unknown>) {
   const choices: Card[] = [];
-  const labels: Record<string, string> = { name: "姓名", phone: "手机", email: "邮箱", gender: "性别", birthDate: "出生日期", currentCity: "现居地", selfIntro: "自我评价", targetRole: "期望岗位", politics: "政治面貌", hometown: "籍贯", ethnicity: "民族", english: "英语水平", expectedSalary: "期望薪资", availableFrom: "最早到岗时间", internshipDuration: "可实习时长", wechat: "微信号", address: "通讯地址" };
+  const labels: Record<string, string> = { name: "姓名", idType: "证件类型", idNumber: "身份证号", passportNumber: "护照号", phone: "手机", email: "邮箱", gender: "性别", birthDate: "出生日期", currentCity: "现居地", selfIntro: "自我评价", targetRole: "期望岗位", politics: "政治面貌", hometown: "籍贯", householdPlace: "户籍地", sourcePlace: "生源地", ethnicity: "民族", english: "英语水平", expectedSalary: "期望薪资", availableFrom: "最早到岗时间", internshipDuration: "可实习时长", wechat: "微信号", address: "通讯地址", emergencyName: "紧急联系人", emergencyPhone: "紧急联系人电话" };
   for (const [key, label] of Object.entries(labels)) if (typeof profile[key] === "string" && profile[key]) choices.push({ group: "基本信息", label, value: profile[key] as string });
+  if (Array.isArray(profile.customFields)) {
+    for (const row of profile.customFields as CustomFieldItem[]) {
+      if (row?.label && row?.value) choices.push({ group: "自定义字段", label: row.label, value: row.value });
+    }
+  }
   const columns: Record<string, string> = { school: "学校", company: "公司", name: "名称", role: "职位 / 角色", start: "开始", end: "结束", major: "专业", degree: "学历", description: "描述", responsibilities: "职责与成果", link: "项目链接", teamSize: "参加人数", issuer: "颁发单位", level: "等级", date: "获奖时间", score: "分数", language: "语种" };
   for (const [key, label] of [["education", "教育"], ["experiences", "工作/实习"], ["projects", "项目"], ["awards", "获奖"]]) if (Array.isArray(profile[key])) (profile[key] as Record<string, string>[]).forEach((row, i) => {
     for (const [name, value] of Object.entries(row)) if (typeof value === "string" && value) choices.push({ group: `${label} ${i + 1}`, label: columns[name] || name, value });
@@ -66,10 +73,20 @@ export function ApplicationAssistant({ bridge, status, busy, hasPage, resumeId, 
 }) {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [cards, setCards] = useState<Card[]>([]);
+  const [rawProfile, setRawProfile] = useState<Record<string, unknown>>({});
   const [length, setLength] = useState(200);
   const edits = useRef<NonNullable<DesktopBridgeAutofillOptions["previewEdits"]>>([]);
   const rememberEdits = useCallback((rows: NonNullable<DesktopBridgeAutofillOptions["previewEdits"]>) => { edits.current = rows; }, []);
   const [drafts, setDrafts] = useState<{ id: string; name: string; url: string; contextKey: string }[]>([]);
+  const loadProfileCards = useCallback((signal?: AbortSignal) => {
+    return fetch(`/api/desktop-browser/profile?${new URLSearchParams({ resumeVersionId: resumeId, variantId })}`, { signal })
+      .then((r) => r.json())
+      .then((p) => {
+        setRawProfile(p || {});
+        setCards(copyChoices(p || {}));
+      })
+      .catch(() => {});
+  }, [resumeId, variantId]);
   useEffect(() => {
     const controller = new AbortController();
     fetch("/api/desktop-browser/application-draft", { signal: controller.signal }).then((r) => r.json()).then(setDrafts).catch(() => {});
@@ -78,9 +95,9 @@ export function ApplicationAssistant({ bridge, status, busy, hasPage, resumeId, 
   }, []);
   useEffect(() => {
     const controller = new AbortController();
-    fetch(`/api/desktop-browser/profile?${new URLSearchParams({ resumeVersionId: resumeId, variantId })}`, { signal: controller.signal }).then((r) => r.json()).then((p) => setCards(copyChoices(p))).catch(() => {});
+    void loadProfileCards(controller.signal);
     return () => controller.abort();
-  }, [resumeId, variantId]);
+  }, [loadProfileCards]);
   const job = jobs.find((j) => j.id === positionId);
   const manual = status?.details?.filter((d) => d.source === "manual") ?? [];
 
@@ -137,7 +154,17 @@ export function ApplicationAssistant({ bridge, status, busy, hasPage, resumeId, 
         </div>
       ))}
 
-      {tab === "cards" && <ProfileCards cards={cards} bridge={bridge} hasPage={hasPage} onOpenProfile={onOpenProfile} />}
+      {tab === "cards" && (
+        <ProfileCards
+          cards={cards}
+          rawProfile={rawProfile}
+          variantId={variantId}
+          bridge={bridge}
+          hasPage={hasPage}
+          onReload={() => loadProfileCards()}
+          onOpenProfile={onOpenProfile}
+        />
+      )}
 
       {tab === "pending" && <InlinePendingReview active={tab === "pending"} refreshToken={pendingRefreshToken} onCountChange={onPendingCountChange} onOpenFullPage={onOpenSettingsPending} />}
 
@@ -146,12 +173,91 @@ export function ApplicationAssistant({ bridge, status, busy, hasPage, resumeId, 
   </aside>;
 }
 
+const QUICK_PERSONAL_SLOTS: { key: string; label: string; placeholder: string }[] = [
+  { key: "idType", label: "证件类型", placeholder: "居民身份证 / 护照" },
+  { key: "idNumber", label: "身份证号", placeholder: "保存后一键填写会自动填入" },
+  { key: "passportNumber", label: "护照号", placeholder: "选填，保存后自动填入" },
+  { key: "wechat", label: "微信号", placeholder: "微信号" },
+  { key: "hometown", label: "籍贯", placeholder: "省 市" },
+  { key: "currentCity", label: "现居城市", placeholder: "如 上海" },
+  { key: "householdPlace", label: "户籍所在地", placeholder: "省 市 区" },
+  { key: "sourcePlace", label: "生源地", placeholder: "高考所在省市" },
+  { key: "politics", label: "政治面貌", placeholder: "群众 / 共青团员 / 中共党员" },
+  { key: "address", label: "通讯地址", placeholder: "详细通讯地址" },
+  { key: "emergencyName", label: "紧急联系人", placeholder: "联系人姓名" },
+  { key: "emergencyPhone", label: "紧急联系人电话", placeholder: "联系人手机号" },
+];
+
 /**
  * 资料点填: click into a box on the page, then a card here, and the value goes
- * in at the caret (⌘Z takes it back). With no box picked it is copied instead.
+ * in at the caret (⌘Z takes it back). Also supports inline editing/adding custom slots.
  */
-function ProfileCards({ cards, bridge, hasPage, onOpenProfile }: { cards: Card[]; bridge: DesktopBridge; hasPage: boolean; onOpenProfile: () => void }) {
+function ProfileCards({
+  cards,
+  rawProfile,
+  variantId,
+  bridge,
+  hasPage,
+  onReload,
+  onOpenProfile,
+}: {
+  cards: Card[];
+  rawProfile: Record<string, unknown>;
+  variantId: string;
+  bridge: DesktopBridge;
+  hasPage: boolean;
+  onReload: () => Promise<void>;
+  onOpenProfile: () => void;
+}) {
   const groups = [...new Set(cards.map((card) => card.group))];
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [extrasDraft, setExtrasDraft] = useState<Record<string, string>>({});
+  const [customDraft, setCustomDraft] = useState<CustomFieldItem[]>([]);
+
+  function openEditor() {
+    if (editing) {
+      setEditing(false);
+      return;
+    }
+    const nextExtras: Record<string, string> = {};
+    for (const slot of QUICK_PERSONAL_SLOTS) {
+      const val = rawProfile[slot.key];
+      nextExtras[slot.key] = typeof val === "string" ? val : "";
+    }
+    setExtrasDraft(nextExtras);
+    const existingCustom = Array.isArray(rawProfile.customFields)
+      ? (rawProfile.customFields as CustomFieldItem[]).map((c) => ({ ...c }))
+      : [];
+    setCustomDraft(
+      existingCustom.length
+        ? existingCustom
+        : [{ id: `cf-${crypto.randomUUID().replace(/-/g, "").slice(0, 8)}`, label: "", value: "" }]
+    );
+    setEditing(true);
+  }
+
+  async function saveQuick() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const cleanCustom = customDraft
+        .map((c) => ({ ...c, label: c.label.trim(), value: c.value.trim() }))
+        .filter((c) => c.label && c.value);
+      const res = await saveQuickPersonalProfile({
+        extras: extrasDraft,
+        customFields: cleanCustom,
+        variantId: variantId && variantId !== "default" ? variantId : null,
+      });
+      if (!res.ok) return void toast.error(res.message);
+      await onReload();
+      setEditing(false);
+      toast.success("已保存到本机资料，点卡片可直接填入，一键填写也会识别使用");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function use(card: Card) {
     const result = hasPage ? await bridge.insertProfileValue(card.value).catch(() => null) : null;
     if (result?.ok) {
@@ -160,18 +266,126 @@ function ProfileCards({ cards, bridge, hasPage, onOpenProfile }: { cards: Card[]
     }
     await copyText(card.value).then(() => toast.success(`${result?.reason || "没有选中网页上的输入框"}；已复制「${card.label}」，可以直接粘贴`)).catch(() => toast.error("复制失败"));
   }
-  if (!cards.length) return <p className="text-xs text-muted-foreground">还没有网申资料。<button type="button" className="text-primary hover:underline" onClick={onOpenProfile}>去账号设置填写</button></p>;
-  return <>
-    <p className="text-xs leading-relaxed text-muted-foreground">先在网页上点一下要填的输入框，再点下面的资料，就填进去了（⌘Z 可撤销）。没选中输入框时会复制，粘贴即可。</p>
-    {groups.map((group, index) => <details key={group} open={index === 0} className="group rounded-md border">
-      <summary className="cursor-pointer px-2 py-1.5 text-xs font-medium select-none">{group}</summary>
-      <div className="flex flex-wrap gap-1.5 border-t p-2">{cards.filter((card) => card.group === group).map((card, i) => (
-        <button key={i} type="button" title={card.value} className="max-w-full rounded-md border bg-background px-2 py-1 text-left text-xs transition-colors hover:border-primary/50 hover:bg-primary/5" onMouseDown={(event) => event.preventDefault()} onClick={() => void use(card)}>
-          <span className="text-muted-foreground">{card.label}：</span><span className="line-clamp-2 whitespace-pre-wrap">{card.value}</span>
+
+  return (
+    <div className="space-y-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-1.5">
+        <Button size="xs" variant={editing ? "default" : "outline"} onClick={openEditor}>
+          <UserPlus className="size-3.5" />
+          {editing ? "收起补充面板" : "补充个人资料 / 自定义空栏"}
+        </Button>
+        <button type="button" className="text-[11px] text-primary hover:underline" onClick={onOpenProfile}>
+          完整设置 →
         </button>
-      ))}</div>
-    </details>)}
-  </>;
+      </div>
+
+      {editing && (
+        <div className="space-y-3 rounded-lg border bg-background/80 p-2.5 text-xs">
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-medium text-foreground">快速补充个人与证件信息</span>
+          </div>
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            保存后一键填写、预览以及后续网申都会自动填入；也可以在网页上手动填过一次，系统会自动记住。
+          </p>
+          <div className="grid grid-cols-2 gap-1.5">
+            {QUICK_PERSONAL_SLOTS.map((slot) => (
+              <label key={slot.key} className={cn("block space-y-0.5", (slot.key === "idNumber" || slot.key === "address") && "col-span-2")}>
+                <span className="text-[11px] text-muted-foreground">{slot.label}</span>
+                <input
+                  type="text"
+                  value={extrasDraft[slot.key] ?? ""}
+                  placeholder={slot.placeholder}
+                  onChange={(e) => setExtrasDraft((prev) => ({ ...prev, [slot.key]: e.target.value }))}
+                  className="h-7 w-full rounded-md border border-input bg-transparent px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+                />
+              </label>
+            ))}
+          </div>
+
+          <div className="space-y-1.5 border-t pt-2">
+            <div className="flex items-center justify-between">
+              <span className="font-medium text-foreground">自定义空栏（自己加任意字段）</span>
+              <button
+                type="button"
+                disabled={customDraft.length >= 40}
+                onClick={() => setCustomDraft((list) => [...list, { id: `cf-${crypto.randomUUID().replace(/-/g, "").slice(0, 8)}`, label: "", value: "" }])}
+                className="inline-flex items-center gap-0.5 text-[11px] font-medium text-primary hover:underline disabled:opacity-50"
+              >
+                <Plus className="size-3" />添加空栏
+              </button>
+            </div>
+            {customDraft.map((row, idx) => (
+              <div key={row.id} className="grid grid-cols-[minmax(0,0.42fr)_minmax(0,0.58fr)_auto] items-center gap-1">
+                <input
+                  type="text"
+                  placeholder="名称（如 学号）"
+                  value={row.label}
+                  onChange={(e) => setCustomDraft((list) => list.map((item, i) => (i === idx ? { ...item, label: e.target.value } : item)))}
+                  className="h-7 min-w-0 rounded-md border border-input bg-transparent px-1.5 text-xs outline-none focus-visible:border-ring"
+                />
+                <input
+                  type="text"
+                  placeholder="填写内容"
+                  value={row.value}
+                  onChange={(e) => setCustomDraft((list) => list.map((item, i) => (i === idx ? { ...item, value: e.target.value } : item)))}
+                  className="h-7 min-w-0 rounded-md border border-input bg-transparent px-1.5 text-xs outline-none focus-visible:border-ring"
+                />
+                <button
+                  type="button"
+                  aria-label="删除空栏"
+                  onClick={() => setCustomDraft((list) => list.filter((_, i) => i !== idx))}
+                  className="grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-destructive"
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex items-center justify-end gap-1.5 pt-1">
+            <Button size="xs" variant="ghost" onClick={() => setEditing(false)}>取消</Button>
+            <Button size="xs" disabled={saving} onClick={() => void saveQuick()}>
+              {saving ? "保存中…" : "保存并应用"}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {!cards.length ? (
+        <p className="text-xs text-muted-foreground">
+          还没有网申资料。点上方「补充个人资料 / 自定义空栏」直接添加，或<button type="button" className="text-primary hover:underline" onClick={onOpenProfile}>去账号设置填写</button>。
+        </p>
+      ) : (
+        <>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            先在网页上点一下要填的输入框，再点下面的资料，就填进去了（⌘Z 可撤销）。没选中输入框时会复制，粘贴即可。
+          </p>
+          {groups.map((group, index) => (
+            <details key={group} open={index === 0} className="group rounded-md border">
+              <summary className="cursor-pointer px-2 py-1.5 text-xs font-medium select-none">{group}</summary>
+              <div className="flex flex-wrap gap-1.5 border-t p-2">
+                {cards
+                  .filter((card) => card.group === group)
+                  .map((card, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      title={card.value}
+                      className="max-w-full rounded-md border bg-background px-2 py-1 text-left text-xs transition-colors hover:border-primary/50 hover:bg-primary/5"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => void use(card)}
+                    >
+                      <span className="text-muted-foreground">{card.label}：</span>
+                      <span className="line-clamp-2 whitespace-pre-wrap">{card.value}</span>
+                    </button>
+                  ))}
+              </div>
+            </details>
+          ))}
+        </>
+      )}
+    </div>
+  );
 }
 
 function FillResult({ status, bridge, onOpenProfile }: { status: DesktopBridgeAutofillStatus; bridge: DesktopBridge; onOpenProfile: () => void }) {

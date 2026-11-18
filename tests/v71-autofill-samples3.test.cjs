@@ -312,3 +312,73 @@ test("v71: fillCustomSelects handles overseas university alias, city->province c
     assert.deepEqual([...wind.res.filled], ["s5"]);
   });
 });
+
+test("v72: user-saved & hand-typed idType, idNumber, passportNumber, and customFields auto-learn and auto-fill cleanly without isolating them", () => {
+  const ts = require("typescript");
+  const profileSrc = fs.readFileSync(path.join(__dirname, "../src/lib/application-profile.ts"), "utf8");
+  const compiled = ts.transpileModule(profileSrc, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
+  const mod = { exports: {} };
+  vm.runInNewContext(compiled, { exports: mod.exports, module: mod, require });
+  const { parseApplicationProfile, describeApplicationProfile } = mod.exports;
+
+  const parsed = parseApplicationProfile({
+    extras: { idType: "居民身份证", idNumber: "110101199901011234", passportNumber: "E12345678", politics: "中共党员" },
+    customFields: [{ id: "cf1", label: "学生证号", value: "202400198" }, { id: "cf2", label: "银行卡开户行", value: "中国银行上海分行" }],
+  });
+  assert.equal(parsed.extras.idNumber, "110101199901011234");
+  assert.equal(parsed.customFields.length, 2);
+
+  // Privacy: private IDs and customFields NEVER appear in AI prompt digest!
+  const digest = describeApplicationProfile(parsed);
+  assert.ok(digest.includes("中共党员"));
+  assert.ok(!digest.includes("110101199901011234"));
+  assert.ok(!digest.includes("E12345678"));
+  assert.ok(!digest.includes("202400198"));
+  assert.ok(!digest.includes("银行卡开户行"));
+
+  // Autofill matcher: fills explicit ID/custom fields, auto-learns hand-typed IDs, skips third-party rows
+  const source = fs.readFileSync(path.join(__dirname, "../electron/autofill-core.js"), "utf8");
+  const ctx = {
+    module: { exports: {} },
+    exports: {},
+    Set, Map, Array, Object, String, Number, Boolean, RegExp, Math, URL, URLSearchParams, JSON,
+  };
+  vm.createContext(ctx);
+  vm.runInContext(`${source}\nmodule.exports.__test = { savedExplicitPersonalValue, isNeverGuessField, learnableProfileKey, profileChoices, suggestValidationRepair };`, ctx);
+  const { savedExplicitPersonalValue, isNeverGuessField, learnableProfileKey, profileChoices, suggestValidationRepair } = ctx.module.exports.__test;
+
+  assert.equal(isNeverGuessField({ label: "身份证号", placeholder: "", name: "" }), true);
+  assert.equal(learnableProfileKey({ label: "身份证号", placeholder: "", name: "", tag: "input", type: "text" }), "idNumber");
+  assert.equal(learnableProfileKey({ label: "证件类型", placeholder: "", name: "", tag: "custom-select", type: "" }), "idType");
+  assert.equal(learnableProfileKey({ label: "护照号码", placeholder: "", name: "", tag: "input", type: "text" }), "passportNumber");
+  assert.equal(learnableProfileKey({ label: "父亲身份证号", section: "家庭成员", placeholder: "", name: "", tag: "input", type: "text" }), null);
+  assert.equal(learnableProfileKey({ label: "登录密码", placeholder: "", name: "", tag: "input", type: "password" }), null);
+  assert.equal(savedExplicitPersonalValue({ label: "身份证号", placeholder: "", name: "", section: "个人信息" }, {}), null);
+  const richProfile = {
+    idType: "居民身份证",
+    idNumber: "110101199901011234",
+    passportNumber: "E12345678",
+    customFields: [{ id: "cf1", label: "学生证号", value: "202400198" }],
+  };
+  assert.equal(savedExplicitPersonalValue({ label: "身份证号码*", placeholder: "", name: "", section: "个人信息" }, richProfile)?.value, "110101199901011234");
+  assert.equal(savedExplicitPersonalValue({ label: "身份证有效期", placeholder: "", name: "", section: "个人信息" }, richProfile), null);
+  assert.equal(savedExplicitPersonalValue({ label: "证件类型", placeholder: "", name: "", section: "个人信息" }, richProfile)?.value, "居民身份证");
+  assert.ok(savedExplicitPersonalValue({ label: "证件类型", placeholder: "", name: "", section: "个人信息" }, richProfile)?.alternatives.includes("二代身份证"));
+  assert.equal(savedExplicitPersonalValue({ label: "护照号码", placeholder: "", name: "", section: "个人信息" }, richProfile)?.value, "E12345678");
+  assert.equal(savedExplicitPersonalValue({ label: "学生证号", placeholder: "", name: "", section: "教育背景" }, richProfile)?.value, "202400198");
+  assert.equal(savedExplicitPersonalValue({ label: "父亲身份证号", placeholder: "", name: "", section: "家庭成员" }, richProfile), null);
+
+  const choices = profileChoices(richProfile);
+  assert.ok(choices.some((c) => c.ref === "idNumber" && c.value === "110101199901011234"));
+  assert.ok(choices.some((c) => c.ref === "custom:cf1" && c.value === "202400198"));
+  assert.equal(suggestValidationRepair({ label: "身份证号", maxLength: 18 }, { value: "110101199901011234 ", source: "profile" }, ""), null);
+
+  const learningSrc = fs.readFileSync(path.join(__dirname, "../src/lib/profile-learning.ts"), "utf8");
+  assert.match(learningSrc, /"idNumber"/);
+
+  const assistantSrc = fs.readFileSync(path.join(__dirname, "../src/components/browser/application-assistant.tsx"), "utf8");
+  assert.match(assistantSrc, /saveQuickPersonalProfile/);
+  assert.match(assistantSrc, /补充个人资料 \/ 自定义空栏/);
+  assert.doesNotMatch(assistantSrc, /type=\{slot\.secret/);
+  assert.doesNotMatch(assistantSrc, /maskSecret/);
+});

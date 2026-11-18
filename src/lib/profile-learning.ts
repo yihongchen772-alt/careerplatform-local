@@ -33,6 +33,9 @@ const FIELD_LABELS: Record<string, string> = { school: "学校", major: "专业"
 
 /** Label → 网申资料 field for answers captured before the browser sent one (old 待核对 rows). */
 const LABEL_KEYS: Array<[RegExp, string, RegExp?]> = [
+  [/^(?:证件类型|证件种类)$|id.?type|document.?type/i, "idType"],
+  [/护照(?:号|号码)|passport.?(?:no|number)/i, "passportNumber", /类型|有效期|签发/],
+  [/(?:身份证|公民身份|证件)(?:号|号码|编号)?|\bid.?(?:number|card|no)\b/i, "idNumber", /类型|种类|有效期|正面|反面|照片|扫描|签发|机关|地址|住址|父|母|配偶|紧急|推荐/],
   [/研究方向|研究领域|research (?:direction|interest|area)/i, "researchDirection"],
   [/成绩排名|专业排名|绩点排名|年级排名|班级排名|学习成绩排名/, "rank"],
   [/主修课程|专业课程|核心课程|主要课程/, "courses"],

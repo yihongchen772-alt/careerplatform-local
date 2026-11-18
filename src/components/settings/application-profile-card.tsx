@@ -471,6 +471,45 @@ export function ApplicationProfileCard({
               </Field>
             ))}
           </div>
+          <div className="space-y-2 border-t pt-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium text-muted-foreground">自定义补充栏位（所有方案共用，仅本机填表，不发给 AI）</p>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={(profile.customFields ?? []).length >= 40}
+                onClick={() =>
+                  setProfile((p) => ({
+                    ...p,
+                    customFields: [
+                      ...(p.customFields ?? []),
+                      { id: `cf-${crypto.randomUUID().replace(/-/g, "").slice(0, 8)}`, label: "", value: "" },
+                    ],
+                  }))
+                }
+              >
+                <Plus className="size-3.5" />新增空栏
+              </Button>
+            </div>
+            {(profile.customFields ?? []).map((row, i) => (
+              <div key={row.id} className="grid grid-cols-[minmax(0,0.4fr)_minmax(0,0.6fr)_auto] items-center gap-2">
+                <Input
+                  placeholder="栏位名（如：银行卡开户行、学号）"
+                  value={row.label}
+                  onChange={(e) => setProfile((p) => ({ ...p, customFields: (p.customFields ?? []).map((item, j) => (j === i ? { ...item, label: e.target.value } : item)) }))}
+                />
+                <Input
+                  placeholder="填写内容"
+                  value={row.value}
+                  onChange={(e) => setProfile((p) => ({ ...p, customFields: (p.customFields ?? []).map((item, j) => (j === i ? { ...item, value: e.target.value } : item)) }))}
+                />
+                <Button type="button" size="sm" variant="ghost" onClick={() => setProfile((p) => ({ ...p, customFields: (p.customFields ?? []).filter((_, j) => j !== i) }))}>
+                  删
+                </Button>
+              </div>
+            ))}
+          </div>
         </section>
 
         <section className="space-y-3">

@@ -108,6 +108,7 @@ export async function GET(request: Request) {
     thesis: structured.extras.thesis || null,
     ...Object.fromEntries(SOCIAL_FIELDS.map((field) => [field.key, structured.extras[field.key] || null])),
     ...Object.fromEntries(PERSONAL_FIELDS.map((field) => [field.key, structured.extras[field.key] || null])),
+    customFields: structured.customFields ?? [],
     family: structured.family ?? [],
     department: edu?.department || null,
     extra: [describeApplicationProfile(structured), ...Object.entries(summaries).map(([category, text]) => `${MEMORY_CATEGORIES[category as MemoryCategory] ?? "经历"}整段原文：${text}`)].filter(Boolean).join("\n") || null,
