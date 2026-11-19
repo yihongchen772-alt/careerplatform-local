@@ -169,16 +169,52 @@ function scanPageFields(prefix, readOnly = false, preserveIds = false, lightweig
     return "";
   }
 
-  // Table-layout forms (still common on older 官网 portals): the label is
-  // the cell to the left.
+  // Table-layout forms (still common on older 官网 and 央国企 portals):
+  // 1) Key-value grid: the label is in the cell immediately to the left (stopping at any cell holding another control);
+  // 2) Horizontal matrix table (教育/工作/家庭成员横表): the label is in the column's <th> / header <tr> at the same visual column index.
   function labelFromTable(el) {
-    const cell = el.closest("td");
+    const cell = el.closest("td, th");
     if (!cell) return "";
     let prev = cell.previousElementSibling;
     while (prev) {
+      if (prev.querySelector && prev.querySelector("input:not([type='hidden']), select, textarea, [role='combobox']")) break;
       const text = clean(prev.textContent);
       if (text && text.length < 40) return text;
       prev = prev.previousElementSibling;
+    }
+    const row = cell.parentElement;
+    const table = cell.closest("table");
+    if (row && table) {
+      const colOf = (targetCell, tr) => {
+        let col = 0;
+        for (const c of Array.from(tr.children || [])) {
+          if (c === targetCell) return col;
+          col += Math.max(1, Number(c.colSpan) || 1);
+        }
+        return -1;
+      };
+      const cellAtCol = (tr, wantCol) => {
+        let col = 0;
+        for (const c of Array.from(tr.children || [])) {
+          const span = Math.max(1, Number(c.colSpan) || 1);
+          if (wantCol >= col && wantCol < col + span) return c;
+          col += span;
+        }
+        return null;
+      };
+      const targetCol = colOf(cell, row);
+      if (targetCol >= 0) {
+        const theadRows = table.querySelectorAll ? Array.from(table.querySelectorAll("thead tr")) : [];
+        const allRows = table.querySelectorAll ? Array.from(table.querySelectorAll("tr")) : [];
+        const headerRow = theadRows[theadRows.length - 1] || (allRows[0] && allRows[0] !== row ? allRows[0] : null);
+        if (headerRow && headerRow !== row) {
+          const hCell = cellAtCol(headerRow, targetCol);
+          if (hCell && !(hCell.querySelector && hCell.querySelector("input:not([type='hidden']), select, textarea"))) {
+            const hText = clean(hCell.textContent);
+            if (hText && hText.length < 40 && !NON_LABEL_TOKEN.test(hText)) return hText;
+          }
+        }
+      }
     }
     return "";
   }
@@ -418,7 +454,7 @@ function scanPageFields(prefix, readOnly = false, preserveIds = false, lightweig
     return clean(copy.textContent);
   }
   function selectedText(container) {
-    const shown = container.querySelector(".ant-select-selection-item, .ant-select-selection-selected-value, .atsx-select-selection-selected-value, .ud__select__selector__selectItem, .phoenix-select__tipEle, .semi-select-selection-text, .arco-select-view-value, .n-base-selection-input__content, .n-base-selection-tag-wrapper, .t-select__single, [class*='sd-Input-display-value'], .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text, .el-cascader__tags");
+    const shown = container.querySelector(".ant-select-selection-item, .ant-select-selection-selected-value, .atsx-select-selection-selected-value, .ud__select__selector__selectItem, .phoenix-select__tipEle, .semi-select-selection-text, .arco-select-view-value, .n-base-selection-input__content, .n-base-selection-tag-wrapper, .t-select__single, [class*='sd-Input-display-value'], .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text, .el-cascader__tags, .select2-selection__rendered, .chosen-single span");
     // Some portals print their prompt ("输入工作单位名称") where the choice goes.
     if (shown && clean(shown.textContent) && !PLACEHOLDER_TEXT.test(clean(shown.textContent))) return clean(shown.textContent);
     // Element UI and cascaders show the choice in a read-only input; Arco,
@@ -445,12 +481,12 @@ function scanPageFields(prefix, readOnly = false, preserveIds = false, lightweig
   // here — the fill step opens each one and picks the closest match.
   // [class*='sd-Select-container']: Moka 自研组件（性别、学历、学校、以及年 / 月各一个的时间框），文字写进它的输入框只是在搜索，点选了才算数。
   // .ud__select__selector：飞书可搜索的下拉（所在地点、家乡），输入框是 type=search，不写这条就整个扫不到。
-  const customSelectors = ".ant-select, .atsx-select, .el-select, .el-cascader, .phoenix-select, .ud__select__selector, .semi-select, .arco-select, .n-select, .t-select, .ivu-select, [data-uxi-widget-type='multiselect'], [class*='sd-Select-container'], [role='combobox']:not(input):not(select), input[role='combobox'][readonly], input[aria-haspopup='listbox'], button[aria-haspopup='listbox'], [role='button'][aria-haspopup='listbox']";
+  const customSelectors = ".ant-select, .atsx-select, .el-select, .el-cascader, .phoenix-select, .ud__select__selector, .semi-select, .arco-select, .n-select, .t-select, .ivu-select, .layui-form-select, .select2-container, .chosen-container, .mini-buttonedit, .mini-combobox, [data-uxi-widget-type='multiselect'], [class*='sd-Select-container'], [role='combobox']:not(input):not(select), input[role='combobox'][readonly], input[aria-haspopup='listbox'], button[aria-haspopup='listbox'], [role='button'][aria-haspopup='listbox']";
   queryAll(customSelectors).forEach((el) => {
     // Element Plus date inputs are read-only comboboxes too; they're typed into.
     // A language switcher or site search in the page header is not the form.
     if (el.closest(PICKER) || el.closest(SITE_CHROME)) return;
-    const container = el.closest(".ant-select, .atsx-select, .el-select, .el-cascader, .ud__select__selector, .phoenix-select, .semi-select, .arco-select, .n-select, .t-select, .ivu-select, [data-uxi-widget-type='multiselect'], [class*='sd-Select-container']") || el;
+    const container = el.closest(".ant-select, .atsx-select, .el-select, .el-cascader, .ud__select__selector, .phoenix-select, .semi-select, .arco-select, .n-select, .t-select, .ivu-select, .layui-form-select, .select2-container, .chosen-container, .mini-buttonedit, .mini-combobox, [data-uxi-widget-type='multiselect'], [class*='sd-Select-container']") || el;
     // An AutoComplete accepts free text: its input is filled like any other.
     if (customContainers.has(container) || container.classList.contains("ant-select-auto-complete") || container.classList.contains("atsx-select-auto-complete")) return;
     if (!isVisible(container)) return;
@@ -1421,7 +1457,7 @@ async function fillCustomSelects(pairs, taskId) {
     return clean(copy.textContent);
   }
   function selectedText(container) {
-    const shown = container.querySelector(".ant-select-selection-item, .ant-select-selection-selected-value, .atsx-select-selection-selected-value, .ud__select__selector__selectItem, .phoenix-select__tipEle, .semi-select-selection-text, .arco-select-view-value, .n-base-selection-input__content, .n-base-selection-tag-wrapper, .t-select__single, [class*='sd-Input-display-value'], .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text, .el-cascader__tags");
+    const shown = container.querySelector(".ant-select-selection-item, .ant-select-selection-selected-value, .atsx-select-selection-selected-value, .ud__select__selector__selectItem, .phoenix-select__tipEle, .semi-select-selection-text, .arco-select-view-value, .n-base-selection-input__content, .n-base-selection-tag-wrapper, .t-select__single, [class*='sd-Input-display-value'], .el-select__selected-item:not(.el-select__placeholder):not(.el-select__input-wrapper), .el-select__placeholder:not(.is-transparent), .el-select__tags-text, .el-cascader__tags, .select2-selection__rendered, .chosen-single span");
     // Some portals print their prompt ("输入工作单位名称") where the choice goes.
     if (shown && clean(shown.textContent) && !PLACEHOLDER_TEXT.test(clean(shown.textContent))) return clean(shown.textContent);
     // Element UI and cascaders show the choice in a read-only input; Arco,
@@ -1469,7 +1505,13 @@ async function fillCustomSelects(pairs, taskId) {
         // 北森 zhiye: a multi-select's rows carry a checkbox; those lists are never guessed.
         ".phoenix-selectList__listItem:not(.phoenix-selectList__listItem--disabled):not(:has(input[type='checkbox'])), " +
         // Moka：每一行是 sd-Menu-container，带副标题的（学校、专业）外面还包一层 common-item。
-        "[class*='sd-Select-menu'] [class*='sd-Menu-container']:not([class*='sd-Menu-disabled'])"
+        "[class*='sd-Select-menu'] [class*='sd-Menu-container']:not([class*='sd-Menu-disabled']), " +
+        // 央国企常见老牌 UI 组件库（Layui / Select2 / Chosen / EasyUI / MiniUI）
+        ".layui-form-select dl dd:not(.layui-disabled):not(.layui-select-tips), " +
+        ".select2-results__option:not([aria-disabled='true']), " +
+        ".chosen-results li.active-result, " +
+        ".combobox-item:not(.combobox-item-disabled), " +
+        ".mini-listbox-item"
     );
     let found = nodes.filter(visible);
     // 北森关掉的列表还留在页面上而且看得见：只认紧挨着这个框的那一层，不然点到的是上一个字段的列表。
@@ -2611,8 +2653,8 @@ const BASIC_FIELD_RULES = [
   { keys: ["是否全日制", "是否为全日制"], not: /在校/, get: (p) => studyMode(p) ? (studyMode(p) === "全日制" ? "是" : "否") : null },
   // Only as a question: 「应届生求职登录」 is a page heading, not this.
   { keys: ["是否应届", "是否为应届"], not: /往届|非应届/, get: (p) => studyingNow(p) ? "是" : null },
-  { keys: ["学习形式", "教育形式", "就读方式", "受教育类型", "教育方式"], studyForm: true, get: (p) => studyMode(p) },
-  { keys: ["学习形式", "教育形式", "就读方式", "学历类型", "学历性质", "培养方式", "受教育类型", "教育方式"], get: (p) => studyMode(p) },
+  { keys: ["学习形式", "教育形式", "就读方式", "受教育类型", "教育方式", "培养方式", "招生类别"], studyForm: true, get: (p) => studyMode(p) },
+  { keys: ["学习形式", "教育形式", "就读方式", "学历类型", "学历性质", "培养方式", "受教育类型", "教育方式", "招生类别"], get: (p) => studyMode(p) },
   // 国籍 is not the country of residence (studying in 新加坡 is still 中国): 民族 / 政治面貌 / 籍贯 say 中国.
   { keys: ["国籍"], not: /父|母|配偶|家庭|亲属|紧急/, get: (p) => p.nationality || (p.ethnicity || p.politics || p.hometown ? "中国" : null), nationality: true },
   { keys: ["招聘信息来源", "信息来源", "获知渠道", "了解渠道", "得知渠道", "从何处得知", "how did you hear", "where did you hear"], get: (p) => p.jobSource, learn: "jobSource" },
@@ -2621,7 +2663,31 @@ const BASIC_FIELD_RULES = [
   { keys: ["实验室", "课题组", "所在实验室", "研究组"], not: /是否|安全|有无/, get: (p) => p.lab, learn: "lab" },
   { keys: ["兴趣爱好", "个人爱好", "爱好特长", "爱好", "hobbies", "hobby"], get: (p) => p.hobbies, learn: "hobbies" },
   { keys: ["毕业论文", "学位论文", "论文题目", "thesis", "dissertation"], get: (p) => p.thesis, learn: "thesis" },
+  // 央国企 / 银行 / 军工院所高频专属字段自动推导
+  { keys: ["专业技术职务", "技术职称", "专业技术资格", "职称等级", "现任职称", "最高职称"], get: (p) => p.professionalTitle || "无" },
+  { keys: ["有无违法", "违法违纪", "犯罪记录", "受过何种处分", "处分记录", "违规违纪", "治安处罚", "失信记录", "不良记录"], get: () => "无", yesNo: true },
+  { keys: ["服从工作地点", "服从地点", "服从分配", "服从单位", "服从外派", "接受外派", "接受出差", "服从安排", "服从岗位"], get: (p) => p.acceptAdjust || "是", yesNo: true },
+  { keys: ["毕(结)业", "毕结业", "毕业情况", "学历状态", "是否毕业"], not: /时间|日期|院校|学校|论文|编号/, get: (p) => studyingNow(p) ? "在读" : "毕业" },
+  { keys: ["毕业证书编号", "学位证书编号", "学历证书编号", "毕结业证书号"], get: (p) => p.certificateNo || (studyingNow(p) ? "暂未取得" : null) },
+  { keys: ["邮政编码", "邮编", "postal code", "zip code"], get: (p) => p.postalCode || derivePostalCode(p.address || p.currentCity || p.hometown) },
 ];
+
+const CITY_POSTAL_CODES = [
+  [/北京/, "100000"], [/上海/, "200000"], [/天津/, "300000"], [/重庆/, "400000"],
+  [/广州/, "510000"], [/深圳/, "518000"], [/珠海/, "519000"], [/佛山/, "528000"], [/东莞/, "523000"],
+  [/南京/, "210000"], [/苏州/, "215000"], [/无锡/, "214000"], [/常州/, "213000"],
+  [/杭州/, "310000"], [/宁波/, "315000"], [/合肥/, "230000"], [/福州/, "350000"], [/厦门/, "361000"],
+  [/济南/, "250000"], [/青岛/, "266000"], [/武汉/, "430000"], [/长沙/, "410000"], [/郑州/, "450000"],
+  [/成都/, "610000"], [/西安/, "710000"], [/沈阳/, "110000"], [/大连/, "116000"], [/长春/, "130000"],
+  [/哈尔滨/, "150000"], [/南昌/, "330000"], [/石家庄/, "050000"], [/太原/, "030000"], [/昆明/, "650000"],
+  [/贵阳/, "550000"], [/南宁/, "530000"], [/海口/, "570000"], [/兰州/, "730000"], [/乌鲁木齐/, "830000"],
+];
+function derivePostalCode(place) {
+  const text = String(place || "");
+  if (!text) return null;
+  for (const [pattern, code] of CITY_POSTAL_CODES) if (pattern.test(text)) return code;
+  return null;
+}
 
 function basicKeyMatches(key, haystack) {
   if (!/^[\x20-\x7e]+$/.test(key)) return haystack.includes(key.toLowerCase());
@@ -2712,7 +2778,13 @@ function studyFormValue(field, row) {
     if (!field.options) return "海外留学生";
   }
   const mode = /非全日制|在职|业余|函授|自考|成人|网络教育|part.?time/i.test(Object.values(row).join(" ")) ? "非全日制" : "全日制";
-  return matchFieldOption(field, mode);
+  const direct = matchFieldOption(field, mode);
+  if (direct) return direct;
+  if (mode === "全日制" && field.options) {
+    const soeOption = field.options.find((opt) => /^(?:非定向|统招|统招非定向|非定向培养|全国统招|普通全日制|统招全日制|公费|国家统招)$/.test(String(opt).trim()));
+    if (soeOption) return soeOption;
+  }
+  return null;
 }
 
 // Never sent to AI, never guessed, always left for the user — a resume
@@ -3386,6 +3458,7 @@ function studyYearsOption(field, row) {
   if (!field.options) return `${years}年`;
   const says = (option) => {
     const text = String(option).replace(/\s+/g, "");
+    if (text === String(years)) return true;
     const digit = /(\d+(?:\.\d+)?)\s*年/.exec(text);
     if (digit) return Number(digit[1]) === years;
     return new RegExp(`^${CHINESE_YEARS[years]}${years === 2 ? "|^两" : ""}`).test(text) || new RegExp(`[^一二三四五六七八两]${CHINESE_YEARS[years]}年`).test(` ${text}`);
@@ -4079,9 +4152,18 @@ function customValueAlternatives(value, kind = "", field = null) {
   const out = [...(field ? degreeAlternatives(field, v) || [] : []), ...yesNoAlternatives(v)];
   if (kind === "mode") {
     const extras = /海外|留学|境外|国外/i.test(v)
-      ? ["海外留学", "海外留学生", "境外学历", "国外学历", "留学归国", "海外", "留学", "全日制", "统招全日制", "普通全日制", "全国普通高等院校全日制"]
-      : ["全日制", "统招全日制", "普通全日制", "全国普通高等院校全日制", "普通高等教育"];
+      ? ["海外留学", "海外留学生", "境外学历", "国外学历", "留学归国", "海外", "留学", "全日制", "统招全日制", "普通全日制", "全国普通高等院校全日制", "统招", "非定向"]
+      : ["全日制", "统招全日制", "普通全日制", "全国普通高等院校全日制", "普通高等教育", "统招", "非定向", "统招非定向", "非定向培养", "全国统招"];
     for (const item of extras) if (item !== v && !out.includes(item)) out.push(item);
+  }
+  if (kind === "years") {
+    const n = Number((/(\d+)/.exec(v) || [])[1] || 0);
+    if (n >= 1 && n <= 8) {
+      const cn = CHINESE_YEARS[n];
+      for (const item of [`${n}年`, `${n}`, `${cn}年`, `${n}年制`, `${cn}年制`, `${n}.0`, ...(n === 3 ? ["2.5年", "2年", "两年"] : [])]) {
+        if (item !== v && !out.includes(item)) out.push(item);
+      }
+    }
   }
   if (kind === "jobType") {
     const extras = /实习|intern/i.test(v) ? ["实习", "实习生", "兼职/实习"] : ["全职", "正式", "正职", "社招/全职"];

@@ -519,3 +519,44 @@ test("v75 Smooth 3-piece suite: confidence tiering, preflight check, 3s review c
   const ebSrc = fs.readFileSync(path.join(__dirname, "../src/components/browser/embedded-browser.tsx"), "utf8");
   assert.match(ebSrc, /断点续投/);
 });
+
+test("v76 SOE (央国企) & universal portal adaptation: horizontal table headers, Layui/Select2/EasyUI selectors, study years/training mode, and SOE 18-questions", () => {
+  const coreSrc = fs.readFileSync(path.join(__dirname, "../electron/autofill-core.js"), "utf8");
+  const ctx = {
+    module: { exports: {} },
+    exports: {},
+    Set, Map, Array, Object, String, Number, Boolean, RegExp, Math, Date, URL, URLSearchParams, JSON,
+  };
+  vm.createContext(ctx);
+  vm.runInContext(`${coreSrc}\nmodule.exports.__test = { matchFlatField, studyYearsOption, studyFormValue, customValueAlternatives, derivePostalCode };`, ctx);
+  const { matchFlatField, studyYearsOption, studyFormValue, customValueAlternatives, derivePostalCode } = ctx.module.exports.__test;
+
+  const soeProfile = {
+    currentCity: "上海",
+    education: [{ school: "上海交通大学", degree: "硕士研究生", major: "控制科学与工程", start: "2024-09", end: "2027-06" }],
+  };
+  const f = (label, extra = {}) => ({ label, placeholder: "", name: "", tag: "input", type: "text", ...extra });
+
+  // 1. SOE high-frequency questions
+  assert.equal(matchFlatField(f("专业技术职务"), soeProfile), "无");
+  assert.equal(matchFlatField(f("有无违法违纪行为", { tag: "select", options: ["有", "无"] }), soeProfile), "无");
+  assert.equal(matchFlatField(f("是否服从工作地点分配", { tag: "select", options: ["是", "否"] }), soeProfile), "是");
+  assert.equal(matchFlatField(f("毕(结)业"), soeProfile), "在读");
+  assert.equal(matchFlatField(f("学位证书编号"), soeProfile), "暂未取得");
+  assert.equal(matchFlatField(f("邮政编码"), soeProfile), "200000");
+  assert.equal(derivePostalCode("江苏省南京市玄武区"), "210000");
+
+  // 2. SOE 培养方式 & 学制
+  assert.equal(studyFormValue(f("培养方式", { tag: "select", options: ["定向", "非定向", "委培"] }), soeProfile.education[0]), "非定向");
+  assert.equal(studyFormValue(f("招生类别", { tag: "select", options: ["统招", "非统招"] }), soeProfile.education[0]), "统招");
+  assert.equal(studyYearsOption(f("学制", { tag: "select", options: ["2", "3", "4", "5"] }), { degree: "本科", start: "2020-09", end: "2024-06" }), "4");
+  assert.equal(studyYearsOption(f("学制", { tag: "select", options: ["二年制", "三年制", "四年制"] }), { degree: "硕士研究生", start: "2024-09", end: "2027-06" }), "三年制");
+  assert.ok(customValueAlternatives("4年", "years").includes("四年制"));
+  assert.ok(customValueAlternatives("全日制", "mode").includes("非定向"));
+
+  // 3. Horizontal table header lookup & Layui/Select2/EasyUI selectors in scanPageFields
+  assert.match(coreSrc, /thead tr/);
+  assert.match(coreSrc, /\.layui-form-select/);
+  assert.match(coreSrc, /\.select2-results__option/);
+  assert.match(coreSrc, /\.combobox-item/);
+});
