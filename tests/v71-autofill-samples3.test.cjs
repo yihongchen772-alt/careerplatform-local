@@ -488,3 +488,34 @@ test("v74 Batch 2: Outlook Windows TZID normalization, deadline timeZone propaga
   const resumeSrc = fs.readFileSync(path.join(__dirname, "../src/lib/actions/resumes.ts"), "utf8");
   assert.match(resumeSrc, /resumeVersionId: null/);
 });
+
+test("v75 Smooth 3-piece suite: confidence tiering, preflight check, 3s review checklist & persistent batch queue", () => {
+  const coreSrc = fs.readFileSync(path.join(__dirname, "../electron/autofill-core.js"), "utf8");
+  const ctx = {
+    module: { exports: {} },
+    exports: {},
+    Set, Map, Array, Object, String, Number, Boolean, RegExp, Math, URL, URLSearchParams, JSON,
+  };
+  vm.createContext(ctx);
+  vm.runInContext(`${coreSrc}\nmodule.exports.__test = { fillDetail };`, ctx);
+  const { fillDetail } = ctx.module.exports.__test;
+
+  const filledSet = new Set(["a", "b", "c"]);
+  const f = (id, label) => ({ id, label, placeholder: "", name: "", tag: "input", type: "text" });
+  assert.equal(fillDetail(f("a", "姓名"), { id: "a", value: "张三", source: "profile" }, filledSet, new Set()).confidence, "high");
+  assert.equal(fillDetail(f("b", "自我评价"), { id: "b", value: "截短文本", source: "profile", shortened: 100 }, filledSet, new Set()).confidence, "medium");
+  assert.equal(fillDetail(f("c", "职业规划"), { id: "c", value: "AI 答案", source: "ai" }, filledSet, new Set()).confidence, "medium");
+  assert.equal(fillDetail(f("d", "其他问题"), undefined, filledSet, new Set()).confidence, "low");
+
+  assert.match(coreSrc, /summary\.preflight = \{/);
+  const assistantSrc = fs.readFileSync(path.join(__dirname, "../src/components/browser/application-assistant.tsx"), "utf8");
+  assert.match(assistantSrc, /提交前体检/);
+  assert.match(assistantSrc, /建议 3 秒核对/);
+
+  const bvSrc = fs.readFileSync(path.join(__dirname, "../electron/browser-view.js"), "utf8");
+  assert.match(bvSrc, /batch-queue\.json/);
+  assert.match(bvSrc, /browser:resume-saved-batch/);
+
+  const ebSrc = fs.readFileSync(path.join(__dirname, "../src/components/browser/embedded-browser.tsx"), "utf8");
+  assert.match(ebSrc, /断点续投/);
+});

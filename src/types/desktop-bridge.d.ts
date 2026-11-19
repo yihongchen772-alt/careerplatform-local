@@ -122,8 +122,24 @@ export type DesktopBridgeAutofillStatus = {
     notes?: string[];
     /** Modules the page shows short of rows, with an 「添加」 waiting, while 自动补齐栏目 is off. */
     expandable?: string[];
+    /** Compact pre-submit risk check metrics. */
+    preflight?: {
+      requiredMissing: number;
+      validationErrors: number;
+      conflicts: number;
+      shortened: number;
+      reviewCount: number;
+      uploaded: number;
+    };
   };
-  details?: { id?: string; label: string; state: string; source?: DesktopBridgeFillSource }[];
+  details?: { id?: string; label: string; state: string; source?: DesktopBridgeFillSource; confidence?: "high" | "medium" | "low"; value?: string }[];
+};
+
+export type DesktopBridgeSavedBatchItem = DesktopBridgeBatchJob & {
+  resumeVersionId?: string;
+  variantId?: string;
+  status?: string;
+  updatedAt?: number;
 };
 
 export type DesktopBridgeCapturedPage = { url: string; title: string; text: string };
@@ -196,6 +212,9 @@ export type DesktopBridge = {
   openBatch?(jobs: DesktopBridgeBatchJob[], options?: { autoFill?: boolean; resumeVersionId?: string; variantId?: string; modules?: DesktopBridgeAutofillModule[]; expandBlocks?: boolean; saveBlocks?: boolean }): Promise<{ opened: number; tabIds: number[] }>;
   fillAllPending?(resumeVersionId?: string, options?: DesktopBridgeAutofillOptions): Promise<{ started: number }>;
   stopBatch?(): Promise<void>;
+  getSavedBatchQueue?(): Promise<DesktopBridgeSavedBatchItem[]>;
+  resumeBatchQueue?(): Promise<{ opened: number; tabIds: number[] }>;
+  clearSavedBatchQueue?(): Promise<void>;
   clearRecordedTabs?(): Promise<{ closed: number }>;
   openExternal(): Promise<void>;
   copyUrl(): Promise<void>;

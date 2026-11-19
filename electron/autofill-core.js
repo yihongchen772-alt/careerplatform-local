@@ -3793,20 +3793,21 @@ function isOtherChoiceBox(field) {
 function fillDetail(field, pair, filledSet, failedSet, reasons = {}) {
   const own = displayLabel(field);
   const label = field.section && !own.includes(field.section) && (sectionGroup(field.section) || THIRD_PARTY.test(field.section)) ? `${field.section} · ${own}` : own;
-  if (field.hasValue || field.userEdited) return { label, state: field.userEdited ? "手动修改过，保持不动" : "页面已有内容，未改动", source: "prefilled" };
-  if (isThirdPartyField(field) && !pair) return { label, state: "家庭成员 / 联系人等他人信息，请手填", source: "manual", deliberate: true };
-  if (field.readonlyPicker) return { label, state: field.suggestion ? `日期需在网页上点选：${field.suggestion}` : "日期需在网页上点选", source: "manual" };
+  if (field.hasValue || field.userEdited) return { label, state: field.userEdited ? "手动修改过，保持不动" : "页面已有内容，未改动", source: "prefilled", confidence: "high" };
+  if (isThirdPartyField(field) && !pair) return { label, state: "家庭成员 / 联系人等他人信息，请手填", source: "manual", deliberate: true, confidence: "low" };
+  if (field.readonlyPicker) return { label, state: field.suggestion ? `日期需在网页上点选：${field.suggestion}` : "日期需在网页上点选", source: "manual", confidence: "low" };
   if (pair && filledSet.has(field.id)) {
-    if (pair.shortened) return { label, state: `来自网申资料，按网页 ${pair.shortened} 字上限截短了，请核对`, source: "profile" };
-    if (pair.source === "profile") return { label, state: "来自网申资料", source: "profile" };
-    if (pair.source === "remembered-field") return { label, state: "来自记忆库", source: "memory" };
-    if (pair.remembered) return { label, state: "复用你确认过的回答", source: "memory" };
-    return { label, state: pair.reused ? "AI 草稿（复用），请核对" : "AI 生成，请核对", source: "ai" };
+    const previewVal = pair.value ? String(pair.value).replace(/\s+/g, " ").trim().slice(0, 60) : undefined;
+    if (pair.shortened) return { label, state: `来自网申资料，按网页 ${pair.shortened} 字上限截短了，请核对`, source: "profile", confidence: "medium", value: previewVal };
+    if (pair.source === "profile") return { label, state: "来自网申资料", source: "profile", confidence: "high", value: previewVal };
+    if (pair.source === "remembered-field") return { label, state: "来自记忆库", source: "memory", confidence: "high", value: previewVal };
+    if (pair.remembered) return { label, state: "复用你确认过的回答", source: "memory", confidence: "medium", value: previewVal };
+    return { label, state: pair.reused ? "AI 草稿（复用），请核对" : "AI 生成，请核对", source: "ai", confidence: "medium", value: previewVal };
   }
-  if (isNeverGuessField(field)) return { label, state: "敏感或需核对，请手填", source: "manual", deliberate: true };
-  if (isOtherChoiceBox(field) && !pair) return { label, state: "列表里选不到时才需要填", source: "manual", deliberate: true };
-  if (pair && failedSet.has(pair.label || pair.id)) return { label, state: reasons[pair.label || pair.id] || "写入没成功，请手填", source: "manual" };
-  return { label, state: "没有对应资料，请手填", source: "manual" };
+  if (isNeverGuessField(field)) return { label, state: "敏感或需核对，请手填", source: "manual", deliberate: true, confidence: "low" };
+  if (isOtherChoiceBox(field) && !pair) return { label, state: "列表里选不到时才需要填", source: "manual", deliberate: true, confidence: "low" };
+  if (pair && failedSet.has(pair.label || pair.id)) return { label, state: reasons[pair.label || pair.id] || "写入没成功，请手填", source: "manual", confidence: "low" };
+  return { label, state: "没有对应资料，请手填", source: "manual", confidence: "low" };
 }
 
 // "有 2 段教育经历，页面只有 1 组" — most portals render one empty block and
@@ -5544,6 +5545,15 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     }
     summary.notes = notes;
     summary.expandable = expandable;
+    const requiredMissing = fields.filter((f) => f.required && !f.hasValue && !filledSet.has(f.id) && !excluded.has(f.id)).length;
+    summary.preflight = {
+      requiredMissing,
+      validationErrors: validation.length,
+      conflicts: conflicts.length,
+      shortened: allShortened.length,
+      reviewCount: allDetails.filter((d) => d.confidence === "medium").length,
+      uploaded: summary.uploaded,
+    };
     const result = { phase: "done", message: parts.join("；"), details: allDetails, summary };
     adapter.status(result);
     return result;

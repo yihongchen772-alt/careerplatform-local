@@ -419,6 +419,49 @@ function historyFile() {
   return path.join(app.getPath("userData"), "browser-history.json");
 }
 
+function batchQueueFile() {
+  return path.join(app.getPath("userData"), "batch-queue.json");
+}
+
+function readSavedBatchQueue() {
+  try {
+    const data = JSON.parse(fs.readFileSync(batchQueueFile(), "utf8"));
+    if (!Array.isArray(data)) return [];
+    const cutoff = Date.now() - 7 * 86_400_000;
+    return data.filter((item) => item && typeof item.url === "string" && (!item.updatedAt || item.updatedAt >= cutoff));
+  } catch {
+    return [];
+  }
+}
+
+function persistBatchQueue() {
+  try {
+    const batchTabs = tabs.filter((t) => t.batchMeta && hasPage(t));
+    if (!batchTabs.length) return;
+    const unfinished = batchTabs
+      .filter((t) => t.fillState?.status !== "recorded")
+      .map((t) => ({
+        url: t.initialUrl || t.view.webContents.getURL(),
+        positionId: t.positionId || t.batchMeta?.positionId,
+        company: t.batchMeta?.company,
+        title: t.batchMeta?.title,
+        sourceLabel: t.batchMeta?.sourceLabel,
+        resumeVersionId: t.resumeVersionId || undefined,
+        variantId: t.variantId || undefined,
+        status: t.fillState?.status || "queued",
+        updatedAt: Date.now(),
+      }))
+      .slice(0, 20);
+    if (!unfinished.length) {
+      fs.rmSync(batchQueueFile(), { force: true });
+    } else {
+      fs.writeFileSync(batchQueueFile(), JSON.stringify(unfinished));
+    }
+  } catch {
+    // Non-fatal persistence failure.
+  }
+}
+
 function readHistory() {
   try {
     const list = JSON.parse(fs.readFileSync(historyFile(), "utf8"));
@@ -1118,6 +1161,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       openedIds.push(tab.id);
     }
     sendTabsState();
+    persistBatchQueue();
     if (options?.autoFill) {
       void startBatchPrefill(openedIds, options.resumeVersionId, {
         variantId: options.variantId,
@@ -1127,6 +1171,61 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       });
     }
     return { opened: openedIds.length, tabIds: openedIds };
+  });
+  handle("browser:get-saved-batch", () => {
+    const saved = readSavedBatchQueue();
+    if (!saved.length) return [];
+    const openUrls = new Set(tabs.filter(hasPage).map((t) => comparableUrl(t.initialUrl || t.view.webContents.getURL())));
+    return saved.filter((item) => !openUrls.has(comparableUrl(item.url)));
+  });
+  handle("browser:resume-saved-batch", async () => {
+    const saved = readSavedBatchQueue();
+    const openUrls = new Set(tabs.filter(hasPage).map((t) => comparableUrl(t.initialUrl || t.view.webContents.getURL())));
+    const pending = saved.filter((item) => !openUrls.has(comparableUrl(item.url))).slice(0, 20);
+    if (!pending.length) return { opened: 0, tabIds: [] };
+    const openedIds = [];
+    const firstBlank = tabs.length === 1 && !hasPage(tabs[0]) && !tabs[0].batchMeta ? tabs[0] : null;
+    for (let i = 0; i < pending.length; i++) {
+      const job = pending[i];
+      const url = normalizeUrl(job.url.trim());
+      let tab;
+      if (i === 0 && firstBlank) {
+        tab = firstBlank;
+        tab.view.webContents.loadURL(url);
+        switchTab(tab.id);
+      } else {
+        tab = createTab(url, { activate: i === 0 });
+      }
+      tab.positionId = typeof job.positionId === "string" ? job.positionId : undefined;
+      tab.resumeVersionId = typeof job.resumeVersionId === "string" && job.resumeVersionId ? job.resumeVersionId : undefined;
+      tab.variantId = typeof job.variantId === "string" && job.variantId ? job.variantId : undefined;
+      tab.batchMeta = {
+        positionId: tab.positionId,
+        company: job.company,
+        title: job.title,
+        sourceLabel: job.sourceLabel,
+      };
+      tab.fillState = {
+        status: "queued",
+        filled: 0,
+        manual: 0,
+        uploaded: 0,
+        message: "断点续投排队中…",
+        updatedAt: Date.now(),
+      };
+      openedIds.push(tab.id);
+    }
+    sendTabsState();
+    persistBatchQueue();
+    void startBatchPrefill(openedIds, pending[0]?.resumeVersionId, {
+      variantId: pending[0]?.variantId,
+      expandBlocks: true,
+      saveBlocks: true,
+    });
+    return { opened: openedIds.length, tabIds: openedIds };
+  });
+  handle("browser:clear-saved-batch", () => {
+    try { fs.rmSync(batchQueueFile(), { force: true }); } catch {}
   });
   handle("browser:fill-all-pending", async (_e, resumeVersionId, options = {}) => {
     const candidates = tabs.filter((t) => {
@@ -2160,6 +2259,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
         batchQueueToken = null;
         batchRunning = false;
         sendTabsState();
+        persistBatchQueue();
       }
     }
   }

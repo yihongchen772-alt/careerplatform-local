@@ -259,6 +259,7 @@ export function EmbeddedBrowser({
   // empty fields just appeared" for the active tab; either show a one-line
   // prompt or, with 自动填每一页 on, just fill it.
   const [detected, setDetected] = useState<{ tabId: number; count: number; signature: string; typing?: boolean } | null>(null);
+  const [savedBatchCount, setSavedBatchCount] = useState(0);
   const [submitted, setSubmitted] = useState<{
     tabId: number;
     url: string;
@@ -691,6 +692,9 @@ export function EmbeddedBrowser({
       setTabsState(state);
       const restored = restoreTabStatus(state);
       if (restored) setStatus(restored);
+      void bridge.getSavedBatchQueue?.().then((items) => {
+        if (Array.isArray(items) && items.length > 0) setSavedBatchCount(items.length);
+      }).catch(() => {});
       if (initialUrl) {
         if (bridge.openUrl) {
           const opened = await bridge.openUrl(initialUrl, {
@@ -1820,6 +1824,17 @@ export function EmbeddedBrowser({
             ) : (
               <span className="text-muted-foreground">{status.message}</span>
             )}
+          </Infobar>
+        )}
+        {savedBatchCount > 0 && !tabsState.batchRunning && (
+          <Infobar
+            tone="info"
+            icon={<Play />}
+            onClose={() => { setSavedBatchCount(0); void bridge?.clearSavedBatchQueue?.(); }}
+            closeLabel="忽略上次队列"
+            actions={<Button size="xs" onClick={() => { setSavedBatchCount(0); void bridge?.resumeBatchQueue?.(); }}><Play />断点续投（{savedBatchCount}）</Button>}
+          >
+            上次批量投递还有 {savedBatchCount} 个未完成岗位，点击可直接从断点继续打开并预填。
           </Infobar>
         )}
         {showBanner("autofillPaused") && status?.phase === "error" && status.message.startsWith("已暂停") && (

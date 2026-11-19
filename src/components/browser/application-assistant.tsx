@@ -391,34 +391,87 @@ function ProfileCards({
 function FillResult({ status, bridge, onOpenProfile }: { status: DesktopBridgeAutofillStatus; bridge: DesktopBridge; onOpenProfile: () => void }) {
   const details = status.details ?? [];
   const manual = details.filter((item) => item.source === "manual");
-  const [onlyManual, setOnlyManual] = useState(manual.length > 0);
-  const visible = onlyManual ? manual : details;
+  const reviewItems = details.filter((item) => item.confidence === "medium");
+  const exactItems = details.filter((item) => item.confidence === "high" || (!item.confidence && item.source !== "manual" && item.source !== "ai"));
+  const preflight = status.summary?.preflight;
+  const hasFocus = manual.length > 0 || reviewItems.length > 0;
+  const [focusMode, setFocusMode] = useState(hasFocus);
+  const preflightIssues: string[] = [];
+  if (preflight?.validationErrors) preflightIssues.push(`校验报错 ${preflight.validationErrors} 处`);
+  if (preflight?.requiredMissing) preflightIssues.push(`必填空缺 ${preflight.requiredMissing} 项`);
+  if (preflight?.conflicts) preflightIssues.push(`与档案冲突 ${preflight.conflicts} 处`);
+  if (preflight?.shortened) preflightIssues.push(`截短 ${preflight.shortened} 项`);
+
+  const renderRow = (item: NonNullable<DesktopBridgeAutofillStatus["details"]>[number], index: number) => (
+    <li key={`${item.label}-${index}`}>
+      <button type="button" disabled={!item.id} onClick={() => item.id && void bridge.focusField(item.id)} title={item.id ? "在网页上定位这个字段" : undefined} className="group flex w-full items-start gap-1.5 rounded-md px-1.5 py-1 text-left hover:bg-muted disabled:hover:bg-transparent">
+        <span className="min-w-0 flex-1">
+          <span className="text-foreground">{item.label}</span>
+          <span className="text-muted-foreground"> · {item.state}</span>
+          {item.value ? <span className="block truncate text-[11px] text-muted-foreground/80">「{item.value}」</span> : null}
+        </span>
+        {item.id && <Crosshair className="mt-0.5 size-3 shrink-0 opacity-0 group-hover:opacity-60" />}
+      </button>
+    </li>
+  );
+
   return <div className="space-y-3 text-xs">
+    {preflight && (
+      <div className={cn("rounded-lg border px-2.5 py-2", preflightIssues.length ? "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300" : "border-emerald-500/35 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300")}>
+        <p className="font-medium">
+          {preflightIssues.length
+            ? `提交前体检：发现 ${preflightIssues.join(" · ")}`
+            : `✓ 提交前体检通过（无必填遗漏 · 无红字报错 · 附件已上传 ${preflight.uploaded} 个）`}
+        </p>
+      </div>
+    )}
     {status.summary && <div className="grid grid-cols-3 gap-1.5 text-center">
       <div className="rounded-md bg-violet-500/10 py-2"><p className="text-base font-semibold">{status.summary.filled}</p><p className="text-muted-foreground">已填</p></div>
-      <div className="rounded-md bg-muted py-2"><p className="text-base font-semibold">{status.summary.preserved}</p><p className="text-muted-foreground">保留原有</p></div>
+      <div className="rounded-md bg-amber-500/10 py-2"><p className="text-base font-semibold">{reviewItems.length}</p><p className="text-muted-foreground">待核对</p></div>
       <div className={cn("rounded-md py-2", status.summary.manual ? "bg-red-500/10" : "bg-muted")}><p className="text-base font-semibold">{status.summary.manual}</p><p className="text-muted-foreground">待手填</p></div>
     </div>}
     <ul className="list-disc space-y-0.5 pl-4 leading-relaxed text-muted-foreground">
       {status.message.split("；").filter(Boolean).map((line, index) => <li key={index}>{line}</li>)}
     </ul>
-    <div className="flex items-center gap-2">
-      <Button size="xs" variant={onlyManual ? "default" : "outline"} onClick={() => setOnlyManual(!onlyManual)}>{onlyManual ? "显示全部字段" : `只看待手填（${manual.length}）`}</Button>
+    <div className="flex flex-wrap items-center gap-2">
+      <Button size="xs" variant={focusMode ? "default" : "outline"} onClick={() => setFocusMode(!focusMode)}>
+        {focusMode ? "显示全部字段" : `3 秒核对清单（${manual.length + reviewItems.length}）`}
+      </Button>
       <Button size="xs" variant="ghost" onClick={onOpenProfile}>补充网申资料</Button>
     </div>
-    {FILL_SOURCES.map(({ source, label, dot }) => {
-      const rows = visible.filter((item) => (item.source ?? "profile") === source);
-      if (!rows.length) return null;
-      return <div key={source} className="space-y-1">
-        <p className="flex items-center gap-1.5 font-medium"><span className={`inline-block size-2 rounded-full ${dot}`} />{label}（{rows.length}）</p>
-        <ul className="space-y-0.5">{rows.map((item, index) => <li key={`${item.label}-${index}`}>
-          <button type="button" disabled={!item.id} onClick={() => item.id && void bridge.focusField(item.id)} title={item.id ? "在网页上定位这个字段" : undefined} className="group flex w-full items-start gap-1.5 rounded-md px-1.5 py-1 text-left hover:bg-muted disabled:hover:bg-transparent">
-            <span className="min-w-0 flex-1"><span className="text-foreground">{item.label}</span><span className="text-muted-foreground"> · {item.state}</span></span>
-            {item.id && <Crosshair className="mt-0.5 size-3 shrink-0 opacity-0 group-hover:opacity-60" />}
-          </button>
-        </li>)}</ul>
-      </div>;
-    })}
+    {focusMode ? (
+      <div className="space-y-3">
+        {manual.length > 0 && (
+          <div className="space-y-1">
+            <p className="flex items-center gap-1.5 font-medium"><span className="inline-block size-2 rounded-full bg-red-500" />需要你手填（{manual.length}）</p>
+            <ul className="space-y-0.5">{manual.map(renderRow)}</ul>
+          </div>
+        )}
+        {reviewItems.length > 0 && (
+          <div className="space-y-1">
+            <p className="flex items-center gap-1.5 font-medium"><span className="inline-block size-2 rounded-full bg-amber-500" />建议 3 秒核对（{reviewItems.length}）</p>
+            <ul className="space-y-0.5">{reviewItems.map(renderRow)}</ul>
+          </div>
+        )}
+        {exactItems.length > 0 && (
+          <details className="rounded-md border px-2 py-1.5">
+            <summary className="cursor-pointer font-medium text-muted-foreground select-none">
+              已准确填入 / 保留（{exactItems.length} 项，点击展开）
+            </summary>
+            <ul className="mt-1.5 space-y-0.5 border-t pt-1.5">{exactItems.map(renderRow)}</ul>
+          </details>
+        )}
+      </div>
+    ) : (
+      FILL_SOURCES.map(({ source, label, dot }) => {
+        const rows = details.filter((item) => (item.source ?? "profile") === source);
+        if (!rows.length) return null;
+        return <div key={source} className="space-y-1">
+          <p className="flex items-center gap-1.5 font-medium"><span className={`inline-block size-2 rounded-full ${dot}`} />{label}（{rows.length}）</p>
+          <ul className="space-y-0.5">{rows.map(renderRow)}</ul>
+        </div>;
+      })
+    )}
   </div>;
 }
 
