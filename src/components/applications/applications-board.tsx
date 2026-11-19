@@ -2,8 +2,11 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ChevronDown, Clock3, Send } from "lucide-react";
+import { toast } from "sonner";
 import type { ApplicationStage } from "@prisma/client";
+import { addStageUpdate, deleteStageHistory } from "@/lib/actions/applications";
 import { STAGE_LABELS } from "@/lib/stage-labels";
 import { applicationStageStyle } from "@/lib/application-stage-style";
 import { cn } from "@/lib/utils";
@@ -59,7 +62,23 @@ function daysSince(iso: string, now: number): number {
   return Math.max(0, Math.floor((now - new Date(iso).getTime()) / 86400000));
 }
 
-function ApplicationCard({ app, closed = false, hit, now }: { app: BoardApplication; closed?: boolean; hit?: ApplicationHits; now: number }) {
+function ApplicationCard({
+  app,
+  closed = false,
+  hit,
+  now,
+  onOptimisticStage,
+  onDragStartApp,
+  onDragEndApp,
+}: {
+  app: BoardApplication;
+  closed?: boolean;
+  hit?: ApplicationHits;
+  now: number;
+  onOptimisticStage?: (id: string, stage: ApplicationStage | null) => void;
+  onDragStartApp?: (id: string) => void;
+  onDragEndApp?: () => void;
+}) {
   const tone = applicationStageStyle(app.currentStage);
   const detail = app.currentStageLabel?.trim();
   const portalDiffers = app.portalStatus && app.portalStatus !== detail;
@@ -69,8 +88,17 @@ function ApplicationCard({ app, closed = false, hit, now }: { app: BoardApplicat
     // the menu and meeting buttons sit above that, so a click on them
     // never races the navigation.
     <div
+      draggable={!closed}
+      onDragStart={(e) => {
+        if (closed) return;
+        e.dataTransfer.setData("text/plain", app.id);
+        e.dataTransfer.effectAllowed = "move";
+        onDragStartApp?.(app.id);
+      }}
+      onDragEnd={() => onDragEndApp?.()}
       className={cn(
         "group relative rounded-xl border bg-card/90 px-3 py-2.5 shadow-[0_2px_8px_-6px_rgba(0,0,0,0.25)] transition-all duration-200 hover:-translate-y-px hover:shadow-[0_8px_20px_-14px_rgba(0,0,0,0.35)]",
+        !closed && "cursor-grab active:cursor-grabbing",
         closed && app.currentStage === "REJECTED" ? "border-rose-500/30" : "border-border/65 hover:border-primary/25"
       )}
     >
@@ -93,7 +121,14 @@ function ApplicationCard({ app, closed = false, hit, now }: { app: BoardApplicat
       {portalDiffers && <p className="mt-1 truncate text-xs text-muted-foreground" title={`官网显示：${app.portalStatus}`}>官网显示 · {app.portalStatus}</p>}
       {app.terminatedAtStage && <p className="mt-1 text-xs text-muted-foreground">结束于：{app.terminatedAtStageLabel || STAGE_LABELS[app.terminatedAtStage as ApplicationStage]}</p>}
       {!closed && <ProgressLine applicationId={app.id} step={app.step} next={app.nextSchedule} now={now} className="relative z-10 mt-1.5" />}
-      <QuickStageMenu applicationId={app.id} companyName={app.companyName} currentStage={app.currentStage} step={app.step} className="absolute right-2 top-2 z-10 bg-card/95" />
+      <QuickStageMenu
+        applicationId={app.id}
+        companyName={app.companyName}
+        currentStage={app.currentStage}
+        step={app.step}
+        className="absolute right-2 top-2 z-10 bg-card/95"
+        onOptimisticStage={(stage) => onOptimisticStage?.(app.id, stage)}
+      />
     </div>
   );
 }
@@ -106,7 +141,61 @@ function arrange(applications: BoardApplication[], narrowed: boolean) {
 }
 
 function BoardBody({ applications, hits, narrowed, now }: { applications: BoardApplication[]; hits?: Map<string, ApplicationHits> | null; narrowed: boolean; now: number }) {
-  const { lanes, outcomes } = arrange(applications, narrowed);
+  const router = useRouter();
+  const [stageOverrideState, setStageOverrideState] = useState<{ base: BoardApplication[]; map: Record<string, ApplicationStage> }>({
+    base: applications,
+    map: {},
+  });
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dropLane, setDropLane] = useState<string | null>(null);
+
+  const stageOverrides = stageOverrideState.base === applications ? stageOverrideState.map : {};
+
+  const effectiveApps = applications.map((app) => {
+    const next = stageOverrides[app.id];
+    return next ? { ...app, currentStage: next } : app;
+  });
+
+  function setOptimisticStage(id: string, stage: ApplicationStage | null) {
+    setStageOverrideState((cur) => {
+      const prev = cur.base === applications ? cur.map : {};
+      if (!stage) {
+        if (!(id in prev)) return { base: applications, map: prev };
+        const copy = { ...prev };
+        delete copy[id];
+        return { base: applications, map: copy };
+      }
+      return { base: applications, map: { ...prev, [id]: stage } };
+    });
+  }
+
+  async function handleLaneDrop(lane: (typeof LANES)[number], appId: string) {
+    setDropLane(null);
+    setDraggingId(null);
+    const app = effectiveApps.find((a) => a.id === appId);
+    if (!app || lane.stages.includes(app.currentStage)) return;
+    const targetStage = lane.stages[0];
+    setOptimisticStage(app.id, targetStage);
+    try {
+      const { stageHistoryId } = await addStageUpdate(app.id, { stage: targetStage });
+      toast.success(`${app.companyName} 已移至「${STAGE_LABELS[targetStage]}」`, {
+        action: {
+          label: "撤销",
+          onClick: async () => {
+            const res = await deleteStageHistory(stageHistoryId);
+            if (!res.ok) toast.error(res.message);
+            else router.refresh();
+          },
+        },
+      });
+      router.refresh();
+    } catch {
+      setOptimisticStage(app.id, null);
+      toast.error("移动失败，请重试");
+    }
+  }
+
+  const { lanes, outcomes } = arrange(effectiveApps, narrowed);
   const finished = outcomes.reduce((sum, group) => sum + group.items.length, 0);
   // Finished ones stay one click away; open by themselves when a search or filter is what brought them up.
   const [showFinished, setShowFinished] = useState(false);
@@ -114,10 +203,29 @@ function BoardBody({ applications, hits, narrowed, now }: { applications: BoardA
   return <div className="space-y-4">
     {lanes.length > 0 && <div className="grid items-start gap-3 md:grid-cols-2 xl:grid-cols-4">
       {lanes.map((lane) => (
-        <section key={lane.title} className="min-w-0 rounded-xl border border-border/65 bg-card/35 p-2 backdrop-blur-md">
+        <section
+          key={lane.title}
+          onDragOver={(e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            if (dropLane !== lane.title) setDropLane(lane.title);
+          }}
+          onDragLeave={() => {
+            if (dropLane === lane.title) setDropLane(null);
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            const appId = e.dataTransfer.getData("text/plain") || draggingId;
+            if (appId) void handleLaneDrop(lane, appId);
+          }}
+          className={cn(
+            "min-w-0 rounded-xl border bg-card/35 p-2 backdrop-blur-md transition-colors",
+            dropLane === lane.title ? "border-primary/70 bg-primary/5 ring-2 ring-primary/25" : "border-border/65"
+          )}
+        >
           <div className="flex items-baseline justify-between gap-2 px-1.5 pb-2 pt-1" title={lane.description}><span className="text-sm font-semibold">{lane.title}</span><span className="rounded-full bg-background/80 px-2 py-0.5 text-xs tabular-nums text-muted-foreground">{lane.items.length}</span></div>
           {/* A long column (130+ 投递 waiting on 筛选) scrolls on its own instead of stretching the page. */}
-          <div className="max-h-[68vh] space-y-2 overflow-y-auto overscroll-contain pr-0.5 [scrollbar-width:thin]">{lane.items.length ? lane.items.map((app) => <ApplicationCard key={app.id} app={app} hit={hits?.get(app.id)} now={now} />) : <p className="rounded-xl border border-dashed border-border/80 bg-background/35 px-3 py-6 text-center text-xs text-muted-foreground">暂无记录</p>}</div>
+          <div className="max-h-[68vh] space-y-2 overflow-y-auto overscroll-contain pr-0.5 [scrollbar-width:thin]">{lane.items.length ? lane.items.map((app) => <ApplicationCard key={app.id} app={app} hit={hits?.get(app.id)} now={now} onOptimisticStage={setOptimisticStage} onDragStartApp={setDraggingId} onDragEndApp={() => { setDraggingId(null); setDropLane(null); }} />) : <p className="rounded-xl border border-dashed border-border/80 bg-background/35 px-3 py-6 text-center text-xs text-muted-foreground">{draggingId ? `拖到这里移入「${lane.title}」` : "暂无记录"}</p>}</div>
         </section>
       ))}
     </div>}
@@ -126,7 +234,7 @@ function BoardBody({ applications, hits, narrowed, now }: { applications: BoardA
         <span><span className="text-sm font-semibold">已结束的投递 · {finished}</span><span className="ml-2 text-xs text-muted-foreground">{outcomes.filter((group) => group.items.length).map((group) => `${group.title.split(" / ").pop()} ${group.items.length}`).join(" · ")}</span></span>
         <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", finishedOpen && "rotate-180")} />
       </button>
-      {finishedOpen && <div className="mt-3 space-y-3">{outcomes.filter((group) => group.items.length > 0).map((group) => <div key={group.title} className="space-y-2"><h4 className={cn("text-xs font-semibold", group.className)}>{group.title} · {group.items.length}</h4><div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">{group.items.map((app) => <ApplicationCard key={app.id} app={app} closed hit={hits?.get(app.id)} now={now} />)}</div></div>)}</div>}
+      {finishedOpen && <div className="mt-3 space-y-3">{outcomes.filter((group) => group.items.length > 0).map((group) => <div key={group.title} className="space-y-2"><h4 className={cn("text-xs font-semibold", group.className)}>{group.title} · {group.items.length}</h4><div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">{group.items.map((app) => <ApplicationCard key={app.id} app={app} closed hit={hits?.get(app.id)} now={now} onOptimisticStage={setOptimisticStage} />)}</div></div>)}</div>}
     </section>}
   </div>;
 }

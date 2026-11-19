@@ -97,23 +97,52 @@ export async function mergeDuplicateMailEvents(tx: Prisma.TransactionClient, use
     select: { id: true, dateKey: true, meetingInfo: true, completedAt: true, createdAt: true },
     orderBy: { createdAt: "asc" },
   });
+  if (events.length < 2) return 0;
   const mails = await tx.personalTask.findMany({ where: { userId, mailEventId: { in: events.map((event) => event.id) } }, select: { id: true, title: true, mailEventId: true, mailUndo: true } });
-  const titlesOf = (id: string) => mails.filter((mail) => mail.mailEventId === id).map((mail) => mail.title);
+  const mailsByEvent = new Map<string, typeof mails>();
+  for (const mail of mails) {
+    if (!mail.mailEventId) continue;
+    const list = mailsByEvent.get(mail.mailEventId) ?? [];
+    list.push(mail);
+    mailsByEvent.set(mail.mailEventId, list);
+  }
+  const byBucket = new Map<string, typeof events>();
+  for (const event of events) {
+    const bucketKey = `${event.dateKey}|${event.completedAt ? 1 : 0}`;
+    const list = byBucket.get(bucketKey) ?? [];
+    list.push(event);
+    byBucket.set(bucketKey, list);
+  }
   const gone = new Set<string>();
-  for (const keep of events) {
-    if (gone.has(keep.id)) continue;
-    for (const other of events) {
-      if (other === keep || gone.has(other.id) || other.dateKey !== keep.dateKey || !!other.completedAt !== !!keep.completedAt) continue;
-      const same = titlesOf(keep.id).some((a) => titlesOf(other.id).some((b) => sameMailCompany(a, b) && kindFromText(a) === kindFromText(b)));
-      if (!same) continue;
-      if (/https?:/.test(other.meetingInfo ?? "") && !/https?:/.test(keep.meetingInfo ?? "")) await tx.calendarEvent.update({ where: { id: keep.id }, data: { meetingInfo: other.meetingInfo } });
-      for (const mail of mails.filter((entry) => entry.mailEventId === other.id)) {
-        const undoHere = parseUndo(mail.mailUndo)?.kind === "event";
-        await tx.personalTask.update({ where: { id: mail.id }, data: { mailEventId: keep.id, ...(undoHere ? { mailUndo: { kind: "event", eventId: keep.id } } : {}) } });
-        mail.mailEventId = keep.id;
+  for (const bucket of byBucket.values()) {
+    if (bucket.length < 2) continue;
+    for (let i = 0; i < bucket.length; i++) {
+      const keep = bucket[i];
+      if (gone.has(keep.id)) continue;
+      for (let j = i + 1; j < bucket.length; j++) {
+        const other = bucket[j];
+        if (gone.has(other.id)) continue;
+        const keepTitles = (mailsByEvent.get(keep.id) ?? []).map((m) => m.title);
+        const otherTitles = (mailsByEvent.get(other.id) ?? []).map((m) => m.title);
+        const same = keepTitles.some((a) => otherTitles.some((b) => sameMailCompany(a, b) && kindFromText(a) === kindFromText(b)));
+        if (!same) continue;
+        if (/https?:/.test(other.meetingInfo ?? "") && !/https?:/.test(keep.meetingInfo ?? "")) {
+          await tx.calendarEvent.update({ where: { id: keep.id }, data: { meetingInfo: other.meetingInfo } });
+          keep.meetingInfo = other.meetingInfo;
+        }
+        const otherMails = mailsByEvent.get(other.id) ?? [];
+        for (const mail of otherMails) {
+          const undoHere = parseUndo(mail.mailUndo)?.kind === "event";
+          await tx.personalTask.update({ where: { id: mail.id }, data: { mailEventId: keep.id, ...(undoHere ? { mailUndo: { kind: "event", eventId: keep.id } } : {}) } });
+          mail.mailEventId = keep.id;
+        }
+        if (otherMails.length) {
+          mailsByEvent.set(keep.id, [...(mailsByEvent.get(keep.id) ?? []), ...otherMails]);
+          mailsByEvent.delete(other.id);
+        }
+        await tx.calendarEvent.delete({ where: { id: other.id } });
+        gone.add(other.id);
       }
-      await tx.calendarEvent.delete({ where: { id: other.id } });
-      gone.add(other.id);
     }
   }
   return gone.size;
@@ -153,11 +182,13 @@ export async function learnMailCompanyFromTask(tx: Prisma.TransactionClient, use
  * reminder repeating the old time is not news, and must not bring it back.
  */
 async function decidedBefore(tx: Prisma.TransactionClient, task: { id: string; userId: string; title: string; applicationId: string | null }, time: NonNullable<ReturnType<typeof mailTime>>): Promise<{ eventId: string | null } | null> {
+  const cutoff = new Date(Date.now() - 90 * 86_400_000);
   const earlier = await tx.personalTask.findMany({
-    where: { userId: task.userId, id: { not: task.id }, sourceMailKey: { not: null } },
+    where: { userId: task.userId, id: { not: task.id }, sourceMailKey: { not: null }, createdAt: { gte: cutoff } },
     select: { title: true, applicationId: true, mailEventDraft: true, mailEventId: true, mailUndoneAt: true, done: true },
   });
   const lastDay = (value: NonNullable<ReturnType<typeof mailTime>>) => (value.endsAt ?? value.startsAt).toISOString().slice(0, 10);
+  const matching: Array<{ other: (typeof earlier)[number]; sameApp: boolean; bothLinked: boolean }> = [];
   for (const other of earlier) {
     if (mailIsAfterthought("", other.title)) continue;
     // A clock time is one appointment even if the mail was matched to another 投递 of that company
@@ -172,7 +203,17 @@ async function decidedBefore(tx: Prisma.TransactionClient, task: { id: string; u
       if (other.done) return { eventId: null };
       continue;
     }
-    const event = await tx.calendarEvent.findUnique({ where: { id: other.mailEventId }, select: { startsAt: true, dateKey: true, stageHistoryId: true } });
+    matching.push({ other, sameApp, bothLinked });
+  }
+  if (!matching.length) return null;
+  const eventIds = [...new Set(matching.map((m) => m.other.mailEventId!).filter(Boolean))];
+  const eventRows = await tx.calendarEvent.findMany({
+    where: { id: { in: eventIds } },
+    select: { id: true, startsAt: true, dateKey: true, stageHistoryId: true },
+  });
+  const eventsById = new Map(eventRows.map((e) => [e.id, e]));
+  for (const { other, sameApp, bothLinked } of matching) {
+    const event = eventsById.get(other.mailEventId!);
     if (!event) return { eventId: null };
     const moved = time.hasTime ? event.startsAt.getTime() !== time.startsAt.getTime() : !event.stageHistoryId && event.dateKey !== lastDay(time);
     if (moved) return { eventId: other.mailEventId };

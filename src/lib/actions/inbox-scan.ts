@@ -211,29 +211,27 @@ async function runScan(
   const autoApply = (await db.user.findUnique({ where: { id: userId }, select: { autoApplyProgress: true } }))?.autoApplyProgress ?? false;
   // Always load active & closed applications so recognized emails stay linked to the right record
   // even when auto-advancing stages/schedules is turned off.
-  const activeApplications: ActiveApplication[] = (
-    await db.application.findMany({
-      where: { userId, currentStage: { notIn: TERMINAL_STAGES } },
-      select: { id: true, title: true, currentStage: true, company: { select: { name: true, careerUrl: true, aliases: { select: { alias: true } } } } },
-      orderBy: { currentStageDate: "desc" },
-      take: 200,
-    })
-  ).map((a) => ({
-    id: a.id,
-    title: a.title,
-    currentStage: a.currentStage,
-    companyName: a.company.name,
-    careerUrls: a.company.careerUrl ? [a.company.careerUrl] : [],
-    aliases: a.company.aliases.map((entry) => entry.alias),
-  }));
+  // Single query for all applications (active + closed); derive activeApplications in memory.
+  const allAppsRaw = await db.application.findMany({
+    where: { userId },
+    select: { id: true, title: true, currentStage: true, currentStageDate: true, company: { select: { name: true, careerUrl: true, aliases: { select: { alias: true } } } } },
+    orderBy: { currentStageDate: "desc" },
+  });
+  const terminalSet = new Set<string>(TERMINAL_STAGES);
+  const activeApplications: ActiveApplication[] = allAppsRaw
+    .filter((a) => !terminalSet.has(a.currentStage))
+    .slice(0, 200)
+    .map((a) => ({
+      id: a.id,
+      title: a.title,
+      currentStage: a.currentStage,
+      companyName: a.company.name,
+      careerUrls: a.company.careerUrl ? [a.company.careerUrl] : [],
+      aliases: a.company.aliases.map((entry) => entry.alias),
+    }));
   // Everything already recorded, closed ones too, so a 「投递成功」 mail for
   // a 投递 made long ago (or already rejected) never creates a second one.
-  const everyApplication: MatchableApplication[] = (
-    await db.application.findMany({
-      where: { userId },
-      select: { id: true, title: true, company: { select: { name: true, careerUrl: true, aliases: { select: { alias: true } } } } },
-    })
-  ).map((a) => ({
+  const everyApplication: MatchableApplication[] = allAppsRaw.map((a) => ({
     id: a.id,
     title: a.title,
     companyName: a.company.name,
@@ -281,7 +279,15 @@ async function runScan(
     scanned += emails.length;
 
     if (emails.length > 0) {
-      const classifications = await classifyEmails(emails, aiConfig, activeApplications, autoApply);
+      let classifications: Awaited<ReturnType<typeof classifyEmails>>;
+      try {
+        classifications = await classifyEmails(emails, aiConfig, activeApplications, autoApply);
+      } catch (err) {
+        console.error(`[inbox-scan] ${account.label} classify failed`, err);
+        failedAccounts.push(account.label);
+        failures.push(`「${account.label}」${err instanceof UserFacingError ? err.message : "AI 识别超时或失败"}`);
+        continue;
+      }
       const judged = new Set<number>();
       for (const c of classifications) {
         if (c.isJobRelated) judged.add(c.index);
@@ -360,11 +366,15 @@ async function runScan(
           try {
             const companyId = await resolveCompanyId(freshCompany);
             const id = taskId;
-            await db.$transaction(async (tx) => {
+            const createdAppId = await db.$transaction(async (tx) => {
               const applicationId = await createApplicationFromMail(tx, { userId, companyId, title: freshTitle, appliedAt: email.date, subject: email.subject });
               await tx.personalTask.update({ where: { id }, data: { applicationId } });
+              return applicationId;
             });
             known.push({ title: freshTitle, companyNames: [freshCompany] });
+            const newActive: ActiveApplication = { id: createdAppId, title: freshTitle, currentStage: "APPLIED", companyName: freshCompany, careerUrls: [], aliases: [] };
+            activeApplications.unshift(newActive);
+            everyApplication.unshift(newActive);
             recorded += 1;
           } catch (error) {
             console.error("[inbox-scan] recording a new application failed", error);
@@ -428,7 +438,9 @@ async function runScan(
     });
   }
 
-  await db.$transaction((tx) => mergeDuplicateMailEvents(tx, userId)).catch((error) => console.error("[inbox-scan] merging duplicates failed", error));
+  if (scheduled > 0 || found > 0) {
+    await db.$transaction((tx) => mergeDuplicateMailEvents(tx, userId)).catch((error) => console.error("[inbox-scan] merging duplicates failed", error));
+  }
 
   // Recent mail whose time the first reading missed gets a second look.
   const again = await rereadMailTimes(userId, { days: 4 }).catch((error) => {

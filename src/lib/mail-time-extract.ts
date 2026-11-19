@@ -222,11 +222,11 @@ export function extractMailTime(input: { subject?: string; body: string; mailDat
 
   // 2. The last moment to pick a slot (自主预约).
   const booked = findBooking(text, input.mailDate);
-  if (booked) return { kind: "booking", localStart: "", localEnd: "", timeZone: "", deadline: booked.value, windowStart: "", evidence: booked.evidence, meetingUrl };
+  if (booked) return { kind: "booking", localStart: "", localEnd: "", timeZone: booked.zone, deadline: booked.value, windowStart: "", evidence: booked.evidence, meetingUrl };
 
   // 3. A cut-off for finishing a 笔试 / 测评.
   const cutoff = findDeadline(text, input.mailDate);
-  if (cutoff) return { kind: "deadline", localStart: "", localEnd: "", timeZone: "", deadline: cutoff.value, windowStart: "", evidence: cutoff.evidence, meetingUrl };
+  if (cutoff) return { kind: "deadline", localStart: "", localEnd: "", timeZone: cutoff.zone, deadline: cutoff.value, windowStart: "", evidence: cutoff.evidence, meetingUrl };
 
   // 3b. 「明天下午 3 点」, counted from the day the mail was sent.
   const relativeSlot = findRelativeSlot(text, input.mailDate);
@@ -326,19 +326,19 @@ function findRelativeSlot(text: string, mailDate: Date): { start: string; eviden
   return null;
 }
 
-function findBooking(text: string, mailDate: Date): { value: string; evidence: string } | null {
+function findBooking(text: string, mailDate: Date): { value: string; zone: string; evidence: string } | null {
   BOOKING_LABEL.lastIndex = 0;
   for (let label = BOOKING_LABEL.exec(text); label; label = BOOKING_LABEL.exec(text)) {
     const from = label.index + label[0].length;
     const moment = momentAt(text.slice(0, from + 60), from, mailDate);
     if (!moment || moment.start - from > 24) continue;
-    const { shift } = zoneFor(moment.offsetMinutes);
-    return { value: deadlineValue(moment, shift), evidence: snippet(text, label.index, moment.end) };
+    const { zone, shift } = zoneFor(moment.offsetMinutes);
+    return { value: deadlineValue(moment, shift), zone, evidence: snippet(text, label.index, moment.end) };
   }
   return null;
 }
 
-function findDeadline(text: string, mailDate: Date): { value: string; evidence: string } | null {
+function findDeadline(text: string, mailDate: Date): { value: string; zone: string; evidence: string } | null {
   // 「2026-10-30 00:00:00 之前完成」: a date, then 前 / 之前 / 止.
   const dates: Moment[] = [];
   for (let at = 0; at < text.length; ) {
@@ -353,8 +353,8 @@ function findDeadline(text: string, mailDate: Date): { value: string; evidence: 
     const before = text.slice(Math.max(0, moment.end - 70), moment.end);
     const next = text.slice(moment.end, moment.end + 40);
     if (!DEADLINE_VERB.test(before) && !DEADLINE_VERB.test(next)) continue;
-    const { shift } = zoneFor(moment.offsetMinutes);
-    return { value: deadlineValue(moment, shift), evidence: snippet(text, moment.end - 36, moment.end + 16) };
+    const { zone, shift } = zoneFor(moment.offsetMinutes);
+    return { value: deadlineValue(moment, shift), zone, evidence: snippet(text, moment.end - 36, moment.end + 16) };
   }
   DEADLINE_LABEL.lastIndex = 0;
   for (let label = DEADLINE_LABEL.exec(text); label; label = DEADLINE_LABEL.exec(text)) {
@@ -362,8 +362,8 @@ function findDeadline(text: string, mailDate: Date): { value: string; evidence: 
     const moment = momentAt(text.slice(0, from + 50), from, mailDate);
     // Only right after the label, not the next date in some later sentence.
     if (!moment || moment.start - from > 16 || /[。！？]/.test(text.slice(from, moment.start))) continue;
-    const { shift } = zoneFor(moment.offsetMinutes);
-    return { value: deadlineValue(moment, shift), evidence: snippet(text, label.index, moment.end) };
+    const { zone, shift } = zoneFor(moment.offsetMinutes);
+    return { value: deadlineValue(moment, shift), zone, evidence: snippet(text, label.index, moment.end) };
   }
   return null;
 }

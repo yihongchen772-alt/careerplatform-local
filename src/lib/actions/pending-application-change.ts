@@ -1,11 +1,12 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { toActionResult, UserFacingError } from "@/lib/action-result";
-import { normalizeMemoryText, memoryCaptureSchema, memoryContent, memoryIdentity, toMemoryView, type MemorySource } from "@/lib/application-memory";
+import { MEMORY_CATEGORIES, MEMORY_LISTS, normalizeMemoryText, memoryCaptureSchema, memoryContent, memoryIdentity, sameMemoryEntity, toMemoryView, type MemoryCapture, type MemoryContent, type MemorySource } from "@/lib/application-memory";
 import { parseApplicationProfile } from "@/lib/application-profile";
 import { LEARNABLE_FACTS, profileKeyForLabel } from "@/lib/profile-learning";
 import type { Prisma } from "@prisma/client";
@@ -21,6 +22,10 @@ const acceptSchema = z.object({
   enableAutomatic: z.boolean().default(false),
   /** A short answer that is a 网申资料 field (研究方向 …): write it there. */
   toProfile: z.boolean().default(false),
+  /** Promote a hand-typed personal field into `profile.customFields` for cross-site autofill. */
+  toCustomField: z.boolean().default(false),
+  /** Sync a reviewed experience/project/fact into both `ApplicationProfile` and the bound/default `ResumeVersion` template text. */
+  toResumeTemplate: z.boolean().default(false),
 });
 
 /** Writes a reviewed answer into its 网申资料 field. Returns false when the label maps to none. */
@@ -38,6 +43,74 @@ async function answerToProfile(tx: Prisma.TransactionClient, userId: string, pay
   return true;
 }
 
+/** Saves a reviewed hand-typed answer as a reusable custom personal slot in `profile.customFields`. */
+async function answerToCustomField(tx: Prisma.TransactionClient, userId: string, label: string, value: string) {
+  const cleanLabel = label.replace(/[\s*＊:：]+$/g, "").trim().slice(0, 40);
+  const cleanValue = value.trim().slice(0, 500);
+  if (!cleanLabel || !cleanValue) return false;
+  const user = await tx.user.findUniqueOrThrow({ where: { id: userId }, select: { applicationProfile: true } });
+  const profile = parseApplicationProfile(user.applicationProfile);
+  const norm = (s: string) => s.normalize("NFKC").toLowerCase().replace(/[\s：:*＊?？()（）【】[\]_\-]+/g, "");
+  const want = norm(cleanLabel);
+  const next = [...profile.customFields];
+  const existingIdx = next.findIndex((cf) => norm(cf.label) === want);
+  if (existingIdx >= 0) {
+    next[existingIdx] = { ...next[existingIdx], value: cleanValue };
+  } else {
+    if (next.length >= 40) throw new UserFacingError("自定义栏位已达 40 条上限，请先在设置中清理");
+    next.push({ id: `cf-${randomUUID().replace(/-/g, "").slice(0, 8)}`, label: cleanLabel, value: cleanValue });
+  }
+  profile.customFields = next;
+  await tx.user.update({ where: { id: userId }, data: { applicationProfile: profile as Prisma.InputJsonValue } });
+  return true;
+}
+
+/** Syncs a reviewed record or profile answer into `ApplicationProfile` and the bound/default `ResumeVersion` template text. */
+async function syncPendingToResumeTemplate(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  resumeVersionId: string | null,
+  change: { kind: "record"; category: MemoryCapture["category"]; content: MemoryContent } | { kind: "answer"; label: string; value: string; profileKey?: string }
+) {
+  const user = await tx.user.findUniqueOrThrow({ where: { id: userId }, select: { applicationProfile: true } });
+  const profile = parseApplicationProfile(user.applicationProfile);
+  let snippet = "";
+  if (change.kind === "record") {
+    const { list, limit } = MEMORY_LISTS[change.category];
+    const rows = [...((profile[list] as MemoryContent[]) || [])];
+    const idx = rows.findIndex((row) => sameMemoryEntity(change.category, row, change.content));
+    const nonEmpty = Object.fromEntries(Object.entries(change.content).filter(([, v]) => String(v || "").trim()));
+    if (idx >= 0) {
+      rows[idx] = { ...rows[idx], ...nonEmpty };
+    } else if (rows.length < limit) {
+      rows.push(nonEmpty as MemoryContent);
+    }
+    (profile as Record<string, unknown>)[list] = rows;
+    await tx.user.update({ where: { id: userId }, data: { applicationProfile: profile as Prisma.InputJsonValue } });
+    const title = change.content.name || change.content.company || change.content.school || MEMORY_CATEGORIES[change.category];
+    const meta = [change.content.role || change.content.major || change.content.level, [change.content.start || change.content.date, change.content.end].filter(Boolean).join(" - ")].filter(Boolean).join(" | ");
+    const body = [change.content.description, change.content.responsibilities, change.content.text].filter(Boolean).join("\n");
+    snippet = `【${MEMORY_CATEGORIES[change.category]}】${title}${meta ? `（${meta}）` : ""}${body ? `\n${body}` : ""}`;
+  } else {
+    await answerToProfile(tx, userId, { questionLabel: change.label, profileKey: change.profileKey }, change.value);
+    snippet = `【${change.label}】${change.value}`;
+  }
+
+  const targetResume =
+    (resumeVersionId ? await tx.resumeVersion.findFirst({ where: { id: resumeVersionId, userId } }) : null) ||
+    (await tx.resumeVersion.findFirst({ where: { userId }, orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }] }));
+  if (targetResume && snippet) {
+    const existingText = String(targetResume.extractedText || "").trim();
+    if (!existingText.includes(snippet.slice(0, 80))) {
+      const nextText = existingText ? `${existingText}\n\n${snippet}` : snippet;
+      await tx.resumeVersion.update({
+        where: { id: targetResume.id },
+        data: { extractedText: nextText.slice(0, 60000), extractedAt: new Date() },
+      });
+    }
+  }
+}
+
 export async function acceptPendingApplicationChange(id: string, input: z.input<typeof acceptSchema>) {
   return toActionResult(async () => {
     const user = await requireUser();
@@ -48,7 +121,13 @@ export async function acceptPendingApplicationChange(id: string, input: z.input<
       const row = await tx.pendingApplicationChange.findFirst({ where: { id, userId: user.id, status: "pending" } });
       if (!row || row.revision !== choice.revision) throw new UserFacingError("这条待核对内容已变化，请刷新后重新核对");
       let memory = null;
-      if (row.kind === "record") {
+      if (row.kind === "record" && choice.toResumeTemplate) {
+        const capture = memoryCaptureSchema.safeParse(row.payload);
+        if (!capture.success) throw new UserFacingError("这条经历内容不完整");
+        const incoming = memoryContent(capture.data.category, choice.content || capture.data.content)!;
+        if (!incoming || !memoryCaptureSchema.safeParse({ ...capture.data, content: incoming }).success) throw new UserFacingError("请补全经历名称和其他内容");
+        await syncPendingToResumeTemplate(tx, user.id, row.resumeVersionId, { kind: "record", category: capture.data.category, content: incoming });
+      } else if (row.kind === "record") {
         const capture = memoryCaptureSchema.safeParse(row.payload);
         if (!capture.success) throw new UserFacingError("这条经历内容不完整");
         const incoming = memoryContent(capture.data.category, choice.content || capture.data.content)!;
@@ -82,6 +161,14 @@ export async function acceptPendingApplicationChange(id: string, input: z.input<
           const sources = view.sources.some((item) => item.url === row.sourceUrl) ? view.sources : [...view.sources, source].slice(-10);
           memory = await tx.applicationMemory.update({ where: { id: existing.id }, data: { content: selected, identity, alternatives, sources, revision: { increment: 1 } } });
         }
+      } else if (row.kind === "answer" && choice.toCustomField) {
+        const answer = z.object({ questionLabel: z.string().trim().min(2).max(500), answer: z.string().trim().min(1).max(10000) }).safeParse(row.payload);
+        if (!answer.success) throw new UserFacingError("这条字段内容不完整");
+        if (!await answerToCustomField(tx, user.id, answer.data.questionLabel, choice.answer || answer.data.answer)) throw new UserFacingError("无法保存为自定义栏位");
+      } else if (row.kind === "answer" && choice.toResumeTemplate) {
+        const answer = z.object({ questionLabel: z.string().trim().min(2).max(500), answer: z.string().trim().min(1).max(10000), profileKey: z.string().max(40).optional() }).safeParse(row.payload);
+        if (!answer.success) throw new UserFacingError("这条字段内容不完整");
+        await syncPendingToResumeTemplate(tx, user.id, row.resumeVersionId, { kind: "answer", label: answer.data.questionLabel, value: choice.answer || answer.data.answer, profileKey: answer.data.profileKey });
       } else if (row.kind === "answer" && choice.toProfile) {
         const answer = z.object({ questionLabel: z.string().trim().min(2).max(500), answer: z.string().trim().min(1).max(10000), profileKey: z.string().max(40).optional() }).safeParse(row.payload);
         if (!answer.success) throw new UserFacingError("这条字段内容不完整");
@@ -103,6 +190,8 @@ export async function acceptPendingApplicationChange(id: string, input: z.input<
       return memory ? toMemoryView(memory) : null;
     });
     revalidatePath("/settings");
+    revalidatePath("/resumes");
+    revalidatePath("/browser");
     return result;
   });
 }
@@ -134,6 +223,8 @@ export async function acceptPendingIntoProfile(items: { id: string; revision: nu
       return { saved, skipped: Math.min(items.length, 100) - saved };
     });
     revalidatePath("/settings");
+    revalidatePath("/resumes");
+    revalidatePath("/browser");
     return result;
   });
 }

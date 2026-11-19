@@ -107,27 +107,35 @@ export function DeadlineCalendar({
   const upcoming = useMemo(
     () =>
       [...events]
-        .filter((e) => new Date(e.date).getTime() >= now - 86400000)
+        .filter((e) => new Date(e.dateEnd ?? e.date).getTime() >= now - 86400000)
         .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
     [events, now]
   );
 
   const selectedKey = selected ? dayKey(selected) : null;
+  const todayKey = dayKey(new Date(now));
   const [showDone, setShowDone] = useState(false);
   // 近期事项: what is still to do, a day at a time like 接下来; what is done folds away.
   const open = upcoming.filter((e) => !e.done);
   const done = upcoming.filter((e) => e.done);
   const shownEvents = selectedKey ? eventsByDay.get(selectedKey) ?? [] : open;
   const groups: { key: string; label: string; items: CalendarEvent[] }[] = [];
+  const groupByKey = new Map<string, { key: string; label: string; items: CalendarEvent[] }>();
   for (const e of shownEvents) {
-    const key = dayKey(new Date(e.date));
-    const last = groups[groups.length - 1];
-    if (last && last.key === key) last.items.push(e);
+    const startKey = dayKey(new Date(e.date));
+    const endKey = e.dateEnd ? dayKey(new Date(e.dateEnd)) : startKey;
+    // Active multi-day windows that already started stay pinned under today until their deadline passes.
+    const key = !selectedKey && startKey < todayKey && endKey >= todayKey ? todayKey : startKey;
+    const existing = groupByKey.get(key);
+    if (existing) existing.items.push(e);
     else {
       const label = dayLabel(key, now);
-      groups.push({ key, label: `${label.day}${label.day.startsWith("周") || ["今天", "明天", "后天", "昨天"].includes(label.day) ? ` · ${label.date}` : ""}`, items: [e] });
+      const entry = { key, label: `${label.day}${label.day.startsWith("周") || ["今天", "明天", "后天", "昨天"].includes(label.day) ? ` · ${label.date}` : ""}`, items: [e] };
+      groupByKey.set(key, entry);
+      groups.push(entry);
     }
   }
+  groups.sort((a, b) => a.key.localeCompare(b.key));
 
   function row(e: CalendarEvent) {
     const canComplete = e.id.startsWith("event-") || e.id.startsWith("stage-") || e.id.startsWith("task-");

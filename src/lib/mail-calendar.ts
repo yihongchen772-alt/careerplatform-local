@@ -33,13 +33,43 @@ export function confirmedWallTime(local: string, zone: string): Date {
   for (const offset of [-3600000, 3600000, -1800000, 1800000]) { const other = partsAt(utc + offset); if (`${other.year}-${other.month}-${other.day}T${other.hour}:${other.minute}` === local) throw new Error("此时间处于夏令时重复区间，请先换算成 UTC 并选择 UTC 时区"); }
   return new Date(utc);
 }
+const WINDOWS_TZ_TO_IANA: Record<string, string> = {
+  "china standard time": "Asia/Shanghai",
+  "taipei standard time": "Asia/Taipei",
+  "singapore standard time": "Asia/Singapore",
+  "tokyo standard time": "Asia/Tokyo",
+  "korea standard time": "Asia/Seoul",
+  "india standard time": "Asia/Kolkata",
+  "aus eastern standard time": "Australia/Sydney",
+  "pacific standard time": "America/Los_Angeles",
+  "pacific daylight time": "America/Los_Angeles",
+  "mountain standard time": "America/Denver",
+  "central standard time": "America/Chicago",
+  "eastern standard time": "America/New_York",
+  "eastern daylight time": "America/New_York",
+  "gmt standard time": "Europe/London",
+  "greenwich standard time": "UTC",
+  "w. europe standard time": "Europe/Berlin",
+  "central europe standard time": "Europe/Budapest",
+  "romance standard time": "Europe/Paris",
+  "utc": "UTC",
+};
+
+export function normalizeCalendarTimeZone(raw: string): string {
+  const trimmed = raw.trim().replace(/^"|"$/g, "");
+  if (!trimmed) return "";
+  return WINDOWS_TZ_TO_IANA[trimmed.toLowerCase()] ?? trimmed;
+}
+
 export function parseCalendarInvite(text: string): MailEventDraft | null {
   const lines = text.replace(/\r?\n[ \t]/g, "").split(/\r?\n/); const start = lines.findIndex((l) => l === "BEGIN:VEVENT"); if (start < 0) return null;
   const event = lines.slice(start + 1, lines.indexOf("END:VEVENT", start) < 0 ? undefined : lines.indexOf("END:VEVENT", start));
   const get = (key: string) => event.find((l) => l.startsWith(`${key}:`) || l.startsWith(`${key};`)) || "";
   const decode = (line: string) => line.slice(line.indexOf(":") + 1).replace(/\\n/gi, "\n").replace(/\\([,;\\])/g, "$1");
   const date = (line: string) => { const raw = decode(line); const match = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})\d{2}(Z)?$/.exec(raw); return match ? `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}` : ""; };
-  const rawStart = get("DTSTART"); const timezone = /;TZID=([^;:]+)/.exec(rawStart)?.[1]?.replace(/^"|"$/g, "") || (/Z$/.test(rawStart) ? "UTC" : "");
+  const rawStart = get("DTSTART");
+  const rawTz = /;TZID=([^;:]+)/.exec(rawStart)?.[1] || (/Z$/.test(rawStart) ? "UTC" : "");
+  const timezone = normalizeCalendarTimeZone(rawTz);
   const description = decode(get("DESCRIPTION")); const url = decode(get("URL")) || decode(get("LOCATION")).match(/https?:\/\/[^\s<>]+/)?.[0] || description.match(/https?:\/\/[^\s<>]+/)?.[0] || "";
   return mailEventDraftSchema.parse({ title: decode(get("SUMMARY")), localStart: date(rawStart), localEnd: date(get("DTEND")), timeZone: timezone, location: decode(get("LOCATION")), meetingUrl: url.slice(0, 2000), evidence: `邮件日历邀请：${decode(rawStart)}${get("STATUS") ? `；${decode(get("STATUS"))}` : ""}` });
 }

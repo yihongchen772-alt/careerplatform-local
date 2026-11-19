@@ -805,6 +805,10 @@ function closeTab(id) {
   stopFillTask(id, "标签页已关闭，填写已停止", { force: true });
   const [tab] = tabs.splice(index, 1);
   if (attachedView === tab.view) detach();
+  if (tab.jdTimer) { clearTimeout(tab.jdTimer); tab.jdTimer = null; }
+  formWatch.lastSignature.delete(id);
+  formWatch.settled.delete(id);
+  submittedSignatures.delete(id);
   lastAiFilled.delete(id);
   pendingPlans.delete(id);
   pendingLogins.delete(id);
@@ -1640,9 +1644,10 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       type: field.type,
       options: field.options,
       retry: overwrite,
+      forceOverwrite: overwrite,
     };
     let ok = false;
-    if (field.tag === "custom-select" || field.tag === "radio") {
+    if (field.tag === "custom-select") {
       const customRes = await frame.executeJavaScript(`(${fillCustomSelects.toString()})(${JSON.stringify([pair])})`).catch(() => null);
       ok = !!customRes?.filled?.includes(field.id);
     }
@@ -1650,10 +1655,12 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       const result = await frame.executeJavaScript(`(${fillFields.toString()})(${JSON.stringify([pair])})`).catch(() => null);
       ok = !!result?.filled?.includes(field.id);
     }
+    if (ok) field.hasValue = true;
     await frame.executeJavaScript(`(${focusFormField.toString()})(${JSON.stringify(field.id)})`).catch(() => {});
     const contextKey = tab.positionId ? `job:v1:${tab.positionId}` : portalContext(tab.archiveUrl || wc.getURL());
     return {
       ok,
+      tag: field.tag,
       label: field.label || label,
       section: field.section || undefined,
       contextKey,
@@ -1687,8 +1694,10 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       const res = await fillSingleFieldByLabel(tab, label, value, !!raw?.overwrite, scan);
       if (res.ok) {
         filled.push({ label: res.label || label, value, section: res.section });
-        // Custom dropdown choices can expand/mount dependent fields — refresh scan for later items.
-        scan = await scanAllFrames(wc);
+        // Only dropdown/radio choices can mount dependent fields — avoid rescanning the whole page after plain textboxes.
+        if (res.tag === "custom-select" || res.tag === "select" || res.tag === "radio") {
+          scan = await scanAllFrames(wc);
+        }
       } else {
         skipped.push({ label, reason: res.needsConfirm ? "这一栏已有内容" : res.reason || "未填进去", needsConfirm: !!res.needsConfirm });
       }
@@ -2448,8 +2457,8 @@ async function captureSample(tab, note, { auto = false } = {}) {
 
 function detectLoginGateCleared(scanFn, rootDoc) {
   const doc = rootDoc || document;
-  const fields = typeof scanFn === "function" ? scanFn(doc) : [];
-  const fillable = Array.isArray(fields) ? fields.length : 0;
+  const fields = typeof scanFn === "function" ? scanFn("readonly-", true, false, true) : [];
+  const fillable = Array.isArray(fields) ? fields.filter((f) => !f?.hasValue).length : 0;
   const isVisible = (el) => {
     if (!el || el.hidden || el.getAttribute?.("aria-hidden") === "true") return false;
     if (el.style?.display === "none" || el.style?.visibility === "hidden") return false;

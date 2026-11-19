@@ -10,7 +10,7 @@
 // `prefix` namespaces the field ids per frame: 网申 forms on 北森/Moka-style
 // portals commonly live inside an iframe, and ids must stay unique across
 // all frames so the fill step can route each value back to the right one.
-function scanPageFields(prefix, readOnly = false, preserveIds = false) {
+function scanPageFields(prefix, readOnly = false, preserveIds = false, lightweight = false) {
   const results = [];
   const nodes = new Map();
   const host = typeof location !== "undefined" ? location.hostname : "";
@@ -623,7 +623,7 @@ function scanPageFields(prefix, readOnly = false, preserveIds = false) {
     }
     return candidate;
   };
-  for (const field of results) {
+  if (!lightweight) for (const field of results) {
     const group = groupFor(field), el = nodes.get(field.id);
     if (!group || !el) continue;
     // 飞书招聘 puts a date range 13 wrappers below the block that holds its 学校. No small limit here: on 北森
@@ -1015,7 +1015,7 @@ async function fillFields(pairs, taskId) {
       // click the option whose label matches
       const radios = findAll('[data-cp-fill-id^="' + p.id + ':"]');
       if (!radios.length && p.mappingKey) { missing.push(p.id); continue; }
-      if (radios.some((r) => r.checked || r.getAttribute("data-cp-user-edited") === "1")) {
+      if (!p.forceOverwrite && radios.some((r) => r.checked || r.getAttribute("data-cp-user-edited") === "1")) {
         skipped.push(p.id);
         continue;
       }
@@ -1043,7 +1043,7 @@ async function fillFields(pairs, taskId) {
       if (!group) { failed.push(p.label || p.id); continue; }
       const choices = Array.from(group.querySelectorAll("[role='radio']"));
       const isOn = (choice) => choice.getAttribute("aria-checked") === "true";
-      if (choices.some(isOn) || group.getAttribute("data-cp-user-edited") === "1") { skipped.push(p.id); continue; }
+      if (!p.forceOverwrite && (choices.some(isOn) || group.getAttribute("data-cp-user-edited") === "1")) { skipped.push(p.id); continue; }
       const target = choices.find((choice) => clean(choice.textContent) === p.value);
       if (!target || target.getAttribute("aria-disabled") === "true") { failed.push(p.label || p.id); continue; }
       target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
@@ -1078,8 +1078,8 @@ async function fillFields(pairs, taskId) {
     const selected = el.tagName.toLowerCase() === "select" ? el.options[el.selectedIndex] : null;
     const placeholder = selected && (!selected.value || /^(?:请(?:选择|选取)|please\s*(?:select|choose)|select\s*(?:one|an?\b)|choose\s*(?:one|an?\b)|[-—]+\s*(?:请选择|select))/i.test(clean(selected.textContent)));
     const current = rich ? clean(el.innerText) : el.value && String(el.value).trim();
-    const allowOverwrite = !!p.retry && el.getAttribute("data-cp-filled") && el.getAttribute("data-cp-user-edited") !== "1";
-    if ((!placeholder && current && !allowOverwrite) || el.getAttribute("data-cp-user-edited") === "1") {
+    const allowOverwrite = !!p.forceOverwrite || (!!p.retry && el.getAttribute("data-cp-filled") && el.getAttribute("data-cp-user-edited") !== "1");
+    if ((!placeholder && current && !allowOverwrite) || (!p.forceOverwrite && el.getAttribute("data-cp-user-edited") === "1")) {
       skipped.push(p.id);
       continue;
     }
@@ -1127,7 +1127,7 @@ async function fillFields(pairs, taskId) {
       const group = Array.from(picker.querySelectorAll("input")).map((input) => {
         const id = input.getAttribute("data-cp-fill-id");
         const pair = input === el ? p : pairs.find((other) => other.id === id && other.value && other.value !== "至今");
-        const allowPickerOverwrite = pair && !!pair.retry && input.getAttribute("data-cp-filled") && input.getAttribute("data-cp-user-edited") !== "1";
+        const allowPickerOverwrite = pair && (!!pair.forceOverwrite || (!!pair.retry && (input.getAttribute("data-cp-filled") || picker.getAttribute("data-cp-filled")) && input.getAttribute("data-cp-user-edited") !== "1"));
         if (pair && (((input.value && String(input.value).trim()) && !allowPickerOverwrite) || input.getAttribute("data-cp-user-edited") === "1")) {
           pickerDone.add(pair.id);
           skipped.push(pair.id);
@@ -1157,6 +1157,7 @@ async function fillFields(pairs, taskId) {
       for (const { input, pair } of group) {
         if (clean(input.value) !== clean(pair.value)) { failed.push(pair.label || pair.id); continue; }
         mark(picker, pair.source || "profile", pair.answerId);
+        input.setAttribute("data-cp-filled", pair.source || "profile");
         // Memory reads the input itself, not the outlined wrapper.
         if ((pair.source || "profile") === "profile") input.setAttribute("data-cp-profile-filled", "1");
         if (pair.answerId) input.setAttribute("data-cp-answer-id", pair.answerId);
@@ -2074,7 +2075,7 @@ async function fillCustomSelects(pairs, taskId) {
 // Side-effect-free count of what an autofill could touch right now — used
 // by the multi-step form watcher to notice "a new form page just appeared".
 function countFillableFields(scan = scanPageFields) {
-  const fields = scan("readonly-", true).filter((field) => !field.hasValue);
+  const fields = scan("readonly-", true, false, true).filter((field) => !field.hasValue);
   const labels = fields.slice(0, 6).map((field) => (field.name || field.placeholder || field.label || "").slice(0, 20));
   return { count: fields.length, signature: location.href + "|" + fields.length + "|" + labels.join(",") };
 }
@@ -3877,15 +3878,20 @@ async function clickAddBlock(group, dryRun = false) {
     language: /语言|外语|英语|language/i,
   };
   const words = GROUP_WORDS[group];
-  const ADD = /^[+＋]?\s*(?:添加|新增|增加|继续添加|再添加|add\b)/i;
+  const ADD = /^(?:[+＋]\s*)?(?:添加|新增|增加|继续添加|再添加|再加一条|加一条|追加|add\b)|^[+＋]\s*(?:教育|学历|实习|工作|项目|获奖|荣誉|校园|社团|技能|语言)/i;
   const visible = (el) => { const r = el.getBoundingClientRect(); const st = getComputedStyle(el); return r.width > 0 && r.height > 0 && st.visibility !== "hidden" && st.display !== "none"; };
   const context = (el) => {
     let node = el;
-    for (let depth = 0; node && node !== document.body && depth < 8; depth++, node = node.parentElement) {
+    for (let depth = 0; node && node !== document.body && depth < 10; depth++, node = node.parentElement) {
       let sibling = node.previousElementSibling;
-      for (let hops = 0; sibling && hops < 6; hops++, sibling = sibling.previousElementSibling) {
+      for (let hops = 0; sibling && hops < 8; hops++, sibling = sibling.previousElementSibling) {
         const text = (sibling.textContent || "").replace(/\s+/g, " ").trim();
-        if (text && text.length <= 30 && !sibling.querySelector("input, select, textarea")) return text;
+        if (text && text.length <= 60 && !sibling.querySelector("input, select, textarea")) return text;
+      }
+      const heading = node.querySelector && node.querySelector(":scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > legend, :scope > [class*='title'], :scope > [class*='Title'], :scope > [class*='header'], :scope > [class*='Header']");
+      if (heading && !heading.contains(el) && !heading.querySelector("input, select, textarea")) {
+        const text = (heading.textContent || "").replace(/\s+/g, " ").trim();
+        if (text && text.length <= 60) return text;
       }
     }
     return "";
@@ -3898,7 +3904,7 @@ async function clickAddBlock(group, dryRun = false) {
   const candidates = qAll("button, a, [role='button'], .ant-btn, .el-button, span, div")
     .filter((el) => {
       const text = (el.textContent || "").replace(/\s+/g, " ").trim();
-      if (!text || text.length > 16 || !ADD.test(text) || !visible(el)) return false;
+      if (!text || text.length > 28 || !ADD.test(text) || !visible(el)) return false;
       // Innermost element carrying the text; its clickable ancestor is used below.
       if (Array.from(el.children).some((child) => ADD.test((child.textContent || "").trim()))) return false;
       // 「技能证书」下面的添加是加证书，表单里长不出技能的框。
@@ -5392,7 +5398,7 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
     const round = options.round || 0;
     // 逐段自动保存：一段填干净了就替你点它自己的「保存」，再接着加下一段。
     // 保存后页面上认不出多了一段（`saveGuard`）就停，不会把同一段存两遍。
-    const maxRounds = options.saveBlocks ? 24 : 4;
+    const maxRounds = options.saveBlocks ? 24 : 12;
     const accumulated = { filled: previous.filled + filled.length, uploaded: previous.uploaded + uploadedResumeCount + uploadedAttachmentCount, details: allDetails, shortened: [...(previous.shortened || []), ...shortened] };
     const shownOf = (group) => missingRepeatCounts(profile, rowIndexes, true).find((row) => row.group === group)?.shown || 0;
     const progressOf = (group) => shownOf(group) + (cardsOnPage.get(group)?.size || 0);
@@ -5558,6 +5564,12 @@ async function frameHasUserEdits(adapter) {
 // Remember manually entered facts and essays; never save untouched drafts.
 async function saveCorrectionsCore(adapter, resumeVersionId, onlyUserEdited = false, variantId, discover = true) {
   const pageUrl = adapter.url();
+  // Fast path on idle 2.5s ticks: if a draft for this page was already captured
+  // and no field carries a user-edited mark, skip scanning all frames.
+  if (onlyUserEdited && adapter.getDraftSignature?.()) {
+    const hasEdits = await frameHasUserEdits(adapter).catch(() => true);
+    if (!hasEdits) return { saved: 0, draftSaved: true };
+  }
   const filledList = adapter.getDrafts();
   const answers = [];
   const records = [];
@@ -5760,9 +5772,13 @@ function validatePageFields() {
     return text && text.length <= 120 ? text : "";
   };
   const ERR_SEL = ".ant-form-item-explain-error, .el-form-item__error, .ud__form-item-explain-error, .arco-form-message, .t-form__error, .phoenix-form-explain, .sd-Form-error, [role='alert']:not([aria-live='off']), [class*='error-msg'], [class*='error-text'], [class*='errorTip'], [class*='explain-error']";
+  const PICKER_WRAP = ".ant-picker, .el-date-editor, .el-range-editor, .arco-picker, .ivu-date-picker, .t-date-picker, .ud__picker, .atsx-date-picker, .ant-calendar-picker, .atsx-calendar-picker, [class*='sd-Dropdown-container']";
+  const seenIssueIds = new Set();
   for (const el of roots.flatMap((root) => Array.from(root.querySelectorAll("[data-cp-fill-id]")))) {
-    if (el.disabled || el.readOnly || !el.getBoundingClientRect().width) continue;
-    const id = el.getAttribute("data-cp-fill-id");
+    const inPicker = !!el.closest?.(PICKER_WRAP);
+    if (el.disabled || (el.readOnly && !inPicker) || !el.getBoundingClientRect().width) continue;
+    const id = String(el.getAttribute("data-cp-fill-id") || "").replace(/:\d+$/, "");
+    if (!id || seenIssueIds.has(id)) continue;
     const row = el.closest(".ant-form-item, .el-form-item, .ud__form-item, .arco-form-item, .t-form__item, .form-group, [class*='form-item'], [class*='form-field']");
     let message = "";
     if (row) {
@@ -5771,9 +5787,15 @@ function validatePageFields() {
         if (text) { message = text; break; }
       }
     }
-    if (message || el.getAttribute("aria-invalid") === "true") issues.push({ id, message: `网页提示：${message || "内容未通过校验"}` });
+    if (message || el.getAttribute("aria-invalid") === "true") {
+      seenIssueIds.add(id);
+      issues.push({ id, message: `网页提示：${message || "内容未通过校验"}` });
+    }
     // React Aria's hidden date twin carries step="60" (meant as seconds, read as 60 days).
-    else if (el.validity && !el.validity.valid && !(el.type === "date" && el.validity.stepMismatch && !el.validity.valueMissing && !el.validity.badInput && !el.validity.typeMismatch && !el.validity.rangeUnderflow && !el.validity.rangeOverflow)) issues.push({ id, message: el.validity.valueMissing ? "必填项尚未填写" : `格式需核对：${el.validationMessage || "网页校验未通过"}` });
+    else if (el.validity && !el.validity.valid && !(el.type === "date" && el.validity.stepMismatch && !el.validity.valueMissing && !el.validity.badInput && !el.validity.typeMismatch && !el.validity.rangeUnderflow && !el.validity.rangeOverflow)) {
+      seenIssueIds.add(id);
+      issues.push({ id, message: el.validity.valueMissing ? "必填项尚未填写" : `格式需核对：${el.validationMessage || "网页校验未通过"}` });
+    }
   }
   return issues;
 }
@@ -5898,7 +5920,14 @@ async function applyAutofillPlan(adapter, input) {
       if (!value || value.length > 20000) continue;
       if (field.maxLength && value.length > field.maxLength) throw new Error(`「${field.label || field.name}」超过 ${field.maxLength} 字，请缩短后再填`);
       if (!plan.options.modules?.includes((field.module || fieldModule(field))) && plan.options.modules) continue;
-      pairs.push({ ...original, id: current.id, label: field.label, tag: field.tag, value, manualConfirmed: !choice && value !== original?.value, source: choice || value !== original?.value ? "profile" : original?.source || "profile" });
+      const changed = !original || value !== original.value;
+      const finalValue = field.tag === "custom-select" && field.datePart && value !== "至今"
+        ? (customDatePart(field, value) || value)
+        : value;
+      const recomputedAlts = changed
+        ? [...(degreeAlternatives(field, finalValue) || []), ...(field.tag === "custom-select" || field.tag === "select" ? [...customValueAlternatives(finalValue, "", field), ...yesNoAlternatives(finalValue)] : [])]
+        : original?.alternatives;
+      pairs.push({ ...original, id: current.id, label: field.label, tag: field.tag, value: finalValue, alternatives: recomputedAlts, manualConfirmed: !choice && value !== original?.value, source: choice || value !== original?.value ? "profile" : original?.source || "profile" });
       selected.add(row.id);
     }
     const wantAttachments = input.uploadAttachments !== undefined ? !!input.uploadAttachments : plan.preview?.uploadAttachments !== false;

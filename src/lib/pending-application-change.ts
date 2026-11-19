@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { MEMORY_CATEGORIES, MEMORY_LISTS, memoryContent, memoryIdentity, memoryValueKey, normalizeMemoryText, sameMemoryEntity, type MemoryCapture, type MemoryContent } from "@/lib/application-memory";
-import { parseApplicationProfile, resolveProfileVariant } from "@/lib/application-profile";
+import { parseApplicationProfile, resolveProfileVariant, type ApplicationProfile } from "@/lib/application-profile";
+import { companySpecificQuestion } from "@/lib/autofill-answer-scope";
 import { learnFromPage, profileKeyForLabel, LEARNABLE_FACTS, type LearnedNotice } from "@/lib/profile-learning";
 
 export type PendingAnswer = {
@@ -16,6 +17,14 @@ export type PendingAnswer = {
 
 export type CaptureWithdrawal = { kind: "answer"; fieldKey: string } | { kind: "record"; category: MemoryCapture["category"]; captureKey: string };
 
+export type PendingEvaluation = {
+  verdict: "add_new" | "upgrade_existing" | "company_specific" | "conflict_review";
+  badge: string;
+  reason: string;
+  currentValue?: string;
+  recommendedTarget: "profile" | "custom_field" | "resume_template" | "memory_local" | "memory_global";
+};
+
 export type PendingApplicationChangeView = {
   id: string;
   kind: "answer" | "record";
@@ -27,6 +36,8 @@ export type PendingApplicationChangeView = {
   revision: number;
   /** For a short answer that is a 网申资料 field: which one (研究方向 …). */
   profileField?: { key: string; label: string };
+  /** Smart assessment of whether/how this hand-typed capture should update profile or resume template. */
+  evaluation?: PendingEvaluation;
 };
 
 /** Pending changes nobody looked at for this long drop out of 待核对. */
@@ -55,7 +66,7 @@ export const ACCOUNT_PAGE = /login|signin|sign-in|signup|sign-up|register|passpo
  * one part of a split date, a dialling code, an internal field name. These
  * made up most of what applicants ignored.
  */
-export function isNoiseAnswer(answer: { questionLabel: string; answer: string; kind?: string }, sourceUrl = ""): boolean {
+export function isNoiseAnswer(answer: { questionLabel: string; answer: string; kind?: string; profileKey?: string }, sourceUrl = ""): boolean {
   const label = answer.questionLabel.replace(/[\s*＊:：]/g, "");
   const value = answer.answer.trim();
   if (!label || !value) return true;
@@ -189,6 +200,126 @@ export async function stageApplicationChanges(
   }
   // Noise and learned captures count as handled: the page stops resending them.
   return { staged, processed: input.answers.length + input.records.length, learned: learning?.learned ?? ([] as LearnedNotice[]) };
+}
+
+export function evaluatePendingChange(
+  view: PendingApplicationChangeView,
+  profile: ApplicationProfile,
+  profileValues: Record<string, string>
+): PendingEvaluation {
+  if (view.kind === "record") {
+    const capture = view.payload as MemoryCapture;
+    const list = MEMORY_LISTS[capture.category].list;
+    const existingRows = (profile[list] as MemoryContent[]) || [];
+    const matched = existingRows.find((row) => sameMemoryEntity(capture.category, row, capture.content));
+    const detailScore = (c: MemoryContent) =>
+      Object.values(c).reduce((sum, v) => sum + String(v || "").trim().length, 0);
+    const summarize = (c: MemoryContent) =>
+      [c.role || c.major || c.level, [c.start || c.date, c.end].filter(Boolean).join("–"), c.description || c.responsibilities || c.text]
+        .filter(Boolean)
+        .join(" · ")
+        .slice(0, 140);
+    if (!matched) {
+      return {
+        verdict: "add_new",
+        badge: "建议补充到简历模板",
+        reason: `你的网申资料里还没有这段${MEMORY_CATEGORIES[capture.category]}，确认后可一键同步到网申资料与简历底稿`,
+        recommendedTarget: "resume_template",
+      };
+    }
+    const incomingLen = detailScore(capture.content);
+    const existingLen = detailScore(matched);
+    if (incomingLen > existingLen + 12) {
+      return {
+        verdict: "upgrade_existing",
+        badge: "建议升级更新",
+        reason: "你手填的内容比现有资料更详细完整，建议同步更新到网申资料与简历底稿",
+        currentValue: summarize(matched),
+        recommendedTarget: "resume_template",
+      };
+    }
+    return {
+      verdict: "conflict_review",
+      badge: "与现有资料有差异",
+      reason: "与已有经历措辞不同，可按需选择更新简历模板或另存为经历库版本",
+      currentValue: summarize(matched),
+      recommendedTarget: "profile",
+    };
+  }
+
+  const answer = view.payload as PendingAnswer;
+  if (view.profileField) {
+    const current = (profileValues[view.profileField.key] || "").trim();
+    if (!current) {
+      return {
+        verdict: "add_new",
+        badge: "建议补充到网申资料",
+        reason: `「${view.profileField.label}」在网申资料中为空，保存后后续网申自动填写`,
+        recommendedTarget: "profile",
+      };
+    }
+    if (view.profileField.key === "preferredCities" || view.profileField.key === "targetRole") {
+      return {
+        verdict: "company_specific",
+        badge: "按公司/方向核对",
+        reason: "该项常随公司与岗位调整，可选择更新为默认资料或仅保留本次",
+        currentValue: current,
+        recommendedTarget: "memory_local",
+      };
+    }
+    if (answer.answer.trim().length > current.length + 15) {
+      return {
+        verdict: "upgrade_existing",
+        badge: "建议更新为更完整版本",
+        reason: `你手填的「${view.profileField.label}」比当前资料更详细，建议更新`,
+        currentValue: current,
+        recommendedTarget: view.profileField.key === "selfIntro" ? "resume_template" : "profile",
+      };
+    }
+    return {
+      verdict: "conflict_review",
+      badge: "与现有资料不同",
+      reason: `你手填的值与当前「${view.profileField.label}」不同，确认是否替换`,
+      currentValue: current,
+      recommendedTarget: "profile",
+    };
+  }
+
+  if (answer.kind === "essay" && companySpecificQuestion(answer.questionLabel)) {
+    return {
+      verdict: "company_specific",
+      badge: "仅建议本岗位保留",
+      reason: "该问题与当前公司/岗位强相关，不建议同步到通用简历模板",
+      recommendedTarget: "memory_local",
+    };
+  }
+
+  if (answer.kind === "field" && answer.questionLabel.trim().length <= 24 && answer.answer.trim().length <= 160) {
+    const norm = (s: string) => s.normalize("NFKC").toLowerCase().replace(/[\s：:*＊?？()（）【】[\]_\-]+/g, "");
+    const existingCustom = profile.customFields.find((cf) => norm(cf.label) === norm(answer.questionLabel));
+    if (existingCustom && existingCustom.value.trim()) {
+      return {
+        verdict: "conflict_review",
+        badge: "与自定义栏位不同",
+        reason: `自定义栏位「${existingCustom.label}」已有值，确认是否更新`,
+        currentValue: existingCustom.value,
+        recommendedTarget: "custom_field",
+      };
+    }
+    return {
+      verdict: "add_new",
+      badge: "可存为自定义栏位",
+      reason: "存为个人自定义空栏后，后续所有网申遇到同类标签都能自动填入",
+      recommendedTarget: "custom_field",
+    };
+  }
+
+  return {
+    verdict: "add_new",
+    badge: "可沉淀为通用回答",
+    reason: "通用开放题回答，确认记住后下次遇到相似问题可直接复用",
+    recommendedTarget: "memory_global",
+  };
 }
 
 export function toPendingApplicationChangeView(row: { id: string; kind: string; label: string; payload: unknown; sourceUrl: string; contextKey: string | null; createdAt: Date; revision: number }): PendingApplicationChangeView {

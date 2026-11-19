@@ -36,6 +36,14 @@ type PendingPayload = {
   currentMemories: MemoryView[];
   currentAnswers: CompactAnswer[];
   profileValues: Record<string, string>;
+  defaultResumeName?: string | null;
+};
+
+const VERDICT_STYLE: Record<string, string> = {
+  add_new: "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300",
+  upgrade_existing: "bg-violet-500/12 text-violet-700 dark:text-violet-300",
+  conflict_review: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+  company_specific: "bg-muted text-muted-foreground",
 };
 
 function hostTitle(url: string) {
@@ -148,7 +156,10 @@ export function InlinePendingReview({
     });
   }
 
-  async function accept(row: PendingApplicationChangeView, toProfile = false) {
+  async function accept(
+    row: PendingApplicationChangeView,
+    mode: "default" | "profile" | "custom_field" | "resume_template" = "default"
+  ) {
     setBusyId(row.id);
     try {
       const target = findTargetMemory(row);
@@ -161,16 +172,22 @@ export function InlinePendingReview({
         expectedAnswer: saved ? { id: saved.id, updatedAt: saved.updatedAt } : null,
         answer: row.kind === "answer" ? answerEdits[rowKey(row)] : undefined,
         enableAutomatic: true,
-        toProfile,
+        toProfile: mode === "profile",
+        toCustomField: mode === "custom_field",
+        toResumeTemplate: mode === "resume_template",
       });
       if (!res.ok) return void toast.error(res.message);
       removeRows([rowKey(row)]);
       toast.success(
-        toProfile
-          ? `已记进网申资料「${row.profileField?.label}」`
-          : row.kind === "record"
-            ? "已加入经历库"
-            : "已记住，下次遇到会复用"
+        mode === "resume_template"
+          ? `已同步更新网申资料与简历模板${data?.defaultResumeName ? `（${data.defaultResumeName}）` : ""}`
+          : mode === "custom_field"
+            ? `已存为自定义栏位「${row.label}」，后续网申自动填入`
+            : mode === "profile"
+              ? `已记进网申资料「${row.profileField?.label}」`
+              : row.kind === "record"
+                ? "已加入经历库"
+                : "已记住，下次遇到会复用"
       );
     } finally {
       setBusyId("");
@@ -278,7 +295,14 @@ export function InlinePendingReview({
               <div key={key} className="rounded-lg border bg-background p-2.5">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{row.label}</p>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <p className="truncate font-medium">{row.label}</p>
+                      {row.evaluation && (
+                        <span className={`inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${VERDICT_STYLE[row.evaluation.verdict] || "bg-muted text-muted-foreground"}`}>
+                          {row.evaluation.badge}
+                        </span>
+                      )}
+                    </div>
                     <p className="text-[11px] text-muted-foreground">
                       {sourceLabel} · {rec ? `新${MEMORY_CATEGORIES[rec.category]}` : row.profileField ? `网申资料 · ${row.profileField.label}` : ans?.kind === "essay" ? "问答" : "字段"}
                     </p>
@@ -294,9 +318,20 @@ export function InlinePendingReview({
                   </button>
                 </div>
 
-                <p className="mt-1.5 line-clamp-3 whitespace-pre-wrap text-muted-foreground">{previewText(row)}</p>
+                {row.evaluation?.reason && (
+                  <p className="mt-1 text-[11px] leading-snug text-muted-foreground/90">{row.evaluation.reason}</p>
+                )}
 
-                <div className="mt-2 flex items-center justify-between gap-2">
+                {row.evaluation?.currentValue && (
+                  <div className="mt-1.5 rounded bg-muted/50 px-2 py-1 text-[11px]">
+                    <span className="text-muted-foreground">现有：</span>
+                    <span className="line-clamp-2 text-muted-foreground line-through decoration-muted-foreground/50">{row.evaluation.currentValue}</span>
+                  </div>
+                )}
+
+                <p className="mt-1.5 line-clamp-3 whitespace-pre-wrap text-foreground/90">{previewText(row)}</p>
+
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-1.5">
                   {ans ? (
                     <button
                       type="button"
@@ -308,15 +343,42 @@ export function InlinePendingReview({
                   ) : (
                     <span />
                   )}
-                  {row.profileField ? (
-                    <Button size="xs" variant="outline" disabled={!!busyId} onClick={() => void accept(row, true)}>
-                      <Check className="size-3" />记进网申资料
-                    </Button>
-                  ) : (
-                    <Button size="xs" variant="outline" disabled={!!busyId} onClick={() => void accept(row, false)}>
-                      <Check className="size-3" />{rec ? "加入经历库" : "记住"}
-                    </Button>
-                  )}
+                  <div className="flex flex-wrap items-center gap-1">
+                    {rec ? (
+                      <>
+                        <Button size="xs" variant="default" disabled={!!busyId} onClick={() => void accept(row, "resume_template")}>
+                          <Check className="size-3" />更新资料与简历模板
+                        </Button>
+                        <Button size="xs" variant="outline" disabled={!!busyId} onClick={() => void accept(row, "default")}>
+                          仅加经历库
+                        </Button>
+                      </>
+                    ) : row.profileField ? (
+                      <>
+                        <Button size="xs" variant="default" disabled={!!busyId} onClick={() => void accept(row, "profile")}>
+                          <Check className="size-3" />更新网申资料
+                        </Button>
+                        {row.profileField.key === "selfIntro" && (
+                          <Button size="xs" variant="outline" disabled={!!busyId} onClick={() => void accept(row, "resume_template")}>
+                            同步简历模板
+                          </Button>
+                        )}
+                      </>
+                    ) : row.evaluation?.recommendedTarget === "custom_field" ? (
+                      <>
+                        <Button size="xs" variant="default" disabled={!!busyId} onClick={() => void accept(row, "custom_field")}>
+                          <Check className="size-3" />存为自定义栏位
+                        </Button>
+                        <Button size="xs" variant="outline" disabled={!!busyId} onClick={() => void accept(row, "default")}>
+                          仅记住
+                        </Button>
+                      </>
+                    ) : (
+                      <Button size="xs" variant="outline" disabled={!!busyId} onClick={() => void accept(row, "default")}>
+                        <Check className="size-3" />记住
+                      </Button>
+                    )}
+                  </div>
                 </div>
 
                 {isOpen && ans && (

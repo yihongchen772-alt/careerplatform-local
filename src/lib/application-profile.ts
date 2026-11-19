@@ -214,6 +214,14 @@ export const customFieldSchema = z.object({
 });
 export type CustomField = z.infer<typeof customFieldSchema>;
 
+const customFieldsArraySchema = z.preprocess(
+  (val) =>
+    Array.isArray(val)
+      ? val.filter((item) => item && typeof item === "object" && String((item as { label?: unknown }).label ?? "").trim().length > 0)
+      : val,
+  z.array(customFieldSchema).max(40).default([])
+);
+
 export const applicationProfileSchema = z.object({
   education: z.array(educationSchema).max(10).default([]),
   experiences: z.array(experienceSchema).max(20).default([]),
@@ -225,7 +233,7 @@ export const applicationProfileSchema = z.object({
   family: z.array(familyMemberSchema).max(10).default([]),
   extras: z.record(z.string(), z.string().trim().max(1000)).default({}),
   /** User-defined personal slots (e.g. 银行卡号, 学号, 开户行), local-only and never sent to AI. */
-  customFields: z.array(customFieldSchema).max(40).default([]),
+  customFields: customFieldsArraySchema,
   variants: z.array(profileVariantSchema).max(100).default([]),
   /** What the 网申浏览器 wrote in by itself from hand-filled pages (for 撤销). */
   learned: z.array(learnedEntrySchema).max(80).default([]),
@@ -278,10 +286,27 @@ export const EMPTY_APPLICATION_PROFILE: ApplicationProfile = { education: [], ex
 export function parseApplicationProfile(raw: unknown): ApplicationProfile {
   const parsed = applicationProfileSchema.safeParse(raw);
   if (parsed.success) return parsed.data;
-  // A bad 撤销 record must never hide (and then, on save, erase) the profile.
-  if (raw && typeof raw === "object" && "learned" in raw) {
-    const retry = applicationProfileSchema.safeParse({ ...raw, learned: [] });
-    if (retry.success) return retry.data;
+  // Salvage valid top-level sections individually so a single malformed field
+  // (or an old 撤销 record) never wipes the user's entire profile on next save.
+  if (raw && typeof raw === "object") {
+    const obj = raw as Record<string, unknown>;
+    const shape = applicationProfileSchema.shape;
+    const salvaged: ApplicationProfile = {
+      education: shape.education.safeParse(obj.education).data ?? [],
+      experiences: shape.experiences.safeParse(obj.experiences).data ?? [],
+      projects: shape.projects.safeParse(obj.projects).data ?? [],
+      awards: shape.awards.safeParse(obj.awards).data ?? [],
+      campus: shape.campus.safeParse(obj.campus).data ?? [],
+      skills: shape.skills.safeParse(obj.skills).data ?? [],
+      languages: shape.languages.safeParse(obj.languages).data ?? [],
+      family: shape.family.safeParse(obj.family).data ?? [],
+      extras: shape.extras.safeParse(obj.extras).data ?? {},
+      customFields: shape.customFields.safeParse(obj.customFields).data ?? [],
+      variants: shape.variants.safeParse(obj.variants).data ?? [],
+      learned: shape.learned.safeParse(obj.learned).data ?? [],
+      pinnedAttachments: shape.pinnedAttachments.safeParse(obj.pinnedAttachments).data,
+    };
+    return salvaged;
   }
   return EMPTY_APPLICATION_PROFILE;
 }

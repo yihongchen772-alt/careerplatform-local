@@ -382,3 +382,109 @@ test("v72: user-saved & hand-typed idType, idNumber, passportNumber, and customF
   assert.doesNotMatch(assistantSrc, /type=\{slot\.secret/);
   assert.doesNotMatch(assistantSrc, /maskSecret/);
 });
+
+test("v73 Batch 1: detectLoginGateCleared read-only, clickAddBlock long headings, resilient profile parsing, and smart pending evaluation", () => {
+  const ts = require("typescript");
+
+  // 1. detectLoginGateCleared calls scanFn("readonly-", true, false, true) & counts unfilled fields
+  const bvSrc = fs.readFileSync(path.join(__dirname, "../electron/browser-view.js"), "utf8");
+  assert.match(bvSrc, /scanFn\("readonly-", true, false, true\)/);
+  assert.match(bvSrc, /fields\.filter\(\(f\) => !f\?\.hasValue\)\.length/);
+  assert.match(bvSrc, /formWatch\.lastSignature\.delete\(id\)/);
+
+  // 2. autofill-core improvements: lightweight scan, extended clickAddBlock, maxRounds=12, idle short-circuit, picker validation, applyAutofillPlan recomputed alternatives
+  const coreSrc = fs.readFileSync(path.join(__dirname, "../electron/autofill-core.js"), "utf8");
+  assert.match(coreSrc, /function scanPageFields\(prefix, readOnly = false, preserveIds = false, lightweight = false\)/);
+  assert.match(coreSrc, /再加一条/);
+  assert.match(coreSrc, /const maxRounds = options\.saveBlocks \? 24 : 12;/);
+  assert.match(coreSrc, /await frameHasUserEdits\(adapter\)/);
+  assert.match(coreSrc, /const recomputedAlts = changed/);
+  assert.match(coreSrc, /replace\(\/:\\d\+\$\/, ""\)/);
+
+  // 3. Resilient parseApplicationProfile & blank customField filtering
+  const profileSrc = fs.readFileSync(path.join(__dirname, "../src/lib/application-profile.ts"), "utf8");
+  const compiledProfile = ts.transpileModule(profileSrc, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
+  const pMod = { exports: {} };
+  vm.runInNewContext(compiledProfile, { exports: pMod.exports, module: pMod, require });
+  const { parseApplicationProfile } = pMod.exports;
+
+  // Blank custom field row is stripped without failing parse; label-only row survives; corrupt `awards` doesn't wipe `extras`
+  const salvaged = parseApplicationProfile({
+    extras: { idNumber: "110101199901011234", politics: "中共党员" },
+    customFields: [
+      { id: "cf-empty", label: "   ", value: "" },
+      { id: "cf-slot", label: "学号", value: "" },
+      { id: "cf-val", label: "开户行", value: "中国银行" },
+    ],
+    awards: "not-an-array",
+  });
+  assert.equal(salvaged.extras.idNumber, "110101199901011234");
+  assert.equal(salvaged.customFields.length, 2);
+  assert.equal(salvaged.customFields[0].label, "学号");
+  assert.equal(salvaged.customFields[0].value, "");
+  assert.equal(salvaged.awards.length, 0);
+
+  // 4. Smart evaluation & custom field auto-learning in source
+  const pendingSrc = fs.readFileSync(path.join(__dirname, "../src/lib/pending-application-change.ts"), "utf8");
+  assert.match(pendingSrc, /export function evaluatePendingChange\(/);
+  assert.match(pendingSrc, /recommendedTarget: "resume_template"/);
+
+  const pendingActionSrc = fs.readFileSync(path.join(__dirname, "../src/lib/actions/pending-application-change.ts"), "utf8");
+  assert.match(pendingActionSrc, /syncPendingToResumeTemplate/);
+  assert.match(pendingActionSrc, /answerToCustomField/);
+
+  const reviewSrc = fs.readFileSync(path.join(__dirname, "../src/components/browser/inline-pending-review.tsx"), "utf8");
+  assert.match(reviewSrc, /更新资料与简历模板/);
+  assert.match(reviewSrc, /存为自定义栏位/);
+});
+
+test("v74 Batch 2: Outlook Windows TZID normalization, deadline timeZone propagation, inbox-scan same-batch linking, multi-day calendar & kanban drag-drop", () => {
+  const ts = require("typescript");
+
+  // 1. Outlook Windows TZID -> IANA in mail-calendar.ts
+  const calSrc = fs.readFileSync(path.join(__dirname, "../src/lib/mail-calendar.ts"), "utf8");
+  const compiledCal = ts.transpileModule(calSrc, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
+  const calMod = { exports: {} };
+  vm.runInNewContext(compiledCal, { exports: calMod.exports, module: calMod, require });
+  const { normalizeCalendarTimeZone, parseCalendarInvite } = calMod.exports;
+
+  assert.equal(normalizeCalendarTimeZone("Pacific Standard Time"), "America/Los_Angeles");
+  assert.equal(normalizeCalendarTimeZone('"China Standard Time"'), "Asia/Shanghai");
+  assert.equal(normalizeCalendarTimeZone("Eastern Standard Time"), "America/New_York");
+  const ics = [
+    "BEGIN:VCALENDAR",
+    "BEGIN:VEVENT",
+    "SUMMARY:Technical Interview",
+    "DTSTART;TZID=\"Pacific Standard Time\":20261125T100000",
+    "DTEND;TZID=\"Pacific Standard Time\":20261125T110000",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n");
+  const parsedInvite = parseCalendarInvite(ics);
+  assert.equal(parsedInvite.timeZone, "America/Los_Angeles");
+
+  // 2. mail-time-extract.ts propagates zone on booking/deadline
+  const extractSrc = fs.readFileSync(path.join(__dirname, "../src/lib/mail-time-extract.ts"), "utf8");
+  assert.match(extractSrc, /timeZone: booked\.zone/);
+  assert.match(extractSrc, /timeZone: cutoff\.zone/);
+
+  // 3. inbox-scan.ts same-batch activeApplications push + per-account classifyEmails try/catch + merge gating
+  const scanSrc = fs.readFileSync(path.join(__dirname, "../src/lib/actions/inbox-scan.ts"), "utf8");
+  assert.match(scanSrc, /activeApplications\.unshift\(newActive\)/);
+  assert.match(scanSrc, /classify failed/);
+  assert.match(scanSrc, /if \(scheduled > 0 \|\| found > 0\)/);
+
+  // 4. Calendar multi-day dateEnd filter + company aliases + Kanban drag-drop + Resume delete cleanup
+  const deadlineCalSrc = fs.readFileSync(path.join(__dirname, "../src/components/calendar/deadline-calendar.tsx"), "utf8");
+  assert.match(deadlineCalSrc, /new Date\(e\.dateEnd \?\? e\.date\)\.getTime\(\) >= now - 86400000/);
+
+  const calPageSrc = fs.readFileSync(path.join(__dirname, "../src/app/(dashboard)/calendar/page.tsx"), "utf8");
+  assert.match(calPageSrc, /aliases: a\.company\.aliases\.map/);
+
+  const boardSrc = fs.readFileSync(path.join(__dirname, "../src/components/applications/applications-board.tsx"), "utf8");
+  assert.match(boardSrc, /handleLaneDrop/);
+  assert.match(boardSrc, /setOptimisticStage/);
+
+  const resumeSrc = fs.readFileSync(path.join(__dirname, "../src/lib/actions/resumes.ts"), "utf8");
+  assert.match(resumeSrc, /resumeVersionId: null/);
+});

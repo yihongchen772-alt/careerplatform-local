@@ -42,6 +42,7 @@ export function QuickStageMenu({
   currentStage,
   step = null,
   className,
+  onOptimisticStage,
 }: {
   applicationId: string;
   companyName: string;
@@ -49,6 +50,7 @@ export function QuickStageMenu({
   /** The current round, for 「本轮已完成」. */
   step?: StepView | null;
   className?: string;
+  onOptimisticStage?: (stage: ApplicationStage | null) => void;
 }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
@@ -56,6 +58,7 @@ export function QuickStageMenu({
   async function change(stage: ApplicationStage) {
     if (saving) return;
     setSaving(true);
+    onOptimisticStage?.(stage);
     try {
       const { stageHistoryId } = await addStageUpdate(applicationId, { stage });
       // A round usually comes with a time: one click to add it.
@@ -74,6 +77,7 @@ export function QuickStageMenu({
       });
       router.refresh();
     } catch {
+      onOptimisticStage?.(null);
       toast.error("更新失败，请重试");
     } finally {
       setSaving(false);

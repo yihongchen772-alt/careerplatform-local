@@ -136,7 +136,7 @@ export function ApplicationsView({ applications, now: serverNow, funnel, cityLoo
       else params.delete("t");
     }
     const search = params.toString();
-    window.history.replaceState(null, "", search ? `${pathname}?${search}` : pathname);
+    router.replace(search ? `${pathname}?${search}` : pathname, { scroll: false });
   }
 
   function commit(value: string) {

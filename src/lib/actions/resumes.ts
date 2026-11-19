@@ -89,12 +89,25 @@ export async function deleteResumeVersion(id: string) {
   const resume = await db.resumeVersion.findFirst({ where: { id, userId: user.id } });
   if (!resume) return;
 
-  await db.$transaction([
+  await db.$transaction(async (tx) => {
     // AI-only drafts are specific to this resume. User-confirmed answers
     // survive through the nullable SET NULL relation as reusable memory.
-    db.autofillAnswer.deleteMany({ where: { resumeVersionId: id, confirmed: false } }),
-    db.resumeVersion.delete({ where: { id } }),
-  ]);
+    await tx.autofillAnswer.deleteMany({ where: { resumeVersionId: id, confirmed: false } });
+    await tx.resumeVersion.delete({ where: { id } });
+    // Clear dangling `resumeVersionId` references on any 资料方案 bound to this deleted resume.
+    const u = await tx.user.findUnique({ where: { id: user.id }, select: { applicationProfile: true } });
+    if (u?.applicationProfile && typeof u.applicationProfile === "object") {
+      const raw = u.applicationProfile as Record<string, unknown>;
+      if (Array.isArray(raw.variants) && raw.variants.some((v) => v && typeof v === "object" && (v as { resumeVersionId?: unknown }).resumeVersionId === id)) {
+        const nextVariants = raw.variants.map((v) =>
+          v && typeof v === "object" && (v as { resumeVersionId?: unknown }).resumeVersionId === id
+            ? { ...(v as Record<string, unknown>), resumeVersionId: null }
+            : v
+        );
+        await tx.user.update({ where: { id: user.id }, data: { applicationProfile: { ...raw, variants: nextVariants } as never } });
+      }
+    }
+  });
   // Deleting the default leaves forms with none: the newest one takes over.
   if (resume.isDefault) {
     const next = await db.resumeVersion.findFirst({ where: { userId: user.id }, orderBy: { createdAt: "desc" }, select: { id: true } });
@@ -106,6 +119,8 @@ export async function deleteResumeVersion(id: string) {
 
   revalidatePath("/resumes");
   revalidatePath("/pool");
+  revalidatePath("/settings");
+  revalidatePath("/browser");
 }
 
 export async function setDefaultResumeVersion(id: string) {

@@ -15,7 +15,9 @@ import { currentTimeMs } from "@/lib/dates";
 export default async function CalendarPage() {
   const user = await requireUser();
 
-  const [positions, stageHistory, personalTasks, allApplications, contacts] =
+  const now = currentTimeMs();
+  const historyCutoff = new Date(now - 90 * 86_400_000);
+  const [positions, stageHistory, personalTasks, allApplications, contacts, personalEvents, pending] =
     await Promise.all([
       db.position.findMany({
         where: { userId: user.id, status: { not: "APPLIED" }, deadline: { not: null } },
@@ -23,35 +25,43 @@ export default async function CalendarPage() {
       }),
       db.stageHistory.findMany({
         where: {
-          nextDeadline: { not: null },
+          nextDeadline: { not: null, gte: historyCutoff },
           application: { userId: user.id },
         },
         include: { application: { include: { company: true } } },
       }),
       db.personalTask.findMany({
-        where: { userId: user.id, dueDate: { not: null } },
+        where: {
+          userId: user.id,
+          dueDate: { not: null },
+          OR: [{ done: false }, { dueDate: { gte: historyCutoff } }],
+        },
         select: { id: true, title: true, done: true, dueDate: true, dueDateEnd: true },
       }),
       // For the add dialog's 投递 picker: every application, not just the
       // ones with a time already on the calendar.
       db.application.findMany({
         where: { userId: user.id },
-        include: { company: true },
+        include: { company: { include: { aliases: { select: { alias: true } } } } },
       }),
       db.contact.findMany({
         where: { userId: user.id, nextFollowUpAt: { not: null } },
         select: { id: true, name: true, companyName: true, nextFollowUpAt: true },
       }),
+      // Calendar copies of 投递 steps are already in stageHistory above.
+      db.calendarEvent.findMany({
+        where: {
+          userId: user.id,
+          stageHistoryId: null,
+          OR: [{ completedAt: null }, { startsAt: { gte: historyCutoff } }],
+        },
+      }),
+      loadPendingMail(user.id, now),
     ]);
 
-  const now = currentTimeMs();
-  const pending = await loadPendingMail(user.id, now);
   const scheduleApps: ScheduleApplication[] = allApplications
     .filter((a) => !isTerminalStage(a.currentStage))
-    .map((a) => ({ id: a.id, companyName: a.company.name, aliases: [], title: a.title, currentStage: a.currentStage }));
-
-  // Calendar copies of 投递 steps are already in stageHistory below.
-  const personalEvents = await db.calendarEvent.findMany({ where: { userId: user.id, stageHistoryId: null } });
+    .map((a) => ({ id: a.id, companyName: a.company.name, aliases: a.company.aliases.map((x) => x.alias), title: a.title, currentStage: a.currentStage }));
   const clock = (date: Date) => `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
   const listed: CalendarEvent[] = [
     ...personalEvents.map((e) => ({ id: `event-${e.id}`, date: e.allDay ? `${e.dateKey}T00:00:00` : e.startsAt.toISOString(), dateEnd: e.allDay ? e.endsAt?.toISOString() ?? null : null, until: e.allDay ? null : e.endsAt?.toISOString() ?? null, label: e.title, timed: !e.allDay, done: !!e.completedAt, href: `/calendar/events?id=${e.id}` })),

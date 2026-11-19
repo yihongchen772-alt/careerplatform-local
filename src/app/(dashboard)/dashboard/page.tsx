@@ -58,50 +58,66 @@ export default async function DashboardPage() {
     loadInferredNotice(user.id),
   ]);
 
-  const [applications, positions, stageHistories, personalTasks, allPositions, contacts] =
-    await Promise.all([
-      db.application.findMany({
-        where: { userId: user.id },
-        include: { company: { include: { aliases: { select: { alias: true } } } } },
-        orderBy: { appliedDate: "desc" },
-      }),
-      db.position.findMany({
-        where: { userId: user.id, status: { not: "APPLIED" } },
-        include: { company: true },
-      }),
-      db.stageHistory.findMany({
-        where: { application: { userId: user.id }, nextDeadline: { not: null } },
-        include: { application: { include: { company: true } } },
-      }),
-      db.personalTask.findMany({
-        where: { userId: user.id },
-        orderBy: { createdAt: "desc" },
-      }),
-      // Every position, not just the not-yet-applied ones above — a personal
-      // task can link to anything in the pool, including ones already applied.
-      db.position.findMany({
-        where: { userId: user.id },
-        include: { company: true },
-      }),
-      db.contact.findMany({
-        where: { userId: user.id, nextFollowUpAt: { not: null } },
-        select: { id: true, name: true, companyName: true, nextFollowUpAt: true },
-      }),
-    ]);
+  const [
+    applications,
+    allPositions,
+    stageHistories,
+    personalTasks,
+    contacts,
+    calendarEvents,
+    pendingMailRows,
+    recentEntries,
+    journeyEvents,
+    dbUser,
+    resumeCount,
+    leadCount,
+    sheetCount,
+    filledCount,
+  ] = await Promise.all([
+    db.application.findMany({
+      where: { userId: user.id },
+      include: {
+        company: { include: { aliases: { select: { alias: true } } } },
+        stageHistory: { select: { stage: true } },
+      },
+      orderBy: { appliedDate: "desc" },
+    }),
+    db.position.findMany({
+      where: { userId: user.id },
+      include: { company: true },
+    }),
+    db.stageHistory.findMany({
+      where: { application: { userId: user.id }, nextDeadline: { not: null } },
+      include: { application: { include: { company: true } } },
+    }),
+    db.personalTask.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: "desc" },
+    }),
+    db.contact.findMany({
+      where: { userId: user.id, nextFollowUpAt: { not: null } },
+      select: { id: true, name: true, companyName: true, nextFollowUpAt: true },
+    }),
+    db.calendarEvent.findMany({ where: { userId: user.id, completedAt: null } }),
+    loadPendingMail(user.id, now),
+    db.journeyEntry.findMany({ where: { userId: user.id, createdAt: { gte: new Date(now - 8 * 86_400_000) } }, select: { about: true, createdAt: true } }),
+    loadJourneyEvents(user.id, now),
+    db.user.findUnique({ where: { id: user.id }, select: { name: true, phone: true, contactEmail: true, defaultAiProvider: true, agentWeeklyReview: true, agentDailyBrief: true } }),
+    db.resumeVersion.count({ where: { userId: user.id } }),
+    db.jobLead.count({ where: { userId: user.id } }),
+    db.postingSource.count({ where: { userId: user.id } }),
+    // A form the 网申浏览器 filled leaves a draft or a learned answer behind.
+    Promise.all([db.applicationDraft.count({ where: { userId: user.id } }), db.applicationMemory.count({ where: { userId: user.id } })]).then(([drafts, memories]) => drafts + memories),
+  ]);
 
-  const funnelApps = await db.application.findMany({
-    where: { userId: user.id },
-    select: { currentStage: true, stageHistory: { select: { stage: true } }, company: { select: { name: true, industry: true } } },
-  });
-
+  const positions = allPositions.filter((p) => p.status !== "APPLIED");
   const total = applications.length;
   // The same counts as 投递记录's 总表: Offer takes in accepted and declined ones, 已结束 every closed one.
   const offers = applications.filter((a) => ["OFFER", "ACCEPTED", "DECLINED"].includes(a.currentStage)).length;
   const closed = applications.filter((a) => ["REJECTED", "ACCEPTED", "DECLINED", "WITHDRAWN", "CANCELLED"].includes(a.currentStage)).length;
   const inProgress = total - closed;
 
-  const shareStats = computeShareStats(funnelApps.map((a) => ({ currentStage: a.currentStage, stageHistory: a.stageHistory, companyName: a.company.name, industry: a.company.industry })));
-  const calendarEvents = await db.calendarEvent.findMany({ where: { userId: user.id, completedAt: null } });
+  const shareStats = computeShareStats(applications.map((a) => ({ currentStage: a.currentStage, stageHistory: a.stageHistory, companyName: a.company.name, industry: a.company.industry })));
   const todos = buildTodos(applications, positions, stageHistories, personalTasks, contacts, calendarEvents);
   // 待办 is what the app watches for you; the tasks you wrote are in 我的待办,
   // and mail times waiting for the calendar are in 日历 — each in one place.
@@ -110,7 +126,7 @@ export default async function DashboardPage() {
   const watchTodos = todos.filter((todo) => !todo.id.startsWith("task-") && !listedAbove.has(todo.id));
   // Mail with a time shows in 接下来 with its own 写入 button; only those with no
   // time need the calendar, so only those are pointed at.
-  const mailNeedingTime = (await loadPendingMail(user.id, now)).filter((row) => !row.time);
+  const mailNeedingTime = pendingMailRows.filter((row) => !row.time);
   // A mail whose time has passed has nothing left to do — taken back (撤销) or never
   // acted on: once older than the pending window it would otherwise sit here for good.
   const ownTasks = personalTasks.filter((task) => {
@@ -122,21 +138,13 @@ export default async function DashboardPage() {
   const linkedEvents = ownTasks.flatMap((task) => (task.mailEventId ? [task.mailEventId] : []));
   const liveEvents = new Set(linkedEvents.length ? (await db.calendarEvent.findMany({ where: { id: { in: linkedEvents } }, select: { id: true } })).map((event) => event.id) : []);
   // A result in the last two days with nothing written about it: one gentle line, not a card.
-  const recentEntries = await db.journeyEntry.findMany({ where: { userId: user.id, createdAt: { gte: new Date(now - 8 * 86_400_000) } }, select: { about: true, createdAt: true } });
-  const journeyNudge = nudgeEvent(await loadJourneyEvents(user.id, now), recentEntries.map((entry) => ({ about: entry.about, createdAt: entry.createdAt.toISOString() })), now);
+  const journeyNudge = nudgeEvent(journeyEvents, recentEntries.map((entry) => ({ about: entry.about, createdAt: entry.createdAt.toISOString() })), now);
   // One line under the greeting: today's / the next sitting, open 测评, what is pressing.
   const heroSummary = dashboardBrief(upcoming, todos, now);
-  const dailyDigest = await getTodayDigest();
-  const weeklyReview = await getWeeklyReview();
-
-  const [dbUser, resumeCount, leadCount, sheetCount, filledCount] = await Promise.all([
-    db.user.findUnique({ where: { id: user.id }, select: { name: true, phone: true, contactEmail: true, defaultAiProvider: true, agentWeeklyReview: true, agentDailyBrief: true } }),
-    db.resumeVersion.count({ where: { userId: user.id } }),
-    db.jobLead.count({ where: { userId: user.id } }),
-    db.postingSource.count({ where: { userId: user.id } }),
-    // A form the 网申浏览器 filled leaves a draft or a learned answer behind.
-    Promise.all([db.applicationDraft.count({ where: { userId: user.id } }), db.applicationMemory.count({ where: { userId: user.id } })]).then(([drafts, memories]) => drafts + memories),
-  ]);
+  const showAgentBrief = Boolean(dbUser?.agentDailyBrief && dbUser.defaultAiProvider);
+  const [dailyDigest, weeklyReview] = showAgentBrief
+    ? [null, null]
+    : await Promise.all([getTodayDigest(), getWeeklyReview()]);
   // 上手四步, in the order they pay off: your details, an AI, where the jobs are, the first 一键填写.
   const onboardingSteps = [
     {

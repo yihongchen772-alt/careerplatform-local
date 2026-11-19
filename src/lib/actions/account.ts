@@ -9,7 +9,7 @@ import { updateProfileSchema } from "@/lib/validation";
 import { toActionResult, UserFacingError, type ActionResult } from "@/lib/action-result";
 import { getResumeContext } from "@/lib/resume-context";
 import { callTextAi, getUserAiConfig } from "@/lib/ai-providers";
-import { applicationProfileSchema, customFieldSchema, parseApplicationProfile, type ApplicationProfile } from "@/lib/application-profile";
+import { applicationProfileSchema, customFieldSchema, parseApplicationProfile, PERSONAL_FIELDS, type ApplicationProfile } from "@/lib/application-profile";
 
 export async function updateProfile(input: z.infer<typeof updateProfileSchema>) {
   const user = await requireUser();
@@ -46,6 +46,16 @@ export async function updateApplicationProfile(input: unknown): Promise<ActionRe
     const existingStored = parseApplicationProfile(stored?.applicationProfile);
     // Drop fully blank rows — an empty education row still counts as
     // "education[0]" to the keyword matcher and would fill nothing.
+    // Preserve newly auto-learned blank-filling facts that arrived from the browser
+    // while this settings form was open (without overwriting user-edited non-empty fields).
+    const mergedExtras = Object.fromEntries(Object.entries(data.extras).filter(([, v]) => v));
+    for (const entry of existingStored.learned) {
+      if (entry.undone || entry.kind !== "fact" || !entry.ref.startsWith("extras:")) continue;
+      const k = entry.ref.slice(7);
+      if (!mergedExtras[k] && existingStored.extras[k] && !(k in data.extras && data.extras[k] === "")) {
+        mergedExtras[k] = existingStored.extras[k];
+      }
+    }
     const cleaned: ApplicationProfile = {
       education: data.education.filter((e) => Object.values(e).some(Boolean)),
       experiences: data.experiences.filter((x) => Object.values(x).some(Boolean)),
@@ -55,8 +65,8 @@ export async function updateApplicationProfile(input: unknown): Promise<ActionRe
       skills: data.skills.filter((row) => Object.values(row).some(Boolean)),
       languages: data.languages.filter((row) => row.name),
       family: data.family.filter((row) => Object.values(row).some(Boolean)),
-      extras: Object.fromEntries(Object.entries(data.extras).filter(([, v]) => v)),
-      customFields: data.customFields.filter((f) => f.label.trim() && f.value.trim()),
+      extras: mergedExtras,
+      customFields: data.customFields.filter((f) => f.label.trim().length > 0),
       learned: existingStored.learned,
       pinnedAttachments: existingStored.pinnedAttachments,
       variants: data.variants.map((variant) => ({
@@ -81,15 +91,26 @@ export async function updateApplicationProfile(input: unknown): Promise<ActionRe
   });
 }
 
+const PERSONAL_KEYS = new Set<string>(PERSONAL_FIELDS.map((f) => f.key));
+
 const quickPersonalSchema = z.object({
   extras: z.record(z.string().max(60), z.string().trim().max(1000)).default({}),
-  customFields: z.array(customFieldSchema).max(40).optional(),
+  customFields: z
+    .preprocess(
+      (val) =>
+        Array.isArray(val)
+          ? val.filter((item) => item && typeof item === "object" && String((item as { label?: unknown }).label ?? "").trim().length > 0)
+          : val,
+      z.array(customFieldSchema).max(40)
+    )
+    .optional(),
   variantId: z.string().trim().max(40).nullish(),
 });
 
 /**
  * Lets the applicant supplement personal facts (such as 身份证号, 证件类型, or
  * custom key/value slots) straight from the embedded browser sidebar without leaving the form.
+ * Personal/ID facts always live on base `profile.extras` so switching variants never hides them.
  */
 export async function saveQuickPersonalProfile(input: z.infer<typeof quickPersonalSchema>): Promise<ActionResult<ApplicationProfile>> {
   return toActionResult(async () => {
@@ -100,21 +121,29 @@ export async function saveQuickPersonalProfile(input: z.infer<typeof quickPerson
     const nextVariants = [...current.variants];
     const targetVariantIdx = parsed.variantId ? nextVariants.findIndex((v) => v.id === parsed.variantId) : -1;
     const nextExtras = { ...current.extras };
-    if (targetVariantIdx >= 0) {
-      const merged = { ...nextVariants[targetVariantIdx].extras };
-      for (const [k, v] of Object.entries(parsed.extras)) {
-        if (v) merged[k] = v;
-        else delete merged[k];
-      }
-      nextVariants[targetVariantIdx] = { ...nextVariants[targetVariantIdx], extras: merged };
-    } else {
-      for (const [k, v] of Object.entries(parsed.extras)) {
+    for (const [k, v] of Object.entries(parsed.extras)) {
+      if (PERSONAL_KEYS.has(k) || targetVariantIdx < 0) {
         if (v) nextExtras[k] = v;
         else delete nextExtras[k];
+        // Clear any stale per-variant shadow of shared personal keys.
+        if (PERSONAL_KEYS.has(k)) {
+          for (let i = 0; i < nextVariants.length; i++) {
+            if (k in nextVariants[i].extras) {
+              const rest = { ...nextVariants[i].extras };
+              delete rest[k];
+              nextVariants[i] = { ...nextVariants[i], extras: rest };
+            }
+          }
+        }
+      } else {
+        const merged = { ...nextVariants[targetVariantIdx].extras };
+        if (v) merged[k] = v;
+        else delete merged[k];
+        nextVariants[targetVariantIdx] = { ...nextVariants[targetVariantIdx], extras: merged };
       }
     }
     const nextCustomFields = parsed.customFields
-      ? parsed.customFields.filter((f) => f.label.trim() && f.value.trim())
+      ? parsed.customFields.filter((f) => f.label.trim().length > 0)
       : current.customFields;
     const updated: ApplicationProfile = {
       ...current,

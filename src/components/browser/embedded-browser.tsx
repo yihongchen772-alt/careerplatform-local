@@ -674,10 +674,7 @@ export function EmbeddedBrowser({
       const live = liveRef.current;
       if (live.autofilling || payload.tabId !== activeIdRef.current) return;
       if (!payload.typing && live.autoFill && live.fillModules.length > 0) {
-        setDetected(null);
-        setAutofilling(true);
-        setStatus({ phase: "scanning", message: `检测到新一页表单（${payload.count} 个字段），自动填写中…` });
-        void bridge.autofill(live.resumeVersionId || undefined, { expandBlocks: live.expandBlocks, variantId: live.variantChoice || undefined, modules: live.fillModules, positionId: live.positionId || undefined });
+        shortcutActionsRef.current.triggerAutofill();
       } else {
         setDetected(payload);
       }

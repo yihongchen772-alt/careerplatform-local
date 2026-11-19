@@ -105,7 +105,7 @@ export function profileKeyForLabel(label: string): string | null {
 export type LearnedNotice = { id: string; label: string };
 
 type LearnInput = {
-  answers: Array<{ answer: string; profileKey?: string }>;
+  answers: Array<{ questionLabel?: string; answer: string; profileKey?: string }>;
   records: MemoryCapture[];
   sourceUrl: string;
   /** A 资料方案 is in use: its own internships / projects are not touched. */
@@ -163,12 +163,29 @@ export function learnFromPage(base: ApplicationProfile, user: { preferredCities:
   // Two boxes for one field on a page (研究方向 under 本科 and 硕士): the first one counts.
   const handled = new Set<string>();
 
+  const normCustom = (s: string) => s.normalize("NFKC").toLowerCase().replace(/[\s：:*＊?？()（）【】[\]_\-]+/g, "");
+
   for (const [index, answer] of input.answers.entries()) {
     const key = shortVersionKey(answer.profileKey, answer.answer, input.effectiveExtras);
-    if (!key || !Object.hasOwn(LEARNABLE_FACTS, key) || PER_COMPANY.has(key) || handled.has(key)) continue;
-    handled.add(key);
     const value = answer.answer.trim();
     if (!value || value.length > 1000 || PLACEHOLDER.test(value)) continue;
+    // Also auto-fill any blank user-defined custom slot whose label matches the typed box.
+    if (!key && answer.questionLabel && profile.customFields.length) {
+      const want = normCustom(answer.questionLabel);
+      const slot = want.length >= 2 ? profile.customFields.find((cf) => !cf.value.trim() && normCustom(cf.label) === want) : undefined;
+      if (slot && !handled.has(`custom:${slot.id}`)) {
+        handled.add(`custom:${slot.id}`);
+        slot.value = value.slice(0, 500);
+        changed = true;
+        const created: LearnedEntry = { id: randomUUID(), kind: "fact", ref: `custom:${slot.id}`, label: slot.label, state: slot.value, added: {}, source: input.sourceUrl, captureKey: "", at, undone: false, seen: true };
+        profile.learned.push(created);
+        notice(created);
+        consumedAnswers.add(index);
+        continue;
+      }
+    }
+    if (!key || !Object.hasOwn(LEARNABLE_FACTS, key) || PER_COMPANY.has(key) || handled.has(key)) continue;
+    handled.add(key);
     const ref = key === "preferredCities" ? "user:preferredCities" : `extras:${key}`;
     const stored = key === "preferredCities" ? (preferredCities ?? user.preferredCities ?? "") : (profile.extras[key] || "");
     const shown = key === "preferredCities" ? stored : (input.effectiveExtras[key] || stored);
