@@ -254,6 +254,17 @@ async function runScan(
         aliases: p.company.aliases.map((entry) => entry.alias),
       }))
     : [];
+  const CLASSIFY_CHUNK_SIZE = 6;
+  const isObviousNonJobNoise = (email: InboxEmail): boolean => {
+    if (email.calendarInvite) return false;
+    const sub = email.subject || "";
+    if (/面试|笔试|测评|录用|offer|校招|招聘|秋招|春招|投递|简历|interview|assessment|online test|application/i.test(sub)) {
+      return false;
+    }
+    return /^(?:【[^】]{1,24}】)?\s*(?:登录|注册|安全|动态|邮箱|手机)?验证码|verification code|one-time (?:password|code)|login code|security code/i.test(sub);
+  };
+
+  const seenMessageIds = new Set<string>();
   const known: KnownApplication[] = everyApplication.map((a) => ({ title: a.title, companyNames: [a.companyName, ...(a.aliases ?? [])] }));
 
   for (const account of accounts) {
@@ -278,17 +289,57 @@ async function runScan(
     }
     scanned += emails.length;
 
+    let maxProcessedUid: number | undefined = undefined;
     if (emails.length > 0) {
-      let classifications: Awaited<ReturnType<typeof classifyEmails>>;
-      try {
-        classifications = await classifyEmails(emails, aiConfig, activeApplications, autoApply);
-      } catch (err) {
-        console.error(`[inbox-scan] ${account.label} classify failed`, err);
-        failedAccounts.push(account.label);
-        failures.push(`「${account.label}」${err instanceof UserFacingError ? err.message : "AI 识别超时或失败"}`);
-        continue;
-      }
       const judged = new Set<number>();
+      const classifications: Awaited<ReturnType<typeof classifyEmails>> = [];
+      let chunkFailed = false;
+
+      // Chunk AI classification (6 emails/batch) and track maxProcessedUid per
+      // completed chunk so a single timeout never deadlocks the whole mailbox.
+      for (let offset = 0; offset < emails.length; offset += CLASSIFY_CHUNK_SIZE) {
+        const chunk = emails.slice(offset, offset + CLASSIFY_CHUNK_SIZE);
+        const candidates: { email: InboxEmail; origIndex: number }[] = [];
+        for (let j = 0; j < chunk.length; j++) {
+          const email = chunk[j];
+          const msgId = email.messageId?.trim().toLowerCase();
+          if (msgId && seenMessageIds.has(msgId)) {
+            judged.add(offset + j);
+            continue;
+          }
+          if (msgId) seenMessageIds.add(msgId);
+          if (isObviousNonJobNoise(email)) {
+            judged.add(offset + j);
+            continue;
+          }
+          candidates.push({ email, origIndex: offset + j });
+        }
+        if (candidates.length > 0) {
+          try {
+            const subResults = await classifyEmails(
+              candidates.map((c) => c.email),
+              aiConfig,
+              activeApplications,
+              autoApply
+            );
+            for (const item of subResults) {
+              const mapped = candidates[item.index];
+              if (mapped) classifications.push({ ...item, index: mapped.origIndex });
+            }
+          } catch (err) {
+            console.error(`[inbox-scan] ${account.label} classify failed`, err);
+            failedAccounts.push(account.label);
+            failures.push(`「${account.label}」${err instanceof UserFacingError ? err.message : "AI 识别超时或失败"}`);
+            chunkFailed = true;
+            break;
+          }
+        }
+        const chunkMaxUid = Math.max(...chunk.map((e) => e.uid));
+        maxProcessedUid = maxProcessedUid === undefined ? chunkMaxUid : Math.max(maxProcessedUid, chunkMaxUid);
+      }
+
+      if (chunkFailed && maxProcessedUid === undefined) continue;
+
       for (const c of classifications) {
         if (c.isJobRelated) judged.add(c.index);
         if (!c.isJobRelated) continue;
@@ -398,7 +449,7 @@ async function runScan(
       // test / offer from a company applied to: kept as a 「可能相关」 待办 to check.
       const rescueApps = activeApplications.length ? activeApplications : (await db.application.findMany({ where: { userId, currentStage: { notIn: TERMINAL_STAGES } }, select: { id: true, currentStage: true, company: { select: { name: true, aliases: { select: { alias: true } } } } }, take: 200 })).map((a) => ({ id: a.id, title: "", currentStage: a.currentStage, companyName: a.company.name, aliases: a.company.aliases.map((entry) => entry.alias) }));
       for (const [index, email] of emails.entries()) {
-        if (judged.has(index)) continue;
+        if (judged.has(index) || (maxProcessedUid !== undefined && email.uid > maxProcessedUid)) continue;
         const hit = rescueMail(email, rescueApps);
         if (!hit) continue;
         try {
@@ -425,7 +476,7 @@ async function runScan(
     // it (harmless to data, but a real waste, and the more that behavior
     // gets relied on the more it's *only one bug away* from silently
     // reprocessing everything again).
-    const maxUid = emails.length > 0 ? Math.max(...emails.map((e) => e.uid)) : undefined;
+    const maxUid = emails.length > 0 ? maxProcessedUid : undefined;
     await db.mailAccount.updateMany({
       where: {
         id: account.id,

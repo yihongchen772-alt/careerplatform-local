@@ -109,6 +109,20 @@ export function extractJson(text: string): unknown {
   }
 }
 
+function parseModelList(model: string): string[] {
+  const parts = String(model || "")
+    .split(/[,，\n]/)
+    .map((m) => m.trim())
+    .filter(Boolean);
+  return parts.length ? parts : [model];
+}
+
+function isTransientStatus(status: number): boolean {
+  return status === 429 || status === 408 || status === 500 || status === 502 || status === 503 || status === 504;
+}
+
+const waitRetryMs = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export async function callOpenAiCompatible(
   provider: OpenAiCompatibleProviderId,
   apiKey: string,
@@ -121,7 +135,7 @@ export async function callOpenAiCompatible(
   // A vision call always uses the provider's dedicated vision model — the
   // account's configured text model (e.g. "deepseek-chat") can't read images
   // at all, so silently sending it a picture would just 400.
-  const effectiveModel = file ? VISION_MODEL[provider] ?? model : model;
+  const models = file ? [VISION_MODEL[provider] ?? parseModelList(model)[0]] : parseModelList(model);
   const content: unknown = file
     ? [
         { type: "image_url", image_url: { url: `data:${file.mimeType};base64,${file.data}` } },
@@ -129,59 +143,66 @@ export async function callOpenAiCompatible(
       ]
     : prompt;
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  let response: Response;
-  try {
-    response = await fetch(`${baseUrlOverride || OPENAI_COMPATIBLE_BASE_URL[provider]}/chat/completions`, {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: effectiveModel,
-        // `prompt` here is already schema-annotated by withSchemaReminder(),
-        // which also satisfies OpenAI-compatible APIs' (confirmed on
-        // DeepSeek, same documented behavior on OpenAI) requirement that the
-        // literal word "json" appear somewhere in the prompt to use
-        // response_format: json_object.
-        messages: [{ role: "user", content }],
-        response_format: { type: "json_object" },
-        // Without this, DeepSeek/OpenAI/Kimi/Qwen fall back to their own
-        // (commonly 4096-token) default — a multi-question interview Q&A
-        // generation (6-8 items, each with a full reference answer) can run
-        // right up against that and get cut off mid-JSON, which then fails
-        // to parse and surfaces as a confusing "AI 返回格式异常" instead of
-        // the truncation it actually was.
-        max_tokens: 8192,
-      }),
-    });
-  } catch {
-    throw new UserFacingError(`${provider} · ${effectiveModel} 没有响应（超时或网络不通），请稍后重试`);
-  } finally {
-    clearTimeout(timeout);
-  }
+  let lastError: Error | null = null;
+  for (const effectiveModel of models) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+      let response: Response;
+      try {
+        response = await fetch(`${baseUrlOverride || OPENAI_COMPATIBLE_BASE_URL[provider]}/chat/completions`, {
+          method: "POST",
+          signal: controller.signal,
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: effectiveModel,
+            // `prompt` here is already schema-annotated by withSchemaReminder(),
+            // which also satisfies OpenAI-compatible APIs' requirement that the
+            // literal word "json" appear somewhere in the prompt to use
+            // response_format: json_object.
+            messages: [{ role: "user", content }],
+            response_format: { type: "json_object" },
+            max_tokens: 8192,
+          }),
+        });
+      } catch {
+        lastError = new UserFacingError(`${provider} · ${effectiveModel} 没有响应（超时或网络不通），请稍后重试`);
+        if (attempt === 0) { await waitRetryMs(700); continue; }
+        break;
+      } finally {
+        clearTimeout(timeout);
+      }
 
-  if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    console.error(`[${provider}] ${response.status}`, detail.slice(0, 500));
-    if (response.status === 401 || response.status === 403) {
-      throw new UserFacingError(`${provider} · ${effectiveModel}：API Key 无效，请检查账号设置里的 AI 配置`);
-    }
-    if (response.status === 429) {
-      throw new UserFacingError(`${provider} · ${effectiveModel}：API 调用超限（额度或频率），请稍后重试，或在设置里换一个模型`);
-    }
-    throw new UserFacingError(`${provider} · ${effectiveModel} 调用失败（${response.status}）：服务暂时不可用，请稍后重试，或在设置里换一个模型`);
-  }
+      if (!response.ok) {
+        const detail = await response.text().catch(() => "");
+        console.error(`[${provider}] ${response.status}`, detail.slice(0, 500));
+        if (response.status === 401 || response.status === 403) {
+          throw new UserFacingError(`${provider} · ${effectiveModel}：API Key 无效，请检查账号设置里的 AI 配置`);
+        }
+        if (response.status === 429) {
+          lastError = new UserFacingError(`${provider} · ${effectiveModel}：API 调用超限（额度或频率），请稍后重试，或在设置里换一个模型`);
+        } else {
+          lastError = new UserFacingError(`${provider} · ${effectiveModel} 调用失败（${response.status}）：服务暂时不可用，请稍后重试，或在设置里换一个模型`);
+        }
+        if (isTransientStatus(response.status) && attempt === 0) {
+          await waitRetryMs(response.status === 429 ? 1200 : 700);
+          continue;
+        }
+        break;
+      }
 
-  const data = await response.json();
-  if (data?.choices?.[0]?.finish_reason === "length") {
-    throw new UserFacingError("AI 回答内容太长被截断了，请重试（有时候换一次就好）");
+      const data = await response.json();
+      if (data?.choices?.[0]?.finish_reason === "length") {
+        throw new UserFacingError("AI 回答内容太长被截断了，请重试（有时候换一次就好）");
+      }
+      const text: string = data?.choices?.[0]?.message?.content ?? "";
+      return extractJson(text);
+    }
   }
-  const text: string = data?.choices?.[0]?.message?.content ?? "";
-  return extractJson(text);
+  throw lastError ?? new UserFacingError(`${provider} 调用失败，请稍后重试`);
 }
 
 async function callAnthropic(
@@ -190,56 +211,68 @@ async function callAnthropic(
   prompt: string,
   timeoutMs: number
 ): Promise<unknown> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  let response: Response;
-  try {
-    response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model,
-        // Same reasoning as OPENAI_COMPATIBLE's max_tokens: 8192 — a 6-8
-        // question interview Q&A generation can plausibly exceed 4096 and
-        // get cut off mid-JSON.
-        max_tokens: 8192,
-        messages: [
-          {
-            role: "user",
-            content: `${prompt}\n\n只返回一个 JSON 对象，不要用 markdown 代码块包裹，不要有任何其他文字。`,
+  const models = parseModelList(model);
+  let lastError: Error | null = null;
+  for (const effectiveModel of models) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+      let response: Response;
+      try {
+        response = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          signal: controller.signal,
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
           },
-        ],
-      }),
-    });
-  } catch {
-    throw new UserFacingError(`Claude · ${model} 没有响应（超时或网络不通），请稍后重试`);
-  } finally {
-    clearTimeout(timeout);
-  }
+          body: JSON.stringify({
+            model: effectiveModel,
+            max_tokens: 8192,
+            messages: [
+              {
+                role: "user",
+                content: `${prompt}\n\n只返回一个 JSON 对象，不要用 markdown 代码块包裹，不要有任何其他文字。`,
+              },
+            ],
+          }),
+        });
+      } catch {
+        lastError = new UserFacingError(`Claude · ${effectiveModel} 没有响应（超时或网络不通），请稍后重试`);
+        if (attempt === 0) { await waitRetryMs(700); continue; }
+        break;
+      } finally {
+        clearTimeout(timeout);
+      }
 
-  if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    console.error(`[anthropic] ${response.status}`, detail.slice(0, 500));
-    if (response.status === 401) {
-      throw new UserFacingError(`Claude · ${model}：API Key 无效，请检查账号设置里的 AI 配置`);
-    }
-    if (response.status === 429) {
-      throw new UserFacingError(`Claude · ${model}：API 调用超限（额度或频率），请稍后重试，或在设置里换一个模型`);
-    }
-    throw new UserFacingError(`Claude · ${model} 调用失败（${response.status}）：服务暂时不可用，请稍后重试，或在设置里换一个模型`);
-  }
+      if (!response.ok) {
+        const detail = await response.text().catch(() => "");
+        console.error(`[anthropic] ${response.status}`, detail.slice(0, 500));
+        if (response.status === 401) {
+          throw new UserFacingError(`Claude · ${effectiveModel}：API Key 无效，请检查账号设置里的 AI 配置`);
+        }
+        if (response.status === 429) {
+          lastError = new UserFacingError(`Claude · ${effectiveModel}：API 调用超限（额度或频率），请稍后重试，或在设置里换一个模型`);
+        } else {
+          lastError = new UserFacingError(`Claude · ${effectiveModel} 调用失败（${response.status}）：服务暂时不可用，请稍后重试，或在设置里换一个模型`);
+        }
+        if (isTransientStatus(response.status) && attempt === 0) {
+          await waitRetryMs(response.status === 429 ? 1200 : 700);
+          continue;
+        }
+        break;
+      }
 
-  const data = await response.json();
-  if (data?.stop_reason === "max_tokens") {
-    throw new UserFacingError("AI 回答内容太长被截断了，请重试（有时候换一次就好）");
+      const data = await response.json();
+      if (data?.stop_reason === "max_tokens") {
+        throw new UserFacingError("AI 回答内容太长被截断了，请重试（有时候换一次就好）");
+      }
+      const text: string = data?.content?.[0]?.text ?? "";
+      return extractJson(text);
+    }
   }
-  const text: string = data?.content?.[0]?.text ?? "";
-  return extractJson(text);
+  throw lastError ?? new UserFacingError("Claude 调用失败，请稍后重试");
 }
 
 /**

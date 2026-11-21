@@ -492,11 +492,15 @@ function activeTab() {
 
 function tabState(t) {
   const wc = t.view.webContents;
+  const liveUrl = wc.getURL();
+  const displayUrl = liveUrl && liveUrl !== "about:blank" ? liveUrl : (t.deferredUrl || liveUrl);
+  const liveTitle = wc.getTitle();
+  const fallbackTitle = t.batchMeta ? [t.batchMeta.company, t.batchMeta.title].filter(Boolean).join(" · ") : "";
   return {
     id: t.id,
-    url: wc.getURL(),
+    url: displayUrl,
     initialUrl: t.initialUrl || null,
-    title: wc.getTitle(),
+    title: liveTitle || fallbackTitle,
     loading: wc.isLoading(),
     canGoBack: wc.navigationHistory.canGoBack(),
     canGoForward: wc.navigationHistory.canGoForward(),
@@ -542,8 +546,17 @@ async function loadFavicon(tab, url) {
 
 // A blank tab shows the App's own 新标签页 underneath instead of a white page.
 function hasPage(t) {
+  if (t.deferredUrl) return true;
   const url = t.view.webContents.getURL();
   return !!url && url !== "about:blank";
+}
+
+function ensureTabLoaded(tab) {
+  if (!tab || !tab.deferredUrl || tab.view.webContents.isDestroyed()) return false;
+  const target = tab.deferredUrl;
+  tab.deferredUrl = null;
+  tab.view.webContents.loadURL(target);
+  return true;
 }
 
 function sendTabsState() {
@@ -667,7 +680,7 @@ function cleanOldUploadCopies() {
   }))).catch(() => {});
 }
 
-function createTab(url, { activate = true } = {}) {
+function createTab(url, { activate = true, deferLoad = false } = {}) {
   const view = new WebContentsView({
     webPreferences: {
       contextIsolation: true,
@@ -683,7 +696,16 @@ function createTab(url, { activate = true } = {}) {
   view.setBackgroundColor("#ffffff");
   const initialTarget = normalizeUrl(url || "about:blank");
   // resumeUploads / jdPage: what 记为已投递 needs to know about this application (see below).
-  const tab = { id: nextTabId++, view, revision: 0, resumeUploads: [], jdPage: null, sentForms: [], initialUrl: initialTarget !== "about:blank" ? initialTarget : null };
+  const tab = {
+    id: nextTabId++,
+    view,
+    revision: 0,
+    resumeUploads: [],
+    jdPage: null,
+    sentForms: [],
+    initialUrl: initialTarget !== "about:blank" ? initialTarget : null,
+    deferredUrl: deferLoad && initialTarget !== "about:blank" ? initialTarget : null,
+  };
   tabs.push(tab);
   const wc = view.webContents;
 
@@ -836,10 +858,13 @@ function createTab(url, { activate = true } = {}) {
   });
   wc.on("destroyed", () => sendTabsState());
 
-  wc.loadURL(normalizeUrl(url || "about:blank"));
+  if (!tab.deferredUrl) {
+    wc.loadURL(initialTarget);
+  }
   if (activate) {
     if (activeId !== tab.id) stopFillTask(activeId, "标签页已切换，填写已停止");
     activeId = tab.id;
+    ensureTabLoaded(tab);
     attach(tab);
   }
   sendTabsState();
@@ -882,6 +907,7 @@ function switchTab(id) {
   if (!tab) return;
   if (activeId !== id) stopFillTask(activeId, "标签页已切换，填写已停止");
   activeId = id;
+  ensureTabLoaded(tab);
   attach(tab);
   sendTabsState();
 }
@@ -1181,7 +1207,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
         tab.view.webContents.loadURL(url);
         switchTab(tab.id);
       } else {
-        tab = createTab(url, { activate: i === 0 });
+        tab = createTab(url, { activate: i === 0, deferLoad: i >= 2 });
       }
       tab.positionId = typeof job.positionId === "string" ? job.positionId : undefined;
       tab.resumeVersionId = typeof options?.resumeVersionId === "string" && options.resumeVersionId ? options.resumeVersionId : undefined;
@@ -1236,7 +1262,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
         tab.view.webContents.loadURL(url);
         switchTab(tab.id);
       } else {
-        tab = createTab(url, { activate: i === 0 });
+        tab = createTab(url, { activate: i === 0, deferLoad: i >= 2 });
       }
       tab.positionId = typeof job.positionId === "string" ? job.positionId : undefined;
       tab.resumeVersionId = typeof job.resumeVersionId === "string" && job.resumeVersionId ? job.resumeVersionId : undefined;
@@ -2248,23 +2274,32 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
   resumeLoginHandler = checkPendingLoginResumes;
 
   async function startBatchPrefill(tabIds, resumeVersionId, options = {}) {
+    const BATCH_PREFETCH_WINDOW = 2;
     const token = crypto.randomUUID();
     batchQueueToken = token;
     batchRunning = true;
     sendTabsState();
     const readyWaiters = new Map();
-    for (const id of tabIds) {
-      const tab = tabs.find((t) => t.id === id);
-      if (tab && !tab.view.webContents.isDestroyed() && hasPage(tab)) {
-        readyWaiters.set(id, waitForTabReady(tab));
+    const primeWindow = (startIdx) => {
+      for (let k = startIdx; k < Math.min(tabIds.length, startIdx + BATCH_PREFETCH_WINDOW); k++) {
+        const nextId = tabIds[k];
+        if (readyWaiters.has(nextId)) continue;
+        const nextTab = tabs.find((t) => t.id === nextId);
+        if (!nextTab || nextTab.view.webContents.isDestroyed() || !hasPage(nextTab)) continue;
+        ensureTabLoaded(nextTab);
+        readyWaiters.set(nextId, waitForTabReady(nextTab));
       }
-    }
+    };
+    primeWindow(0);
     try {
-      for (const id of tabIds) {
+      for (let idx = 0; idx < tabIds.length; idx++) {
+        const id = tabIds[idx];
         if (batchQueueToken !== token) break;
+        primeWindow(idx);
         const tab = tabs.find((t) => t.id === id);
         if (!tab || tab.view.webContents.isDestroyed()) continue;
         if (!hasPage(tab)) continue;
+        ensureTabLoaded(tab);
         if (tab.view.webContents.isLoading()) {
           tab.fillState = {
             ...(tab.fillState || { filled: 0, manual: 0, uploaded: 0 }),
@@ -2541,7 +2576,9 @@ const sampleDir = () => path.join(app.getPath("userData"), "网申样本");
 async function rememberPreFill(tab) {
   try {
     const url = new URL(tab.view.webContents.getURL());
-    tab.preFill = { page: `${url.origin}${url.pathname}`, at: Date.now(), frames: await snapshotFrames(tab.view.webContents) };
+    const pageKey = `${url.origin}${url.pathname}`;
+    if (tab.preFill?.page === pageKey && Date.now() - tab.preFill.at < 30_000) return;
+    tab.preFill = { page: pageKey, at: Date.now(), frames: await snapshotFrames(tab.view.webContents) };
   } catch { tab.preFill = null; }
 }
 

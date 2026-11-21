@@ -44,21 +44,24 @@ function greeting(now: Date) {
 
 export default async function DashboardPage() {
   const user = await requireUser();
-  const scanHealth = await getScanHealth(user.id);
   const now = currentTimeMs();
-  // 待核对 captures that fill a blank in 网申资料 are learned here too (with 撤销).
-  const backlog = await db.$transaction((tx) => learnFromBacklog(tx, user.id)).catch((error) => { console.error("[backlog]", error); return []; }).then(() => loadBacklogNotices(user.id));
-  const [autoUpdates, autoSchedules, mailConflicts, upcoming, justFinished, briefs, inferred] = await Promise.all([
-    loadAutoProgressItems(user.id),
-    loadAutoScheduleItems(user.id),
-    loadMailScheduleConflicts(user.id),
-    loadUpcomingSchedule(user.id, new Date(now)),
-    loadJustFinished(user.id, new Date(now)),
-    loadBriefState(user.id, new Date(now)),
-    loadInferredNotice(user.id),
-  ]);
+  // Skip write transaction on cold dashboard visits when no pending captures exist.
+  const pendingCaptureCount = await db.pendingApplicationChange.count({ where: { userId: user.id, status: "PENDING" } });
+  const backlogPromise = (pendingCaptureCount > 0
+    ? db.$transaction((tx) => learnFromBacklog(tx, user.id)).catch((error) => { console.error("[backlog]", error); return []; })
+    : Promise.resolve([])
+  ).then(() => loadBacklogNotices(user.id));
 
   const [
+    scanHealth,
+    backlog,
+    autoUpdates,
+    autoSchedules,
+    mailConflicts,
+    upcoming,
+    justFinished,
+    briefs,
+    inferred,
     applications,
     allPositions,
     stageHistories,
@@ -74,6 +77,15 @@ export default async function DashboardPage() {
     sheetCount,
     filledCount,
   ] = await Promise.all([
+    getScanHealth(user.id),
+    backlogPromise,
+    loadAutoProgressItems(user.id),
+    loadAutoScheduleItems(user.id),
+    loadMailScheduleConflicts(user.id),
+    loadUpcomingSchedule(user.id, new Date(now)),
+    loadJustFinished(user.id, new Date(now)),
+    loadBriefState(user.id, new Date(now)),
+    loadInferredNotice(user.id),
     db.application.findMany({
       where: { userId: user.id },
       include: {

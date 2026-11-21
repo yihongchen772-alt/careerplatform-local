@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  serverExternalPackages: ["unpdf"],
   outputFileTracingExcludes: {
     "/*": ["./.env*", "./.secret", "./**/*.db*", "./uploads/**/*", "./.local-data/**/*", "./.local-run/**/*", "./.local-desktop.json", "./.git/**/*", "./dist-electron/**/*"],
   },

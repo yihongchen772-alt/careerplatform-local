@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { fetchFileAsInlinePart } from "@/lib/gemini";
+import { extractPdfTextFromBase64 } from "@/lib/pdf-local-extract";
 import {
   getFileSearchKey,
   getImageSearchKey,
@@ -36,6 +37,19 @@ export async function extractResumeContent(
 
     const file = await fetchFileAsInlinePart(resume.fileUrl);
     const isPdf = file.mimeType === "application/pdf";
+    // Fast local PDF text extraction first: instant (~50ms), zero token cost,
+    // and unblocks text-only providers (DeepSeek / Kimi / Doubao / Zhipu).
+    // Falls back to multimodal AI only for scanned-image PDFs or image files.
+    if (isPdf) {
+      const localText = await extractPdfTextFromBase64(file.data);
+      if (localText) {
+        await db.resumeVersion.update({
+          where: { id: resumeVersionId },
+          data: { extractedText: localText, extractedAt: new Date() },
+        });
+        return;
+      }
+    }
     const fileKey = isPdf ? await getFileSearchKey(userId) : await getImageSearchKey(userId);
     if (!fileKey) return;
 

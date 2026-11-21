@@ -661,3 +661,43 @@ test("v78 Batch A UI polish: Omnibox data-slot fix, collapsed pixel sidebar, Liq
   assert.match(appearanceSrc, /p\.darkSurface/);
   assert.match(appearanceSrc, /界面密度与字号/);
 });
+
+test("v79 Batch B performance & reliability: sliding batch prefetch, cross-job baseDigest reuse, AI retries, local PDF extraction, chunked inbox scan & fast cold start", () => {
+  // 1. Sliding window lazy tab loading in browser-view.js
+  const bvSrc = fs.readFileSync(path.join(__dirname, "../electron/browser-view.js"), "utf8");
+  assert.match(bvSrc, /function ensureTabLoaded\(tab\)/);
+  assert.match(bvSrc, /deferLoad: i >= 2/);
+  assert.match(bvSrc, /BATCH_PREFETCH_WINDOW = 2/);
+
+  // 2. Cross-job baseDigest cache reuse & local PDF extraction fallback in answer-questions
+  const aqSrc = fs.readFileSync(path.join(__dirname, "../src/app/api/desktop-browser/answer-questions/route.ts"), "utf8");
+  assert.match(aqSrc, /const baseDigest = createHash\("sha256"\)/);
+  assert.match(aqSrc, /extractPdfTextFromFileUrl/);
+  assert.match(aqSrc, /contextDigest: isCompanyQ \? contextDigest : baseDigest/);
+
+  // 3. OpenAI-compatible & Anthropic retry + comma-separated model failover
+  const aiSrc = fs.readFileSync(path.join(__dirname, "../src/lib/ai-providers.ts"), "utf8");
+  assert.match(aiSrc, /function parseModelList\(/);
+  assert.match(aiSrc, /function isTransientStatus\(/);
+
+  // 4. Local PDF extraction in resume-extract.ts & uppercase awards schema in account.ts
+  const reSrc = fs.readFileSync(path.join(__dirname, "../src/lib/resume-extract.ts"), "utf8");
+  assert.match(reSrc, /extractPdfTextFromBase64/);
+  const accSrc = fs.readFileSync(path.join(__dirname, "../src/lib/actions/account.ts"), "utf8");
+  assert.match(accSrc, /awards:\s*\{\s*type:\s*"ARRAY"/);
+
+  // 5. IMAP empty-UID guard + messageId + chunked inbox classification
+  const imapSrc = fs.readFileSync(path.join(__dirname, "../src/lib/imap.ts"), "utf8");
+  assert.match(imapSrc, /if \(!recentUids\.length\) return \[\]/);
+  assert.match(imapSrc, /messageId\?: string/);
+  const scanSrc = fs.readFileSync(path.join(__dirname, "../src/lib/actions/inbox-scan.ts"), "utf8");
+  assert.match(scanSrc, /CLASSIFY_CHUNK_SIZE = 6/);
+  assert.match(scanSrc, /seenMessageIds/);
+  assert.match(scanSrc, /isObviousNonJobNoise/);
+
+  // 6. Fast cold start (skip runPrismaMigrate when 0 migrations pending) & single-wave dashboard
+  const mainSrc = fs.readFileSync(path.join(__dirname, "../electron/main.js"), "utf8");
+  assert.match(mainSrc, /if \(migrationsPending\)/);
+  const dashSrc = fs.readFileSync(path.join(__dirname, "../src/app/(dashboard)/dashboard/page.tsx"), "utf8");
+  assert.match(dashSrc, /pendingCaptureCount/);
+});

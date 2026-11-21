@@ -227,10 +227,10 @@ ${resumeText}
             },
           },
           awards: {
-            type: "array",
+            type: "ARRAY",
             items: {
-              type: "object",
-              properties: { name: { type: "string" }, issuer: { type: "string" }, level: { type: "string" }, date: { type: "string" }, description: { type: "string" } },
+              type: "OBJECT",
+              properties: { name: { type: "STRING" }, issuer: { type: "STRING" }, level: { type: "STRING" }, date: { type: "STRING" }, description: { type: "STRING" } },
               required: ["name", "issuer", "level", "date", "description"],
             },
           },

@@ -12,6 +12,7 @@ export type InboxEmail = {
   subject: string;
   from: string;
   date: Date;
+  messageId?: string;
   /** Plain-text snippet only — not the full body, to keep AI calls cheap and
    * limit how much of the user's mail content leaves the machine. */
   snippet: string;
@@ -52,17 +53,19 @@ export async function getUserScanAccounts(userId: string): Promise<ScanAccount[]
 }
 
 
-type FetchedMessage = { uid: number; source?: Buffer; envelope?: { subject?: string; from?: { address?: string }[]; date?: Date } };
+type FetchedMessage = { uid: number; source?: Buffer; envelope?: { subject?: string; messageId?: string; from?: { address?: string }[]; date?: Date } };
 
 async function toInboxEmail(message: FetchedMessage): Promise<InboxEmail> {
   const parsed = message.source ? await simpleParser(message.source) : null;
   // HTML-only mail (most recruiting systems) has no plain text: read its HTML.
   const bodyText = bodyTextOf(parsed?.text, parsed?.html);
+  const rawMessageId = parsed?.messageId || message.envelope?.messageId || "";
   return {
     uid: message.uid,
     subject: message.envelope?.subject ?? "(无主题)",
     from: message.envelope?.from?.[0]?.address ?? "",
     date: message.envelope?.date ?? new Date(),
+    ...(rawMessageId ? { messageId: String(rawMessageId).trim().slice(0, 240) } : {}),
     snippet: bodyText.slice(0, 12000),
     calendarInvite: parsed?.attachments?.filter((a) => a.contentType === "text/calendar" || /\.ics$/i.test(a.filename || "")).slice(0, 1).map((a) => a.size < 1024 * 1024 ? (() => { try { return parseCalendarInvite(a.content.toString("utf8")); } catch { return null; } })() : null)[0] || null,
   };
@@ -148,6 +151,7 @@ export async function fetchRecentEmails(
       // oldest matching UIDs first so advancing the cursor never jumps over
       // mail that is still waiting for classification.
       const recentUids = unseenUids(Array.isArray(uids) ? uids : [], sinceUid).slice(0, MAX_EMAILS_PER_CHECK);
+      if (!recentUids.length) return [];
 
       // `{ uid: true }` MUST be the third (options) argument, not part of the
       // second (query) argument. In the query it only means "also return the

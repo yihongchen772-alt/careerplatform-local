@@ -192,14 +192,18 @@ async function startNextServer() {
   };
 
   const appRoot = getAppRoot();
-  if (!fs.existsSync(dbPath)) await runDataWorker(true);
+  const dbExisted = fs.existsSync(dbPath);
+  if (!dbExisted) await runDataWorker(true);
   // Back up before new migrations, including local builds that keep the same
   // package version while adding schema changes.
   const marker = path.join(userDataDir, ".last-migrated-version");
   const previousVersion = fs.existsSync(marker) ? fs.readFileSync(marker, "utf8").trim() : "";
-  if (previousVersion !== app.getVersion() || hasPendingMigrations(dbPath, path.join(appRoot, "prisma", "migrations"))) await backupUserData();
-  await runPrismaMigrate(appRoot, env);
-  fs.writeFileSync(marker, app.getVersion());
+  const migrationsPending = !dbExisted || hasPendingMigrations(dbPath, path.join(appRoot, "prisma", "migrations"));
+  if (previousVersion !== app.getVersion() || migrationsPending) await backupUserData();
+  if (migrationsPending) {
+    await runPrismaMigrate(appRoot, env);
+  }
+  if (previousVersion !== app.getVersion()) fs.writeFileSync(marker, app.getVersion());
 
   const nextCli = path.join(appRoot, "node_modules", "next", "dist", "bin", "next");
   serverProcess = spawn(
