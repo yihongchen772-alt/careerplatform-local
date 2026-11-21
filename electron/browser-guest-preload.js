@@ -269,6 +269,15 @@ function readSentForm(from) {
     if (!shown(el) && !shown(el.closest(SELECT_LIKE))) continue;
     add(labelOf(el), valueOf(el));
   }
+  // Custom DIV-based dropdowns that carry no inner <input>/<select> (AntD/Element/Moka/ARIA combobox).
+  for (const box of scope.querySelectorAll('[role="combobox"]:not(input):not(select), .ant-select, .el-select, .phoenix-select, [class*="sd-Select-container"]')) {
+    if (!shown(box) || box.querySelector('input:not([type="hidden"]), select')) continue;
+    const display = box.querySelector(SHOWN_VALUE);
+    const val = display ? textOf(display) : "";
+    if (val && !/^(?:请|点击)?(?:选择|输入|搜索)|^(?:select|choose)\b/i.test(val)) {
+      add(labelOf(box), val);
+    }
+  }
   for (const entry of choices.values()) add(entry.label, entry.values.join("、"));
   return fields;
 }

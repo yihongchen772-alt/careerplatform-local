@@ -1050,14 +1050,25 @@ export function EmbeddedBrowser({
     else void bridge.navigate(url);
   }
 
+  function selectResumeVersion(next: string) {
+    setResumeVersionId(next);
+    void bridge?.setTabProfile?.({ resumeVersionId: next || null });
+  }
+
+  function selectVariantChoice(next: string) {
+    setVariantChoice(next);
+    void bridge?.setTabProfile?.({ variantId: next || null });
+  }
+
   function handleAutofill(extra: DesktopBridgeAutofillOptions = {}, targetId?: number) {
     if (!bridge) return;
     const targetTabId = targetId ?? activeIdRef.current;
     if (targetTabId !== null && busyTabsRef.current.has(targetTabId)) return;
     if (!fillModules.length) { toast.info("请先在「填写范围」里至少勾选一个模块"); return; }
     const boundTab = targetTabId !== null ? tabsState.tabs.find((t) => t.id === targetTabId) : null;
-    const chosenResumeId = extra.resumeVersionId ?? boundTab?.resumeVersionId ?? (resumeVersionId || undefined);
-    const chosenVariantId = extra.variantId ?? boundTab?.variantId ?? (variantChoice || undefined);
+    const isActiveManual = targetId === undefined;
+    const chosenResumeId = extra.resumeVersionId ?? (isActiveManual ? (resumeVersionId || undefined) : (boundTab?.resumeVersionId ?? (resumeVersionId || undefined)));
+    const chosenVariantId = extra.variantId ?? (isActiveManual ? (variantChoice || undefined) : (boundTab?.variantId ?? (variantChoice || undefined)));
     if (extra.mode !== "preview") lastFill.current = extra;
     if (targetTabId !== null) busyTabsRef.current.add(targetTabId);
     setDetected(null);
@@ -1324,6 +1335,7 @@ export function EmbeddedBrowser({
           snapshot: /^https?:/i.test(snapshot.url) ? { url: snapshot.url, fields: snapshot.fields, positionId: snapshot.positionId, resumeVersionId: snapshot.resumeVersionId, variantId: snapshot.variantId } : undefined,
           jd,
           auto,
+          allowDuplicate: !auto && submittedDuplicate,
         }),
       });
       const body = await res.json();
@@ -1333,7 +1345,7 @@ export function EmbeddedBrowser({
         setSubmittedDuplicate(true);
         return;
       }
-      void bridge.applicationRecorded?.();
+      void bridge.applicationRecorded?.(false, announced.tabId);
       // That job is done in this tab; the next 网申 here is another one.
       setJobBindings((bindings) => { const next = { ...bindings }; delete next[announced.tabId]; return next; });
       setRecordedPages((list) => [...list, snapshot.url]);
@@ -1368,7 +1380,7 @@ export function EmbeddedBrowser({
     if (!bar) return;
     setRecordedBar(null);
     await undoSubmittedApplication(bar.id, bar.createdPositionId);
-    void bridge?.applicationRecorded?.(true);
+    void bridge?.applicationRecorded?.(true, bar.tabId);
     setRecordedPages((list) => list.filter((page) => page !== bar.restore.submitted.url));
     setSubmitted(bar.restore.submitted);
     setSubmittedDuplicate(false);
@@ -1435,7 +1447,7 @@ export function EmbeddedBrowser({
         {resumeVersions.length > 0 ? (
           <label className="block space-y-1">
             <span className="text-muted-foreground">使用简历（AI 答题依据、上传的附件）</span>
-            <select aria-label="使用简历" disabled={busy} value={resumeVersionId || "none"} onChange={(e) => setResumeVersionId(e.target.value === "none" ? "" : e.target.value)} className={panelSelect}>
+            <select aria-label="使用简历" disabled={busy} value={resumeVersionId || "none"} onChange={(e) => selectResumeVersion(e.target.value === "none" ? "" : e.target.value)} className={panelSelect}>
               {resumeVersions.map((r) => <option key={r.id} value={r.id}>{r.name}{r.isDefault ? "（默认）" : ""}</option>)}
               <option value="none">不用简历，只填资料</option>
             </select>
@@ -1446,7 +1458,7 @@ export function EmbeddedBrowser({
         {profileVariants.length > 0 && (
           <label className="block space-y-1">
             <span className="text-muted-foreground">资料方案（不同方向的实习/项目顺序和常问字段）</span>
-            <select aria-label="资料方案" disabled={busy} value={variantChoice || "auto"} onChange={(e) => setVariantChoice(e.target.value === "auto" ? "" : e.target.value)} className={panelSelect}>
+            <select aria-label="资料方案" disabled={busy} value={variantChoice || "auto"} onChange={(e) => selectVariantChoice(e.target.value === "auto" ? "" : e.target.value)} className={panelSelect}>
               <option value="auto">跟随简历（{linkedVariant ? linkedVariant.name : "默认资料"}）</option>
               <option value="default">默认资料</option>
               {profileVariants.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
@@ -1640,7 +1652,7 @@ export function EmbeddedBrowser({
                   <DropdownMenuGroup>
                     <DropdownMenuLabel>使用简历</DropdownMenuLabel>
                     {resumeVersions.length > 0 ? (
-                      <DropdownMenuRadioGroup value={resumeVersionId || "none"} onValueChange={(value) => setResumeVersionId(value === "none" ? "" : String(value))}>
+                      <DropdownMenuRadioGroup value={resumeVersionId || "none"} onValueChange={(value) => selectResumeVersion(value === "none" ? "" : String(value))}>
                         {resumeVersions.map((r) => <DropdownMenuRadioItem key={r.id} value={r.id}>{r.name}{r.isDefault ? "（默认）" : ""}</DropdownMenuRadioItem>)}
                         <DropdownMenuRadioItem value="none">不用简历，只填资料</DropdownMenuRadioItem>
                       </DropdownMenuRadioGroup>
@@ -1654,7 +1666,7 @@ export function EmbeddedBrowser({
                     <DropdownMenuSub>
                       <DropdownMenuSubTrigger><span className="truncate">资料方案：{variantLabel}</span></DropdownMenuSubTrigger>
                       <DropdownMenuSubContent className="w-56">
-                        <DropdownMenuRadioGroup value={variantChoice || "auto"} onValueChange={(value) => setVariantChoice(value === "auto" ? "" : String(value))}>
+                        <DropdownMenuRadioGroup value={variantChoice || "auto"} onValueChange={(value) => selectVariantChoice(value === "auto" ? "" : String(value))}>
                           <DropdownMenuRadioItem value="auto">跟随简历</DropdownMenuRadioItem>
                           <DropdownMenuRadioItem value="default">默认资料</DropdownMenuRadioItem>
                           {profileVariants.map((v) => <DropdownMenuRadioItem key={v.id} value={v.id}>{v.name}</DropdownMenuRadioItem>)}
@@ -1924,7 +1936,7 @@ export function EmbeddedBrowser({
             icon={<Wand2 />}
             onClose={() => setSkippedTailored((list) => [...list, tailoredHere.site])}
             closeLabel="这次不用"
-            actions={<Button size="xs" onClick={() => { setResumeVersionId(tailoredHere.resumeVersionId); toast.success(`一键填写改用「${tailoredHere.name}」`); }}>用定制的简历</Button>}
+            actions={<Button size="xs" onClick={() => { selectResumeVersion(tailoredHere.resumeVersionId); toast.success(`一键填写改用「${tailoredHere.name}」`); }}>用定制的简历</Button>}
           >
             你为「{tailoredHere.label}」定制了简历「{tailoredHere.name}」。这个网站一键填写要用它吗？
           </Infobar>
@@ -1944,8 +1956,8 @@ export function EmbeddedBrowser({
                   size="xs"
                   onClick={() => {
                     const rec = pageIntel.recommendation!;
-                    if (rec.resumeVersionId) setResumeVersionId(rec.resumeVersionId);
-                    if (rec.variantId) setVariantChoice(rec.variantId);
+                    if (rec.resumeVersionId) selectResumeVersion(rec.resumeVersionId);
+                    if (rec.variantId) selectVariantChoice(rec.variantId);
                     toast.success(
                       `已切换${rec.resumeName ? `简历「${rec.resumeName}」` : ""}${rec.resumeName && rec.variantName ? " · " : ""}${rec.variantName ? `方案「${rec.variantName}」` : ""}`
                     );

@@ -95,6 +95,7 @@ export function pickResumeUsed(input: {
  * the applicant's note, not something to send).
  */
 export function resumeUploadName(userName: string | null | undefined, ext: string): string {
-  const name = (userName ?? "").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "").replace(/\s+/g, "").slice(0, 20);
+  const raw = (userName ?? "").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "").replace(/\s+/g, "").slice(0, 20);
+  const name = raw && raw !== "我" ? raw : "";
   return `${name || "个人"}-简历${/^\.[a-z0-9]{2,5}$/i.test(ext) ? ext.toLowerCase() : ".pdf"}`;
 }

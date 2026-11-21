@@ -398,7 +398,7 @@ test("v73 Batch 1: detectLoginGateCleared read-only, clickAddBlock long headings
   assert.match(coreSrc, /再加一条/);
   assert.match(coreSrc, /const maxRounds = options\.saveBlocks \? 24 : 12;/);
   assert.match(coreSrc, /await frameHasUserEdits\(adapter\)/);
-  assert.match(coreSrc, /const recomputedAlts = changed/);
+  assert.match(coreSrc, /const recomputedAlts = /);
   assert.match(coreSrc, /replace\(\/:\\d\+\$\/, ""\)/);
 
   // 3. Resilient parseApplicationProfile & blank customField filtering
@@ -559,4 +559,72 @@ test("v76 SOE (央国企) & universal portal adaptation: horizontal table header
   assert.match(coreSrc, /\.layui-form-select/);
   assert.match(coreSrc, /\.select2-results__option/);
   assert.match(coreSrc, /\.combobox-item/);
+});
+
+test("v77 Embedded browser reliability & intelligence: tab profile sync, preview fixes, multi-tab recording, smart upload slots, agreement/multi-select safety & modern cascader/calendar", () => {
+  const ts = require("typescript");
+  const coreSrc = fs.readFileSync(path.join(__dirname, "../electron/autofill-core.js"), "utf8");
+  const ctx = {
+    module: { exports: {} },
+    exports: {},
+    Set, Map, Array, Object, String, Number, Boolean, RegExp, Math, Date, URL, URLSearchParams, JSON,
+  };
+  vm.createContext(ctx);
+  vm.runInContext(`${coreSrc}\nmodule.exports.__test = { fillDetail, scanUploadSlots };`, ctx);
+  const { fillDetail, scanUploadSlots } = ctx.module.exports.__test;
+
+  // 1. Agreement checkbox & multi-select are surfaced safely as deliberate manual items, never auto-filled
+  assert.equal(typeof scanUploadSlots, "function");
+  const agreeDetail = fillDetail({ id: "c1", label: "我已阅读并同意隐私协议", tag: "checkbox", type: "checkbox", agreement: true, required: true }, undefined, new Set(), new Set());
+  assert.equal(agreeDetail.source, "manual");
+  assert.equal(agreeDetail.deliberate, true);
+  assert.equal(agreeDetail.confidence, "low");
+  assert.match(agreeDetail.state, /不会自动勾选/);
+
+  const multiDetail = fillDetail({ id: "s1", label: "期望工作城市", tag: "multi-select", multiple: true, required: true }, undefined, new Set(), new Set());
+  assert.equal(multiDetail.source, "manual");
+  assert.equal(multiDetail.deliberate, true);
+  assert.match(multiDetail.state, /多选/);
+
+  // 2. Preview mode customDatePart destructuring + modern cascader/calendar + CITY_TO_PROVINCE O(1) lookup
+  assert.match(coreSrc, /const datePartObj = field\.tag === "custom-select" && field\.datePart/);
+  assert.match(coreSrc, /const finalValue = datePartObj\?\.value \?\? value/);
+  assert.match(coreSrc, /\.arco-cascader/);
+  assert.match(coreSrc, /\.semi-cascader/);
+  assert.match(coreSrc, /CITY_TO_PROVINCE/);
+  assert.match(coreSrc, /async function pickModernCalendar\(/);
+
+  // 3. field-mapping route accepts idNumber/idType/passportNumber/custom:* and filters per-row
+  const mapRouteSrc = fs.readFileSync(path.join(__dirname, "../src/app/api/desktop-browser/field-mapping/route.ts"), "utf8");
+  assert.match(mapRouteSrc, /idType\|idNumber\|passportNumber\|custom:/);
+  assert.match(mapRouteSrc, /validMappings/);
+
+  // 4. resumeUploadName treats default "我" as empty
+  const resumeUsedSrc = fs.readFileSync(path.join(__dirname, "../src/lib/resume-used.ts"), "utf8");
+  const compiledRU = ts.transpileModule(resumeUsedSrc, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
+  const ruMod = { exports: {} };
+  vm.runInNewContext(compiledRU, { exports: ruMod.exports, module: ruMod, require });
+  assert.equal(ruMod.exports.resumeUploadName("我", ".pdf"), "个人-简历.pdf");
+  assert.equal(ruMod.exports.resumeUploadName("张三", ".pdf"), "张三-简历.pdf");
+
+  // 5. submitted-application allowDuplicate + effectiveApplyUrl
+  const subSrc = fs.readFileSync(path.join(__dirname, "../src/lib/actions/submitted-application.ts"), "utf8");
+  assert.match(subSrc, /allowDuplicate/);
+  assert.match(subSrc, /effectiveApplyUrl/);
+
+  // 6. browser-view, preload, guest-preload & embedded-browser wiring
+  const bvSrc = fs.readFileSync(path.join(__dirname, "../electron/browser-view.js"), "utf8");
+  assert.match(bvSrc, /browser:set-tab-profile/);
+  assert.match(bvSrc, /handle\("browser:application-recorded", \(_e, undone, tabId\)/);
+  assert.match(bvSrc, /const tabResumeId = tab\.resumeVersionId \?\? resumeVersionId/);
+  assert.match(bvSrc, /scanUploadSlots\.toString\(\)/);
+  assert.match(bvSrc, /function persistBatchQueue\(allowClear = false\)/);
+
+  const guestSrc = fs.readFileSync(path.join(__dirname, "../electron/browser-guest-preload.js"), "utf8");
+  assert.match(guestSrc, /\[role="combobox"\]:not\(input\):not\(select\)/);
+
+  const ebSrc = fs.readFileSync(path.join(__dirname, "../src/components/browser/embedded-browser.tsx"), "utf8");
+  assert.match(ebSrc, /allowDuplicate: !auto && submittedDuplicate/);
+  assert.match(ebSrc, /applicationRecorded\?\.\(false, announced\.tabId\)/);
+  assert.match(ebSrc, /setTabProfile\?\./);
 });

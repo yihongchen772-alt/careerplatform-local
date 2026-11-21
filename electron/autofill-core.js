@@ -481,21 +481,36 @@ function scanPageFields(prefix, readOnly = false, preserveIds = false, lightweig
   // here — the fill step opens each one and picks the closest match.
   // [class*='sd-Select-container']: Moka 自研组件（性别、学历、学校、以及年 / 月各一个的时间框），文字写进它的输入框只是在搜索，点选了才算数。
   // .ud__select__selector：飞书可搜索的下拉（所在地点、家乡），输入框是 type=search，不写这条就整个扫不到。
-  const customSelectors = ".ant-select, .atsx-select, .el-select, .el-cascader, .phoenix-select, .ud__select__selector, .semi-select, .arco-select, .n-select, .t-select, .ivu-select, .layui-form-select, .select2-container, .chosen-container, .mini-buttonedit, .mini-combobox, [data-uxi-widget-type='multiselect'], [class*='sd-Select-container'], [role='combobox']:not(input):not(select), input[role='combobox'][readonly], input[aria-haspopup='listbox'], button[aria-haspopup='listbox'], [role='button'][aria-haspopup='listbox']";
+  const customSelectors = ".ant-select, .atsx-select, .el-select, .el-cascader, .arco-cascader, .semi-cascader, .t-cascader, .n-cascader, .phoenix-select, .ud__select__selector, .semi-select, .arco-select, .n-select, .t-select, .ivu-select, .layui-form-select, .select2-container, .chosen-container, .mini-buttonedit, .mini-combobox, [data-uxi-widget-type='multiselect'], [class*='sd-Select-container'], [role='combobox']:not(input):not(select), input[role='combobox'][readonly], input[aria-haspopup='listbox'], button[aria-haspopup='listbox'], [role='button'][aria-haspopup='listbox']";
   queryAll(customSelectors).forEach((el) => {
     // Element Plus date inputs are read-only comboboxes too; they're typed into.
     // A language switcher or site search in the page header is not the form.
     if (el.closest(PICKER) || el.closest(SITE_CHROME)) return;
-    const container = el.closest(".ant-select, .atsx-select, .el-select, .el-cascader, .ud__select__selector, .phoenix-select, .semi-select, .arco-select, .n-select, .t-select, .ivu-select, .layui-form-select, .select2-container, .chosen-container, .mini-buttonedit, .mini-combobox, [data-uxi-widget-type='multiselect'], [class*='sd-Select-container']") || el;
+    const container = el.closest(".ant-select, .atsx-select, .el-select, .el-cascader, .arco-cascader, .semi-cascader, .t-cascader, .n-cascader, .ud__select__selector, .phoenix-select, .semi-select, .arco-select, .n-select, .t-select, .ivu-select, .layui-form-select, .select2-container, .chosen-container, .mini-buttonedit, .mini-combobox, [data-uxi-widget-type='multiselect'], [class*='sd-Select-container']") || el;
     // An AutoComplete accepts free text: its input is filled like any other.
     if (customContainers.has(container) || container.classList.contains("ant-select-auto-complete") || container.classList.contains("atsx-select-auto-complete")) return;
     if (!isVisible(container)) return;
     if (container.classList.contains("ant-select-disabled") || container.classList.contains("atsx-select-disabled") || container.classList.contains("is-disabled") || container.classList.contains("phoenix-select--disabled") || /sd-Input-disabled/.test(container.className || "") || container.getAttribute("aria-disabled") === "true" || container.disabled) return;
     const multiple = container.classList.contains("ant-select-multiple") || container.classList.contains("atsx-select-multiple") || container.classList.contains("semi-select-multiple") || container.classList.contains("arco-select-view-multiple") || container.classList.contains("n-base-selection--multiple") || (container.classList.contains("t-select__wrap") && container.classList.contains("is-multiple")) || container.getAttribute("aria-multiselectable") === "true" || !!container.querySelector(".el-select__tags, .el-cascader__tags, .phoenix-select__tag, .n-base-selection--multiple, .semi-select-multiple, .arco-select-view-multiple, .t-select__wrap.is-multiple") || container.classList.contains("phoenix-select--exsitMultiValue") || container.classList.contains("phoenix-select--showCountTag");
-    if (multiple) return; // never guess multi-selects
     const innerInput = container.matches("input") ? container : container.querySelector("input:not([type='hidden'])");
     const id = assignId(container, "s");
     customContainers.add(container);
+    if (multiple) {
+      if (!lightweight) {
+        results.push({
+          id,
+          tag: "multi-select",
+          type: "",
+          label: labelFor(innerInput || container) || labelFor(container),
+          placeholder: clean((innerInput && innerInput.getAttribute("placeholder")) || ""),
+          name: (innerInput && innerInput.getAttribute("name")) || container.id || "",
+          section: sectionFor(container),
+          hasValue: !!selectedText(container) || !!container.querySelector(".ant-select-selection-item, .el-tag, .semi-tag, .arco-tag, .phoenix-select__tag"),
+          multiple: true,
+        });
+      }
+      return;
+    }
     results.push({
       id,
       tag: "custom-select",
@@ -505,7 +520,7 @@ function scanPageFields(prefix, readOnly = false, preserveIds = false, lightweig
       name: (innerInput && innerInput.getAttribute("name")) || container.id || "",
       section: sectionFor(container),
       hasValue: !!selectedText(container),
-      cascader: container.classList.contains("ant-cascader") || container.classList.contains("el-cascader"),
+      cascader: container.classList.contains("ant-cascader") || container.classList.contains("el-cascader") || container.classList.contains("arco-cascader") || container.classList.contains("semi-cascader") || container.classList.contains("t-cascader") || container.classList.contains("n-cascader"),
       // Moka 的时间：年、月各是一个下拉，占位字就是「年」「月」。
       datePart: DATE_PART_WORD[clean((innerInput && innerInput.getAttribute("placeholder")) || "")] || sdDatePart(container),
     });
@@ -557,6 +572,32 @@ function scanPageFields(prefix, readOnly = false, preserveIds = false, lightweig
     const id = assignId(el, "f");
     results.push({ id, tag: "richtext", type: "", label: labelFor(el), placeholder: clean(el.getAttribute("data-placeholder") || el.getAttribute("placeholder") || el.getAttribute("aria-placeholder") || ""), name: el.getAttribute("name") || "", section: sectionFor(el), hasValue: !!clean(el.innerText) });
   });
+
+  // Mandatory privacy/commitment checkboxes: never auto-checked, but surfaced in
+  // 3 秒核对清单 and 提交前体检 so unchecked agreements never get a false-green check.
+  if (!lightweight) {
+    queryAll('input[type="checkbox"]').forEach((el) => {
+      if (el.disabled || el.closest(SITE_CHROME) || el.closest(PICKER)) return;
+      const wrap = el.closest("label") || el.parentElement;
+      if (!controlVisible(el) && !(wrap && isVisible(wrap))) return;
+      const text = clean((wrap && wrap.textContent) || labelFor(el));
+      if (!text || /至今|目前|在读|在职|present|current/i.test(text)) return;
+      if (!/同意|阅读|承诺|隐私|协议|声明|知情|授权|agree|consent|terms|privacy/i.test(text)) return;
+      const id = assignId(el, "c");
+      results.push({
+        id,
+        tag: "checkbox",
+        type: "checkbox",
+        label: text.slice(0, 60),
+        placeholder: "",
+        name: el.getAttribute("name") || "",
+        section: sectionFor(el),
+        hasValue: !!el.checked,
+        required: true,
+        agreement: true,
+      });
+    });
+  }
 
   elements.forEach((el) => {
     if (el.type === "password" || !controlVisible(el) || el.closest(SITE_CHROME)) return;
@@ -681,7 +722,7 @@ function scanPageFields(prefix, readOnly = false, preserveIds = false, lightweig
     const el = nodes.get(field.id);
     if (el) {
       const members = radioMembers.get(field.id);
-      field.required = !!el.required || el.getAttribute("aria-required") === "true" || !!el.closest(".ant-form-item-required, .is-required") || !!el.closest(".ant-form-item")?.querySelector(".ant-form-item-required");
+      field.required = !!field.required || !!el.required || el.getAttribute("aria-required") === "true" || !!el.closest(".ant-form-item-required, .is-required") || !!el.closest(".ant-form-item")?.querySelector(".ant-form-item-required");
       field.maxLength = el.maxLength > 0 ? el.maxLength : null;
       field.pattern = el.getAttribute("pattern") || "";
       // 「时间 [日历] 至 [日历]」：两个老版 Ant Design / atsx 日历并排是一段时间；「至」后那个用这一行的标签。
@@ -842,7 +883,8 @@ function detectApplicationSuccess() {
   return { evidence, url: location.href, title: document.title || "" };
 }
 
-function markResumeFileInputs() {
+function markResumeFileInputs(options = {}) {
+  const isEnglishResume = !!(options && typeof options === "object" && options.isEnglishResume);
   const inputs = [];
   const walk = (root) => {
     for (const node of root.querySelectorAll('input[type="file"]')) inputs.push(node);
@@ -864,6 +906,8 @@ function markResumeFileInputs() {
       label && label.textContent, nearby && nearby.textContent,
     ].filter(Boolean).join(" ");
     const accept = (el.getAttribute("accept") || "").toLowerCase();
+    // Skip English-only resume slots unless the selected resume version itself is English.
+    if (!isEnglishResume && /英文简历|english\s*(?:resume|cv)\b/i.test(description) && !/中英文|中文/.test(description)) continue;
     const docInputs = inputs.filter((inp) => {
       const acc = (inp.getAttribute("accept") || "").toLowerCase();
       return !inp.disabled && (!acc || /pdf|doc|document|word/.test(acc));
@@ -876,6 +920,49 @@ function markResumeFileInputs() {
     marked++;
   }
   return marked;
+}
+
+// Read-only inventory of every file upload slot on the page, for 小欧 and preflight checks.
+function scanUploadSlots() {
+  const inputs = [];
+  const walk = (root) => {
+    for (const node of root.querySelectorAll('input[type="file"]')) inputs.push(node);
+    for (const node of root.querySelectorAll("*")) if (node.shadowRoot) walk(node.shadowRoot);
+  };
+  walk(document);
+  const clean = (t) => String(t || "").replace(/\s+/g, " ").trim();
+  const slots = [];
+  for (const el of inputs.slice(0, 20)) {
+    if (el.disabled) continue;
+    const labelEl = el.id ? (el.getRootNode?.() || document).querySelector(`label[for="${CSS.escape(el.id)}"]`) : null;
+    const formItem = el.closest("label, .form-item, .atsx-form-item, .ant-form-item, .el-form-item, .semi-form-field, [class*='form-item' i], [class*='field' i], tr");
+    const uploadWrap = el.closest("[class*='upload']");
+    const uploadArea = el.closest(".ant-form-item, .el-form-item, .atsx-form-item, .semi-form-field, .arco-form-item, .n-form-item, .t-form__item") || uploadWrap || formItem;
+    const description = clean([
+      el.getAttribute("aria-label"), el.getAttribute("title"),
+      labelEl && labelEl.textContent, (formItem || uploadWrap) && (formItem || uploadWrap).textContent, el.name, el.id,
+    ].filter(Boolean).join(" "));
+    const accept = (el.getAttribute("accept") || "").toLowerCase();
+    const uploaded = !!(el.files && el.files.length) || !!uploadArea?.querySelector(".ant-upload-list-item-done, .atsx-upload-list-item-done, .el-upload-list__item.is-success, .el-upload-list__item:not(.is-fail):not(.is-error) .el-upload-list__item-name, .ant-upload-list-item:not(.ant-upload-list-item-error) .ant-upload-list-item-name, .semi-upload-file-list-item:not(.semi-upload-file-list-item-error), .arco-upload-list-item-done, .n-upload-file--success-status, .t-upload__single-display-text");
+    const errNode = uploadArea?.querySelector(".ant-upload-list-item-error, .el-upload-list__item.is-fail, .el-upload-list__item.is-error, .ant-form-item-explain-error, .el-form-item__error");
+    let fileKind = "attachment";
+    if (/英文简历|english\s*(?:resume|cv)\b/i.test(description) && !/中英文|中文/.test(description)) fileKind = "english_resume";
+    else if (/简历|履历|resume|curriculum|\bcv\b/i.test(description)) fileKind = "resume";
+    else if (/证件照|个人照片|一寸照|二寸照|免冠照|头像|照片|photo|avatar|portrait/i.test(description)) fileKind = "photo";
+    else if (/成绩单|成绩证明|transcript/i.test(description)) fileKind = "transcript";
+    else if (/四六级|四级|六级|英语证书|雅思|托福|\bcet\b|ielts|toefl/i.test(description)) fileKind = "language";
+    else if (/作品集|portfolio/i.test(description)) fileKind = "portfolio";
+    else if (/在读证明|学籍证明|学生证|enrollment/i.test(description)) fileKind = "enrollment";
+    else if (/获奖|资格证|荣誉证|证书|certificate|award/i.test(description)) fileKind = "certificate";
+    slots.push({
+      label: (clean(labelEl?.textContent || el.getAttribute("aria-label") || description) || fileKind).slice(0, 80),
+      fileKind,
+      accept: accept.slice(0, 120),
+      uploaded,
+      ...(errNode ? { errorText: clean(errNode.textContent).slice(0, 120) } : {}),
+    });
+  }
+  return slots;
 }
 
 function markTypedFileInputs(wantedRoles) {
@@ -1191,7 +1278,11 @@ async function fillFields(pairs, taskId) {
       document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
       await sleep(150);
       for (const { input, pair } of group) {
-        if (clean(input.value) !== clean(pair.value)) { failed.push(pair.label || pair.id); continue; }
+        let accepted = clean(input.value) === clean(pair.value);
+        if (!accepted && group.length === 1 && input.closest(".ant-picker, .el-date-editor")) {
+          accepted = await pickModernCalendar(input, pair.value);
+        }
+        if (!accepted) { failed.push(pair.label || pair.id); continue; }
         mark(picker, pair.source || "profile", pair.answerId);
         input.setAttribute("data-cp-filled", pair.source || "profile");
         // Memory reads the input itself, not the outlined wrapper.
@@ -1363,6 +1454,82 @@ async function fillFields(pairs, taskId) {
       if (day) { day.click(); await sleep(250); }
     }
     return clean(el.value).startsWith(`${m[1]}-${m[2].padStart(2, "0")}`);
+  }
+
+  // Fallback for readonly/controlled Ant Design v4/v5 (.ant-picker) and Element UI/Plus (.el-date-editor) calendars.
+  async function pickModernCalendar(el, value) {
+    const m = /(\d{4})(?:\D+(\d{1,2})(?:\D+(\d{1,2}))?)?/.exec(String(value || ""));
+    if (!m) return false;
+    const year = Number(m[1]);
+    const month = m[2] ? Number(m[2]) : null;
+    const day = m[3] ? Number(m[3]) : null;
+    const shown = (node) => { const r = node.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+    const isAnt = !!el.closest(".ant-picker");
+    const PANEL_SEL = isAnt ? ".ant-picker-dropdown:not(.ant-picker-dropdown-hidden)" : ".el-picker-panel.el-date-picker, .el-picker-panel";
+    el.focus();
+    el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    el.click();
+    let box = null;
+    for (let waited = 0; waited < 900 && !box; waited += 100) {
+      await sleep(100);
+      const open = Array.from(document.querySelectorAll(PANEL_SEL)).filter(shown);
+      box = open[open.length - 1] || null;
+    }
+    if (!box) return false;
+    try {
+      if (isAnt) {
+        for (let step = 0; step < 60; step++) {
+          const curYear = Number(/\d{4}/.exec(box.querySelector(".ant-picker-year-btn, .ant-picker-header-view")?.textContent || "")?.[0]);
+          if (!curYear || curYear === year) break;
+          box.querySelector(curYear > year ? ".ant-picker-header-super-prev-btn" : ".ant-picker-header-super-next-btn")?.click();
+          await sleep(40);
+        }
+        if (month && box.querySelector(".ant-picker-month-panel")) {
+          const cells = Array.from(box.querySelectorAll("td.ant-picker-cell:not(.ant-picker-cell-disabled)"));
+          const cell = cells[month - 1] || cells.find((c) => c.getAttribute("title") === `${year}-${String(month).padStart(2, "0")}`);
+          if (cell) { cell.click(); await sleep(150); }
+        } else if (month) {
+          for (let step = 0; step < 14; step++) {
+            const curMonth = Number(/(\d{1,2})\s*月/.exec(box.querySelector(".ant-picker-month-btn, .ant-picker-header-view")?.textContent || "")?.[1]);
+            if (!curMonth || curMonth === month) break;
+            box.querySelector(curMonth > month ? ".ant-picker-header-prev-btn" : ".ant-picker-header-next-btn")?.click();
+            await sleep(40);
+          }
+          const wantTitle = `${year}-${String(month).padStart(2, "0")}-${String(day || 1).padStart(2, "0")}`;
+          const cell = box.querySelector(`td.ant-picker-cell-in-view[title="${wantTitle}"]:not(.ant-picker-cell-disabled)`)
+            || Array.from(box.querySelectorAll("td.ant-picker-cell-in-view:not(.ant-picker-cell-disabled)")).find((c) => clean(c.textContent) === String(day || 1));
+          if (cell) { cell.click(); await sleep(150); }
+        }
+      } else {
+        for (let step = 0; step < 60; step++) {
+          const curYear = Number(/\d{4}/.exec(box.querySelector(".el-date-picker__header-label")?.textContent || "")?.[0]);
+          if (!curYear || curYear === year) break;
+          box.querySelector(curYear > year ? ".el-icon-d-arrow-left, .d-arrow-left, [aria-label*='前一年'], [aria-label*='Previous Year']" : ".el-icon-d-arrow-right, .d-arrow-right, [aria-label*='后一年'], [aria-label*='Next Year']")?.click();
+          await sleep(40);
+        }
+        if (month && box.querySelector(".el-month-table")) {
+          const cells = Array.from(box.querySelectorAll(".el-month-table td:not(.disabled)"));
+          const cell = cells[month - 1];
+          if (cell) { (cell.querySelector(".cell, a") || cell).click(); await sleep(150); }
+        } else if (month && box.querySelector(".el-date-table")) {
+          for (let step = 0; step < 14; step++) {
+            const labels = Array.from(box.querySelectorAll(".el-date-picker__header-label")).map((n) => clean(n.textContent)).join(" ");
+            const curMonth = Number(/(\d{1,2})\s*月/.exec(labels)?.[1]);
+            if (!curMonth || curMonth === month) break;
+            box.querySelector(curMonth > month ? ".el-icon-arrow-left, .arrow-left, [aria-label*='上个月']" : ".el-icon-arrow-right, .arrow-right, [aria-label*='下个月']")?.click();
+            await sleep(40);
+          }
+          const cell = Array.from(box.querySelectorAll(".el-date-table td.available:not(.disabled)")).find((c) => clean(c.textContent) === String(day || 1));
+          if (cell) { (cell.querySelector("span, div") || cell).click(); await sleep(150); }
+        }
+      }
+      for (let waited = 0; waited < 400 && !String(el.value || "").includes(String(year)); waited += 100) await sleep(100);
+      return String(el.value || "").includes(String(year));
+    } finally {
+      if (!String(el.value || "").includes(String(year))) {
+        document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", keyCode: 27, bubbles: true }));
+      }
+    }
   }
 
   // Types the value, waits for the suggestions, and clicks the one that is
@@ -1683,17 +1850,19 @@ async function fillCustomSelects(pairs, taskId) {
     }
   }
 
-  // 省 → 市 (→ 区) cascaders: walk the columns, matching each level against
-  // what's left of the wanted text ("江苏南京" → 江苏省 → 南京市). A value
-  // without its province ("深圳") is found by looking one level down.
+  // 省 → 市 (→ 区) cascaders: supports AntD, Element, Arco, Semi, TDesign, NaiveUI.
+  // A city without its province ("深圳") resolves its province directly via CITY_TO_PROVINCE
+  // in 1 click (~180ms) before falling back to scanning level-0 columns.
   async function fillCascader(container, value) {
-    const ant = !container.classList.contains("el-cascader");
-    const columns = () => qAll(ant ? ".ant-cascader-dropdown:not(.ant-select-dropdown-hidden) .ant-cascader-menu" : ".el-cascader__dropdown .el-cascader-menu").filter(visible);
-    const items = (column) => Array.from(column.querySelectorAll(ant ? ".ant-cascader-menu-item" : ".el-cascader-node")).filter((item) => visible(item) && !/disabled/.test(item.className));
-    const text = (item) => clean((item.querySelector(".ant-cascader-menu-item-content, .el-cascader-node__label") || item).textContent);
+    const MENU_SEL = ".ant-cascader-dropdown:not(.ant-select-dropdown-hidden) .ant-cascader-menu, .el-cascader__dropdown .el-cascader-menu, .arco-cascader-popup .arco-cascader-list, .semi-cascader-popover .semi-cascader-option-list, .t-cascader__popup .t-cascader__menu, .n-cascader-menu .n-cascader-submenu";
+    const ITEM_SEL = ".ant-cascader-menu-item, .el-cascader-node, .arco-cascader-list-item, .semi-cascader-option, .t-cascader__item, .n-cascader-option";
+    const LABEL_SEL = ".ant-cascader-menu-item-content, .el-cascader-node__label, .arco-cascader-list-item-label, .semi-cascader-option-label, .t-cascader__item-label, .n-cascader-option__label";
+    const columns = () => qAll(MENU_SEL).filter(visible);
+    const items = (column) => Array.from(column.querySelectorAll(ITEM_SEL)).filter((item) => visible(item) && !/disabled/.test(item.className) && item.getAttribute("aria-disabled") !== "true");
+    const text = (item) => clean((item.querySelector(LABEL_SEL) || item).textContent);
     const SUFFIX = /(?:特别行政区|维吾尔自治区|壮族自治区|回族自治区|自治区|自治州|地区|省|市|盟|区|县)$/;
     const base = (t) => t.replace(SUFFIX, "") || t;
-    const isLeaf = (item) => ant ? !item.querySelector(".ant-cascader-menu-item-expand-icon") : item.getAttribute("aria-haspopup") !== "true";
+    const isLeaf = (item) => !item.querySelector(".ant-cascader-menu-item-expand-icon, .arco-cascader-list-item-icon, .semi-cascader-option-icon, .t-cascader__icon") && item.getAttribute("aria-haspopup") !== "true";
     const matches = (item, rest) => { const t = text(item), b = base(t); return rest.startsWith(t) || (b.length >= 2 && rest.includes(b)); };
     open(container);
     await sleep(250);
@@ -1707,6 +1876,14 @@ async function fillCustomSelects(pairs, taskId) {
       const list = items(column);
       let target = list.find((item) => matches(item, rest));
       let expanded = false;
+      // Fast O(1) province lookup via CITY_TO_PROVINCE for bare city names like "深圳" / "杭州".
+      if (!target && level === 0) {
+        const stripped = rest.replace(/[市省区县]$/g, "");
+        const prov = CITY_TO_PROVINCE[stripped] || Object.entries(CITY_TO_PROVINCE).find(([city]) => rest.includes(city))?.[1];
+        if (prov) {
+          target = list.find((item) => text(item).startsWith(prov) || base(text(item)) === base(prov));
+        }
+      }
       // 上海 → 上海市 → 浦东新区: a municipality repeats itself one level down.
       if (!target && level > 0) target = list.length === 1 ? list[0] : list.find((item) => base(text(item)) === base(previous));
       if (!target && level === 0) {
@@ -3867,6 +4044,8 @@ function fillDetail(field, pair, filledSet, failedSet, reasons = {}) {
   const own = displayLabel(field);
   const label = field.section && !own.includes(field.section) && (sectionGroup(field.section) || THIRD_PARTY.test(field.section)) ? `${field.section} · ${own}` : own;
   if (field.hasValue || field.userEdited) return { label, state: field.userEdited ? "手动修改过，保持不动" : "页面已有内容，未改动", source: "prefilled", confidence: "high" };
+  if (field.agreement) return { label, state: "需本人亲自勾选确认（不会自动勾选）", source: "manual", deliberate: true, confidence: "low" };
+  if (field.multiple || field.tag === "multi-select") return { label, state: "多选下拉框，请在网页上点选", source: "manual", deliberate: true, confidence: "low" };
   if (isThirdPartyField(field) && !pair) return { label, state: "家庭成员 / 联系人等他人信息，请手填", source: "manual", deliberate: true, confidence: "low" };
   if (field.readonlyPicker) return { label, state: field.suggestion ? `日期需在网页上点选：${field.suggestion}` : "日期需在网页上点选", source: "manual", confidence: "low" };
   if (pair && filledSet.has(field.id)) {
@@ -5015,6 +5194,8 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
         continue;
       }
       field.module = fieldModule(field, repeat);
+      if (field.agreement) { neverGuessCount++; continue; }
+      if (field.multiple || field.tag === "multi-select") { pickOnPageCount++; continue; }
       const explicitPersonal = savedExplicitPersonalValue(field, profile);
       if (explicitPersonal?.value) {
         pairs.push({ id: field.id, value: explicitPersonal.value, source: "profile", label: field.label, tag: field.tag, alternatives: explicitPersonal.alternatives || [] });
@@ -5681,6 +5862,7 @@ async function saveCorrectionsCore(adapter, resumeVersionId, onlyUserEdited = fa
   }
   const groups = new Map();
   for (const field of fields) {
+    if (field.agreement || field.tag === "checkbox" || field.multiple || field.tag === "multi-select") continue;
     const repeat = resolveRepeatField(field, rowIndexes);
     const label = field.label || field.placeholder || field.name;
     const directLearnKey = !repeat ? learnableProfileKey(field) : null;
@@ -6000,7 +6182,7 @@ async function applyAutofillPlan(adapter, input) {
     const selected = new Set();
     for (const row of (input.approved || []).slice(0, 500)) {
       const field = plan.fields.find((f) => f.id === row.id);
-      if (!field || field.hasValue || (isNeverGuessField(field) && !plan.pairs.some((p) => p.id === row.id)) || (isThirdPartyField(field) && !plan.pairs.some((p) => p.id === row.id)) || field.readonlyPicker || selected.has(row.id)) continue;
+      if (!field || field.hasValue || field.agreement || field.multiple || field.tag === "multi-select" || (isNeverGuessField(field) && !plan.pairs.some((p) => p.id === row.id)) || (isThirdPartyField(field) && !plan.pairs.some((p) => p.id === row.id)) || field.readonlyPicker || selected.has(row.id)) continue;
       const current = liveByOldId.get(row.id);
       if (!current) throw new Error("网页表单已变化，请重新扫描预览");
       if (current.hasValue || current.userEdited) { selected.add(row.id); continue; }
@@ -6013,13 +6195,14 @@ async function applyAutofillPlan(adapter, input) {
       if (field.maxLength && value.length > field.maxLength) throw new Error(`「${field.label || field.name}」超过 ${field.maxLength} 字，请缩短后再填`);
       if (!plan.options.modules?.includes((field.module || fieldModule(field))) && plan.options.modules) continue;
       const changed = !original || value !== original.value;
-      const finalValue = field.tag === "custom-select" && field.datePart && value !== "至今"
-        ? (customDatePart(field, value) || value)
-        : value;
-      const recomputedAlts = changed
-        ? [...(degreeAlternatives(field, finalValue) || []), ...(field.tag === "custom-select" || field.tag === "select" ? [...customValueAlternatives(finalValue, "", field), ...yesNoAlternatives(finalValue)] : [])]
-        : original?.alternatives;
-      pairs.push({ ...original, id: current.id, label: field.label, tag: field.tag, value: finalValue, alternatives: recomputedAlts, manualConfirmed: !choice && value !== original?.value, source: choice || value !== original?.value ? "profile" : original?.source || "profile" });
+      const datePartObj = field.tag === "custom-select" && field.datePart && value !== "至今" ? customDatePart(field, value) : null;
+      const finalValue = datePartObj?.value ?? value;
+      const recomputedAlts = datePartObj?.alternatives
+        ? datePartObj.alternatives
+        : changed
+          ? [...(degreeAlternatives(field, finalValue) || []), ...(field.tag === "custom-select" || field.tag === "select" ? [...customValueAlternatives(finalValue, "", field), ...yesNoAlternatives(finalValue)] : [])]
+          : original?.alternatives;
+      pairs.push({ ...original, id: current.id, label: field.label, tag: field.tag, value: finalValue, alternatives: recomputedAlts, ...(field.datePart ? { datePart: field.datePart } : {}), manualConfirmed: !choice && value !== original?.value, source: choice || value !== original?.value ? "profile" : original?.source || "profile" });
       selected.add(row.id);
     }
     const wantAttachments = input.uploadAttachments !== undefined ? !!input.uploadAttachments : plan.preview?.uploadAttachments !== false;
@@ -6157,6 +6340,7 @@ module.exports = {
   rowDateValue,
   savedExplicitPersonalValue,
   scanPageFields,
+  scanUploadSlots,
   sectionGroup,
   sectionOrdinal,
   skillFieldKind,

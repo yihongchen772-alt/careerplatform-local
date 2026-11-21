@@ -15,9 +15,15 @@ const schema = z.object({ companyName: z.string().trim().min(1).max(120), title:
   /** The job description page the tab showed before the form (browser-view.js jdPage). */
   jd: z.object({ url: z.string().max(2000).optional(), text: z.string().max(8000) }).optional(),
   /** Recorded on its own, not by the applicant: a job already on record is left for them to decide. */
-  auto: z.boolean().optional() });
+  auto: z.boolean().optional(),
+  /** Applicant explicitly pressed 「再记一条」 after a duplicate notice. */
+  allowDuplicate: z.boolean().optional() });
 export async function recordSubmittedApplication(input: z.input<typeof schema>) {
   const user = await requireUser(); const data = schema.parse(input);
+  const effectiveApplyUrl =
+    data.jd?.url && /^https?:\/\//i.test(data.jd.url) && /\/(?:success|complete|result|thank|finish)/i.test(data.applyUrl)
+      ? data.jd.url
+      : data.applyUrl;
   const position = data.positionId ? await db.position.findFirst({ where: { id: data.positionId, userId: user.id }, include: { company: true } }) : null;
   if (data.positionId && !position) throw new Error("关联岗位不存在");
   if (position && (position.company.name !== data.companyName || position.title !== data.title)) throw new Error("公司或职位与关联岗位不一致，请重新核对");
@@ -39,8 +45,10 @@ export async function recordSubmittedApplication(input: z.input<typeof schema>) 
       copy = await saveLocalFile(await readFile(file), mimeTypeForExtension(path.extname(file)) || "application/pdf");
     }
     const result = await db.$transaction(async (tx) => {
-      const duplicate = await tx.application.findFirst({ where: { userId: user.id, companyId, title: data.title, applyUrl: data.applyUrl } });
-      if (duplicate) throw new Error("此岗位和页面已经记录过投递，请到投递详情核对");
+      if (!data.allowDuplicate) {
+        const duplicate = await tx.application.findFirst({ where: { userId: user.id, companyId, title: data.title, applyUrl: effectiveApplyUrl } });
+        if (duplicate) throw new Error("此岗位和页面已经记录过投递，请到投递详情核对");
+      }
       const portals = await tx.applicationPortal.findMany({ where: { companyId }, take: 2 });
       // A job from outside the pool whose JD was read off its page is kept as a 岗位, already
       // 已投递: 模拟面试, 面试准备, 简历深挖 and 小欧 all work from a 岗位's JD.
@@ -58,7 +66,7 @@ export async function recordSubmittedApplication(input: z.input<typeof schema>) 
       }
       // The JD as it reads right now, frozen with the record: the 岗位 may be edited or deleted later.
       const jdFrozen = (position?.jdText?.trim() || jdRead || "") || null;
-      const app = await tx.application.create({ data: { jdSnapshot: jdFrozen, jdSnapshotUrl: jdFrozen ? (data.jd?.url || position?.jdUrl || null) : null, userId: user.id, companyId, positionId: kept?.id, title: data.title, appliedDate: data.appliedDate, currentStageDate: data.appliedDate, applyUrl: data.applyUrl, resumeVersionId: resume?.id, portalId: portals.length === 1 ? portals[0].id : null, source: data.source || position?.source, city, currentStage: "APPLIED" } });
+      const app = await tx.application.create({ data: { jdSnapshot: jdFrozen, jdSnapshotUrl: jdFrozen ? (data.jd?.url || position?.jdUrl || null) : null, userId: user.id, companyId, positionId: kept?.id, title: data.title, appliedDate: data.appliedDate, currentStageDate: data.appliedDate, applyUrl: effectiveApplyUrl, resumeVersionId: resume?.id, portalId: portals.length === 1 ? portals[0].id : null, source: data.source || position?.source, city, currentStage: "APPLIED" } });
       let attachmentId: string | null = null;
       if (copy) { const attachment = await tx.attachment.create({ data: { userId: user.id, applicationId: app.id, url: copy.url, name: `投递时简历 · ${resume!.name}` } }); attachmentId = attachment.id; }
       const jd = position?.jdText || jdRead;

@@ -209,6 +209,7 @@ export type DesktopBridge = {
   closeTab(id: number): Promise<void>;
   getTabs(): Promise<DesktopBridgeTabsState>;
   bindPosition?(positionId: string | null, tabId?: number): Promise<void>;
+  setTabProfile?(profile: { resumeVersionId?: string | null; variantId?: string | null }, tabId?: number): Promise<void>;
   openBatch?(jobs: DesktopBridgeBatchJob[], options?: { autoFill?: boolean; resumeVersionId?: string; variantId?: string; modules?: DesktopBridgeAutofillModule[]; expandBlocks?: boolean; saveBlocks?: boolean }): Promise<{ opened: number; tabIds: number[] }>;
   fillAllPending?(resumeVersionId?: string, options?: DesktopBridgeAutofillOptions): Promise<{ started: number }>;
   stopBatch?(): Promise<void>;
@@ -226,7 +227,7 @@ export type DesktopBridge = {
   onFormDetected(callback: (payload: { tabId: number; count: number; signature: string; typing?: boolean }) => void): () => void;
   onApplicationSubmitted(callback: (payload: { tabId: number; url: string; title: string; evidence: string }) => void): () => void;
   /** After 记为已投递: the active tab's remembered form and JD belong to that record now; `undone` (撤销) brings them back. */
-  applicationRecorded?(undone?: boolean): Promise<void>;
+  applicationRecorded?(undone?: boolean, tabId?: number): Promise<void>;
   find(options: { text: string; forward?: boolean; findNext?: boolean }): Promise<void>;
   findStop(): Promise<void>;
   onTabs(callback: (state: DesktopBridgeTabsState) => void): () => void;

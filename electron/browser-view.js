@@ -66,6 +66,7 @@ const {
   resolveRepeatField,
   rowDateValue,
   scanPageFields,
+  scanUploadSlots,
   formSkeleton,
   sectionGroup,
   sectionOrdinal,
@@ -434,10 +435,13 @@ function readSavedBatchQueue() {
   }
 }
 
-function persistBatchQueue() {
+function persistBatchQueue(allowClear = false) {
   try {
     const batchTabs = tabs.filter((t) => t.batchMeta && hasPage(t));
-    if (!batchTabs.length) return;
+    if (!batchTabs.length) {
+      if (allowClear) fs.rmSync(batchQueueFile(), { force: true });
+      return;
+    }
     const unfinished = batchTabs
       .filter((t) => t.fillState?.status !== "recorded")
       .map((t) => ({
@@ -847,6 +851,7 @@ function closeTab(id) {
   if (index === -1) return;
   stopFillTask(id, "标签页已关闭，填写已停止", { force: true });
   const [tab] = tabs.splice(index, 1);
+  if (tab.batchMeta) persistBatchQueue(true);
   if (attachedView === tab.view) detach();
   if (tab.jdTimer) { clearTimeout(tab.jdTimer); tab.jdTimer = null; }
   formWatch.lastSignature.delete(id);
@@ -936,13 +941,49 @@ async function setInputFilesByAttr(wc, attrName, attrValue, filePath, stillOnPag
       return false;
     });
     let uploaded = 0;
+    const ext = path.extname(filePath || "").toLowerCase();
     for (const node of targets) {
       if (!stillOnPage()) throw new Error(cancelError);
       const { object } = await dbg.sendCommand("DOM.resolveNode", { backendNodeId: node.backendNodeId });
-      const state = await dbg.sendCommand("Runtime.callFunctionOn", { objectId: object.objectId, functionDeclaration: "function () { return this.disabled || !!(this.files && this.files.length); }", returnByValue: true });
-      if (state.result?.value !== false) continue;
+      const state = await dbg.sendCommand("Runtime.callFunctionOn", {
+        objectId: object.objectId,
+        arguments: [{ value: ext }],
+        functionDeclaration: `function (fileExt) {
+          if (this.disabled || !!(this.files && this.files.length)) return { skip: true };
+          const acc = String(this.accept || "").trim().toLowerCase();
+          if (acc && fileExt) {
+            const tokens = acc.split(",").map((s) => s.trim()).filter(Boolean);
+            if (tokens.length && !tokens.includes("*/*")) {
+              const isPdf = fileExt === ".pdf";
+              const isDoc = fileExt === ".doc" || fileExt === ".docx";
+              const isImg = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"].includes(fileExt);
+              const ok = tokens.some((t) =>
+                t === fileExt ||
+                (isPdf && (t === "application/pdf" || t === ".pdf")) ||
+                (isDoc && (t.includes("word") || t === ".doc" || t === ".docx")) ||
+                (isImg && (t === "image/*" || t.startsWith("image/")))
+              );
+              if (!ok) return { skip: true };
+            }
+          }
+          return { skip: false };
+        }`,
+        returnByValue: true,
+      });
+      if (state.result?.value?.skip !== false) continue;
       if (!stillOnPage()) throw new Error(cancelError);
       await dbg.sendCommand("DOM.setFileInputFiles", { files: [filePath], backendNodeId: node.backendNodeId });
+      await new Promise((r) => setTimeout(r, 250));
+      const post = await dbg.sendCommand("Runtime.callFunctionOn", {
+        objectId: object.objectId,
+        functionDeclaration: `function () {
+          const wrap = this.closest(".ant-upload-wrapper, .ant-upload, .el-upload, .arco-upload, .semi-upload, form") || this.parentElement;
+          const failNode = wrap && wrap.querySelector(".ant-upload-list-item-error, .el-upload-list__item.is-fail, .el-upload-list__item.is-error, .arco-upload-list-item-error, .semi-upload-file-card-fail");
+          return { failed: !!failNode };
+        }`,
+        returnByValue: true,
+      }).catch(() => null);
+      if (post?.result?.value?.failed) continue;
       uploaded++;
     }
     return uploaded;
@@ -952,11 +993,12 @@ async function setInputFilesByAttr(wc, attrName, attrValue, filePath, stillOnPag
 }
 
 async function uploadResumeFiles(wc, filePath, stillOnPage = () => true) {
+  const isEnglishResume = /english|英文|(?:^|[-_\s])en(?:[-_\s.]|$)/i.test(path.basename(filePath || ""));
   let candidates = 0;
   for (const frame of allFrames(wc)) {
     if (!stillOnPage()) throw new Error("页面已切换，已停止上传简历");
     try {
-      candidates += await frame.executeJavaScript(`(${markResumeFileInputs.toString()})()`);
+      candidates += await frame.executeJavaScript(`(${markResumeFileInputs.toString()})(${JSON.stringify({ isEnglishResume })})`);
     } catch {
       // inaccessible/disappearing frame
     }
@@ -1217,12 +1259,25 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     }
     sendTabsState();
     persistBatchQueue();
-    void startBatchPrefill(openedIds, pending[0]?.resumeVersionId, {
-      variantId: pending[0]?.variantId,
+    void startBatchPrefill(openedIds, undefined, {
       expandBlocks: true,
       saveBlocks: true,
     });
     return { opened: openedIds.length, tabIds: openedIds };
+  });
+  handle("browser:set-tab-profile", (_e, profile, tabId) => {
+    if (!profile || typeof profile !== "object") return false;
+    const tab = (tabId != null ? tabs.find((t) => t.id === tabId) : null) || activeTab();
+    if (!tab) return false;
+    if ("resumeVersionId" in profile) {
+      tab.resumeVersionId = typeof profile.resumeVersionId === "string" && profile.resumeVersionId.trim() ? profile.resumeVersionId.trim() : undefined;
+    }
+    if ("variantId" in profile) {
+      tab.variantId = typeof profile.variantId === "string" && profile.variantId.trim() ? profile.variantId.trim() : undefined;
+    }
+    sendTabsState();
+    if (tab.batchMeta) persistBatchQueue(true);
+    return true;
   });
   handle("browser:clear-saved-batch", () => {
     try { fs.rmSync(batchQueueFile(), { force: true }); } catch {}
@@ -1427,17 +1482,18 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
   ipcMain.on("browser-guest:success-seen", (event, payload) => {
     const tab = tabForSender(event.sender);
     const evidence = typeof payload?.evidence === "string" ? payload.evidence.slice(0, 40) : "";
-    if (!tab || !evidence || tab.id !== activeId || justRecorded(tab)) return;
+    if (!tab || !evidence || justRecorded(tab)) return;
     const wc = tab.view.webContents;
     const signature = `${wc.getURL()}|${evidence}`;
     if (submittedSignatures.get(tab.id) === signature) return;
     submittedSignatures.set(tab.id, signature);
+    if (!tab.historyMark?.recorded || tab.lastSendAt > tab.historyMark.at) markHistory(tab, false);
     send("browser:application-submitted", { tabId: tab.id, url: wc.getURL(), title: wc.getTitle(), evidence });
   });
   // Recorded: this application's form, JD and send are spoken for, and the next
   // one in this tab starts clean. 撤销 brings them back, to record it again.
-  handle("browser:application-recorded", (_e, undone) => {
-    const tab = activeTab();
+  handle("browser:application-recorded", (_e, undone, tabId) => {
+    const tab = (tabId != null ? tabs.find((t) => t.id === tabId) : null) || activeTab();
     if (!tab) return;
     if (undone) {
       if (tab.recordedState) Object.assign(tab, tab.recordedState, { lastSendAt: null });
@@ -1445,6 +1501,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
       tab.recordedAt = null;
       if (tab.fillState) tab.fillState = { ...tab.fillState, status: "ready", updatedAt: Date.now() };
       sendTabsState();
+      if (tab.batchMeta) persistBatchQueue(true);
       return;
     }
     tab.recordedAt = Date.now();
@@ -1458,6 +1515,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     tab.lastSendAt = null;
     tab.fillState = { ...(tab.fillState || { filled: 0, manual: 0, uploaded: 0 }), status: "recorded", updatedAt: Date.now() };
     sendTabsState();
+    if (tab.batchMeta) persistBatchQueue(true);
   });
   ipcMain.on("browser-guest:login-form", async (event) => {
     const tab = tabForSender(event.sender);
@@ -2219,6 +2277,8 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
         const alive = await (readyWaiters.get(id) || waitForTabReady(tab));
         if (batchQueueToken !== token) break;
         if (!alive || tab.view.webContents.isDestroyed()) continue;
+        const tabResumeId = tab.resumeVersionId ?? resumeVersionId;
+        const tabVariantId = tab.variantId ?? options.variantId;
         if (loginStates.has(tab.id)) {
           let fillable = 0;
           for (const frame of allFrames(tab.view.webContents)) {
@@ -2227,9 +2287,10 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
           }
           if (fillable < 4) {
             tab.resumeAfterLogin = {
-              resumeVersionId,
+              resumeVersionId: tabResumeId,
               options: {
                 ...options,
+                variantId: tabVariantId,
                 mode: "fill",
                 allowBackground: true,
                 positionId: tab.positionId ?? tab.batchMeta?.positionId ?? options.positionId,
@@ -2247,8 +2308,9 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
             continue;
           }
         }
-        await runAutofillOnTab(tab, resumeVersionId, {
+        await runAutofillOnTab(tab, tabResumeId, {
           ...options,
+          variantId: tabVariantId,
           mode: "fill",
           allowBackground: true,
           positionId: tab.positionId ?? tab.batchMeta?.positionId ?? options.positionId,
@@ -2379,14 +2441,21 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
           if (issue?.id && issue?.message) errById.set(issue.id, String(issue.message).slice(0, 200));
         }
       }
-      uploadSlots = scanned.fields
-        .filter((f) => f.type === "file")
-        .slice(0, 10)
-        .map((f) => ({
-          label: String(f.label || f.fileKind || "文件上传").slice(0, 120),
-          fileKind: String(f.fileKind || "attachment"),
-          uploaded: !!f.hasValue,
-        }));
+      const rawSlots = [];
+      for (const frame of allFrames(wc)) {
+        const slots = await frame.executeJavaScript(`(${scanUploadSlots.toString()})()`).catch(() => []);
+        if (Array.isArray(slots)) rawSlots.push(...slots);
+      }
+      uploadSlots = rawSlots.length
+        ? rawSlots.slice(0, 12)
+        : scanned.fields
+            .filter((f) => f.type === "file")
+            .slice(0, 10)
+            .map((f) => ({
+              label: String(f.label || f.fileKind || "文件上传").slice(0, 120),
+              fileKind: String(f.fileKind || "attachment"),
+              uploaded: !!f.hasValue,
+            }));
       formFields = scanned.fields
         .filter((f) => f.type !== "file" && f.type !== "password")
         .slice(0, 80)
