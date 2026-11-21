@@ -256,6 +256,7 @@ export async function applyAssistantAction(
         const application = await findApplicationForAction(user.id, a.targetId, a.companyName, a.title);
         if (!application) throw new UserFacingError("找不到这条投递记录，改成手动更新吧");
         const cities = parseCities(a.city);
+        const hasTimedDate = typeof a.date === "string" && /T\d{1,2}:\d{2}/.test(a.date);
         await db.$transaction(async (tx) => {
           await tx.stageHistory.create({
             data: {
@@ -265,6 +266,7 @@ export async function applyAssistantAction(
               note: a.note || undefined,
               nextDeadline: parseDate(a.date) ?? undefined,
               nextDeadlineEnd: parseDate(a.dateEnd) ?? undefined,
+              ...(hasTimedDate ? { nextHasTime: true } : {}),
             },
           });
           await tx.application.update({

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Send, Check, Plus, Loader2, CircleAlert, CircleCheck, Trash2, Copy, MessageSquareText, ChevronRight } from "lucide-react";
+import { Send, Check, Plus, Loader2, CircleAlert, CircleCheck, Trash2, Copy, MessageSquareText, ChevronRight, Square, RotateCcw, Pencil, ArrowDown } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,7 @@ import { applyAssistantAction } from "@/lib/actions/assistant";
 import { addAgentMemory, deleteAgentMemory, getAgentState, saveAgentPlan, type AgentState } from "@/lib/actions/agent-memory";
 import { deleteAgentConversation, listAgentConversations, loadAgentConversation, saveAgentConversation, type AgentThreadSummary } from "@/lib/actions/agent-conversation";
 import { assistantActionSchema, type AssistantAction, type AssistantChatMessage } from "@/lib/assistant-shared";
+import { STAGE_LABELS } from "@/lib/stage-labels";
 import type { AgentStep } from "@/lib/agent/run";
 import { VoiceInput } from "./voice-input";
 import { MarkdownText } from "./markdown-text";
@@ -61,9 +62,44 @@ export type AgentPageContext = {
   portalCompanyId?: string;
   portalCompanyName?: string;
   portalAlreadySet?: boolean;
+  preflight?: {
+    requiredMissing?: number;
+    validationErrors?: number;
+    conflicts?: number;
+    shortened?: number;
+    reviewCount?: number;
+    uploaded?: number;
+  };
+  eligibilityWarnings?: string[];
 };
 
-type TurnResult = { ok: true; reply: string; actions: AssistantAction[]; drafts: PageDraft[]; steps: AgentStep[]; notices: string[]; refs: string } | { ok: false; message: string };
+type TurnResult =
+  | { ok: true; reply: string; actions: AssistantAction[]; drafts: PageDraft[]; steps: AgentStep[]; notices: string[]; refs: string }
+  | { ok: false; message: string; aborted?: boolean };
+
+const DESTRUCTIVE_ACTIONS = new Set<AssistantAction["type"]>([
+  "delete_position",
+  "withdraw_application",
+  "delete_task",
+  "delete_contact",
+]);
+
+function actionMetaChips(action: AssistantAction): string[] {
+  const chips: string[] = [];
+  if (action.companyName || action.title) {
+    chips.push([action.companyName, action.title].filter(Boolean).join(" · "));
+  }
+  if (action.stage && action.stage in STAGE_LABELS) {
+    chips.push(STAGE_LABELS[action.stage as keyof typeof STAGE_LABELS]);
+  }
+  if (action.city) chips.push(action.city);
+  if (action.date) chips.push(action.dateEnd ? `${action.date} ~ ${action.dateEnd}` : action.date);
+  if (action.salaryMin != null || action.salaryMax != null) {
+    chips.push(`${action.salaryMin ?? "?"}-${action.salaryMax ?? "?"}K`);
+  }
+  if (action.offerAnnualTotal != null) chips.push(`总包 ${action.offerAnnualTotal}万`);
+  return chips.slice(0, 4);
+}
 type Tab = "chat" | "history" | "plan" | "memory";
 
 /** Where the chat lived before it was kept in the database (moved over once). */
@@ -126,8 +162,25 @@ function StepsSummary({ steps, onNavigate }: { steps: AgentStep[]; onNavigate?: 
 }
 
 /** Reads the agent's NDJSON stream; `onEvent` sees each step as it happens. */
-async function streamTurn(message: string, history: AssistantChatMessage[], page: AgentPageContext | null, onEvent: (event: { type: string; step?: AgentStep; text?: string }) => void): Promise<TurnResult> {
-  const response = await fetch("/api/agent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message, history, ...(page ? { page } : {}) }) });
+async function streamTurn(
+  message: string,
+  history: AssistantChatMessage[],
+  page: AgentPageContext | null,
+  routeContext: { pathname: string } | undefined,
+  signal: AbortSignal,
+  onEvent: (event: { type: string; step?: AgentStep; text?: string }) => void
+): Promise<TurnResult> {
+  const response = await fetch("/api/agent", {
+    method: "POST",
+    signal,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message,
+      history,
+      ...(page ? { page } : {}),
+      ...(routeContext ? { routeContext } : {}),
+    }),
+  });
   if (!response.ok || !response.body) {
     const body = await response.json().catch(() => null);
     return { ok: false, message: body?.error ?? "小欧暂时连不上，请稍后重试" };
@@ -135,19 +188,23 @@ async function streamTurn(message: string, history: AssistantChatMessage[], page
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  for (;;) {
-    const { value, done } = await reader.read();
-    buffer += decoder.decode(value, { stream: !done });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      const event = JSON.parse(line);
-      if (event.type === "done") return { ok: true, reply: event.reply, actions: event.actions ?? [], drafts: event.drafts ?? [], steps: event.steps ?? [], notices: event.notices ?? [], refs: typeof event.refs === "string" ? event.refs : "" };
-      if (event.type === "error") return { ok: false, message: event.message };
-      onEvent(event);
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const event = JSON.parse(line);
+        if (event.type === "done") return { ok: true, reply: event.reply, actions: event.actions ?? [], drafts: event.drafts ?? [], steps: event.steps ?? [], notices: event.notices ?? [], refs: typeof event.refs === "string" ? event.refs : "" };
+        if (event.type === "error") return { ok: false, message: event.message };
+        onEvent(event);
+      }
+      if (done) return { ok: false, message: "连接中断，本次请求未完成。请稍后重试。" };
     }
-    if (done) return { ok: false, message: "连接中断，本次请求未完成。请稍后重试。" };
+  } finally {
+    if (signal.aborted) await reader.cancel().catch(() => {});
   }
 }
 
@@ -170,7 +227,26 @@ function toDisplay(stored: Array<Record<string, unknown>>, keepActions: boolean)
 }
 
 function toStored(messages: DisplayMessage[]) {
-  return messages.map(({ role, content, refs, actions, applied, steps, notices, failedRequest, drafts, filled }) => ({ role, ...(refs ? { refs: refs.slice(0, 4000) } : {}), ...(drafts?.length ? { drafts, filled: filled ?? [] } : {}), content: content.slice(0, 16000), ...(actions?.length ? { actions } : {}), ...(applied?.length ? { applied } : {}), ...(steps?.length ? { steps: steps.map((step) => ({ ...step, label: step.label.slice(0, 300), summary: step.summary.slice(0, 400) })) } : {}), ...(notices?.length ? { notices } : {}), ...(failedRequest ? { failedRequest: { message: failedRequest.message, history: failedRequest.history.slice(-20) } } : {}) }));
+  return messages.map(({ role, content, refs, actions, applied, steps, notices, failedRequest, drafts, filled }) => ({
+    role,
+    ...(refs ? { refs: refs.slice(0, 4000) } : {}),
+    ...(drafts?.length
+      ? {
+          drafts: drafts.slice(0, 40).map((d) => ({
+            question: d.question.slice(0, 500),
+            answer: d.answer.slice(0, 6000),
+            ...(d.section ? { section: d.section.slice(0, 80) } : {}),
+          })),
+          filled: (filled ?? []).filter((idx) => idx >= 0 && idx < 40).slice(0, 40),
+        }
+      : {}),
+    content: content.slice(0, 16000),
+    ...(actions?.length ? { actions: actions.slice(0, 30) } : {}),
+    ...(applied?.length ? { applied: applied.filter((idx) => idx >= 0 && idx < 30).slice(0, 30) } : {}),
+    ...(steps?.length ? { steps: steps.slice(0, 60).map((step) => ({ ...step, label: step.label.slice(0, 300), summary: step.summary.slice(0, 400) })) } : {}),
+    ...(notices?.length ? { notices: notices.slice(0, 12).map((n) => n.slice(0, 300)) } : {}),
+    ...(failedRequest ? { failedRequest: { message: failedRequest.message.slice(0, 6000), history: failedRequest.history.slice(-20) } } : {}),
+  }));
 }
 
 function when(iso: string) {
@@ -183,9 +259,10 @@ function when(iso: string) {
  * 小欧's conversation, plan and memory — the floating window on every page
  * and the 网申浏览器's side panel (with the open page as context) both show this.
  */
-export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIONS, quickQuestions = DEFAULT_QUICK_QUESTIONS, intro, askText, askSend = false, onAskConsumed, onNavigate, onReply, onFillField, onFillFields, className }: {
+export function AgentChat({ header, pageContext, routeContext, suggestions = DEFAULT_SUGGESTIONS, quickQuestions = DEFAULT_QUICK_QUESTIONS, intro, askText, askSend = false, onAskConsumed, onNavigate, onReply, onFillField, onFillFields, className }: {
   header: ReactNode;
   pageContext?: () => Promise<AgentPageContext | null>;
+  routeContext?: { pathname: string };
   suggestions?: string[];
   quickQuestions?: string[];
   intro?: ReactNode;
@@ -217,7 +294,14 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
   const [memoryDraft, setMemoryDraft] = useState("");
   const nextId = useRef(0);
   const [loaded, setLoaded] = useState(false);
+  const [showScrollDown, setShowScrollDown] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const stickToBottomRef = useRef(true);
+  const abortRef = useRef<AbortController | null>(null);
+  const liveTextRef = useRef("");
+  const liveStepsRef = useRef<AgentStep[]>([]);
   const busyRef = useRef(false);
   const threadRef = useRef<string | null>(null);
   const dirty = useRef(false);
@@ -226,6 +310,14 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
   const generation = useRef(0);
 
   useEffect(() => { threadRef.current = threadId; }, [threadId]);
+
+  // Auto-grow composer textarea up to 140px.
+  useEffect(() => {
+    const el = composerRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
+  }, [input]);
 
   // The latest thread is picked up when it is recent; an old chat kept in
   // localStorage moves into the database once.
@@ -263,14 +355,32 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
       if (res.ok && generation.current === started) {
         threadRef.current = res.data.id;
         setThreadId(res.data.id);
+      } else if (!res.ok) {
+        toast.error(res.message || "对话保存失败，请稍后重试");
       }
     }, 500);
     return () => clearTimeout(timer);
   }, [messages, loaded, sending]);
 
   useEffect(() => {
-    if (tab === "chat") bottomRef.current?.scrollIntoView({ behavior: live.text ? "auto" : "smooth", block: "end" });
+    if (tab === "chat" && stickToBottomRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: live.text ? "auto" : "smooth", block: "end" });
+    }
   }, [messages, live, sending, tab]);
+
+  function handleScroll() {
+    const el = scrollRef.current;
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 64;
+    stickToBottomRef.current = nearBottom;
+    setShowScrollDown(!nearBottom);
+  }
+
+  function scrollToBottom() {
+    stickToBottomRef.current = true;
+    setShowScrollDown(false);
+    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }
 
   const loadThreads = useCallback(async () => {
     const res = await listAgentConversations();
@@ -296,6 +406,7 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
   }
 
   function newChat() {
+    abortRef.current?.abort();
     generation.current++;
     threadRef.current = null;
     setMessages([]);
@@ -304,7 +415,12 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
     setTab("chat");
   }
 
+  function stopGenerating() {
+    abortRef.current?.abort();
+  }
+
   async function openThread(id: string) {
+    abortRef.current?.abort();
     generation.current++;
     const res = await loadAgentConversation(id);
     if (!res.ok || !res.data) return void toast.error(res.ok ? "这段对话不在了" : res.message);
@@ -324,21 +440,38 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
   }
 
   async function runTurn(content: string, history: AssistantChatMessage[]): Promise<TurnResult> {
+    const controller = new AbortController();
+    abortRef.current = controller;
+    liveTextRef.current = "";
+    liveStepsRef.current = [];
     setLive({ steps: [], note: "", text: "" });
     try {
       const page = pageContext ? await pageContext().catch(() => null) : null;
-      return await streamTurn(content, history, page, (event) => {
+      return await streamTurn(content, history, page, routeContext, controller.signal, (event) => {
         if (event.type === "step" && event.step) {
           const step = event.step;
-          setLive((prev) => ({ ...prev, steps: prev.steps.some((item) => item.id === step.id) ? prev.steps.map((item) => item.id === step.id ? step : item) : [...prev.steps, step] }));
+          const nextSteps = liveStepsRef.current.some((item) => item.id === step.id)
+            ? liveStepsRef.current.map((item) => (item.id === step.id ? step : item))
+            : [...liveStepsRef.current, step];
+          liveStepsRef.current = nextSteps;
+          setLive((prev) => ({ ...prev, steps: nextSteps }));
         } else if (event.type === "note" && event.text) setLive((prev) => ({ ...prev, note: event.text! }));
         // The reply as the model writes it; a new model turn (after looking things up) starts over.
-        else if (event.type === "reset") setLive((prev) => ({ ...prev, text: "" }));
-        else if (event.type === "delta" && event.text) setLive((prev) => ({ ...prev, text: prev.text + event.text }));
+        else if (event.type === "reset") {
+          liveTextRef.current = "";
+          setLive((prev) => ({ ...prev, text: "" }));
+        } else if (event.type === "delta" && event.text) {
+          liveTextRef.current += event.text;
+          setLive((prev) => ({ ...prev, text: prev.text + event.text }));
+        }
       });
     } catch {
+      if (controller.signal.aborted) {
+        return { ok: false, message: "已停止生成", aborted: true };
+      }
       return { ok: false, message: "连接中断，本次请求未完成。请稍后重试。" };
     } finally {
+      if (abortRef.current === controller) abortRef.current = null;
       setLive({ steps: [], note: "", text: "" });
     }
   }
@@ -349,7 +482,7 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
     setSending(true);
     try {
       const res = await runTurn(message.failedRequest.message, message.failedRequest.history);
-      if (!res.ok) toast.error(res.message);
+      if (!res.ok && !res.aborted) toast.error(res.message);
       update((prev) => prev.map((m) => m.id !== message.id ? m : res.ok
         ? { id: m.id, role: "assistant", content: res.reply, ...(res.refs ? { refs: res.refs } : {}), actions: res.actions, steps: res.steps, notices: res.notices, applied: [], drafts: res.drafts.length ? res.drafts : undefined, filled: [] }
         : { ...m, content: res.message }));
@@ -359,11 +492,54 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
     }
   }
 
+  async function regenerateReply(messageId: number) {
+    if (busyRef.current || !loaded) return;
+    const idx = messages.findIndex((m) => m.id === messageId);
+    if (idx <= 0) return;
+    let userIdx = idx - 1;
+    while (userIdx >= 0 && messages[userIdx].role !== "user") userIdx--;
+    if (userIdx < 0) return;
+    const userContent = messages[userIdx].content;
+    const prior = messages.slice(0, userIdx);
+    const history = prior.filter((m) => !m.failedRequest).map(({ role, content, refs }) => ({ role, content, ...(refs ? { refs } : {}) }));
+    update(() => messages.slice(0, userIdx + 1));
+    busyRef.current = true;
+    stickToBottomRef.current = true;
+    setSending(true);
+    try {
+      const res = await runTurn(userContent, history);
+      onReply?.();
+      if (res.ok) addMessage("assistant", res.reply, res.actions, res.steps, res.notices, res.drafts, res.refs || undefined);
+      else if (res.aborted) {
+        const partial = liveTextRef.current.trim();
+        addMessage("assistant", partial ? `${partial}\n\n（已停止生成）` : "（已停止生成）", undefined, liveStepsRef.current.length ? liveStepsRef.current : undefined);
+      } else {
+        toast.error(res.message);
+        const id = nextId.current++;
+        update((prev) => [...prev, { id, role: "assistant", content: res.message, failedRequest: { message: userContent, history } }]);
+      }
+    } finally {
+      setSending(false);
+      busyRef.current = false;
+    }
+  }
+
+  function editUserMessage(message: DisplayMessage) {
+    if (sending) return;
+    const idx = messages.findIndex((m) => m.id === message.id);
+    if (idx < 0) return;
+    update(() => messages.slice(0, idx));
+    setInput(message.content);
+    setTimeout(() => composerRef.current?.focus(), 0);
+  }
+
   async function handleSend(text?: string) {
     const content = (text ?? input).trim();
     if (!content || busyRef.current || !loaded) return;
     if (content.length > 6000) { toast.error("单条消息请控制在 6000 字以内"); return; }
     busyRef.current = true;
+    stickToBottomRef.current = true;
+    setShowScrollDown(false);
     setTab("chat");
     const history = messages.filter((m) => !m.failedRequest).map(({ role, content, refs }) => ({ role, content, ...(refs ? { refs } : {}) }));
     addMessage("user", content);
@@ -374,7 +550,10 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
       const res = await runTurn(content, history);
       onReply?.();
       if (res.ok) addMessage("assistant", res.reply, res.actions, res.steps, res.notices, res.drafts, res.refs || undefined);
-      else {
+      else if (res.aborted) {
+        const partial = liveTextRef.current.trim();
+        addMessage("assistant", partial ? `${partial}\n\n（已停止生成）` : "（已停止生成）", undefined, liveStepsRef.current.length ? liveStepsRef.current : undefined);
+      } else {
         // A failed call should be noticed even with the window scrolled away.
         toast.error(res.message);
         const id = nextId.current++;
@@ -579,104 +758,174 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
 
       {tab === "chat" && (
         <>
-          <div className="flex-1 space-y-2 overflow-y-auto p-3">
-            {messages.length === 0 ? (
-              <div className="space-y-2">
-                {intro ?? (
-                  <p className="text-sm text-muted-foreground">
-                    把求职的事交给我：我会自己查你的记录、读 JD 和简历、上官网找岗位、联网研究，然后给你明确的建议和计划。
-                    要改记录时我会给出按钮，你点了才保存；我不会替你发邮件或提交网申。
-                  </p>
-                )}
-                <Link href="/settings?tab=ai" onClick={onNavigate} className="inline-block text-xs text-primary underline">配置 AI 服务商和 API Key</Link>
-                {suggestions.map((s) => (
-                  <button key={s} type="button" disabled={!loaded} onClick={() => handleSend(s)} className="block w-full rounded-md border px-3 py-2 text-left text-sm hover:bg-muted">{s}</button>
-                ))}
-              </div>
-            ) : (
-              messages.map((m) => (
-                <div key={m.id} className="flex flex-col gap-1.5">
-                  {!!m.steps?.length && <StepsSummary steps={m.steps} onNavigate={onNavigate} />}
-                  <div className={m.failedRequest ? "mr-6 rounded-2xl rounded-bl-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm" : m.role === "assistant" ? "bubble-ai group relative mr-6 rounded-2xl rounded-bl-md bg-muted px-3 py-2 text-sm" : "bubble-user max-w-[85%] self-end rounded-2xl rounded-br-md bg-primary px-3 py-2 text-sm text-primary-foreground"}>
-                    {m.role === "assistant" && !m.failedRequest ? <MarkdownText text={m.content} /> : <p className="whitespace-pre-wrap">{m.failedRequest && <CircleAlert className="mr-1 inline size-3.5 -translate-y-px text-destructive" />}{m.content}</p>}
-                    {m.role === "assistant" && !m.failedRequest && m.content.length > 40 && (
-                      <button type="button" aria-label="复制这条回答" title="复制" className="absolute right-1.5 top-1.5 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground group-hover:opacity-100 focus:opacity-100" onClick={() => copy(m.content)}><Copy className="size-3.5" /></button>
-                    )}
-                    {m.failedRequest && (
-                      <div className="mt-1.5 flex flex-wrap gap-2">
-                        <Button size="sm" variant="outline" disabled={sending || !!applying} onClick={() => retryMessage(m)}>重新发送</Button>
-                        <Link href="/settings?tab=ai" onClick={onNavigate} className="inline-flex h-8 items-center rounded-md px-2 text-xs text-primary underline">去设置换模型</Link>
+          <div className="relative flex min-h-0 flex-1 flex-col">
+            <div ref={scrollRef} onScroll={handleScroll} className="flex-1 space-y-2.5 overflow-y-auto p-3">
+              {messages.length === 0 ? (
+                <div className="space-y-2">
+                  {intro ?? (
+                    <p className="text-sm text-muted-foreground">
+                      把求职的事交给我：我会自己查你的记录、读 JD 和简历、上官网找岗位、联网研究，然后给你明确的建议和计划。
+                      要改记录时我会给出按钮，你点了才保存；我不会替你发邮件或提交网申。
+                    </p>
+                  )}
+                  <Link href="/settings?tab=ai" onClick={onNavigate} className="inline-block text-xs text-primary underline">配置 AI 服务商和 API Key</Link>
+                  {suggestions.map((s) => (
+                    <button key={s} type="button" disabled={!loaded} onClick={() => handleSend(s)} className="block w-full rounded-xl border px-3 py-2 text-left text-sm transition-colors hover:bg-muted">{s}</button>
+                  ))}
+                </div>
+              ) : (
+                messages.map((m) => (
+                  <div key={m.id} className="group/msg flex flex-col gap-1.5">
+                    {!!m.steps?.length && <StepsSummary steps={m.steps} onNavigate={onNavigate} />}
+                    <div className={m.failedRequest ? "mr-6 rounded-2xl rounded-bl-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm" : m.role === "assistant" ? "bubble-ai group relative mr-6 rounded-2xl rounded-bl-md bg-muted px-3 py-2 text-sm" : "bubble-user group relative max-w-[85%] self-end rounded-2xl rounded-br-md bg-primary px-3 py-2 text-sm text-primary-foreground"}>
+                      {m.role === "assistant" && !m.failedRequest ? (
+                        <MarkdownText text={m.content} onNavigate={onNavigate} />
+                      ) : (
+                        <p className="whitespace-pre-wrap">{m.failedRequest && <CircleAlert className="mr-1 inline size-3.5 -translate-y-px text-destructive" />}{m.content}</p>
+                      )}
+                      {m.failedRequest && (
+                        <div className="mt-1.5 flex flex-wrap gap-2">
+                          <Button size="sm" variant="outline" disabled={sending || !!applying} onClick={() => retryMessage(m)}>重新发送</Button>
+                          <Link href="/settings?tab=ai" onClick={onNavigate} className="inline-flex h-8 items-center rounded-md px-2 text-xs text-primary underline">去设置换模型</Link>
+                        </div>
+                      )}
+                    </div>
+                    {!m.failedRequest && (
+                      <div className={cn("flex items-center gap-1 px-1 text-[11px] text-muted-foreground opacity-0 transition-opacity group-hover/msg:opacity-100 focus-within:opacity-100", m.role === "user" && "justify-end")}>
+                        <button type="button" title="复制" className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-muted hover:text-foreground" onClick={() => copy(m.content)}>
+                          <Copy className="size-3" />复制
+                        </button>
+                        {m.role === "assistant" && !sending && (
+                          <button type="button" title="重新生成" className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-muted hover:text-foreground" onClick={() => void regenerateReply(m.id)}>
+                            <RotateCcw className="size-3" />重试
+                          </button>
+                        )}
+                        {m.role === "user" && !sending && (
+                          <button type="button" title="编辑并重发" className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-muted hover:text-foreground" onClick={() => editUserMessage(m)}>
+                            <Pencil className="size-3" />编辑
+                          </button>
+                        )}
                       </div>
+                    )}
+                    {!!m.notices?.length && <p className="px-1 text-xs text-amber-600 dark:text-amber-400">{m.notices.join("；")}</p>}
+
+                    {(m.drafts?.length ?? 0) - (m.filled?.length ?? 0) >= 2 && (onFillFields || onFillField) && (
+                      <Button size="sm" variant="outline" className="w-full text-xs" disabled={!!applying} onClick={() => void fillAllDrafts(m.id, m.drafts ?? [], m.filled ?? [])}>
+                        {applying === `${m.id}:drafts` ? <><Loader2 className="size-3.5 animate-spin" />正在填入网页…</> : <><Check className="size-3.5" />一键全部填入本页（{(m.drafts?.length ?? 0) - (m.filled?.length ?? 0)} 项）</>}
+                      </Button>
+                    )}
+                    {m.drafts?.map((draft, i) => {
+                      const done = m.filled?.includes(i);
+                      return (
+                        <div key={`d${i}`} className="space-y-1.5 rounded-lg border border-primary/30 bg-primary/5 p-2.5 text-xs">
+                          <p className="font-medium text-foreground">{draft.section ? `${draft.section} · ${draft.question}` : draft.question}</p>
+                          <p className="max-h-40 overflow-y-auto whitespace-pre-wrap text-sm leading-6">{draft.answer}</p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            {onFillField && <Button size="sm" variant={done ? "outline" : "default"} onClick={() => fillDraft(m.id, i, draft)}>{done ? <><Check className="size-3.5" />已填进去（再填一次）</> : "填进这一栏"}</Button>}
+                            <Button size="sm" variant="ghost" onClick={() => copy(draft.answer)}><Copy className="size-3.5" />复制</Button>
+                            <span className="text-muted-foreground">{draft.answer.replace(/\s/g, "").length} 字</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {(m.actions?.length ?? 0) - (m.applied?.length ?? 0) >= 2 && (
+                      <Button size="sm" variant="outline" className="w-full text-xs" disabled={!!applying} onClick={() => handleApplyAll(m.id)}>
+                        {applying === `${m.id}:all` ? <><Loader2 className="size-3.5 animate-spin" />保存中…</> : <><Check className="size-3.5" />全部保存（{(m.actions?.length ?? 0) - (m.applied?.length ?? 0)} 项）</>}
+                      </Button>
+                    )}
+                    {m.actions?.map((action, i) => {
+                      const done = m.applied?.includes(i);
+                      const busy = applying === `${m.id}:${i}`;
+                      const destructive = DESTRUCTIVE_ACTIONS.has(action.type);
+                      const chips = actionMetaChips(action);
+                      return (
+                        <button
+                          key={i}
+                          type="button"
+                          disabled={done || !!applying}
+                          onClick={() => handleApply(m.id, i, action)}
+                          className={cn(
+                            "flex w-full items-start gap-2 rounded-xl border bg-card px-3 py-2 text-left text-xs shadow-xs transition-colors enabled:hover:bg-muted disabled:shadow-none disabled:opacity-70",
+                            destructive && !done && "border-destructive/40 bg-destructive/[0.04] enabled:hover:bg-destructive/10"
+                          )}
+                        >
+                          {done ? (
+                            <Check className="mt-0.5 size-3.5 shrink-0 text-green-600" />
+                          ) : destructive ? (
+                            <Trash2 className="mt-0.5 size-3.5 shrink-0 text-destructive" />
+                          ) : (
+                            <Plus className="mt-0.5 size-3.5 shrink-0 text-primary" />
+                          )}
+                          <span className="min-w-0 flex-1 space-y-1">
+                            <span className="block font-medium text-foreground">{action.label}</span>
+                            {chips.length > 0 && (
+                              <span className="flex flex-wrap gap-1">
+                                {chips.map((chip) => (
+                                  <span key={chip} className="rounded-md bg-muted/80 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                                    {chip}
+                                  </span>
+                                ))}
+                              </span>
+                            )}
+                          </span>
+                          <span
+                            className={cn(
+                              "mt-0.5 shrink-0 rounded-full px-2 py-0.5",
+                              done || busy
+                                ? "text-muted-foreground"
+                                : destructive
+                                  ? "bg-destructive/15 font-medium text-destructive"
+                                  : "bg-primary/10 font-medium text-primary"
+                            )}
+                          >
+                            {done ? "已保存" : busy ? "执行中…" : destructive ? "确认删除" : "保存"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                    {m.steps?.some((step) => step.tool === "research_cities" || step.tool === "list_missing_cities") && /(?:还剩|还有|其余|下一批|接着查|继续查)/.test(m.content) && (
+                      <Button size="sm" variant="secondary" className="w-full text-xs" disabled={sending || !!applying} onClick={() => handleSend("继续查下一批还没查的投递城市，查到的给我按钮保存")}>
+                        继续查下一批城市
+                      </Button>
                     )}
                   </div>
-                  {!!m.notices?.length && <p className="px-1 text-xs text-amber-600 dark:text-amber-400">{m.notices.join("；")}</p>}
-
-                  {(m.drafts?.length ?? 0) - (m.filled?.length ?? 0) >= 2 && (onFillFields || onFillField) && (
-                    <Button size="sm" variant="outline" className="w-full text-xs" disabled={!!applying} onClick={() => void fillAllDrafts(m.id, m.drafts ?? [], m.filled ?? [])}>
-                      {applying === `${m.id}:drafts` ? <><Loader2 className="size-3.5 animate-spin" />正在填入网页…</> : <><Check className="size-3.5" />一键全部填入本页（{(m.drafts?.length ?? 0) - (m.filled?.length ?? 0)} 项）</>}
-                    </Button>
-                  )}
-                  {m.drafts?.map((draft, i) => {
-                    const done = m.filled?.includes(i);
-                    return (
-                      <div key={`d${i}`} className="space-y-1.5 rounded-lg border border-primary/30 bg-primary/5 p-2.5 text-xs">
-                        <p className="font-medium text-foreground">{draft.question}</p>
-                        <p className="max-h-40 overflow-y-auto whitespace-pre-wrap text-sm leading-6">{draft.answer}</p>
-                        <div className="flex flex-wrap items-center gap-2">
-                          {onFillField && <Button size="sm" variant={done ? "outline" : "default"} onClick={() => fillDraft(m.id, i, draft)}>{done ? <><Check className="size-3.5" />已填进去（再填一次）</> : "填进这一栏"}</Button>}
-                          <Button size="sm" variant="ghost" onClick={() => copy(draft.answer)}><Copy className="size-3.5" />复制</Button>
-                          <span className="text-muted-foreground">{draft.answer.replace(/\s/g, "").length} 字</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {(m.actions?.length ?? 0) - (m.applied?.length ?? 0) >= 2 && (
-                    <Button size="sm" variant="outline" className="w-full text-xs" disabled={!!applying} onClick={() => handleApplyAll(m.id)}>
-                      {applying === `${m.id}:all` ? <><Loader2 className="size-3.5 animate-spin" />保存中…</> : <><Check className="size-3.5" />全部保存（{(m.actions?.length ?? 0) - (m.applied?.length ?? 0)} 项）</>}
-                    </Button>
-                  )}
-                  {m.actions?.map((action, i) => {
-                    const done = m.applied?.includes(i);
-                    const busy = applying === `${m.id}:${i}`;
-                    return (
-                      <button key={i} type="button" disabled={done || !!applying} onClick={() => handleApply(m.id, i, action)} className="flex w-full items-center gap-2 rounded-xl border bg-card px-3 py-2 text-left text-xs shadow-xs transition-colors enabled:hover:bg-muted disabled:shadow-none disabled:opacity-70">
-                        {done ? <Check className="size-3.5 shrink-0 text-green-600" /> : <Plus className="size-3.5 shrink-0 text-primary" />}
-                        <span className="min-w-0 flex-1">
-                          {action.label}
-                          {/* The label says things like "下周三", but what
-                              gets written is the date the model resolved
-                              that to — and it does get that wrong. Show the
-                              real value so a bad one is caught before the
-                              click, not after. */}
-                          {action.date && <span className="ml-1 text-muted-foreground">（{action.date}）</span>}
-                        </span>
-                        <span className={cn("shrink-0 rounded-full px-2 py-0.5", done || busy ? "text-muted-foreground" : "bg-primary/10 font-medium text-primary")}>{done ? "已保存" : busy ? "保存中…" : "保存"}</span>
-                      </button>
-                    );
-                  })}
-                  {m.steps?.some((step) => step.tool === "research_cities" || step.tool === "list_missing_cities") && /(?:还剩|还有|其余|下一批|接着查|继续查)/.test(m.content) && (
-                    <Button size="sm" variant="secondary" className="w-full text-xs" disabled={sending || !!applying} onClick={() => handleSend("继续查下一批还没查的投递城市，查到的给我按钮保存")}>
-                      继续查下一批城市
-                    </Button>
-                  )}
+                ))
+              )}
+              {sending && (
+                <div className="px-1 text-xs" aria-live="polite">
+                  <p className="flex items-center gap-1.5 text-muted-foreground">
+                    <Loader2 className="size-3.5 animate-spin text-primary" />
+                    {(() => {
+                      const running = [...live.steps].reverse().find((s) => s.status === "running");
+                      if (running) return `正在：${running.label}…`;
+                      if (live.text.trim()) return "小欧正在组织回答…";
+                      return live.steps.length ? "小欧正在整理结果…" : "小欧在想该怎么做…";
+                    })()}
+                  </p>
+                  {live.note && <p className="mt-1 text-muted-foreground">{live.note}</p>}
+                  {!!live.steps.length && <ol className="mt-2">{live.steps.map((step) => <StepLine key={step.id} step={step} onNavigate={onNavigate} />)}</ol>}
                 </div>
-              ))
+              )}
+              {sending && live.text.trim() && (
+                <div className="bubble-ai mr-6 rounded-2xl rounded-bl-md bg-muted px-3 py-2 text-sm" aria-live="off">
+                  <MarkdownText text={live.text} onNavigate={onNavigate} />
+                  <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse rounded-sm bg-foreground/50 align-middle" aria-hidden />
+                </div>
+              )}
+              <div ref={bottomRef} />
+            </div>
+
+            {showScrollDown && (
+              <button
+                type="button"
+                onClick={scrollToBottom}
+                aria-label="回到底部"
+                className="absolute bottom-2 right-3 inline-flex items-center gap-1 rounded-full border bg-card/95 px-2.5 py-1 text-xs font-medium text-foreground shadow-md backdrop-blur-md transition-colors hover:bg-muted"
+              >
+                <ArrowDown className="size-3" />回到底部
+              </button>
             )}
-            {sending && (
-              <div className="px-1 text-xs" aria-live="polite">
-                <p className="flex items-center gap-1.5 text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />{live.steps.length ? "小欧正在做…" : "小欧在想该怎么做…"}</p>
-                {live.note && <p className="mt-1 text-muted-foreground">{live.note}</p>}
-                {!!live.steps.length && <ol className="mt-2">{live.steps.map((step) => <StepLine key={step.id} step={step} onNavigate={onNavigate} />)}</ol>}
-              </div>
-            )}
-            {sending && live.text.trim() && (
-              <div className="bubble-ai mr-6 rounded-2xl rounded-bl-md bg-muted px-3 py-2 text-sm" aria-live="off">
-                <MarkdownText text={live.text} />
-                <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse rounded-sm bg-foreground/50 align-middle" aria-hidden />
-              </div>
-            )}
-            <div ref={bottomRef} />
           </div>
 
           <div className="flex gap-1.5 overflow-x-auto border-t px-2 pt-2 [scrollbar-width:none]">
@@ -684,23 +933,34 @@ export function AgentChat({ header, pageContext, suggestions = DEFAULT_SUGGESTIO
               <button key={question} type="button" disabled={sending || !loaded} onClick={() => handleSend(question)} className="shrink-0 rounded-full border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50">{question}</button>
             ))}
           </div>
-          <div className="flex items-center gap-2 p-2">
+          <div className="flex items-end gap-2 p-2">
             <VoiceInput disabled={sending || !loaded} onText={(text) => setInput((previous) => (previous ? previous + "\n" + text : text).slice(0, 6000))} />
-            <Input
+            <textarea
+              ref={composerRef}
+              rows={1}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.nativeEvent.isComposing) handleSend();
+                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  void handleSend();
+                }
               }}
-              placeholder="交给小欧一件事，或说说你今天投了啥..."
+              placeholder="交给小欧一件事（Enter 发送，Shift+Enter 换行）…"
               aria-label="给小欧发送消息"
               maxLength={6000}
               disabled={sending || !loaded}
-              className="h-9"
+              className="max-h-[140px] min-h-9 flex-1 resize-none rounded-xl border border-input bg-background px-3 py-2 text-sm leading-5 outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-50"
             />
-            <Button type="button" size="icon" className="size-9 shrink-0" aria-label="发送" disabled={sending || !input.trim()} onClick={() => handleSend()}>
-              <Send className="size-4" />
-            </Button>
+            {sending ? (
+              <Button type="button" size="icon" variant="destructive" className="size-9 shrink-0" aria-label="停止生成" title="停止生成" onClick={stopGenerating}>
+                <Square className="size-3.5 fill-current" />
+              </Button>
+            ) : (
+              <Button type="button" size="icon" className="size-9 shrink-0" aria-label="发送" disabled={!input.trim() || !loaded} onClick={() => handleSend()}>
+                <Send className="size-4" />
+              </Button>
+            )}
           </div>
         </>
       )}

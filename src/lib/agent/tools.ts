@@ -70,25 +70,49 @@ const TOOL_LABELS: Record<string, string> = {
   search_records: "查记录", filter_applications: "筛选投递记录", get_workspace_overview: "读全库模块数据", get_application: "看投递详情", get_position: "看岗位 JD", resume_context: "读简历",
   research_web: "联网研究", find_jobs: "到官网找岗位", read_webpage: "读网页", prepare_application: "准备投递",
   list_missing_cities: "看哪些投递没写城市", research_cities: "联网查工作城市", recall_conversations: "翻以前的对话", remember: "记住", forget: "忘掉一条记忆", update_plan: "更新求职计划", propose_actions: "提出操作",
+  draft_page_answers: "生成网页填表草稿", sync_current_portal_page: "同步当前进度页",
+};
+
+const ENUM_LABELS: Record<string, string> = {
+  all: "全部",
+  interviews: "面试记录",
+  offers: "Offer 对比",
+  missing_city: "未标城市",
+  stale: "久未更新",
+  active: "进行中",
+  rejected: "已淘汰",
+  pool: "候选岗位池",
+  materials: "简历与附件",
+  postings: "校招信息表",
+  profile: "求职偏好与资料",
+  schedule: "日程与待办",
+  contacts: "联系人",
+  journey: "心路历程",
+  leads: "岗位线索",
 };
 
 // What research_cities found per 投递 in this turn (keyed by the turn's
-// proposals list): a set_city button must name a city that appears there.
+// proposals list): a set_city button must name a city that appears there
+// unless the user explicitly wrote that city themselves in this turn.
 const cityEvidence = new WeakMap<AssistantAction[], Map<string, string>>();
 
-/** Whether the button's cities were in what research found; fixes a slightly miscopied 投递ID on the way. */
-function cityBacked(action: AssistantAction, found: Map<string, string> | undefined): boolean {
+/** Whether the button's cities were in what research found (or explicitly stated by the user); fixes a slightly miscopied 投递ID on the way. */
+function cityBacked(action: AssistantAction, found: Map<string, string> | undefined, userMessage?: string): boolean {
   const id = action.targetId && found ? closestId(action.targetId, found.keys()) : null;
   if (id) action.targetId = id;
   const material = id ? found?.get(id) : undefined;
   const cities = parseCities(action.city ?? action.note);
-  return !!material && cities.length > 0 && cities.every((city) => material.includes(city));
+  if (!cities.length) return false;
+  if (material && cities.every((city) => material.includes(city))) return true;
+  if (userMessage && cities.every((city) => userMessage.includes(city))) return true;
+  return false;
 }
 
 const text = (value: unknown, max = 2000) => (typeof value === "string" ? value.trim().slice(0, max) : "");
 
 export function describeToolCall(call: ToolCall): string {
-  const detail = text(call.args.query ?? call.args.keywords ?? call.args.question ?? call.args.content ?? call.args.url ?? call.args.section ?? call.args.city ?? call.args.company ?? call.args.filter, 40);
+  const rawDetail = text(call.args.query ?? call.args.keywords ?? call.args.question ?? call.args.content ?? call.args.url ?? call.args.section ?? call.args.city ?? call.args.company ?? call.args.filter, 40);
+  const detail = ENUM_LABELS[rawDetail] ?? rawDetail;
   return `${TOOL_LABELS[call.name] ?? call.name}${detail ? `：${detail}` : ""}`;
 }
 
@@ -97,7 +121,7 @@ function ymd(date: Date | null | undefined) {
 }
 
 /** Runs one tool call for this user; proposals are collected into `proposed`. */
-export async function executeTool(userId: string, call: ToolCall, proposed: AssistantAction[]): Promise<ToolOutcome> {
+export async function executeTool(userId: string, call: ToolCall, proposed: AssistantAction[], userMessage?: string): Promise<ToolOutcome> {
   const label = describeToolCall(call);
   switch (call.name) {
     case "search_records": {
@@ -232,6 +256,12 @@ export async function executeTool(userId: string, call: ToolCall, proposed: Assi
     case "remember": {
       const content = text(call.args.content, 300);
       if (!content) throw new UserFacingError("要记的内容是空的");
+      const norm = (s: string) => s.replace(/\s+/g, "").toLowerCase();
+      if (typeof db.agentMemory.findMany === "function") {
+        const existing = await db.agentMemory.findMany({ where: { userId }, select: { id: true, content: true } });
+        const dup = existing.find((row) => norm(row.content) === norm(content));
+        if (dup) return { content: `已经记住过这条了 [记忆ID:${dup.id}]`, label: `已记住：${content}`, summary: "长期记忆中已有相同条目" };
+      }
       const count = await db.agentMemory.count({ where: { userId } });
       if (count >= MAX_MEMORIES) throw new UserFacingError(`记忆已满 ${MAX_MEMORIES} 条，先 forget 过时的`);
       const memory = await db.agentMemory.create({ data: { userId, content } });
@@ -255,13 +285,18 @@ export async function executeTool(userId: string, call: ToolCall, proposed: Assi
       const valid: AssistantAction[] = [];
       const rejected: string[] = [];
       const unbacked: string[] = [];
-      for (const raw of list.slice(0, 12)) {
+      const room = Math.max(0, 30 - proposed.length);
+      for (const raw of list.slice(0, Math.min(12, room))) {
         // Empty strings stand for "not given" (some providers can't send null).
         const cleaned = raw && typeof raw === "object" ? Object.fromEntries(Object.entries(raw as Record<string, unknown>).filter(([, value]) => value !== "" && value !== null)) : raw;
         const parsed = assistantActionSchema.safeParse(cleaned);
-        if (parsed.success && parsed.data.type === "set_city" && !cityBacked(parsed.data, cityEvidence.get(proposed))) unbacked.push(parsed.data.label);
+        if (parsed.success && parsed.data.type === "set_city" && !cityBacked(parsed.data, cityEvidence.get(proposed), userMessage)) unbacked.push(parsed.data.label);
         else if (parsed.success) valid.push(parsed.data);
-        else rejected.push(JSON.stringify(raw).slice(0, 120));
+        else {
+          const issue = parsed.error.issues[0];
+          const reason = issue ? `${issue.path.join(".") || "字段"}: ${issue.message}` : "格式不对";
+          rejected.push(`${JSON.stringify(raw).slice(0, 80)}（${reason}）`);
+        }
       }
       proposed.push(...valid);
       return { content: `已生成 ${valid.length} 个待用户确认的按钮${rejected.length ? `；${rejected.length} 个格式不对没生成：${rejected.join("；")}` : ""}${unbacked.length ? `；${unbacked.length} 个城市在这轮 research_cities 查到的资料里没有出现，没生成（告诉他这几条没查到）：${unbacked.join("；")}` : ""}。用户还没点，不能说已经办好。`, label: `提出 ${valid.length} 个操作`, summary: valid.map((action) => action.label).join("、").slice(0, 200) || "没有可用的操作" };

@@ -18,6 +18,15 @@ import { z } from "zod";
  * a discriminated union with different fields per branch is what they get
  * wrong most often, whereas one flat object with nullable fields survives.
  */
+const optionalRoundedInt = (max: number) =>
+  z.union([z.number(), z.string()])
+    .transform((v) => {
+      const n = typeof v === "number" ? v : Number(String(v).trim());
+      return Number.isFinite(n) ? Math.round(n) : NaN;
+    })
+    .pipe(z.number().int().min(0).max(max))
+    .nullish();
+
 export const assistantActionSchema = z.object({
   type: z.enum([
     "add_task",
@@ -71,10 +80,10 @@ export const assistantActionSchema = z.object({
   /// The work city for set_city / update_position / update_profile / log_application.
   city: z.string().nullish(),
   /// Offer / position salary fields (monthly in K, annual total in 万元).
-  salaryMin: z.number().int().min(0).max(500).nullish(),
-  salaryMax: z.number().int().min(0).max(500).nullish(),
-  offerAnnualTotal: z.number().int().min(0).max(5000).nullish(),
-  commuteMinutes: z.number().int().min(0).max(600).nullish(),
+  salaryMin: optionalRoundedInt(500),
+  salaryMax: optionalRoundedInt(500),
+  offerAnnualTotal: optionalRoundedInt(5000),
+  commuteMinutes: optionalRoundedInt(600),
   overtimeNote: z.string().nullish(),
   growthNote: z.string().nullish(),
   /// For update_position: EVALUATING | PLANNED | DROPPED (or Chinese equivalents).

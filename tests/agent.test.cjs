@@ -636,3 +636,63 @@ test("agent loop: streamed text is forwarded, and each model turn starts over", 
   });
   assert.deepEqual(events.filter((e) => e === "reset" || e.startsWith("delta")), ["reset", "delta:先看", "reset", "delta:结论"]);
 });
+
+test("v80 小欧 overhaul: collectRefs search_records JSON, numeric coercion, Chinese enum labels, parseError feedback, abort, routeContext & rich markdown", async () => {
+  const { collectRefs } = loadTs("src/lib/agent/refs.ts");
+  const refs = new Map();
+  collectRefs(refs, JSON.stringify({
+    applications: [{ id: "app_1", company: "字节跳动", title: "后端工程师" }],
+    positions: [{ id: "pos_9", company: "腾讯", title: "算法工程师" }],
+  }));
+  assert.match(refs.get("app_1") || "", /\[投递ID:app_1\].*字节跳动/);
+  assert.match(refs.get("pos_9") || "", /\[岗位ID:pos_9\].*腾讯/);
+
+  const { assistantActionSchema } = loadTs("src/lib/assistant-shared.ts");
+  const coerced = assistantActionSchema.safeParse({
+    type: "update_offer",
+    label: "更新年包",
+    targetId: "app_1",
+    salaryMin: "28.4",
+    offerAnnualTotal: 42.6,
+  });
+  assert.equal(coerced.success, true);
+  assert.equal(coerced.data.salaryMin, 28);
+  assert.equal(coerced.data.offerAnnualTotal, 43);
+
+  // Malformed tool JSON args produce explicit model feedback instead of silently executing {}
+  const seenToolResults = [];
+  let round = 0;
+  const out = await runAgent({
+    chat: async (req) => {
+      if (round++ === 0) return turn("", [{ id: "c1", name: "search_records", args: { __parseError: "工具参数 JSON 截断或格式错误" } }]);
+      seenToolResults.push(req.messages[req.messages.length - 1].results[0].content);
+      return turn("已重试完成");
+    },
+    request: { config: {}, system: "s", messages: [{ role: "user", text: "q" }], tools: [{ name: "search_records" }] },
+    execute: async () => { throw new Error("should not execute broken args"); },
+    describe,
+    emit: () => {},
+  });
+  assert.equal(out.reply, "已重试完成");
+  assert.match(seenToolResults[0], /工具参数解析失败/);
+
+  // Verify conversation schema raised caps + section, routeContext + preflight, Stop button, and GFM table/code renderer
+  const convSrc = fs.readFileSync(path.join(__dirname, "../src/lib/actions/agent-conversation.ts"), "utf8");
+  assert.match(convSrc, /section: z\.string\(\)\.max\(80\)\.optional\(\)/);
+  assert.match(convSrc, /\.max\(40\)\.optional\(\)/);
+
+  const routeSrc = fs.readFileSync(path.join(__dirname, "../src/app/api/agent/route.ts"), "utf8");
+  assert.match(routeSrc, /buildRouteContextSection/);
+  assert.match(routeSrc, /abortController\.abort\(\)/);
+  assert.match(routeSrc, /preflight/);
+
+  const chatSrc = fs.readFileSync(path.join(__dirname, "../src/components/assistant/agent-chat.tsx"), "utf8");
+  assert.match(chatSrc, /stopGenerating/);
+  assert.match(chatSrc, /regenerateReply/);
+  assert.match(chatSrc, /editUserMessage/);
+  assert.match(chatSrc, /DESTRUCTIVE_ACTIONS/);
+
+  const mdSrc = fs.readFileSync(path.join(__dirname, "../src/components/assistant/markdown-text.tsx"), "utf8");
+  assert.match(mdSrc, /function CodeBlock/);
+  assert.match(mdSrc, /isTableSeparator/);
+});

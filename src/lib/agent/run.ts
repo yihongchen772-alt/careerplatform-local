@@ -70,6 +70,11 @@ export async function runAgent({ chat, request, execute, describe, emit, review,
     // records at once); anything that writes or remembers runs alone, in order.
     const outcomes: ({ call: ToolCall; content: string; step: AgentStep | null } | undefined)[] = new Array(turn.calls.length);
     const runOne = async (call: ToolCall, index: number) => {
+      if (typeof call.args?.__parseError === "string") {
+        const step: AgentStep = { id: `${round}-${index}`, tool: call.name, label: describe(call), status: "error", summary: call.args.__parseError };
+        emit({ type: "step", step: { ...step } });
+        return { call, content: `工具参数解析失败（${call.args.__parseError}），请用合法且完整的 JSON 重新调用。`, step };
+      }
       const readOnly = READ_ONLY_TOOLS.has(call.name);
       const key = readOnly ? JSON.stringify([call.name, call.args]) : "";
       const step: AgentStep = { id: `${round}-${index}`, tool: call.name, label: describe(call), status: "running", summary: "" };

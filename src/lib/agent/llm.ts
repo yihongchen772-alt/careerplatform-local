@@ -37,6 +37,8 @@ export type ChatRequest = {
   /** Empty: the model must answer in text now. */
   tools: ToolSpec[];
   timeoutMs?: number;
+  /** Optional caller abort signal (Stop Generating / closed stream). */
+  signal?: AbortSignal;
   /** Given: the reply is streamed, and each piece of its text arrives here as it is written. */
   onText?: (delta: string) => void;
 };
@@ -60,45 +62,85 @@ function httpError(config: UserAiConfig, status: number, model?: string): UserFa
   return new UserFacingError(`${who(config, model)} 调用失败（${status}）：${reason(status)}`);
 }
 
-/** "Overloaded, try again" (Gemini's 503 at peak hours, Anthropic's 529). */
-const TRANSIENT = new Set([500, 502, 503, 504, 529]);
+/** "Overloaded, try again" (Gemini's 503 at peak hours, Anthropic's 529, HTTP 408 timeout). */
+const TRANSIENT = new Set([408, 500, 502, 503, 504, 529]);
 
-async function post(url: string, headers: Record<string, string>, body: unknown, timeoutMs: number, label: string): Promise<Response> {
+function sleepAbortable(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) return new Promise((resolve) => setTimeout(resolve, ms));
+  if (signal.aborted) return Promise.reject(new UserFacingError("已停止生成"));
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new UserFacingError("已停止生成"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+async function post(
+  url: string,
+  headers: Record<string, string>,
+  body: unknown,
+  timeoutMs: number,
+  label: string,
+  options?: { signal?: AbortSignal; retry429?: boolean }
+): Promise<Response> {
+  const callerSignal = options?.signal;
   for (let attempt = 0; ; attempt++) {
+    if (callerSignal?.aborted) throw new UserFacingError("已停止生成");
     let response: Response;
+    const timeoutSig = AbortSignal.timeout(timeoutMs);
+    const combinedSignal = callerSignal && typeof AbortSignal.any === "function"
+      ? AbortSignal.any([callerSignal, timeoutSig])
+      : callerSignal || timeoutSig;
     try {
-      response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs) });
+      response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body), signal: combinedSignal });
     } catch {
+      if (callerSignal?.aborted) throw new UserFacingError("已停止生成");
       throw new UserFacingError(`${label} 没有响应（超时或网络不通），请检查网络后重试`);
     }
-    if (!TRANSIENT.has(response.status) || attempt >= 2) return response;
+    const shouldRetry = TRANSIENT.has(response.status) || (options?.retry429 && response.status === 429);
+    if (!shouldRetry || attempt >= 2) return response;
+    const retryAfterSec = Number(response.headers?.get?.("retry-after") || 0);
+    const delayMs = response.status === 429 && retryAfterSec > 0 && retryAfterSec <= 6
+      ? retryAfterSec * 1000
+      : 1500 * (attempt + 1);
     await response.body?.cancel().catch(() => {});
-    await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
+    await sleepAbortable(delayMs, callerSignal);
   }
 }
 
 /** The JSON objects of a server-sent-event stream (`data: {…}` lines), as they arrive. */
-async function* sseEvents(response: Response): AsyncGenerator<Record<string, unknown>> {
+async function* sseEvents(response: Response, signal?: AbortSignal): AsyncGenerator<Record<string, unknown>> {
   if (!response.body) return;
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  for (;;) {
-    const { value, done } = await reader.read();
-    buffer += decoder.decode(value, { stream: !done });
-    const lines = buffer.split(/\r?\n/);
-    buffer = done ? "" : lines.pop() ?? "";
-    for (const line of lines) {
-      if (!line.startsWith("data:")) continue;
-      const data = line.slice(5).trim();
-      if (!data || data === "[DONE]") continue;
-      try {
-        yield JSON.parse(data);
-      } catch {
-        // A keep-alive or a line split oddly: nothing to read in it.
+  try {
+    for (;;) {
+      if (signal?.aborted) throw new UserFacingError("已停止生成");
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done });
+      const lines = buffer.split(/\r?\n/);
+      buffer = done ? "" : lines.pop() ?? "";
+      for (const line of lines) {
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice(5).trim();
+        if (!data || data === "[DONE]") continue;
+        try {
+          yield JSON.parse(data);
+        } catch {
+          // A keep-alive or a line split oddly: nothing to read in it.
+        }
       }
+      if (done) return;
     }
-    if (done) return;
+  } finally {
+    if (signal?.aborted) await reader.cancel().catch(() => {});
   }
 }
 
@@ -107,9 +149,9 @@ function parseArgs(raw: unknown): Record<string, unknown> {
   if (typeof raw !== "string" || !raw.trim()) return {};
   try {
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : { __parseError: "工具参数不是合法的 JSON 对象" };
   } catch {
-    return {};
+    return { __parseError: "工具参数 JSON 截断或格式错误" };
   }
 }
 
@@ -150,7 +192,7 @@ export function geminiModels(model: string): string[] {
   return list.length ? list : ["gemini-3.5-flash-lite"];
 }
 
-async function geminiTurn({ config, system, messages, tools, timeoutMs = 60000, onText }: ChatRequest, state: { modelIndex: number }, notice: (text: string) => void): Promise<ChatTurn> {
+async function geminiTurn({ config, system, messages, tools, timeoutMs = 60000, signal, onText }: ChatRequest, state: { modelIndex: number }, notice: (text: string) => void): Promise<ChatTurn> {
   const contents = (model: string) => messages.map((message) => {
     if (message.role === "user") return { role: "user", parts: [{ text: message.text }] };
     if (message.role === "assistant") return { role: "model", parts: geminiParts(message.raw, model) };
@@ -165,7 +207,7 @@ async function geminiTurn({ config, system, messages, tools, timeoutMs = 60000, 
       contents: contents(model),
       ...(tools.length ? { tools: [{ functionDeclarations: tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: geminiSchema(tool.parameters) })) }] } : {}),
       generationConfig: { maxOutputTokens: MAX_TOKENS, thinkingConfig: { thinkingBudget: 1024 } },
-    }, timeoutMs, who(config, model));
+    }, timeoutMs, who(config, model), { signal, retry429: i === models.length - 1 });
     if (!response.ok) {
       console.error(`[agent:gemini:${model}] ${response.status}`, (await response.text().catch(() => "")).slice(0, 500));
       if ((response.status === 429 || TRANSIENT.has(response.status)) && i < models.length - 1) {
@@ -180,7 +222,7 @@ async function geminiTurn({ config, system, messages, tools, timeoutMs = 60000, 
       // Each event carries the next parts; text parts are pieces of one reply.
       const streamed: GeminiPart[] = [];
       let finishReason: string | undefined;
-      for await (const event of sseEvents(response)) {
+      for await (const event of sseEvents(response, signal)) {
         const candidate = (event as typeof data).candidates?.[0];
         for (const part of candidate?.content?.parts ?? []) {
           streamed.push(part);
@@ -203,7 +245,7 @@ async function geminiTurn({ config, system, messages, tools, timeoutMs = 60000, 
 
 type OpenAiMessage = { role: string; content?: string | null; tool_calls?: { id: string; type: "function"; function: { name: string; arguments: string } }[]; tool_call_id?: string; reasoning_content?: string };
 
-async function openAiTurn({ config, system, messages, tools, timeoutMs = 60000, onText }: ChatRequest): Promise<ChatTurn> {
+async function openAiTurn({ config, system, messages, tools, timeoutMs = 60000, signal, onText }: ChatRequest): Promise<ChatTurn> {
   if (config.provider === "gemini" || config.provider === "anthropic") throw new Error("not an OpenAI-compatible provider");
   const wire: OpenAiMessage[] = [{ role: "system", content: system }];
   for (const message of messages) {
@@ -218,12 +260,12 @@ async function openAiTurn({ config, system, messages, tools, timeoutMs = 60000, 
     max_tokens: MAX_TOKENS,
   };
   const url = `${config.baseUrl || OPENAI_COMPATIBLE_BASE_URL[config.provider]}/chat/completions`;
-  let response = await post(url, { Authorization: `Bearer ${config.apiKey}` }, onText ? { ...body, stream: true } : body, timeoutMs, who(config));
+  let response = await post(url, { Authorization: `Bearer ${config.apiKey}` }, onText ? { ...body, stream: true } : body, timeoutMs, who(config), { signal, retry429: true });
   // A provider that refuses streaming (with tools) still answers the plain way.
   let streaming = !!onText;
   if (onText && response.status === 400) {
     await response.body?.cancel().catch(() => {});
-    response = await post(url, { Authorization: `Bearer ${config.apiKey}` }, body, timeoutMs, who(config));
+    response = await post(url, { Authorization: `Bearer ${config.apiKey}` }, body, timeoutMs, who(config), { signal, retry429: true });
     streaming = false;
   }
   if (!response.ok) {
@@ -231,18 +273,21 @@ async function openAiTurn({ config, system, messages, tools, timeoutMs = 60000, 
     throw httpError(config, response.status);
   }
   let message: OpenAiMessage;
+  let finishReason: string | undefined;
   if (streaming && onText) {
     // Text and reasoning arrive in pieces; a tool call's id and name come once, its arguments in pieces, by index.
     let content = "";
     let reasoning = "";
     const pending: { id: string; name: string; args: string }[] = [];
-    for await (const event of sseEvents(response)) {
-      const delta = (event as { choices?: { delta?: { content?: string | null; reasoning_content?: string | null; tool_calls?: { index?: number; id?: string; function?: { name?: string; arguments?: string } }[] } }[] }).choices?.[0]?.delta;
+    for await (const event of sseEvents(response, signal)) {
+      const choice = (event as { choices?: { finish_reason?: string; delta?: { content?: string | null; reasoning_content?: string | null; tool_calls?: { index?: number; id?: string; function?: { name?: string; arguments?: string } }[] } }[] }).choices?.[0];
+      if (choice?.finish_reason) finishReason = choice.finish_reason;
+      const delta = choice?.delta;
       if (!delta) continue;
       if (delta.content) { content += delta.content; onText(delta.content); }
       if (delta.reasoning_content) reasoning += delta.reasoning_content;
       for (const piece of delta.tool_calls ?? []) {
-        const index = piece.index ?? pending.length;
+        const index = piece.index ?? ((piece.id || piece.function?.name) ? pending.length : Math.max(0, pending.length - 1));
         const call = (pending[index] ??= { id: "", name: "", args: "" });
         if (piece.id) call.id = piece.id;
         if (piece.function?.name) call.name += piece.function.name;
@@ -253,18 +298,21 @@ async function openAiTurn({ config, system, messages, tools, timeoutMs = 60000, 
     message = { role: "assistant", content, ...(toolCalls.length ? { tool_calls: toolCalls } : {}), ...(reasoning ? { reasoning_content: reasoning } : {}) };
   } else {
     const data = await response.json();
+    finishReason = data?.choices?.[0]?.finish_reason;
     message = data?.choices?.[0]?.message ?? { role: "assistant", content: "" };
   }
   const calls = (message.tool_calls ?? []).map((call, index) => ({ id: call.id || `call-${index}`, name: call.function?.name ?? "", args: parseArgs(call.function?.arguments) }));
+  const text = (message.content ?? "").trim();
+  if (!calls.length && !text && finishReason === "length") throw new UserFacingError("AI 回答太长被截断了，请重试");
   const raw: OpenAiMessage = { role: "assistant", content: message.content ?? "", ...(message.tool_calls?.length ? { tool_calls: message.tool_calls.map((call, index) => ({ ...call, id: calls[index].id })) } : {}), ...(message.reasoning_content ? { reasoning_content: message.reasoning_content } : {}) };
-  return { text: (message.content ?? "").trim(), calls, raw };
+  return { text, calls, raw };
 }
 
 // ---- Anthropic ----
 
 type AnthropicBlock = { type: string; text?: string; id?: string; name?: string; input?: unknown };
 
-async function anthropicTurn({ config, system, messages, tools, timeoutMs = 60000, onText }: ChatRequest): Promise<ChatTurn> {
+async function anthropicTurn({ config, system, messages, tools, timeoutMs = 60000, signal, onText }: ChatRequest): Promise<ChatTurn> {
   const wire = messages.map((message) => {
     if (message.role === "user") return { role: "user", content: message.text };
     if (message.role === "assistant") return { role: "assistant", content: message.raw as AnthropicBlock[] };
@@ -277,17 +325,18 @@ async function anthropicTurn({ config, system, messages, tools, timeoutMs = 6000
     ...(tools.length ? { tools: tools.map((tool) => ({ name: tool.name, description: tool.description, input_schema: tool.parameters })) } : {}),
     max_tokens: MAX_TOKENS,
     ...(onText ? { stream: true } : {}),
-  }, timeoutMs, who(config));
+  }, timeoutMs, who(config), { signal, retry429: true });
   if (!response.ok) {
     console.error(`[agent:anthropic] ${response.status}`, (await response.text().catch(() => "")).slice(0, 500));
     throw httpError(config, response.status);
   }
   let blocks: AnthropicBlock[];
+  let stopReason: string | undefined;
   if (onText) {
     // Blocks open, grow (text, or a tool's input as pieces of JSON) and close, by index.
     blocks = [];
     const inputs: string[] = [];
-    for await (const event of sseEvents(response)) {
+    for await (const event of sseEvents(response, signal)) {
       const index = typeof event.index === "number" ? event.index : 0;
       if (event.type === "content_block_start") blocks[index] = { ...(event.content_block as AnthropicBlock) };
       else if (event.type === "content_block_delta") {
@@ -295,15 +344,20 @@ async function anthropicTurn({ config, system, messages, tools, timeoutMs = 6000
         const block = (blocks[index] ??= { type: delta.type === "input_json_delta" ? "tool_use" : "text" });
         if (delta.type === "text_delta" && delta.text) { block.text = (block.text ?? "") + delta.text; onText(delta.text); }
         if (delta.type === "input_json_delta" && delta.partial_json) inputs[index] = (inputs[index] ?? "") + delta.partial_json;
+      } else if (event.type === "message_delta") {
+        const delta = event.delta as { stop_reason?: string } | undefined;
+        if (delta?.stop_reason) stopReason = delta.stop_reason;
       } else if (event.type === "error") throw new UserFacingError(`${who(config)} 调用中断：服务商那边过载或出错，请稍后重试`);
     }
     blocks = blocks.map((block, index) => block && block.type === "tool_use" && inputs[index] !== undefined ? { ...block, input: parseArgs(inputs[index]) } : block).filter(Boolean);
   } else {
     const data = await response.json();
+    stopReason = data?.stop_reason;
     blocks = data?.content ?? [];
   }
   const calls = blocks.filter((block) => block.type === "tool_use").map((block) => ({ id: block.id ?? "", name: block.name ?? "", args: parseArgs(block.input) }));
   const text = blocks.filter((block) => block.type === "text").map((block) => block.text ?? "").join("").trim();
+  if (!calls.length && !text && stopReason === "max_tokens") throw new UserFacingError("AI 回答太长被截断了，请重试");
   return { text, calls, raw: blocks.length ? blocks : [{ type: "text", text: text || " " }] };
 }
 

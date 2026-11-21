@@ -35,12 +35,11 @@ function ymd(d: Date): string {
 }
 
 export async function buildSnapshot(userId: string): Promise<string> {
+  const now = new Date();
   const [
     profile,
     positions,
-    positionCount,
     applications,
-    applicationCount,
     positionMatches,
     stageHistories,
     personalTasks,
@@ -48,6 +47,7 @@ export async function buildSnapshot(userId: string): Promise<string> {
     leads,
     leadCount,
     contacts,
+    upcoming,
   ] = await Promise.all([
       db.user.findUnique({
         where: { id: userId },
@@ -60,18 +60,44 @@ export async function buildSnapshot(userId: string): Promise<string> {
           expectedSalaryMin: true,
         },
       }),
+      // Minimal select avoids loading every jdText blob into RAM on every chat turn.
       db.position.findMany({
         where: { userId },
-        include: { company: true },
+        select: {
+          id: true,
+          title: true,
+          track: true,
+          status: true,
+          deadline: true,
+          company: { select: { name: true } },
+        },
         orderBy: { createdAt: "desc" },
       }),
-      db.position.count({ where: { userId } }),
       db.application.findMany({
         where: { userId },
-        include: { company: true, position: { select: { location: true } }, stageHistory: { orderBy: { enteredAt: "desc" }, take: 8, select: { stage: true, terminatedAtStage: true, terminatedAtStageLabel: true } } },
+        include: {
+          company: true,
+          position: { select: { location: true } },
+          stageHistory: {
+            orderBy: { enteredAt: "desc" },
+            take: 12,
+            select: {
+              id: true,
+              stage: true,
+              enteredAt: true,
+              nextDeadline: true,
+              nextDeadlineEnd: true,
+              nextHasTime: true,
+              completedAt: true,
+              followedUpAt: true,
+              note: true,
+              terminatedAtStage: true,
+              terminatedAtStageLabel: true,
+            },
+          },
+        },
         orderBy: { appliedDate: "desc" },
       }),
-      db.application.count({ where: { userId } }),
       // Only the two fields the highlight logic below needs to rank and
       // annotate positions — a full PositionMatch.result breakdown would be
       // exactly the kind of per-record bulk this summary is trying to avoid.
@@ -101,18 +127,18 @@ export async function buildSnapshot(userId: string): Promise<string> {
       }),
       db.jobLead.count({ where: { userId, promotedPositionId: null } }),
       db.contact.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: MAX_ITEMS }),
+      loadUpcomingSchedule(userId, now, 14),
     ]);
 
+  const positionCount = positions.length;
+  const applicationCount = applications.length;
   const todos = buildTodos(applications, positions, stageHistories, personalTasks, contacts);
 
   const sections: string[] = [];
 
   // Users say "下周三" / "这周五" constantly, and models are measurably bad
-  // at the arithmetic — Qwen turned "下周五" into a Sunday and "周三" into a
-  // Friday even when told today's date and weekday. Weekday arithmetic is
-  // trivial to do exactly here, so do it here: spelling out the next two
-  // weeks turns the conversion into a lookup instead of a calculation.
-  const now = new Date();
+  // at the arithmetic — spelling out the next two weeks turns the conversion
+  // into a lookup instead of a calculation.
   const calendar = Array.from({ length: 14 }, (_, i) => {
     const d = new Date(now);
     d.setDate(d.getDate() + i);
@@ -222,7 +248,7 @@ export async function buildSnapshot(userId: string): Promise<string> {
             .join("\n"))
   );
 
-  sections.push(await scheduleSection(userId, now));
+  sections.push(formatScheduleSection(upcoming, applications, now));
 
   sections.push(
     `秋招信息库（导入的岗位线索，还没提到候选池，共 ${leadCount} 条）：\n` +
@@ -252,8 +278,8 @@ export async function buildSnapshot(userId: string): Promise<string> {
   );
 
   // Separate from the merged feed above (which has no IDs): complete_task
-  // needs to name a specific row, and only undone ones are worth offering.
-  const openTasks = personalTasks.filter((t) => !t.done);
+  // needs to name a specific row, and only undone manual tasks are worth listing (capped at 25).
+  const openTasks = personalTasks.filter((t) => !t.done && !t.sourceMailKey).slice(0, 25);
   sections.push(
     "自建待办（含ID，只列未完成的）：\n" +
       (openTasks.length === 0
@@ -306,15 +332,29 @@ export async function buildSnapshot(userId: string): Promise<string> {
  * 这一轮的状态（等结果、该跟进、截止已过）——带进度ID，小欧才能改期、标记
  * 完成、记面经。
  */
-async function scheduleSection(userId: string, now: Date): Promise<string> {
+function formatScheduleSection(
+  upcoming: Awaited<ReturnType<typeof loadUpcomingSchedule>>,
+  open: Array<{
+    id: string;
+    title: string;
+    currentStage: keyof typeof STAGE_LABELS;
+    currentStageDate: Date;
+    company: { name: string };
+    stageHistory: Array<{
+      id: string;
+      stage: keyof typeof STAGE_LABELS;
+      enteredAt: Date;
+      nextDeadline: Date | null;
+      nextDeadlineEnd: Date | null;
+      nextHasTime: boolean;
+      completedAt: Date | null;
+      followedUpAt: Date | null;
+      note: string | null;
+    }>;
+  }>,
+  now: Date
+): string {
   const nowMs = now.getTime();
-  const [upcoming, open] = await Promise.all([
-    loadUpcomingSchedule(userId, now, 14),
-    db.application.findMany({
-      where: { userId },
-      select: { id: true, title: true, currentStage: true, currentStageDate: true, company: { select: { name: true } }, stageHistory: { select: { id: true, stage: true, enteredAt: true, nextDeadline: true, nextDeadlineEnd: true, nextHasTime: true, completedAt: true, followedUpAt: true, note: true } } },
-    }),
-  ]);
   const lines = upcoming.map((item) => {
     const ids = item.source === "stage" ? `[进度ID:${item.sourceId}][投递ID:${item.applicationId}] ` : item.source === "mail" ? "（邮件里识别到、还没确认）" : item.applicationId ? `[投递ID:${item.applicationId}] ` : "";
     const url = extractMeetingUrl(item.meetingInfo);
@@ -347,7 +387,7 @@ export const ACTION_GUIDE = `当用户说的话意味着数据该被记下来或
 - promote_lead：把秋招信息库里的一条线索提进候选岗位池。targetId 填上面的[线索ID]
 - add_contact：记一个 HR / 内推人 / 面试官。contactName 填这个人的名字（必填），title 填角色（HR/内推人/面试官等），companyName 可选，note 填联系方式（微信/邮箱/电话）或其他备注，date 填下次该跟进的日期（用户说"过几天再联系他"这类才填，没提就不填）
 - mark_position_applied：把候选岗位池里的一个岗位标记为已投递。targetId 填上面"候选岗位池"里对上的 [岗位ID]，date 填投递日期（没说就用今天），note 填渠道（官网/内推/猎头...），contactName 填内推人（没有就不填）。**用户提到的公司+岗位如果能在候选岗位池里对上号，一定用这个而不是 log_application**——这样投递记录和候选池会正确关联、候选池状态也会同步更新；对不上号（候选池里没有这个岗位）才用 log_application 单独记一条
-- update_application：修改一条已有投递记录的日期/渠道/内推人。targetId 填上面"投递记录"里对上的 [投递ID]，date/note（渠道）/contactName（内推人）里用户提到哪个改哪个，没提到的字段留空——**留空的字段调用时会自动保留原值，不会被清空**
+- update_application：修改一条已有投递记录的日期/渠道/内推人/城市。targetId 填上面"投递记录"里对上的 [投递ID]，date/note（渠道）/contactName（内推人）/city 里用户提到哪个改哪个，没提到的字段留空——**留空的字段调用时会自动保留原值，不会被清空**
 - delete_position：把候选岗位池里一个不打算投的岗位删掉。targetId 填 [岗位ID]，仅当用户明确说"不投了""删了"这类才提
 - withdraw_application：删掉一条投递记录，仅用于记错了且明确要求删除。主动撤回必须使用 update_stage 的 WITHDRAWN；岗位取消使用 CANCELLED；企业淘汰使用 REJECTED。targetId 填 [投递ID]，仅当用户明确说要删/记错了才提，不要因为用户说"这家跪了""被拒了"就提删除——被拒也是投递记录的一部分，应该用 update_stage 改成 REJECTED，不是删掉
 - complete_task：把一条自建待办标记完成。targetId 填上面"自建待办"里对上的 [待办ID]

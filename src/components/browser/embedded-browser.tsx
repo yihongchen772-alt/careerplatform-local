@@ -125,10 +125,11 @@ const ALL_FILL_MODULES = FILL_MODULES.map(({ id }) => id);
 
 // A 网申 box asking something to write, not a fact: what 小欧 can draft.
 const OPEN_QUESTION = /[?？]|请(?:简述|描述|介绍|谈谈|说明|列举|举例)|为什么|为何|如何|怎样|谈谈|简述|描述|介绍一下|你的|你在|经历中|why|how|describe|tell us|explain/i;
-const AGENT_PAGE_QUESTIONS = ["这个岗位值得投吗？", "帮我写这页的开放题", "这家公司怎么样？", "这个岗位面试会问什么？"];
+const AGENT_PAGE_QUESTIONS = ["检查这页漏填和报错并帮我修复", "帮我写这页的开放题", "这个岗位值得投吗？", "这家公司怎么样？", "同步本页投递进度"];
 const AGENT_PAGE_SUGGESTIONS = [
+  "检查这页的必填空项和校验报错，按我的简历直接生成可填入草稿",
   "这个岗位和我的经历匹配吗？给个结论和理由",
-  "按我的真实经历，写这页的开放题，按字数要求",
+  "按我的真实经历，写这页的开放题，严格按字数要求",
   "查一下这家公司最近的情况和校招面经",
 ];
 
@@ -348,6 +349,8 @@ export function EmbeddedBrowser({
     const isPortalPage = looksLikeCandidateCenter(snapshot.url, snapshot.title || "", snapshot.text || "");
     const portalMatch = isPortalPage ? matchKnownSite(knownSites, snapshot.url, snapshot.title || "") : null;
     const portalAlreadySet = !!portalMatch && !!siteKey(snapshot.url) && portalMatch.portalKeys.includes(siteKey(snapshot.url)!);
+    const preflight = status?.summary?.preflight;
+    const eligibilityWarnings = pageIntel?.url === snapshot.url ? pageIntel.warnings.map((w) => w.message).filter(Boolean).slice(0, 8) : [];
     return {
       url: snapshot.url.slice(0, 2000),
       title: (snapshot.title || "").slice(0, 300),
@@ -358,9 +361,11 @@ export function EmbeddedBrowser({
       jdPage: snapshot.jdPage ? { url: snapshot.jdPage.url, title: snapshot.jdPage.title, text: snapshot.jdPage.text.slice(0, 6000) } : null,
       positionId: positionId || snapshot.positionId || undefined,
       contextKey: snapshot.contextKey,
+      ...(preflight ? { preflight } : {}),
+      ...(eligibilityWarnings.length ? { eligibilityWarnings } : {}),
       ...(portalMatch ? { portalCompanyId: portalMatch.companyId, portalCompanyName: portalMatch.companyName, portalAlreadySet } : {}),
     };
-  }, [bridge, knownSites, positionId]);
+  }, [bridge, knownSites, positionId, status, pageIntel]);
 
   const persistApprovedDrafts = useCallback((items: { label: string; value: string; section?: string }[], contextKey?: string) => {
     const url = currentUrlRef.current;
@@ -2119,7 +2124,7 @@ export function EmbeddedBrowser({
               onFillFields={fillMultipleDrafts}
               quickQuestions={AGENT_PAGE_QUESTIONS}
               suggestions={AGENT_PAGE_SUGGESTIONS}
-              intro={<p className="text-sm text-muted-foreground">我能看到你正在看的这个页面：问我这个岗位值不值得投、这家公司怎么样，或者让我按你的经历写这页的开放题（写好点复制，粘贴进去）。</p>}
+              intro={<p className="text-sm text-muted-foreground">我能看到你正在看的这个页面（含表单字段、漏填、报错和附件槽位）：可以帮你判断岗位值不值得投、写开放题并一键填入网页，或者即时同步本页投递进度。</p>}
               header={(
                 <div className="assistant-head flex items-center gap-2 border-b px-3 py-2">
                   <Sparkles className="size-4 text-primary" />
