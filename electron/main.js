@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, systemPreferences, shell, ipcMain, Menu } = require("electron");
+const { app, BrowserWindow, dialog, systemPreferences, shell, ipcMain, Menu, nativeTheme } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
@@ -251,14 +251,53 @@ ipcMain.handle("mic:open-settings", () => {
   }
 });
 
+function uiThemeFile() {
+  return path.join(app.getPath("userData"), "ui-theme.json");
+}
+
+function readUiThemePref() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(uiThemeFile(), "utf8"));
+    const mode = raw?.mode === "light" || raw?.mode === "dark" || raw?.mode === "system" ? raw.mode : "system";
+    const bg = typeof raw?.backgroundColor === "string" && /^#[0-9a-fA-F]{6}$/.test(raw.backgroundColor)
+      ? raw.backgroundColor
+      : null;
+    return { mode, backgroundColor: bg };
+  } catch {
+    return { mode: "system", backgroundColor: null };
+  }
+}
+
+ipcMain.handle("app:set-theme", (_e, payload) => {
+  if (!payload || typeof payload !== "object") return false;
+  const mode = payload.mode === "light" || payload.mode === "dark" || payload.mode === "system" ? payload.mode : "system";
+  const bg = typeof payload.backgroundColor === "string" && /^#[0-9a-fA-F]{6}$/.test(payload.backgroundColor)
+    ? payload.backgroundColor
+    : (payload.isDark ? "#10111c" : "#f3f3fb");
+  try {
+    nativeTheme.themeSource = mode;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setBackgroundColor(bg);
+    }
+    fs.writeFileSync(uiThemeFile(), JSON.stringify({ mode, backgroundColor: bg }));
+    return true;
+  } catch {
+    return false;
+  }
+});
+
 function createWindow({ show = true } = {}) {
+  const themePref = readUiThemePref();
+  try { nativeTheme.themeSource = themePref.mode; } catch { /* ignore */ }
+  const initialDark = themePref.mode === "dark" || (themePref.mode === "system" && nativeTheme.shouldUseDarkColors);
+  const initialBg = themePref.backgroundColor || (initialDark ? "#10111c" : "#f3f3fb");
   mainWindow = new BrowserWindow({
     width: 1320,
     height: 880,
     minWidth: 900,
     minHeight: 600,
     title: "求职罗盘",
-    backgroundColor: "#ffffff",
+    backgroundColor: initialBg,
     show: process.env.CAREERPLATFORM_TEST_MODE === "1" ? false : show,
     webPreferences: {
       contextIsolation: true,

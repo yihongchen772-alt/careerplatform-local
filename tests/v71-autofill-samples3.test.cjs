@@ -628,3 +628,36 @@ test("v77 Embedded browser reliability & intelligence: tab profile sync, preview
   assert.match(ebSrc, /applicationRecorded\?\.\(false, announced\.tabId\)/);
   assert.match(ebSrc, /setTabProfile\?\./);
 });
+
+test("v78 Batch A UI polish: Omnibox data-slot fix, collapsed pixel sidebar, Liquid Glass overlays, Electron nativeTheme sync, custom Material You seed & density", () => {
+  const omniboxSrc = fs.readFileSync(path.join(__dirname, "../src/components/browser/omnibox.tsx"), "utf8");
+  assert.match(omniboxSrc, /data-slot="omnibox-input"/);
+
+  const ebSrc = fs.readFileSync(path.join(__dirname, "../src/components/browser/embedded-browser.tsx"), "utf8");
+  assert.match(ebSrc, /data-slot="find-input"/);
+  assert.match(ebSrc, /browser-chrome/);
+  assert.match(ebSrc, /browser-toolbar/);
+  assert.match(ebSrc, /border-l-current\/25/);
+
+  const css = fs.readFileSync(path.join(__dirname, "../src/app/globals.css"), "utf8");
+  assert.match(css, /\[data-palette="custom"\]/);
+  assert.match(css, /\.dark\[data-palette="custom"\]/);
+  assert.match(css, /\[data-style="pixel"\] \.app-sidebar:not\(\[data-collapsed="true"\]\) nav a/);
+  assert.match(css, /\[data-style="glass"\] \.assistant-panel/);
+  assert.match(css, /html\[data-density="compact"\]/);
+  assert.match(css, /\[data-style="material"\] \.kanban-lane/);
+
+  const mainSrc = fs.readFileSync(path.join(__dirname, "../electron/main.js"), "utf8");
+  assert.match(mainSrc, /nativeTheme/);
+  assert.match(mainSrc, /ipcMain\.handle\("app:set-theme"/);
+  assert.match(mainSrc, /ui-theme\.json/);
+
+  const preloadSrc = fs.readFileSync(path.join(__dirname, "../electron/preload.js"), "utf8");
+  assert.match(preloadSrc, /desktopTheme/);
+  assert.match(preloadSrc, /app:set-theme/);
+
+  const appearanceSrc = fs.readFileSync(path.join(__dirname, "../src/components/settings/appearance-form.tsx"), "utf8");
+  assert.match(appearanceSrc, /Material You 动态取色/);
+  assert.match(appearanceSrc, /p\.darkSurface/);
+  assert.match(appearanceSrc, /界面密度与字号/);
+});

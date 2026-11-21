@@ -22,6 +22,10 @@ contextBridge.exposeInMainWorld("desktopMic", {
   openSettings: () => ipcRenderer.invoke("mic:open-settings"),
 });
 
+contextBridge.exposeInMainWorld("desktopTheme", {
+  sync: (payload) => ipcRenderer.invoke("app:set-theme", payload),
+});
+
 // This app's first contextBridge. Kept deliberately narrow — only what the
 // embedded 网申浏览器 panel needs — since anything exposed here is reachable
 // from every page this window ever loads (all of them are our own Next app,

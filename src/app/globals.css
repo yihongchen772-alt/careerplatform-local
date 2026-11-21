@@ -873,6 +873,78 @@
   --sidebar-ring: #f5c36c;
 }
 
+/* ---------- Palette 13: Material You 动态自定义种子色 (custom) ---------- */
+[data-palette="custom"] {
+  --seed-color: #1a73e8;
+  --background: color-mix(in oklch, var(--seed-color) 6%, #f8f9fc);
+  --foreground: color-mix(in oklch, var(--seed-color) 12%, #15171c);
+  --card: #ffffff;
+  --card-foreground: var(--foreground);
+  --popover: #ffffff;
+  --popover-foreground: var(--foreground);
+  --primary: var(--seed-color);
+  --primary-foreground: #ffffff;
+  --secondary: color-mix(in oklch, var(--seed-color) 11%, #f1f3f8);
+  --secondary-foreground: color-mix(in oklch, var(--seed-color) 42%, #15171c);
+  --muted: color-mix(in oklch, var(--seed-color) 8%, #f1f3f8);
+  --muted-foreground: color-mix(in oklch, var(--seed-color) 14%, #5e6472);
+  --accent: color-mix(in oklch, var(--seed-color) 18%, #ffffff);
+  --accent-foreground: color-mix(in oklch, var(--seed-color) 62%, #111318);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: color-mix(in oklch, var(--seed-color) 15%, #e2e5ee);
+  --input: color-mix(in oklch, var(--seed-color) 15%, #e2e5ee);
+  --ring: var(--seed-color);
+  --gradient-accent: linear-gradient(135deg, color-mix(in oklch, var(--seed-color) 92%, black) 0%, var(--seed-color) 52%, color-mix(in oklch, var(--seed-color) 72%, white) 100%);
+  --glow-1: var(--seed-color);
+  --glow-2: color-mix(in oklch, var(--seed-color) 65%, white);
+  --chart-1: var(--seed-color);
+  --chart-2: color-mix(in oklch, var(--seed-color) 76%, #6366f1);
+  --chart-3: color-mix(in oklch, var(--seed-color) 65%, #10b981);
+  --chart-4: color-mix(in oklch, var(--seed-color) 70%, #f59e0b);
+  --chart-5: color-mix(in oklch, var(--seed-color) 80%, black);
+  --sidebar: color-mix(in oklch, var(--seed-color) 9%, #f4f6fb);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--seed-color);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: color-mix(in oklch, var(--seed-color) 17%, #ffffff);
+  --sidebar-accent-foreground: color-mix(in oklch, var(--seed-color) 62%, #111318);
+  --sidebar-border: color-mix(in oklch, var(--seed-color) 14%, #e2e5ee);
+  --sidebar-ring: var(--seed-color);
+}
+
+.dark[data-palette="custom"] {
+  --seed-color: #1a73e8;
+  --background: color-mix(in oklch, var(--seed-color) 8%, #101217);
+  --foreground: color-mix(in oklch, var(--seed-color) 6%, #f2f4f8);
+  --card: color-mix(in oklch, var(--seed-color) 11%, #181b22);
+  --card-foreground: var(--foreground);
+  --popover: color-mix(in oklch, var(--seed-color) 13%, #1e222b);
+  --popover-foreground: var(--foreground);
+  --primary: color-mix(in oklch, var(--seed-color) 58%, white);
+  --primary-foreground: color-mix(in oklch, var(--seed-color) 28%, #090b10);
+  --secondary: color-mix(in oklch, var(--seed-color) 16%, #232833);
+  --secondary-foreground: var(--foreground);
+  --muted: color-mix(in oklch, var(--seed-color) 14%, #212530);
+  --muted-foreground: color-mix(in oklch, var(--seed-color) 18%, #9aa3b5);
+  --accent: color-mix(in oklch, var(--seed-color) 32%, #1e222b);
+  --accent-foreground: color-mix(in oklch, var(--seed-color) 32%, white);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: color-mix(in oklch, var(--seed-color) 20%, rgba(255, 255, 255, 0.12));
+  --input: color-mix(in oklch, var(--seed-color) 22%, rgba(255, 255, 255, 0.14));
+  --ring: color-mix(in oklch, var(--seed-color) 58%, white);
+  --gradient-accent: linear-gradient(135deg, var(--seed-color) 0%, color-mix(in oklch, var(--seed-color) 62%, white) 56%, color-mix(in oklch, var(--seed-color) 42%, white) 100%);
+  --glow-1: var(--seed-color);
+  --glow-2: color-mix(in oklch, var(--seed-color) 60%, black);
+  --sidebar: color-mix(in oklch, var(--seed-color) 10%, #14171e);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: color-mix(in oklch, var(--seed-color) 58%, white);
+  --sidebar-primary-foreground: color-mix(in oklch, var(--seed-color) 28%, #090b10);
+  --sidebar-accent: color-mix(in oklch, var(--seed-color) 24%, transparent);
+  --sidebar-accent-foreground: color-mix(in oklch, var(--seed-color) 30%, white);
+  --sidebar-border: color-mix(in oklch, var(--seed-color) 18%, rgba(255, 255, 255, 0.1));
+  --sidebar-ring: color-mix(in oklch, var(--seed-color) 58%, white);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -1439,11 +1511,14 @@ html[data-style="pixel"] {
   background: var(--background);
   backdrop-filter: none;
 }
-/* Iconic Gmail / Google Drive right-rounded half-pill sidebar navigation */
-[data-style="pixel"] .app-sidebar nav a {
+/* Iconic Gmail / Google Drive right-rounded half-pill sidebar navigation (expanded only so collapsed icons stay centered) */
+[data-style="pixel"] .app-sidebar:not([data-collapsed="true"]) nav a {
   border-radius: 0 9999px 9999px 0;
   margin-left: -0.5rem;
   padding-left: 1rem;
+}
+[data-style="pixel"] .app-sidebar[data-collapsed="true"] nav a {
+  border-radius: 9999px;
 }
 [data-style="pixel"] .nav-active {
   font-weight: 600;
@@ -1712,10 +1787,112 @@ main h1 {
   border: none;
   box-shadow: 0 0 0 1px var(--soft-line), 0 32px 72px -20px rgba(0, 0, 0, 0.22);
 }
-:is([data-style="soft"], [data-style="glass"]) :is([data-slot="dropdown-menu-content"], [data-slot="select-content"], [data-slot="dropdown-menu-sub-content"]) {
+:is([data-style="soft"], [data-style="glass"]) :is([data-slot="dropdown-menu-content"], [data-slot="select-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="popover-content"]) {
   border-radius: 1.15rem;
   box-shadow: 0 0 0 1px var(--soft-line), 0 20px 44px -16px rgba(0, 0, 0, 0.18);
   backdrop-filter: blur(28px) saturate(180%);
+}
+/* True Liquid Glass translucency on popovers, dialogs & 小欧 drawer in glass mode */
+[data-style="glass"] :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="dropdown-menu-content"], [data-slot="select-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="popover-content"]) {
+  background-color: color-mix(in oklch, var(--popover) 72%, transparent) !important;
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.55),
+    0 0 0 1px var(--card-edge),
+    0 24px 56px -18px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(36px) saturate(210%);
+}
+.dark[data-style="glass"] :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="dropdown-menu-content"], [data-slot="select-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="popover-content"]) {
+  background-color: color-mix(in oklch, var(--popover) 76%, transparent) !important;
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.14),
+    0 0 0 1px var(--card-edge),
+    0 28px 60px -18px rgba(0, 0, 0, 0.72);
+}
+[data-style="glass"] .assistant-panel {
+  background-color: color-mix(in oklch, var(--card) 74%, transparent) !important;
+  backdrop-filter: blur(36px) saturate(200%);
+}
+
+/* Theme-aware Browser Chrome, Tabs & Kanban Board */
+[data-style="glass"] .browser-chrome {
+  background-color: color-mix(in oklch, var(--card) 44%, transparent);
+  backdrop-filter: blur(32px) saturate(190%);
+  border-color: var(--card-edge);
+}
+[data-style="glass"] .browser-toolbar {
+  background-color: color-mix(in oklch, var(--card) 60%, transparent);
+  backdrop-filter: blur(28px) saturate(190%);
+}
+[data-style="material"] .browser-chrome {
+  border-radius: 1.5rem;
+  background-color: var(--m3-surface-container);
+  border-color: var(--card-edge);
+}
+[data-style="material"] .browser-toolbar {
+  background-color: var(--m3-surface-low);
+}
+:is([data-style="soft"], [data-style="glass"], [data-style="material"]) .browser-tab {
+  border-radius: 0.75rem;
+  margin-bottom: 4px;
+  height: 30px;
+}
+:is([data-style="soft"], [data-style="glass"]) .browser-tab[aria-selected="true"] {
+  background-color: color-mix(in oklch, var(--card) 86%, transparent);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  clip-path: none;
+}
+[data-style="material"] .browser-tab[aria-selected="true"] {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+  box-shadow: none;
+  clip-path: none;
+}
+[data-style="minimal"] .browser-tab {
+  border-radius: 0.35rem 0.35rem 0 0;
+}
+
+/* Kanban lanes & cards harmonize with Material You, Liquid Glass & Minimal */
+[data-style="material"] .kanban-lane {
+  border-radius: 1.5rem;
+  background-color: var(--m3-surface-container);
+  border-color: transparent;
+}
+[data-style="material"] .kanban-card {
+  border-radius: 1.25rem;
+  background-color: var(--card);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+[data-style="glass"] .kanban-lane {
+  background-color: color-mix(in oklch, var(--card) 42%, transparent);
+  border-color: var(--card-edge);
+  backdrop-filter: blur(28px) saturate(190%);
+}
+[data-style="glass"] .kanban-card {
+  background-color: color-mix(in oklch, var(--card) 68%, transparent);
+  border-color: var(--card-edge);
+}
+[data-style="minimal"] :is(.kanban-lane, .kanban-card) {
+  border-radius: 0.45rem;
+  box-shadow: none;
+}
+
+/* UI Density: Compact / Standard / Comfortable */
+html[data-density="compact"] {
+  font-size: 14.5px;
+}
+html[data-density="compact"] [data-slot="card"] {
+  --card-spacing: 0.9rem;
+}
+html[data-density="compact"] [data-slot="table-cell"],
+html[data-density="compact"] [data-slot="table-head"] {
+  padding-top: 0.4rem;
+  padding-bottom: 0.4rem;
+}
+html[data-density="comfortable"] {
+  font-size: 16.5px;
+}
+html[data-density="comfortable"] [data-slot="card"] {
+  --card-spacing: 1.45rem;
 }
 :is([data-style="soft"], [data-style="glass"]) :is([data-slot="dropdown-menu-item"], [data-slot="select-item"]) {
   border-radius: 0.75rem;

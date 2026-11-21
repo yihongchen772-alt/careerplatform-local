@@ -136,6 +136,8 @@ export function Omnibox({
         <SecurityIcon url={url} typing={focused && typing} />
         <input
           ref={inputRef}
+          type="text"
+          data-slot="omnibox-input"
           value={value}
           spellCheck={false}
           aria-label="地址栏"

@@ -496,19 +496,19 @@ export function TailorWorkbench({
             <span>点任何文字直接改 · ⌘B 加粗 · 回车在下面加一条 · 条目右侧可「隐藏」</span>
             <span className="ml-auto">{saveState === "saving" ? "保存中…" : saveState === "pending" ? "有改动，马上自动保存" : saveState === "error" ? "保存失败" : "已自动保存"}</span>
           </div>
-          <div className="overflow-auto rounded-lg border bg-muted/40 p-3">
+          <div className="surface-card overflow-auto rounded-xl p-4 dark:bg-black/25">
             <iframe
               ref={frameRef}
               title="定制简历预览"
               srcDoc={FRAME_SHELL}
-              className="block w-[210mm] rounded bg-white shadow-md"
+              className="mx-auto block w-[210mm] rounded-md bg-white shadow-[0_8px_32px_rgba(0,0,0,0.16)] ring-1 ring-black/10"
               style={{ height: `${Math.ceil(PAGE_PX) + 4}px` }}
             />
           </div>
         </div>
 
         <aside aria-label="改动和设置" className="w-full min-w-[300px] flex-1 space-y-4 lg:sticky lg:top-4 lg:max-h-[calc(100dvh-2rem)] lg:max-w-[420px] lg:overflow-auto">
-          <section className={cn("space-y-2 rounded-xl border p-3", overflow > 0 ? "border-amber-300 bg-amber-50/60 dark:border-amber-700 dark:bg-amber-950/30" : "")}>
+          <section className={cn("surface-card space-y-2 rounded-xl p-3.5", overflow > 0 ? "ring-1 ring-amber-500/45 bg-amber-500/8" : "")}>
             <div className="flex items-center justify-between gap-2">
               <p className="text-sm font-medium">{overflow > 0 ? `超出一页（多约 ${Math.max(1, Math.round(overflow / 18))} 行）` : "刚好一页"}</p>
               <div className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -526,7 +526,7 @@ export function TailorWorkbench({
             )}
           </section>
 
-          <section className="space-y-3 rounded-xl border p-3">
+          <section className="surface-card space-y-3 rounded-xl p-3.5">
             <div>
               <p className="text-sm font-medium">AI 改了 {changes.length} 处{changes.length ? `，现在用着 ${applied} 处` : ""}</p>
               {draft.summary && <p className="mt-1 text-xs text-muted-foreground">{draft.summary}</p>}

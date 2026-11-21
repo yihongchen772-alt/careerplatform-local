@@ -49,11 +49,15 @@ const NO_FLASH_THEME_SCRIPT = `
     var mode = localStorage.getItem("careerplatform:theme-mode") || "system";
     var palette = localStorage.getItem("careerplatform:theme-palette") || "indigo";
     var style = localStorage.getItem("careerplatform:theme-style") || "soft";
+    var density = localStorage.getItem("careerplatform:theme-density") || "standard";
+    var seed = localStorage.getItem("careerplatform:theme-seed") || "#1a73e8";
     var isDark = mode === "dark" || (mode === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
     var root = document.documentElement;
     if (isDark) root.classList.add("dark");
     root.setAttribute("data-palette", palette);
     root.setAttribute("data-style", style);
+    root.setAttribute("data-density", density);
+    if (palette === "custom" && /^#[0-9a-fA-F]{6}$/.test(seed)) root.style.setProperty("--seed-color", seed);
   } catch (e) {}
 })();
 `;

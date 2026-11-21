@@ -193,9 +193,9 @@ export default async function DashboardPage() {
       {/* The opening card: the same light card as the other pages, with today in one line. */}
       <header className="hero-card">
         <div aria-hidden="true" className="hero-decor pointer-events-none absolute inset-0">
-          <span className="absolute -right-10 -top-16 size-56 rounded-full bg-white/15 blur-2xl" />
-          <span className="absolute right-[18%] top-6 size-10 rotate-12 rounded-2xl bg-white/25 shadow-[0_10px_24px_-8px_rgba(0,0,0,0.25)]" />
-          <span className="absolute right-[8%] bottom-6 size-16 -rotate-6 rounded-[1.4rem] bg-gradient-to-br from-white/45 to-white/10 shadow-[0_14px_30px_-10px_rgba(0,0,0,0.3)]" />
+          <span className="absolute -right-10 -top-16 size-56 rounded-full bg-[var(--primary)]/12 blur-2xl" />
+          <span className="absolute right-[18%] top-6 size-10 rotate-12 rounded-2xl bg-[var(--primary)]/10 ring-1 ring-[var(--primary)]/15" />
+          <span className="absolute right-[8%] bottom-6 size-16 -rotate-6 rounded-[1.4rem] bg-gradient-to-br from-[var(--primary)]/16 to-transparent ring-1 ring-[var(--primary)]/12" />
         </div>
         <div className="relative flex flex-wrap items-end justify-between gap-4">
           <div className="min-w-0">
@@ -300,7 +300,7 @@ export default async function DashboardPage() {
       </div>
 
       {total > 0 && (
-        <section className="surface-card flex flex-wrap items-center justify-between gap-4 rounded-2xl px-5 py-4">
+        <section className="surface-card flex flex-wrap items-center justify-between gap-4 rounded-xl px-5 py-4">
           <div className="min-w-0">
             <h2 className="text-sm font-semibold tracking-tight">阶段转化概览</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
@@ -336,7 +336,7 @@ const STAT_TONES = {
     value: "text-emerald-600 dark:text-emerald-400",
   },
   slate: {
-    badge: "bg-slate-500/12 text-slate-500 dark:text-slate-400",
+    badge: "bg-foreground/[0.06] text-muted-foreground",
     value: "text-muted-foreground",
   },
 } as const;
@@ -359,7 +359,7 @@ function StatCard({
   const t = STAT_TONES[tone];
   return (
     <Link href={href} className="group block outline-none">
-      <Card className="stat-tile relative overflow-hidden rounded-2xl transition-transform duration-300 ease-(--ease-apple) group-hover:-translate-y-0.5" data-tone={tone}>
+      <Card className="stat-tile relative overflow-hidden rounded-xl transition-transform duration-300 ease-(--ease-apple) group-hover:-translate-y-0.5" data-tone={tone}>
         <CardContent className="flex min-h-30 flex-col justify-between gap-3 py-1">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">

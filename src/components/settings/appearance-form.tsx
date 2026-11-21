@@ -1,9 +1,12 @@
 "use client";
 
-import { Check, Laptop, Moon, Sparkles, Sun } from "lucide-react";
+import { useSyncExternalStore } from "react";
+import { Check, Laptop, Moon, Pipette, Sparkles, Sun } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useThemeSettings } from "@/components/theme-provider";
 import {
+  CUSTOM_SEED_SWATCHES,
+  DENSITIES,
   PALETTES,
   STYLES,
   THEME_PRESETS,
@@ -168,12 +171,15 @@ function StylePreview({ style }: { style: ThemeStyle }) {
 function PaletteCard({
   p,
   active,
+  isDark,
   onSelect,
 }: {
   p: (typeof PALETTES)[number];
   active: boolean;
+  isDark: boolean;
   onSelect: (id: ThemePalette) => void;
 }) {
+  const bgSurface = isDark ? p.darkSurface : p.surface;
   return (
     <button
       type="button"
@@ -186,30 +192,33 @@ function PaletteCard({
           : "border-border/70 bg-card/70 hover:border-primary/30"
       )}
     >
-      <span className="block rounded-xl border border-black/5 p-2.5 shadow-inner" style={{ backgroundColor: p.surface }}>
+      <span
+        className={cn("block rounded-xl border p-2.5 shadow-inner", isDark ? "border-white/10" : "border-black/5")}
+        style={{ backgroundColor: bgSurface }}
+      >
         <span className="mb-2 flex items-center justify-between">
           <span className="flex items-center gap-1">
-            <span className="size-1.5 rounded-full bg-black/20" />
-            <span className="size-1.5 rounded-full bg-black/10" />
-            <span className="size-1.5 rounded-full bg-black/10" />
+            <span className={cn("size-1.5 rounded-full", isDark ? "bg-white/25" : "bg-black/20")} />
+            <span className={cn("size-1.5 rounded-full", isDark ? "bg-white/15" : "bg-black/10")} />
+            <span className={cn("size-1.5 rounded-full", isDark ? "bg-white/15" : "bg-black/10")} />
           </span>
           <span className="h-1.5 w-6 rounded-full" style={{ background: `linear-gradient(90deg, ${p.swatch}, ${p.swatch2})` }} />
         </span>
         <span className="flex gap-2">
-          <span className="w-7 rounded-md bg-white/70 p-1.5 shadow-sm">
-            <span className="mb-1 block h-1 w-3 rounded-full" style={{ backgroundColor: p.swatch }} />
-            <span className="block h-1 w-4 rounded-full bg-black/10" />
+          <span className={cn("w-7 rounded-md p-1.5 shadow-sm", isDark ? "bg-white/8" : "bg-white/70")}>
+            <span className="mb-1 block h-1 w-3 rounded-full" style={{ backgroundColor: p.swatch2 }} />
+            <span className={cn("block h-1 w-4 rounded-full", isDark ? "bg-white/15" : "bg-black/10")} />
           </span>
-          <span className="flex-1 space-y-1 rounded-md bg-white/92 p-1.5 shadow-sm">
-            <span className="block h-1.5 w-12 rounded-full bg-black/20" />
-            <span className="block h-1 w-16 rounded-full bg-black/10" />
-            <span className="block h-1 w-10 rounded-full" style={{ backgroundColor: p.swatch2, opacity: 0.7 }} />
+          <span className={cn("flex-1 space-y-1 rounded-md p-1.5 shadow-sm", isDark ? "bg-white/10" : "bg-white/92")}>
+            <span className={cn("block h-1.5 w-12 rounded-full", isDark ? "bg-white/30" : "bg-black/20")} />
+            <span className={cn("block h-1 w-16 rounded-full", isDark ? "bg-white/15" : "bg-black/10")} />
+            <span className="block h-1 w-10 rounded-full" style={{ backgroundColor: p.swatch2, opacity: 0.85 }} />
           </span>
         </span>
       </span>
       <span className="mt-3 flex items-center gap-2.5">
         <span
-          className="size-5 shrink-0 rounded-full ring-2 ring-white/80 shadow-sm"
+          className="size-5 shrink-0 rounded-full ring-2 ring-white/80 shadow-sm dark:ring-white/25"
           style={{ background: `linear-gradient(135deg, ${p.swatch} 0%, ${p.swatch2} 100%)` }}
         />
         <span className="min-w-0 flex-1">
@@ -223,7 +232,17 @@ function PaletteCard({
 }
 
 export function AppearanceForm() {
-  const { mode, palette, style, setMode, setPalette, setStyle } = useThemeSettings();
+  const { mode, palette, style, density, seedColor, setMode, setPalette, setStyle, setDensity, setSeedColor } = useThemeSettings();
+  const systemDark = useSyncExternalStore(
+    (cb) => {
+      const mq = window.matchMedia("(prefers-color-scheme: dark)");
+      mq.addEventListener("change", cb);
+      return () => mq.removeEventListener("change", cb);
+    },
+    () => window.matchMedia("(prefers-color-scheme: dark)").matches,
+    () => false
+  );
+  const isDark = mode === "dark" || (mode === "system" && systemDark);
   const applePalettes = PALETTES.filter((p) => p.ecosystem === "apple");
   const googlePalettes = PALETTES.filter((p) => p.ecosystem === "google");
 
@@ -325,27 +344,112 @@ export function AppearanceForm() {
           </div>
         </div>
 
-        {/* 深浅色 */}
-        <div className="space-y-3">
-          <p className="text-xs font-medium text-muted-foreground">深浅色</p>
-          <div className="grid grid-cols-3 gap-2 rounded-2xl bg-muted/60 p-1.5">
-            {MODES.map((m) => {
-              const Icon = m.icon;
-              return (
+        {/* 深浅色 + 界面密度 */}
+        <div className="grid gap-5 md:grid-cols-2">
+          <div className="space-y-3">
+            <p className="text-xs font-medium text-muted-foreground">深浅色（同步系统原生窗口）</p>
+            <div className="grid grid-cols-3 gap-2 rounded-2xl bg-muted/60 p-1.5">
+              {MODES.map((m) => {
+                const Icon = m.icon;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setMode(m.id)}
+                    aria-pressed={mode === m.id}
+                    className={cn(
+                      "flex min-h-10 items-center justify-center gap-2 rounded-xl px-2 text-xs font-medium transition-all duration-200 sm:text-sm",
+                      mode === m.id
+                        ? "bg-card text-foreground shadow-[0_2px_10px_rgba(0,0,0,0.08)] ring-1 ring-border/60"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    <Icon className="size-4" />
+                    {m.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <p className="text-xs font-medium text-muted-foreground">界面密度与字号</p>
+            <div className="grid grid-cols-3 gap-2 rounded-2xl bg-muted/60 p-1.5">
+              {DENSITIES.map((d) => (
                 <button
-                  key={m.id}
+                  key={d.id}
                   type="button"
-                  onClick={() => setMode(m.id)}
-                  aria-pressed={mode === m.id}
+                  title={d.description}
+                  onClick={() => setDensity(d.id)}
+                  aria-pressed={density === d.id}
                   className={cn(
-                    "flex min-h-10 items-center justify-center gap-2 rounded-xl px-2 text-xs font-medium transition-all duration-200 sm:text-sm",
-                    mode === m.id
+                    "flex min-h-10 items-center justify-center rounded-xl px-2 text-xs font-medium transition-all duration-200 sm:text-sm",
+                    density === d.id
                       ? "bg-card text-foreground shadow-[0_2px_10px_rgba(0,0,0,0.08)] ring-1 ring-border/60"
                       : "text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  <Icon className="size-4" />
-                  {m.label}
+                  {d.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Material You 自定义动态取色 */}
+        <div
+          className={cn(
+            "space-y-3 rounded-2xl border p-4 transition-all",
+            palette === "custom" ? "border-primary/55 bg-primary/[0.04] ring-1 ring-primary/20" : "border-border/70 bg-card/60"
+          )}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                <Pipette className="size-4 text-primary" />
+                Material You 动态取色（任意种子色）
+                {palette === "custom" && <Check className="size-3.5 text-primary" />}
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                像 Android Pixel 一样任选一个主色，自动衍生整套浅色与深色色板
+              </p>
+            </div>
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium shadow-2xs transition-colors hover:border-primary/50">
+              <span className="size-4 rounded-full ring-1 ring-black/15" style={{ backgroundColor: seedColor }} />
+              <span className="font-mono uppercase">{seedColor}</span>
+              <input
+                type="color"
+                aria-label="自定义主色"
+                value={seedColor}
+                onChange={(e) => {
+                  setSeedColor(e.target.value);
+                  setPalette("custom");
+                }}
+                className="sr-only"
+              />
+            </label>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {CUSTOM_SEED_SWATCHES.map((item) => {
+              const selected = palette === "custom" && seedColor.toLowerCase() === item.color.toLowerCase();
+              return (
+                <button
+                  key={item.color}
+                  type="button"
+                  title={item.label}
+                  onClick={() => {
+                    setSeedColor(item.color);
+                    setPalette("custom");
+                  }}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-all",
+                    selected
+                      ? "border-primary/60 bg-primary/10 font-medium text-foreground ring-1 ring-primary/25"
+                      : "border-border/70 bg-card/80 text-muted-foreground hover:border-foreground/25 hover:text-foreground"
+                  )}
+                >
+                  <span className="size-3 rounded-full ring-1 ring-black/15" style={{ backgroundColor: item.color }} />
+                  {item.label}
                 </button>
               );
             })}
@@ -360,7 +464,7 @@ export function AppearanceForm() {
           </div>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {applePalettes.map((p) => (
-              <PaletteCard key={p.id} p={p} active={palette === p.id} onSelect={setPalette} />
+              <PaletteCard key={p.id} p={p} active={palette === p.id} isDark={isDark} onSelect={setPalette} />
             ))}
           </div>
         </div>
@@ -373,7 +477,7 @@ export function AppearanceForm() {
           </div>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {googlePalettes.map((p) => (
-              <PaletteCard key={p.id} p={p} active={palette === p.id} onSelect={setPalette} />
+              <PaletteCard key={p.id} p={p} active={palette === p.id} isDark={isDark} onSelect={setPalette} />
             ))}
           </div>
         </div>

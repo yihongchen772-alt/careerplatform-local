@@ -258,6 +258,9 @@ export type DesktopBridge = {
 declare global {
   interface Window {
     desktopBridge?: DesktopBridge;
+    desktopTheme?: {
+      sync: (payload: { mode: "light" | "dark" | "system"; isDark: boolean; backgroundColor?: string }) => Promise<boolean>;
+    };
   }
 }
 

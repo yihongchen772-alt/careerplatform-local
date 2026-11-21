@@ -28,7 +28,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useThemeSettings } from "@/components/theme-provider";
-import { PALETTES, STYLES, THEME_PRESETS, type ThemeMode } from "@/lib/theme";
+import { DENSITIES, PALETTES, STYLES, THEME_PRESETS, type ThemeMode } from "@/lib/theme";
 import { TOOL_LINKS } from "@/lib/nav-tools";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -280,7 +280,7 @@ function NavContent({
  * current module transform immediately.
  */
 function QuickThemeSwitcher() {
-  const { mode, palette, style, setMode, setPalette, setStyle } = useThemeSettings();
+  const { mode, palette, style, density, seedColor, setMode, setPalette, setStyle, setDensity, setSeedColor } = useThemeSettings();
   const modes: { id: ThemeMode; label: string; icon: typeof Sun }[] = [
     { id: "light", label: "浅色", icon: Sun },
     { id: "dark", label: "深色", icon: Moon },
@@ -392,7 +392,23 @@ function QuickThemeSwitcher() {
           </div>
 
           <div className="space-y-1.5">
-            <p className="text-[11px] font-medium text-muted-foreground">主题配色（12 种 · Apple &amp; Material You）</p>
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-medium text-muted-foreground">主题配色（12 套 + 动态取色）</p>
+              <label className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-border/70 bg-card/80 px-2 py-0.5 text-[10px] font-medium text-foreground hover:border-primary/50">
+                <span className="size-2.5 rounded-full ring-1 ring-black/15" style={{ backgroundColor: seedColor }} />
+                自定义
+                <input
+                  type="color"
+                  aria-label="自定义主色"
+                  value={seedColor}
+                  onChange={(e) => {
+                    setSeedColor(e.target.value);
+                    setPalette("custom");
+                  }}
+                  className="sr-only"
+                />
+              </label>
+            </div>
             <div className="grid grid-cols-3 gap-1.5">
               {PALETTES.map((p) => {
                 const active = palette === p.id;
@@ -416,6 +432,25 @@ function QuickThemeSwitcher() {
                   </button>
                 );
               })}
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <p className="text-[11px] font-medium text-muted-foreground">界面密度</p>
+            <div className="grid grid-cols-3 gap-1 rounded-xl bg-muted/70 p-1">
+              {DENSITIES.map((d) => (
+                <button
+                  key={d.id}
+                  type="button"
+                  onClick={() => setDensity(d.id)}
+                  className={cn(
+                    "flex h-6 items-center justify-center rounded-lg text-[11px] font-medium transition-all",
+                    density === d.id ? "bg-card text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {d.label.slice(0, 2)}
+                </button>
+              ))}
             </div>
           </div>
         </div>
@@ -487,10 +522,13 @@ export function DashboardNav({ userLabel }: { userLabel: string }) {
       <GlobalSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
 
       {/* Desktop sidebar — sticky & collapsible so full-bleed tools like 网申浏览器 get extra width. */}
-      <aside className={cn(
-        "app-sidebar hidden shrink-0 border-r border-(--sidebar-edge) bg-(--sidebar-surface) backdrop-blur-xl transition-[width] duration-200 ease-(--ease-apple) md:block print:hidden",
-        collapsed ? "w-[4.5rem]" : "w-60"
-      )}>
+      <aside
+        data-collapsed={collapsed ? "true" : "false"}
+        className={cn(
+          "app-sidebar hidden shrink-0 border-r border-(--sidebar-edge) bg-(--sidebar-surface) backdrop-blur-xl transition-[width] duration-200 ease-(--ease-apple) md:block print:hidden",
+          collapsed ? "w-[4.5rem]" : "w-60"
+        )}
+      >
         <div className="sticky top-0 h-screen overflow-y-auto">
           <NavContent
             userLabel={userLabel}

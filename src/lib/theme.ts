@@ -11,16 +11,38 @@ export type ThemePalette =
   | "pixel-sage"
   | "pixel-coral"
   | "rose"
-  | "amber";
+  | "amber"
+  | "custom";
 
 /** How surfaces look, independent of color: Apple (iOS/Liquid Glass/macOS), Google (Material You/Workspace), or Minimalist Studio. */
 export type ThemeStyle = "soft" | "glass" | "classic" | "material" | "pixel" | "minimal";
+
+export type ThemeDensity = "compact" | "standard" | "comfortable";
 
 export type ThemeEcosystem = "apple" | "google" | "studio";
 
 export const THEME_MODE_KEY = "careerplatform:theme-mode";
 export const THEME_PALETTE_KEY = "careerplatform:theme-palette";
 export const THEME_STYLE_KEY = "careerplatform:theme-style";
+export const THEME_DENSITY_KEY = "careerplatform:theme-density";
+export const THEME_SEED_KEY = "careerplatform:theme-seed";
+
+export const DENSITIES: { id: ThemeDensity; label: string; description: string }[] = [
+  { id: "compact", label: "紧凑高效", description: "更小留白，同屏多看 20% 表格与岗位" },
+  { id: "standard", label: "标准舒适", description: "默认黄金比例，兼顾密度与呼吸感" },
+  { id: "comfortable", label: "宽松大字", description: "更舒展的字号与间距，久看不累眼" },
+];
+
+export const CUSTOM_SEED_SWATCHES: { color: string; label: string }[] = [
+  { color: "#1a73e8", label: "晴空蓝" },
+  { color: "#7c3aed", label: "电光紫" },
+  { color: "#0ea5e9", label: "冰川青" },
+  { color: "#10b981", label: "森林绿" },
+  { color: "#f97316", label: "落日橘" },
+  { color: "#ec4899", label: "洋红粉" },
+  { color: "#e11d48", label: "绯红" },
+  { color: "#ca8a04", label: "琥珀黄" },
+];
 
 export const STYLES: {
   id: ThemeStyle;
@@ -274,7 +296,8 @@ export const THEME_PRESETS: {
 ];
 
 const VALID_STYLES = new Set<string>(STYLES.map((s) => s.id));
-const VALID_PALETTES = new Set<string>(PALETTES.map((p) => p.id));
+const VALID_PALETTES = new Set<string>([...PALETTES.map((p) => p.id), "custom"]);
+const VALID_DENSITIES = new Set<string>(DENSITIES.map((d) => d.id));
 
 export function normalizeStyle(value: string | null | undefined): ThemeStyle {
   return value && VALID_STYLES.has(value) ? (value as ThemeStyle) : "soft";
@@ -282,6 +305,14 @@ export function normalizeStyle(value: string | null | undefined): ThemeStyle {
 
 export function normalizePalette(value: string | null | undefined): ThemePalette {
   return value && VALID_PALETTES.has(value) ? (value as ThemePalette) : "indigo";
+}
+
+export function normalizeDensity(value: string | null | undefined): ThemeDensity {
+  return value && VALID_DENSITIES.has(value) ? (value as ThemeDensity) : "standard";
+}
+
+export function normalizeSeedColor(value: string | null | undefined): string {
+  return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value.trim()) ? value.trim() : "#1a73e8";
 }
 
 export function resolveIsDark(mode: ThemeMode): boolean {
@@ -293,12 +324,43 @@ export function resolveIsDark(mode: ThemeMode): boolean {
   );
 }
 
-/** Applies mode+palette+style to <html>. Shared by the blocking no-flash script
- * (as an inline string, see layout.tsx) and the client provider — keep the
- * logic identical between the two or the first paint won't match. */
-export function applyTheme(mode: ThemeMode, palette: ThemePalette, style: ThemeStyle) {
+export function paletteBackgroundColor(palette: ThemePalette, isDark: boolean): string {
+  const entry = PALETTES.find((p) => p.id === palette);
+  if (entry) return isDark ? entry.darkSurface : entry.surface;
+  return isDark ? "#121318" : "#f5f6fa";
+}
+
+/** Applies mode+palette+style+density+seed to <html> and syncs Electron native chrome.
+ * Shared by the blocking no-flash script (in layout.tsx) and the client provider. */
+export function applyTheme(
+  mode: ThemeMode,
+  palette: ThemePalette,
+  style: ThemeStyle,
+  density: ThemeDensity = "standard",
+  seedColor = "#1a73e8"
+) {
   const root = document.documentElement;
-  root.classList.toggle("dark", resolveIsDark(mode));
-  root.setAttribute("data-palette", normalizePalette(palette));
-  root.setAttribute("data-style", normalizeStyle(style));
+  const isDark = resolveIsDark(mode);
+  const safePalette = normalizePalette(palette);
+  const safeStyle = normalizeStyle(style);
+  const safeDensity = normalizeDensity(density);
+  const safeSeed = normalizeSeedColor(seedColor);
+
+  root.classList.toggle("dark", isDark);
+  root.setAttribute("data-palette", safePalette);
+  root.setAttribute("data-style", safeStyle);
+  root.setAttribute("data-density", safeDensity);
+  if (safePalette === "custom") {
+    root.style.setProperty("--seed-color", safeSeed);
+  } else {
+    root.style.removeProperty("--seed-color");
+  }
+
+  const bg = paletteBackgroundColor(safePalette, isDark);
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", bg);
+
+  if (typeof window !== "undefined") {
+    void window.desktopTheme?.sync({ mode, isDark, backgroundColor: bg }).catch(() => {});
+  }
 }

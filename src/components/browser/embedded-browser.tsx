@@ -1552,7 +1552,7 @@ export function EmbeddedBrowser({
   return (
     <div
       className={cn(
-        "flex flex-col overflow-hidden bg-muted dark:bg-background",
+        "browser-chrome flex flex-col overflow-hidden bg-muted dark:bg-background",
         expanded ? "fixed inset-0 z-[45]" : "rounded-xl border shadow-[0_1px_3px_rgb(0_0_0/0.06),0_8px_24px_-12px_rgb(0_0_0/0.18)]",
         !expanded && autoHeight && "h-[calc(100dvh-1.75rem)] min-h-[26rem]"
       )}
@@ -1569,7 +1569,7 @@ export function EmbeddedBrowser({
         />
 
         {/* toolbar */}
-        <div className="flex h-11 shrink-0 items-center gap-1 border-b bg-card px-2">
+        <div className="browser-toolbar flex h-11 shrink-0 items-center gap-1 border-b bg-card px-2">
           <ToolbarIcon label="收起 / 展开主侧栏" className="hidden md:inline-flex" onClick={() => window.dispatchEvent(new Event("cp:sidebar-toggle"))}><PanelLeft /></ToolbarIcon>
           <ToolbarIcon label="后退" shortcut={`${mod}[`} disabled={!activeTab?.canGoBack} onClick={() => bridge.back()}><ArrowLeft /></ToolbarIcon>
           <ToolbarIcon label="前进" shortcut={`${mod}]`} disabled={!activeTab?.canGoForward} onClick={() => bridge.forward()}><ArrowRight /></ToolbarIcon>
@@ -1645,7 +1645,7 @@ export function EmbeddedBrowser({
                 {fillLabel}
               </Button>
               <DropdownMenu open={fillMenuOpen} onOpenChange={setFillMenuOpen}>
-                <DropdownMenuTrigger render={<Button size="sm" className="rounded-l-none border-l border-l-white/25 px-1.5" aria-label="填写选项" title="简历、填写范围和自动化选项" />}>
+                <DropdownMenuTrigger render={<Button size="sm" className="rounded-l-none border-l border-l-current/25 px-1.5" aria-label="填写选项" title="简历、填写范围和自动化选项" />}>
                   <ChevronDown />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-64">
@@ -1799,6 +1799,8 @@ export function EmbeddedBrowser({
             <Search className="size-3.5 text-muted-foreground" />
             <input
               ref={findRef}
+              type="text"
+              data-slot="find-input"
               value={findText}
               aria-label="在页面中查找"
               onChange={(e) => {
@@ -2108,7 +2110,7 @@ export function EmbeddedBrowser({
         </div>
 
         {agentMounted && (
-          <div className={cn("flex w-[min(400px,40vw)] min-w-[320px] shrink-0 flex-col border-l bg-card", !agentOpen && "hidden")} onPointerEnter={refreshFrame}>
+          <div className={cn("assistant-panel flex w-[min(400px,40vw)] min-w-[320px] shrink-0 flex-col border-l bg-card", !agentOpen && "hidden")} onPointerEnter={refreshFrame}>
             <AgentChat
               askText={agentAsk}
               onAskConsumed={() => setAgentAsk(null)}
@@ -2119,7 +2121,7 @@ export function EmbeddedBrowser({
               suggestions={AGENT_PAGE_SUGGESTIONS}
               intro={<p className="text-sm text-muted-foreground">我能看到你正在看的这个页面：问我这个岗位值不值得投、这家公司怎么样，或者让我按你的经历写这页的开放题（写好点复制，粘贴进去）。</p>}
               header={(
-                <div className="flex items-center gap-2 border-b px-3 py-2">
+                <div className="assistant-head flex items-center gap-2 border-b px-3 py-2">
                   <Sparkles className="size-4 text-primary" />
                   <div className="min-w-0 flex-1"><p className="text-sm font-medium">小欧</p><p className="truncate text-xs text-muted-foreground">{currentUrl ? `看着：${activeTab?.title || currentUrl}` : "打开一个网页后，小欧能看着它回答"}</p></div>
                   <ToolbarIcon label="关闭小欧" onClick={() => setAgentOpen(false)}><X /></ToolbarIcon>

@@ -97,7 +97,7 @@ function ApplicationCard({
       }}
       onDragEnd={() => onDragEndApp?.()}
       className={cn(
-        "group relative rounded-xl border bg-card/90 px-3 py-2.5 shadow-[0_2px_8px_-6px_rgba(0,0,0,0.25)] transition-all duration-200 hover:-translate-y-px hover:shadow-[0_8px_20px_-14px_rgba(0,0,0,0.35)]",
+        "kanban-card group relative rounded-xl border bg-card/90 px-3 py-2.5 shadow-[0_2px_8px_-6px_rgba(0,0,0,0.25)] transition-all duration-200 hover:-translate-y-px hover:shadow-[0_8px_20px_-14px_rgba(0,0,0,0.35)]",
         !closed && "cursor-grab active:cursor-grabbing",
         closed && app.currentStage === "REJECTED" ? "border-rose-500/30" : "border-border/65 hover:border-primary/25"
       )}
@@ -219,7 +219,7 @@ function BoardBody({ applications, hits, narrowed, now }: { applications: BoardA
             if (appId) void handleLaneDrop(lane, appId);
           }}
           className={cn(
-            "min-w-0 rounded-xl border bg-card/35 p-2 backdrop-blur-md transition-colors",
+            "kanban-lane min-w-0 rounded-xl border bg-card/35 p-2 backdrop-blur-md transition-colors",
             dropLane === lane.title ? "border-primary/70 bg-primary/5 ring-2 ring-primary/25" : "border-border/65"
           )}
         >
@@ -256,7 +256,7 @@ export function ApplicationsBoard({ applications, sections, folded, onToggleFold
   }, [orderKey, orderLabel]);
 
   if (applications.length === 0) {
-    return <div className="flex min-h-72 flex-col items-center justify-center rounded-[1.6rem] border border-dashed border-border/80 bg-card/55 px-6 py-12 text-center"><Send className="size-6 text-primary" /><h3 className="mt-5 text-base font-semibold">从第一份投递开始</h3><p className="mt-1 text-sm text-muted-foreground">添加投递记录后，这里会按阶段整理你的机会。</p></div>;
+    return <div className="kanban-lane flex min-h-72 flex-col items-center justify-center rounded-xl border border-dashed border-border/80 bg-card/55 px-6 py-12 text-center"><Send className="size-6 text-primary" /><h3 className="mt-5 text-base font-semibold">从第一份投递开始</h3><p className="mt-1 text-sm text-muted-foreground">添加投递记录后，这里会按阶段整理你的机会。</p></div>;
   }
 
   return <div className="space-y-6">

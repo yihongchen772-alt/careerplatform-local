@@ -68,7 +68,7 @@ export function TabStrip({
                 if (event.key === "Enter" || event.key === " ") onSwitch(tab.id);
               }}
               className={cn(
-                "group relative flex h-[34px] min-w-[4.75rem] max-w-[14rem] flex-1 basis-[14rem] cursor-default items-center gap-2 rounded-t-[10px] pr-1.5 pl-3 text-[12.5px] outline-none select-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50",
+                "browser-tab group relative flex h-[34px] min-w-[4.75rem] max-w-[14rem] flex-1 basis-[14rem] cursor-default items-center gap-2 rounded-t-[10px] pr-1.5 pl-3 text-[12.5px] outline-none select-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50",
                 active
                   ? "z-10 bg-card text-foreground shadow-[0_0_0_1px_var(--border)] [clip-path:inset(-2px_-2px_0_-2px)]"
                   : "text-muted-foreground hover:bg-card/60 hover:text-foreground"
