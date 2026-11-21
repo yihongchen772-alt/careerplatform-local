@@ -28,7 +28,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useThemeSettings } from "@/components/theme-provider";
-import { PALETTES, STYLES, type ThemeMode } from "@/lib/theme";
+import { PALETTES, STYLES, THEME_PRESETS, type ThemeMode } from "@/lib/theme";
 import { TOOL_LINKS } from "@/lib/nav-tools";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -295,12 +295,12 @@ function QuickThemeSwitcher() {
       >
         <Palette className="size-4" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent side="top" align="start" sideOffset={8} className="w-72 p-3">
+      <DropdownMenuContent side="top" align="start" sideOffset={8} className="max-h-[82vh] w-80 overflow-y-auto p-3">
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
               <Sparkles className="size-3.5 text-primary" />
-              外观与主题中心
+              外观与双生态主题
             </span>
             <Link href="/settings?tab=appearance" className="text-[11px] font-medium text-primary hover:underline">
               完整设置
@@ -329,7 +329,38 @@ function QuickThemeSwitcher() {
           </div>
 
           <div className="space-y-1.5">
-            <p className="text-[11px] font-medium text-muted-foreground">界面风格（立即生效）</p>
+            <p className="text-[11px] font-medium text-muted-foreground">一键预设（Apple / Google）</p>
+            <div className="flex flex-wrap gap-1.5">
+              {THEME_PRESETS.map((preset) => {
+                const active = style === preset.style && palette === preset.palette;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => {
+                      setStyle(preset.style);
+                      setPalette(preset.palette);
+                    }}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-all",
+                      active
+                        ? "border-primary/60 bg-primary/12 text-foreground ring-1 ring-primary/20"
+                        : "border-border/70 bg-card/60 text-muted-foreground hover:border-foreground/20 hover:text-foreground"
+                    )}
+                  >
+                    <span
+                      className="size-2.5 shrink-0 rounded-full"
+                      style={{ background: `linear-gradient(135deg, ${preset.swatch}, ${preset.swatch2})` }}
+                    />
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <p className="text-[11px] font-medium text-muted-foreground">界面风格（6 套 · 立即生效）</p>
             <div className="grid grid-cols-2 gap-1.5">
               {STYLES.map((item) => {
                 const active = style === item.id;
@@ -345,9 +376,13 @@ function QuickThemeSwitcher() {
                         : "border-border/70 bg-card/60 text-muted-foreground hover:border-foreground/20 hover:text-foreground"
                     )}
                   >
-                    <span className="flex items-center justify-between text-xs font-semibold text-foreground">
-                      {item.label}
-                      {active && <Check className="size-3 text-primary" />}
+                    <span className="flex items-center justify-between gap-1 text-xs font-semibold text-foreground">
+                      <span className="truncate">{item.label}</span>
+                      {active ? (
+                        <Check className="size-3 shrink-0 text-primary" />
+                      ) : (
+                        <span className="shrink-0 text-[9px] font-normal text-muted-foreground">{item.badge}</span>
+                      )}
                     </span>
                     <span className="mt-0.5 line-clamp-1 text-[10px] text-muted-foreground">{item.description}</span>
                   </button>
@@ -357,7 +392,7 @@ function QuickThemeSwitcher() {
           </div>
 
           <div className="space-y-1.5">
-            <p className="text-[11px] font-medium text-muted-foreground">主题配色</p>
+            <p className="text-[11px] font-medium text-muted-foreground">主题配色（12 种 · Apple &amp; Material You）</p>
             <div className="grid grid-cols-3 gap-1.5">
               {PALETTES.map((p) => {
                 const active = palette === p.id;
@@ -373,7 +408,10 @@ function QuickThemeSwitcher() {
                         : "border-border/60 bg-card/60 text-muted-foreground hover:border-foreground/20 hover:text-foreground"
                     )}
                   >
-                    <span className="size-3.5 shrink-0 rounded-full ring-1 ring-black/10" style={{ backgroundColor: p.swatch }} />
+                    <span
+                      className="size-3.5 shrink-0 rounded-full ring-1 ring-black/10"
+                      style={{ background: `linear-gradient(135deg, ${p.swatch}, ${p.swatch2})` }}
+                    />
                     <span className="truncate text-[11px]">{p.label}</span>
                   </button>
                 );

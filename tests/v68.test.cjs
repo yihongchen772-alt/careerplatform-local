@@ -470,10 +470,11 @@ test("v1.69.1: browser:open-url reuses existing tab without refreshing and opens
   assert.match(qqParsed.jobs[0].description, /校园招聘（应届毕业生）/);
 });
 
-test("v1.69.2: Apple/iOS UI styles, distinct light/dark palettes, and sidebar QuickThemeSwitcher", () => {
+test("v1.69.2: Apple/iOS + Google/Android UI styles, distinct light/dark palettes, and sidebar QuickThemeSwitcher", () => {
   const themeLib = loadTs("src/lib/theme.ts");
-  assert.equal(themeLib.STYLES.length, 4);
-  assert.equal(themeLib.PALETTES.length, 6);
+  assert.equal(themeLib.STYLES.length, 6);
+  assert.equal(themeLib.PALETTES.length, 12);
+  assert.equal(themeLib.THEME_PRESETS.length, 6);
 
   const css = fs.readFileSync(path.resolve(__dirname, "../src/app/globals.css"), "utf8");
   // Dark palettes keep their distinct identities instead of being flattened by a global :root.dark[data-palette] override
@@ -481,11 +482,20 @@ test("v1.69.2: Apple/iOS UI styles, distinct light/dark palettes, and sidebar Qu
   assert.match(css, /\.dark\[data-palette="tech"\]/);
   assert.match(css, /\.dark\[data-palette="aurora"\]/);
   assert.match(css, /\.dark\[data-palette="champagne"\]/);
+  assert.match(css, /\.dark\[data-palette="google"\]/);
+  assert.match(css, /\.dark\[data-palette="pixel-lavender"\]/);
+  assert.match(css, /\.dark\[data-palette="pixel-sage"\]/);
+  assert.match(css, /\.dark\[data-palette="pixel-coral"\]/);
+  assert.match(css, /\.dark\[data-palette="rose"\]/);
+  assert.match(css, /\.dark\[data-palette="amber"\]/);
   assert.match(css, /\[data-style="glass"\] \.app-sidebar/);
+  assert.match(css, /\[data-style="material"\] \.app-sidebar/);
+  assert.match(css, /\[data-style="pixel"\] \.app-sidebar/);
 
   const navSrc = fs.readFileSync(path.resolve(__dirname, "../src/components/dashboard/nav.tsx"), "utf8");
   assert.match(navSrc, /QuickThemeSwitcher/);
   assert.match(navSrc, /nav-item-chip/);
+  assert.match(navSrc, /THEME_PRESETS/);
 });
 
 test("v1.69.3: BUILT_IN_BOARDS focuses exclusively on Moka, Beisen (zhiye.com), and Feishu ATS boards", () => {

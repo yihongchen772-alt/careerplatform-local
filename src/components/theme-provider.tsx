@@ -3,6 +3,8 @@
 import { createContext, useContext, useEffect, useSyncExternalStore } from "react";
 import {
   applyTheme,
+  normalizePalette,
+  normalizeStyle,
   THEME_MODE_KEY,
   THEME_PALETTE_KEY,
   THEME_STYLE_KEY,
@@ -61,17 +63,18 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     modeStore.getSnapshot,
     modeStore.getServerSnapshot
   );
-  const palette = useSyncExternalStore(
+  const rawPalette = useSyncExternalStore(
     paletteStore.subscribe,
     paletteStore.getSnapshot,
     paletteStore.getServerSnapshot
   );
-
-  const style = useSyncExternalStore(
+  const rawStyle = useSyncExternalStore(
     styleStore.subscribe,
     styleStore.getSnapshot,
     styleStore.getServerSnapshot
   );
+  const palette = normalizePalette(rawPalette);
+  const style = normalizeStyle(rawStyle);
 
   useEffect(() => {
     applyTheme(mode, palette, style);

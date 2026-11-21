@@ -453,6 +453,426 @@
   --sidebar-ring: #e4b68a;
 }
 
+/* ---------- Palette 7: Google 晴空蓝 (google / Chrome & Android Blue) ---------- */
+[data-palette="google"] {
+  --background: #f0f4f9;
+  --foreground: #1f1f1f;
+  --card: #ffffff;
+  --card-foreground: #1f1f1f;
+  --popover: #ffffff;
+  --popover-foreground: #1f1f1f;
+  --primary: #0b57d0;
+  --primary-foreground: #ffffff;
+  --secondary: #e3ecf8;
+  --secondary-foreground: #041e49;
+  --muted: #e8eef6;
+  --muted-foreground: #5f6368;
+  --accent: #d3e3fd;
+  --accent-foreground: #041e49;
+  --destructive: #b3261e;
+  --border: #d7e2f1;
+  --input: #d7e2f1;
+  --ring: #1a73e8;
+  --gradient-accent: linear-gradient(135deg, #0b57d0 0%, #1a73e8 54%, #4285f4 100%);
+  --glow-1: #1a73e8;
+  --glow-2: #34a853;
+  --chart-1: #1a73e8;
+  --chart-2: #34a853;
+  --chart-3: #fbbc04;
+  --chart-4: #ea4335;
+  --chart-5: #4285f4;
+  --sidebar: #eaf1fb;
+  --sidebar-foreground: #1f1f1f;
+  --sidebar-primary: #0b57d0;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #d3e3fd;
+  --sidebar-accent-foreground: #041e49;
+  --sidebar-border: #d7e2f1;
+  --sidebar-ring: #1a73e8;
+}
+
+.dark[data-palette="google"] {
+  --background: #11141a;
+  --foreground: #e3e8f0;
+  --card: #1b2029;
+  --card-foreground: #e3e8f0;
+  --popover: #222833;
+  --popover-foreground: #e3e8f0;
+  --primary: #a8c7fa;
+  --primary-foreground: #062e6f;
+  --secondary: #252d3a;
+  --secondary-foreground: #e3e8f0;
+  --muted: #232a36;
+  --muted-foreground: #9aa6b8;
+  --accent: #004a77;
+  --accent-foreground: #c2e7ff;
+  --destructive: #f2b8b5;
+  --border: rgba(168, 199, 250, 0.14);
+  --input: rgba(168, 199, 250, 0.17);
+  --ring: #a8c7fa;
+  --gradient-accent: linear-gradient(135deg, #4285f4 0%, #8ab4f8 55%, #a8c7fa 100%);
+  --glow-1: #1a73e8;
+  --glow-2: #004a77;
+  --sidebar: #161b23;
+  --sidebar-foreground: #e3e8f0;
+  --sidebar-primary: #a8c7fa;
+  --sidebar-primary-foreground: #062e6f;
+  --sidebar-accent: rgba(168, 199, 250, 0.16);
+  --sidebar-accent-foreground: #d3e3fd;
+  --sidebar-border: rgba(168, 199, 250, 0.12);
+  --sidebar-ring: #a8c7fa;
+}
+
+/* ---------- Palette 8: M3 薰衣草紫 (pixel-lavender / Material You Baseline) ---------- */
+[data-palette="pixel-lavender"] {
+  --background: #f7f2fa;
+  --foreground: #1d1b20;
+  --card: #fffbff;
+  --card-foreground: #1d1b20;
+  --popover: #fffbff;
+  --popover-foreground: #1d1b20;
+  --primary: #6750a4;
+  --primary-foreground: #ffffff;
+  --secondary: #ede6f4;
+  --secondary-foreground: #21005d;
+  --muted: #f1ebf6;
+  --muted-foreground: #625b71;
+  --accent: #eaddff;
+  --accent-foreground: #21005d;
+  --destructive: #b3261e;
+  --border: #dfd6ea;
+  --input: #dfd6ea;
+  --ring: #6750a4;
+  --gradient-accent: linear-gradient(135deg, #6750a4 0%, #7f67be 52%, #b69df8 100%);
+  --glow-1: #7f67be;
+  --glow-2: #d0bcff;
+  --chart-1: #6750a4;
+  --chart-2: #7d5260;
+  --chart-3: #9a82db;
+  --chart-4: #625b71;
+  --chart-5: #4f378b;
+  --sidebar: #f3edf7;
+  --sidebar-foreground: #1d1b20;
+  --sidebar-primary: #6750a4;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e8def8;
+  --sidebar-accent-foreground: #1d192b;
+  --sidebar-border: #dfd6ea;
+  --sidebar-ring: #6750a4;
+}
+
+.dark[data-palette="pixel-lavender"] {
+  --background: #141218;
+  --foreground: #e6e0e9;
+  --card: #1d1b23;
+  --card-foreground: #e6e0e9;
+  --popover: #24212b;
+  --popover-foreground: #e6e0e9;
+  --primary: #d0bcff;
+  --primary-foreground: #381e72;
+  --secondary: #2b2636;
+  --secondary-foreground: #e6e0e9;
+  --muted: #272330;
+  --muted-foreground: #cac4d0;
+  --accent: #4a4458;
+  --accent-foreground: #e8def8;
+  --destructive: #f2b8b5;
+  --border: rgba(208, 188, 255, 0.14);
+  --input: rgba(208, 188, 255, 0.18);
+  --ring: #d0bcff;
+  --gradient-accent: linear-gradient(135deg, #9a82db 0%, #b69df8 52%, #d0bcff 100%);
+  --glow-1: #7f67be;
+  --glow-2: #4f378b;
+  --sidebar: #191620;
+  --sidebar-foreground: #e6e0e9;
+  --sidebar-primary: #d0bcff;
+  --sidebar-primary-foreground: #381e72;
+  --sidebar-accent: #4a4458;
+  --sidebar-accent-foreground: #e8def8;
+  --sidebar-border: rgba(208, 188, 255, 0.12);
+  --sidebar-ring: #d0bcff;
+}
+
+/* ---------- Palette 9: Pixel 鼠尾草绿 (pixel-sage / Android 15 Dynamic Sage) ---------- */
+[data-palette="pixel-sage"] {
+  --background: #f0f5f0;
+  --foreground: #18211b;
+  --card: #fbfdfb;
+  --card-foreground: #18211b;
+  --popover: #fbfdfb;
+  --popover-foreground: #18211b;
+  --primary: #34694a;
+  --primary-foreground: #ffffff;
+  --secondary: #e2ece3;
+  --secondary-foreground: #123320;
+  --muted: #e6efe7;
+  --muted-foreground: #526358;
+  --accent: #c7e7cf;
+  --accent-foreground: #0d3820;
+  --destructive: #ba1a1a;
+  --border: #d1e0d4;
+  --input: #d1e0d4;
+  --ring: #386a4b;
+  --gradient-accent: linear-gradient(135deg, #2d5e41 0%, #3d7554 52%, #66a37d 100%);
+  --glow-1: #4d8a64;
+  --glow-2: #8ec9a4;
+  --chart-1: #34694a;
+  --chart-2: #528265;
+  --chart-3: #76a688;
+  --chart-4: #3a6470;
+  --chart-5: #234d34;
+  --sidebar: #eaf1eb;
+  --sidebar-foreground: #18211b;
+  --sidebar-primary: #34694a;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #cfe7d5;
+  --sidebar-accent-foreground: #0d3820;
+  --sidebar-border: #d1e0d4;
+  --sidebar-ring: #386a4b;
+}
+
+.dark[data-palette="pixel-sage"] {
+  --background: #0f1511;
+  --foreground: #e2ebe3;
+  --card: #18211b;
+  --card-foreground: #e2ebe3;
+  --popover: #1f2a23;
+  --popover-foreground: #e2ebe3;
+  --primary: #9ad4ae;
+  --primary-foreground: #08371c;
+  --secondary: #243329;
+  --secondary-foreground: #e2ebe3;
+  --muted: #212e25;
+  --muted-foreground: #9cb3a3;
+  --accent: #274a34;
+  --accent-foreground: #c7e7cf;
+  --destructive: #ffb4ab;
+  --border: rgba(154, 212, 174, 0.14);
+  --input: rgba(154, 212, 174, 0.17);
+  --ring: #9ad4ae;
+  --gradient-accent: linear-gradient(135deg, #528f6a 0%, #7ec296 55%, #a8e0bb 100%);
+  --glow-1: #386a4b;
+  --glow-2: #1f4730;
+  --sidebar: #131b16;
+  --sidebar-foreground: #e2ebe3;
+  --sidebar-primary: #9ad4ae;
+  --sidebar-primary-foreground: #08371c;
+  --sidebar-accent: rgba(154, 212, 174, 0.16);
+  --sidebar-accent-foreground: #d1f0db;
+  --sidebar-border: rgba(154, 212, 174, 0.12);
+  --sidebar-ring: #9ad4ae;
+}
+
+/* ---------- Palette 10: Pixel 珊瑚陶橘 (pixel-coral / Material You Terracotta) ---------- */
+[data-palette="pixel-coral"] {
+  --background: #fbf2ee;
+  --foreground: #271814;
+  --card: #fffcfb;
+  --card-foreground: #271814;
+  --popover: #fffcfb;
+  --popover-foreground: #271814;
+  --primary: #c24b31;
+  --primary-foreground: #ffffff;
+  --secondary: #f3e2db;
+  --secondary-foreground: #461b10;
+  --muted: #f5e6e0;
+  --muted-foreground: #7a5c53;
+  --accent: #ffdbd0;
+  --accent-foreground: #681e0d;
+  --destructive: #ba1a1a;
+  --border: #ebd4cb;
+  --input: #ebd4cb;
+  --ring: #c44d34;
+  --gradient-accent: linear-gradient(135deg, #b54026 0%, #d45d42 52%, #ef8b6d 100%);
+  --glow-1: #e06a4d;
+  --glow-2: #f4a58a;
+  --chart-1: #c24b31;
+  --chart-2: #df7456;
+  --chart-3: #f0a07d;
+  --chart-4: #994636;
+  --chart-5: #7d2f1e;
+  --sidebar: #f7eae5;
+  --sidebar-foreground: #271814;
+  --sidebar-primary: #c24b31;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f9d8ce;
+  --sidebar-accent-foreground: #5e1b0b;
+  --sidebar-border: #ebd4cb;
+  --sidebar-ring: #c44d34;
+}
+
+.dark[data-palette="pixel-coral"] {
+  --background: #1a110e;
+  --foreground: #f6e7e2;
+  --card: #261a16;
+  --card-foreground: #f6e7e2;
+  --popover: #2f201b;
+  --popover-foreground: #f6e7e2;
+  --primary: #ffb5a0;
+  --primary-foreground: #561708;
+  --secondary: #382520;
+  --secondary-foreground: #f6e7e2;
+  --muted: #34221d;
+  --muted-foreground: #c7a69c;
+  --accent: #5e2a1d;
+  --accent-foreground: #ffdbd0;
+  --destructive: #ffb4ab;
+  --border: rgba(255, 181, 160, 0.14);
+  --input: rgba(255, 181, 160, 0.18);
+  --ring: #ffb5a0;
+  --gradient-accent: linear-gradient(135deg, #d96b50 0%, #f2947a 55%, #ffc4b3 100%);
+  --glow-1: #b54026;
+  --glow-2: #752715;
+  --sidebar: #201512;
+  --sidebar-foreground: #f6e7e2;
+  --sidebar-primary: #ffb5a0;
+  --sidebar-primary-foreground: #561708;
+  --sidebar-accent: rgba(255, 181, 160, 0.16);
+  --sidebar-accent-foreground: #ffdbd0;
+  --sidebar-border: rgba(255, 181, 160, 0.12);
+  --sidebar-ring: #ffb5a0;
+}
+
+/* ---------- Palette 11: 樱花粉雾 (rose / Pixel Rose Quartz) ---------- */
+[data-palette="rose"] {
+  --background: #fcf1f5;
+  --foreground: #26161d;
+  --card: #fffcfd;
+  --card-foreground: #26161d;
+  --popover: #fffcfd;
+  --popover-foreground: #26161d;
+  --primary: #c93b6b;
+  --primary-foreground: #ffffff;
+  --secondary: #f5e2ea;
+  --secondary-foreground: #4c142a;
+  --muted: #f7e7ee;
+  --muted-foreground: #7a5867;
+  --accent: #ffd9e5;
+  --accent-foreground: #6b1133;
+  --destructive: #ba1a1a;
+  --border: #ecd4de;
+  --input: #ecd4de;
+  --ring: #cf3f70;
+  --gradient-accent: linear-gradient(135deg, #be3262 0%, #db5180 52%, #f486ac 100%);
+  --glow-1: #e35d8b;
+  --glow-2: #f4a4c0;
+  --chart-1: #c93b6b;
+  --chart-2: #e26b93;
+  --chart-3: #f39ab8;
+  --chart-4: #994066;
+  --chart-5: #7d2045;
+  --sidebar: #f8eaf0;
+  --sidebar-foreground: #26161d;
+  --sidebar-primary: #c93b6b;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #fad7e4;
+  --sidebar-accent-foreground: #661131;
+  --sidebar-border: #ecd4de;
+  --sidebar-ring: #cf3f70;
+}
+
+.dark[data-palette="rose"] {
+  --background: #191014;
+  --foreground: #f6e7ed;
+  --card: #25191f;
+  --card-foreground: #f6e7ed;
+  --popover: #2e1f27;
+  --popover-foreground: #f6e7ed;
+  --primary: #ffb0ca;
+  --primary-foreground: #540f29;
+  --secondary: #37242e;
+  --secondary-foreground: #f6e7ed;
+  --muted: #33212a;
+  --muted-foreground: #c7a4b3;
+  --accent: #5e223b;
+  --accent-foreground: #ffd9e5;
+  --destructive: #ffb4ab;
+  --border: rgba(255, 176, 202, 0.14);
+  --input: rgba(255, 176, 202, 0.18);
+  --ring: #ffb0ca;
+  --gradient-accent: linear-gradient(135deg, #d95584 0%, #f282a8 55%, #ffc0d5 100%);
+  --glow-1: #b53462;
+  --glow-2: #731d3d;
+  --sidebar: #20141a;
+  --sidebar-foreground: #f6e7ed;
+  --sidebar-primary: #ffb0ca;
+  --sidebar-primary-foreground: #540f29;
+  --sidebar-accent: rgba(255, 176, 202, 0.16);
+  --sidebar-accent-foreground: #ffd9e5;
+  --sidebar-border: rgba(255, 176, 202, 0.12);
+  --sidebar-ring: #ffb0ca;
+}
+
+/* ---------- Palette 12: 暖阳琥珀金 (amber / Material You Honey Gold) ---------- */
+[data-palette="amber"] {
+  --background: #faf4e8;
+  --foreground: #241d11;
+  --card: #fffdf8;
+  --card-foreground: #241d11;
+  --popover: #fffdf8;
+  --popover-foreground: #241d11;
+  --primary: #a86208;
+  --primary-foreground: #ffffff;
+  --secondary: #f2e6cf;
+  --secondary-foreground: #442b05;
+  --muted: #f4ead6;
+  --muted-foreground: #74644b;
+  --accent: #fde2ad;
+  --accent-foreground: #543203;
+  --destructive: #ba1a1a;
+  --border: #e7d7b8;
+  --input: #e7d7b8;
+  --ring: #b4690e;
+  --gradient-accent: linear-gradient(135deg, #9b5804 0%, #c67b14 52%, #e8a73e 100%);
+  --glow-1: #d98e21;
+  --glow-2: #f2c46d;
+  --chart-1: #a86208;
+  --chart-2: #cf8921;
+  --chart-3: #e8b04d;
+  --chart-4: #7d5928;
+  --chart-5: #6e4105;
+  --sidebar: #f5edd9;
+  --sidebar-foreground: #241d11;
+  --sidebar-primary: #a86208;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f7dfb0;
+  --sidebar-accent-foreground: #4d2e03;
+  --sidebar-border: #e7d7b8;
+  --sidebar-ring: #b4690e;
+}
+
+.dark[data-palette="amber"] {
+  --background: #18140c;
+  --foreground: #f5eedf;
+  --card: #241e13;
+  --card-foreground: #f5eedf;
+  --popover: #2c2518;
+  --popover-foreground: #f5eedf;
+  --primary: #f5c36c;
+  --primary-foreground: #3e2500;
+  --secondary: #342b1c;
+  --secondary-foreground: #f5eedf;
+  --muted: #30281a;
+  --muted-foreground: #c4b397;
+  --accent: #523b16;
+  --accent-foreground: #fde2ad;
+  --destructive: #ffb4ab;
+  --border: rgba(245, 195, 108, 0.14);
+  --input: rgba(245, 195, 108, 0.18);
+  --ring: #f5c36c;
+  --gradient-accent: linear-gradient(135deg, #c9861e 0%, #e8ab47 55%, #fad184 100%);
+  --glow-1: #a86208;
+  --glow-2: #693f06;
+  --sidebar: #1e1910;
+  --sidebar-foreground: #f5eedf;
+  --sidebar-primary: #f5c36c;
+  --sidebar-primary-foreground: #3e2500;
+  --sidebar-accent: rgba(245, 195, 108, 0.16);
+  --sidebar-accent-foreground: #fde2ad;
+  --sidebar-border: rgba(245, 195, 108, 0.12);
+  --sidebar-ring: #f5c36c;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -519,31 +939,34 @@
   box-shadow: none !important;
 }
 
-/* ---------- Style 2: 液态毛玻璃 (glass / visionOS Liquid Glass) ---------- */
+/* ---------- Style 2: iOS 26 液态玻璃 (glass / Apple Liquid Glass & visionOS) ---------- */
 [data-style="glass"] {
-  --radius: 1.15rem;
-  --surface-card: color-mix(in oklch, var(--card) 52%, transparent);
-  --card-edge: color-mix(in oklch, white 65%, var(--primary) 18%);
+  --radius: 1.2rem;
+  --surface-card: color-mix(in oklch, var(--card) 48%, transparent);
+  --card-edge: color-mix(in oklch, white 72%, var(--primary) 18%);
   --card-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.65),
-    0 16px 40px -16px color-mix(in oklch, var(--primary) 18%, rgba(0, 0, 0, 0.16));
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.78),
+    inset 0 -1px 0 0 rgba(255, 255, 255, 0.22),
+    0 18px 42px -16px color-mix(in oklch, var(--primary) 20%, rgba(0, 0, 0, 0.16));
   --card-shadow-hover:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.85),
-    0 22px 48px -14px color-mix(in oklch, var(--primary) 26%, rgba(0, 0, 0, 0.22));
-  --card-blur: 36px;
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.92),
+    inset 0 -1px 0 0 rgba(255, 255, 255, 0.34),
+    0 24px 52px -14px color-mix(in oklch, var(--primary) 28%, rgba(0, 0, 0, 0.22));
+  --card-blur: 40px;
   --btn-primary-bg: var(--gradient-accent);
   --btn-primary-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.35),
-    0 10px 24px -6px color-mix(in oklch, var(--primary) 50%, transparent);
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.45),
+    inset 0 -1px 0 0 rgba(0, 0, 0, 0.12),
+    0 10px 26px -6px color-mix(in oklch, var(--primary) 54%, transparent);
   --btn-radius: 9999px;
-  --sidebar-surface: color-mix(in oklch, var(--card) 42%, transparent);
-  --sidebar-edge: color-mix(in oklch, white 55%, var(--primary) 15%);
-  --glow-opacity: 2.35;
-  --page-heading: 1.8rem;
-  --nav-active-bg: color-mix(in oklch, var(--primary) 15%, rgba(255, 255, 255, 0.55));
+  --sidebar-surface: color-mix(in oklch, var(--card) 40%, transparent);
+  --sidebar-edge: color-mix(in oklch, white 62%, var(--primary) 16%);
+  --glow-opacity: 2.45;
+  --page-heading: 1.82rem;
+  --nav-active-bg: color-mix(in oklch, var(--primary) 16%, rgba(255, 255, 255, 0.58));
   --nav-active-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.7),
-    0 6px 18px -6px color-mix(in oklch, var(--primary) 30%, transparent);
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.8),
+    0 6px 18px -6px color-mix(in oklch, var(--primary) 32%, transparent);
   --nav-active-fg: var(--foreground);
   --nav-active-icon: var(--primary);
 }
@@ -835,16 +1258,274 @@ html[data-style="soft"] body {
     var(--card);
 }
 
-/* Calendars in 柔光 / 通透 */
-:is([data-style="soft"], [data-style="glass"]) [data-slot="calendar"] {
+/* ---------- Style 5: Android Material You (material / Google Material Design 3) ---------- */
+[data-style="material"] {
+  --radius: 1.25rem;
+  --m3-surface-low: color-mix(in oklch, var(--primary) 3%, var(--card));
+  --m3-surface-container: color-mix(in oklch, var(--primary) 6%, var(--card));
+  --m3-surface-high: color-mix(in oklch, var(--primary) 10%, var(--card));
+  --surface-card: var(--m3-surface-low);
+  --card-edge: color-mix(in oklch, var(--primary) 11%, transparent);
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  --card-shadow-hover:
+    0 2px 6px 2px color-mix(in oklch, var(--primary) 8%, rgba(0, 0, 0, 0.06)),
+    0 1px 2px rgba(0, 0, 0, 0.05);
+  --card-blur: 0px;
+  --btn-primary-bg: var(--primary);
+  --btn-primary-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+  --btn-radius: 9999px;
+  --sidebar-surface: var(--m3-surface-container);
+  --sidebar-edge: transparent;
+  --glow-opacity: 0.35;
+  --page-heading: 1.85rem;
+  --nav-active-bg: var(--accent);
+  --nav-active-shadow: 0 0 0 0 transparent;
+  --nav-active-fg: var(--accent-foreground);
+  --nav-active-icon: var(--primary);
+}
+.dark[data-style="material"] {
+  --m3-surface-low: color-mix(in oklch, var(--primary) 5%, var(--card));
+  --m3-surface-container: color-mix(in oklch, var(--primary) 9%, var(--card));
+  --m3-surface-high: color-mix(in oklch, var(--primary) 14%, var(--card));
+  --surface-card: var(--m3-surface-low);
+  --card-edge: color-mix(in oklch, var(--primary) 16%, transparent);
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  --card-shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.45);
+  --sidebar-surface: var(--m3-surface-container);
+}
+html[data-style="material"] {
+  font-family: "Google Sans", "Product Sans", "Roboto", "HarmonyOS Sans SC", "PingFang SC", "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+[data-style="material"] .app-sidebar {
+  border-right: none;
+  background: var(--sidebar-surface);
+  backdrop-filter: none;
+}
+[data-style="material"] .app-sidebar a,
+[data-style="material"] .app-sidebar .nav-active {
+  border-radius: 9999px;
+}
+[data-style="material"] .nav-active .nav-item-chip {
+  background: color-mix(in oklch, var(--primary) 18%, transparent) !important;
+  color: var(--accent-foreground) !important;
+  border-radius: 9999px;
+}
+[data-style="material"] .btn-primary:hover {
+  filter: none;
+  box-shadow: 0 2px 6px 1px color-mix(in oklch, var(--primary) 34%, rgba(0, 0, 0, 0.16));
+}
+[data-style="material"] :is(.hero-card, .page-hero) {
+  border-radius: 1.75rem;
+  padding: 1.5rem 1.85rem;
+  background:
+    radial-gradient(65% 160% at 100% 0%, color-mix(in oklch, var(--accent) 68%, transparent) 0%, transparent 65%),
+    var(--m3-surface-container);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--primary) 12%, transparent);
+}
+[data-style="material"] .page-hero-chip,
+[data-style="material"] .section-chip {
+  border-radius: 1.1rem;
+  background: var(--accent);
+  color: var(--accent-foreground);
+  box-shadow: none;
+}
+[data-style="material"] .hero-card .hero-pill {
+  background: var(--accent);
+  color: var(--accent-foreground);
+  border-radius: 9999px;
+}
+[data-style="material"] [data-slot="card-title"] {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+[data-style="material"] .stat-tile[data-tone="brand"] {
+  background: color-mix(in oklch, var(--accent) 42%, var(--card));
+}
+[data-style="material"] .stat-tile[data-tone="amber"] {
+  background: color-mix(in oklch, rgba(245, 158, 11, 0.16) 100%, var(--card));
+}
+[data-style="material"] .stat-tile[data-tone="emerald"] {
+  background: color-mix(in oklch, rgba(16, 185, 129, 0.15) 100%, var(--card));
+}
+[data-style="material"] .stat-tile[data-tone="slate"] {
+  background: var(--m3-surface-container);
+}
+/* M3 Filled Inputs & Outlined Segmented Tabs */
+[data-style="material"] :is([data-slot="input"], [data-slot="textarea"], [data-slot="select-trigger"], [data-slot="native-select"], [data-slot="input-group"]),
+[data-style="material"] :is(main, [role="dialog"], [data-slot="sheet-content"], [data-slot="popover-content"]) :is(input[type="text"], input[type="search"], input[type="number"], input[type="date"], input[type="month"], input[type="time"], input[type="datetime-local"], input:not([type]), select, textarea):not([data-slot]) {
+  background-color: var(--m3-surface-container);
+  border: 1px solid color-mix(in oklch, var(--foreground) 14%, transparent);
+  border-radius: 0.9rem;
+}
+[data-style="material"] :is([data-slot="input"], [data-slot="textarea"], [data-slot="select-trigger"], [data-slot="native-select"]):focus-visible,
+[data-style="material"] :is(main, [role="dialog"], [data-slot="sheet-content"], [data-slot="popover-content"]) :is(input, select, textarea):not([data-slot]):focus-visible {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--primary) 26%, transparent);
+}
+[data-style="material"] [data-slot="tabs-list"] {
+  background: transparent;
+  border: 1px solid color-mix(in oklch, var(--foreground) 18%, transparent);
+  border-radius: 9999px;
+  padding: 3px;
+}
+[data-style="material"] [data-slot="tabs-trigger"] {
+  border-radius: 9999px;
+}
+[data-style="material"] [data-slot="tabs-trigger"][data-active],
+[data-style="material"] [data-slot="tabs-trigger"][aria-selected="true"] {
+  background: var(--accent);
+  color: var(--accent-foreground);
+  box-shadow: none;
+  font-weight: 600;
+}
+[data-style="material"] :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], .assistant-panel) {
+  border-radius: 1.75rem;
+  border: none;
+  background-color: var(--m3-surface-container);
+  box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.2);
+}
+[data-style="material"] :is([data-slot="dropdown-menu-content"], [data-slot="select-content"], [data-slot="dropdown-menu-sub-content"]) {
+  border-radius: 1.25rem;
+  box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.16);
+}
+[data-style="material"] .bubble-user {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-radius: 1.4rem 1.4rem 0.45rem 1.4rem;
+  margin-left: 2.5rem;
+}
+[data-style="material"] .bubble-ai {
+  background: var(--m3-surface-high);
+  border-radius: 1.4rem 1.4rem 1.4rem 0.45rem;
+  margin-right: 1.5rem;
+}
+[data-style="material"] [data-slot="table-header"] [data-slot="table-row"] {
+  background: var(--m3-surface-container);
+  border-bottom-color: transparent;
+}
+
+/* ---------- Style 6: Google 晴空桌面 (pixel / Google Workspace & Chrome M3) ---------- */
+[data-style="pixel"] {
+  --radius: 0.95rem;
+  --surface-card: var(--card);
+  --card-edge: color-mix(in oklch, var(--foreground) 10%, transparent);
+  --card-shadow: 0 1px 2px rgba(60, 64, 67, 0.08);
+  --card-shadow-hover:
+    0 1px 3px rgba(60, 64, 67, 0.14),
+    0 6px 16px -4px rgba(60, 64, 67, 0.1);
+  --card-blur: 0px;
+  --btn-primary-bg: var(--primary);
+  --btn-primary-shadow: 0 1px 2px rgba(60, 64, 67, 0.16);
+  --btn-radius: 9999px;
+  --sidebar-surface: var(--background);
+  --sidebar-edge: transparent;
+  --glow-opacity: 0;
+  --page-heading: 1.65rem;
+  --nav-active-bg: var(--accent);
+  --nav-active-shadow: 0 0 0 0 transparent;
+  --nav-active-fg: var(--accent-foreground);
+  --nav-active-icon: var(--primary);
+}
+.dark[data-style="pixel"] {
+  --card-edge: rgba(255, 255, 255, 0.11);
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.32);
+  --card-shadow-hover: 0 4px 14px rgba(0, 0, 0, 0.48);
+}
+html[data-style="pixel"] {
+  font-family: "Google Sans", "Roboto", "PingFang SC", "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+[data-style="pixel"] .app-sidebar {
+  border-right: none;
+  background: var(--background);
+  backdrop-filter: none;
+}
+/* Iconic Gmail / Google Drive right-rounded half-pill sidebar navigation */
+[data-style="pixel"] .app-sidebar nav a {
+  border-radius: 0 9999px 9999px 0;
+  margin-left: -0.5rem;
+  padding-left: 1rem;
+}
+[data-style="pixel"] .nav-active {
+  font-weight: 600;
+}
+[data-style="pixel"] .nav-active .nav-item-chip {
+  background: transparent !important;
+  color: var(--primary) !important;
+}
+[data-style="pixel"] :is(.hero-card, .page-hero) {
+  border-radius: 1.25rem;
+  padding: 1.3rem 1.65rem;
+  background: var(--card);
+  box-shadow: inset 0 0 0 1px var(--card-edge), var(--card-shadow);
+}
+[data-style="pixel"] .page-hero-chip,
+[data-style="pixel"] .section-chip {
+  border-radius: 9999px;
+  background: var(--accent);
+  color: var(--primary);
+  box-shadow: none;
+}
+[data-style="pixel"] :is([data-slot="input"], [data-slot="textarea"], [data-slot="select-trigger"], [data-slot="native-select"], [data-slot="input-group"]),
+[data-style="pixel"] :is(main, [role="dialog"], [data-slot="sheet-content"], [data-slot="popover-content"]) :is(input[type="text"], input[type="search"], input[type="number"], input[type="date"], input[type="month"], input[type="time"], input[type="datetime-local"], input:not([type]), select, textarea):not([data-slot]) {
+  background-color: var(--card);
+  border: 1px solid color-mix(in oklch, var(--foreground) 18%, transparent);
+  border-radius: 0.65rem;
+}
+[data-style="pixel"] :is([data-slot="input"], [data-slot="textarea"], [data-slot="select-trigger"], [data-slot="native-select"]):focus-visible,
+[data-style="pixel"] :is(main, [role="dialog"], [data-slot="sheet-content"], [data-slot="popover-content"]) :is(input, select, textarea):not([data-slot]):focus-visible {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+[data-style="pixel"] [data-slot="tabs-list"] {
+  background: transparent;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  padding: 0;
+  gap: 0.25rem;
+}
+[data-style="pixel"] [data-slot="tabs-trigger"] {
+  border-radius: 0.65rem 0.65rem 0 0;
+  border-bottom: 2px solid transparent;
+}
+[data-style="pixel"] [data-slot="tabs-trigger"][data-active],
+[data-style="pixel"] [data-slot="tabs-trigger"][aria-selected="true"] {
+  background: color-mix(in oklch, var(--accent) 45%, transparent);
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+  box-shadow: none;
+}
+[data-style="pixel"] :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], .assistant-panel) {
+  border-radius: 1.5rem;
+  box-shadow: 0 8px 28px rgba(60, 64, 67, 0.22);
+}
+[data-style="pixel"] .bubble-user {
+  background: var(--accent);
+  color: var(--accent-foreground);
+  border-radius: 1.15rem 1.15rem 0.3rem 1.15rem;
+  margin-left: 2.5rem;
+}
+[data-style="pixel"] .bubble-ai {
+  background: var(--card);
+  border: 1px solid var(--card-edge);
+  border-radius: 1.15rem 1.15rem 1.15rem 0.3rem;
+  margin-right: 1.5rem;
+}
+
+/* Calendars in 柔光 / 通透 / Material You / Google 晴空 */
+:is([data-style="soft"], [data-style="glass"], [data-style="material"], [data-style="pixel"]) [data-slot="calendar"] {
   --cell-radius: 9999px;
 }
-:is([data-style="soft"], [data-style="glass"]) [data-slot="calendar"] .has-event button {
+:is([data-style="soft"], [data-style="glass"], [data-style="material"], [data-style="pixel"]) [data-slot="calendar"] .has-event button {
   background: color-mix(in oklch, var(--primary), transparent 86%);
   border-radius: 9999px;
 }
 :is([data-style="soft"], [data-style="glass"]) [data-slot="calendar"] button[data-selected-single="true"] {
   background: var(--gradient-accent);
+  color: var(--primary-foreground);
+  border-radius: 9999px;
+}
+:is([data-style="material"], [data-style="pixel"]) [data-slot="calendar"] button[data-selected-single="true"] {
+  background: var(--primary);
   color: var(--primary-foreground);
   border-radius: 9999px;
 }
