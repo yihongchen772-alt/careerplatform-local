@@ -6,6 +6,9 @@ import { runAgent } from "@/lib/agent/run";
 import { AGENT_TOOLS, describeToolCall, executeTool } from "@/lib/agent/tools";
 import { buildAgentSystemPrompt } from "@/lib/agent/prompt";
 import { getAgentConfig } from "@/lib/agent/config";
+import { computeProactiveNudges, type ProactiveNudge } from "@/lib/agent/proactive";
+
+export type { ProactiveNudge };
 
 // 小欧 speaking first: a short brief each morning and a review each Sunday,
 // written when the app is opened (never in the background, so nothing runs
@@ -83,14 +86,16 @@ export async function loadBriefState(userId: string, now = new Date()) {
   const user = await db.user.findUnique({ where: { id: userId }, select: { agentDailyBrief: true, agentWeeklyReview: true, defaultAiProvider: true, agentAiProvider: true } });
   // Without any AI Key there is nobody to write it: not owed, not an error on every visit.
   const canWrite = !!(user?.defaultAiProvider || user?.agentAiProvider);
-  const [daily, weekly] = await Promise.all([
+  const [daily, weekly, nudges] = await Promise.all([
     db.agentBrief.findUnique({ where: { userId_kind_period: { userId, kind: "daily", period: briefPeriod("daily", now) } } }),
     db.agentBrief.findUnique({ where: { userId_kind_period: { userId, kind: "weekly", period: briefPeriod("weekly", now) } } }),
+    computeProactiveNudges(userId, now).catch(() => [] as ProactiveNudge[]),
   ]);
   return {
     daily: daily ? toBriefView(daily) : null,
     weekly: weekly ? toBriefView(weekly) : null,
     dailyDue: canWrite && !!user?.agentDailyBrief && briefDue("daily", !!daily, now),
     weeklyDue: canWrite && !!user?.agentWeeklyReview && briefDue("weekly", !!weekly, now),
+    nudges,
   };
 }

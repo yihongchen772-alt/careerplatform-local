@@ -15,6 +15,7 @@ import { toggleTaskDone, updatePersonalTask, deletePersonalTask } from "@/lib/ac
 import { markContacted, updateContact, deleteContact } from "@/lib/actions/contacts";
 import { revalidateContactPaths } from "@/lib/revalidate-contacts";
 import { addCalendarItem, addStageSchedule, markFollowedUp, saveStepNote, setEventCompleted, setStageSchedule, setStepCompleted, writeMailSchedule } from "@/lib/actions/schedule";
+import { generateInterviewBrief } from "@/lib/actions/interview-brief";
 import { assistantActionSchema, type AssistantAction } from "@/lib/assistant-shared";
 import { parseCities } from "@/lib/application-city";
 import { closestId } from "@/lib/closest-id";
@@ -166,7 +167,7 @@ function normalizePositionStatus(input: string | null | undefined): "EVALUATING"
  */
 export async function applyAssistantAction(
   action: AssistantAction
-): Promise<ActionResult<{ done: string; downloadUrl?: string }>> {
+): Promise<ActionResult<{ done: string; downloadUrl?: string; href?: string }>> {
   return toActionResult(async () => {
     const user = await requireUser();
     const a = assistantActionSchema.parse(action);
@@ -682,6 +683,57 @@ export async function applyAssistantAction(
           done: `已准备好导出投递记录（${format.toUpperCase()}）`,
           downloadUrl: `/api/applications/export?format=${format}`,
         };
+      }
+
+      case "generate_interview_brief": {
+        const app = await findApplicationForAction(user.id, a.targetId, a.companyName, a.title);
+        if (!app) throw new UserFacingError("找不到对应的投递记录，没法生成面试速览");
+        const mode = a.stage && /exam|oa|test|笔试|测评/i.test(a.stage) ? "exam" : undefined;
+        const res = await generateInterviewBrief(app.id, app.resumeVersionId ?? null, {
+          ...(mode ? { mode } : {}),
+          includeWebSearch: true,
+        });
+        if (!res.ok) throw new UserFacingError(res.message);
+        revalidatePath(`/applications/${app.id}`);
+        revalidatePath(`/applications/${app.id}/brief`);
+        return {
+          done: `已为「${app.company.name} · ${app.title}」生成针对性备战速览卡`,
+          href: `/applications/${app.id}/brief`,
+        };
+      }
+
+      case "save_cover_letter": {
+        const content = a.note?.trim();
+        if (!content || content.length < 20) throw new UserFacingError("正文内容太短，无法保存为求职信/定制改写稿");
+        const pos = await findPositionForAction(user.id, a.targetId, a.companyName, a.title);
+        if (pos) {
+          await db.coverLetter.upsert({
+            where: { positionId: pos.id },
+            create: { userId: user.id, positionId: pos.id, content: content.slice(0, 12000) },
+            update: { content: content.slice(0, 12000) },
+          });
+          revalidatePath("/pool");
+          revalidatePath(`/pool/${pos.id}`);
+          return {
+            done: `已保存定制材料到「${pos.company.name} · ${pos.title}」`,
+            href: `/pool/${pos.id}`,
+          };
+        }
+        const app = await findApplicationForAction(user.id, a.targetId, a.companyName, a.title);
+        if (app?.positionId) {
+          await db.coverLetter.upsert({
+            where: { positionId: app.positionId },
+            create: { userId: user.id, positionId: app.positionId, content: content.slice(0, 12000) },
+            update: { content: content.slice(0, 12000) },
+          });
+          revalidatePath(`/applications/${app.id}`);
+          revalidatePath(`/pool/${app.positionId}`);
+          return {
+            done: `已保存定制求职信/改写稿到「${app.company.name} · ${app.title}」`,
+            href: `/pool/${app.positionId}`,
+          };
+        }
+        throw new UserFacingError("需要指定关联的候选岗位或投递（含关联岗位）才能保存求职信/定制稿");
       }
     }
   });

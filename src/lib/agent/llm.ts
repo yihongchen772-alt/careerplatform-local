@@ -1,4 +1,4 @@
-import { OPENAI_COMPATIBLE_BASE_URL, type UserAiConfig } from "@/lib/ai-providers";
+import { OPENAI_COMPATIBLE_BASE_URL, VISION_MODEL, type UserAiConfig } from "@/lib/ai-providers";
 import { UserFacingError } from "@/lib/action-result";
 import { AI_PROVIDER_OPTIONS } from "@/lib/ai-provider-labels";
 
@@ -23,12 +23,21 @@ export type JsonSchema = {
 export type ToolSpec = { name: string; description: string; parameters: JsonSchema };
 export type ToolCall = { id: string; name: string; args: Record<string, unknown> };
 
+export type AgentImage = {
+  /** data:image/<type>;base64,... */
+  dataUrl: string;
+  mimeType: string;
+  name?: string;
+};
+
 export type AgentMessage =
-  | { role: "user"; text: string }
+  | { role: "user"; text: string; images?: AgentImage[] }
   | { role: "assistant"; text: string; calls: ToolCall[]; raw: unknown }
   | { role: "tool"; results: { call: ToolCall; content: string }[] };
 
-export type ChatTurn = { text: string; calls: ToolCall[]; raw: unknown };
+export type ChatTurn = { text: string; thought?: string; calls: ToolCall[]; raw: unknown };
+
+export type ThinkingMode = "fast" | "balanced" | "deep";
 
 export type ChatRequest = {
   config: UserAiConfig;
@@ -39,9 +48,19 @@ export type ChatRequest = {
   timeoutMs?: number;
   /** Optional caller abort signal (Stop Generating / closed stream). */
   signal?: AbortSignal;
+  /** Controls reasoning depth (fast = quick lookup, balanced = default, deep = complex analysis). */
+  thinking?: ThinkingMode;
   /** Given: the reply is streamed, and each piece of its text arrives here as it is written. */
   onText?: (delta: string) => void;
+  /** Optional streaming callback for model reasoning/thought summaries. */
+  onThought?: (delta: string) => void;
 };
+
+function splitDataUrl(img: AgentImage): { mimeType: string; data: string } | null {
+  const m = img.dataUrl.match(/^data:(image\/[a-z0-9.+-]+);base64,([a-z0-9+/=\s]+)$/i);
+  if (!m) return null;
+  return { mimeType: m[1].toLowerCase(), data: m[2].replace(/\s+/g, "") };
+}
 
 const MAX_TOKENS = 8192;
 
@@ -192,13 +211,22 @@ export function geminiModels(model: string): string[] {
   return list.length ? list : ["gemini-3.5-flash-lite"];
 }
 
-async function geminiTurn({ config, system, messages, tools, timeoutMs = 60000, signal, onText }: ChatRequest, state: { modelIndex: number }, notice: (text: string) => void): Promise<ChatTurn> {
+async function geminiTurn({ config, system, messages, tools, timeoutMs = 60000, signal, thinking = "balanced", onText, onThought }: ChatRequest, state: { modelIndex: number }, notice: (text: string) => void): Promise<ChatTurn> {
   const contents = (model: string) => messages.map((message) => {
-    if (message.role === "user") return { role: "user", parts: [{ text: message.text }] };
+    if (message.role === "user") {
+      const parts: Record<string, unknown>[] = [];
+      for (const img of message.images ?? []) {
+        const parsed = splitDataUrl(img);
+        if (parsed) parts.push({ inlineData: { mimeType: parsed.mimeType, data: parsed.data } });
+      }
+      parts.push({ text: message.text });
+      return { role: "user", parts };
+    }
     if (message.role === "assistant") return { role: "model", parts: geminiParts(message.raw, model) };
     return { role: "user", parts: message.results.map(({ call, content }) => ({ functionResponse: { ...(call.id.startsWith("gemini-") ? {} : { id: call.id }), name: call.name, response: { content } } })) };
   });
   const models = geminiModels(config.model);
+  const thinkingBudget = thinking === "deep" ? 4096 : thinking === "fast" ? 256 : 1024;
   // Stay on the model that answered: its thought signatures are valid only for it.
   for (let i = state.modelIndex; i < models.length; i++) {
     const model = models[i];
@@ -206,7 +234,10 @@ async function geminiTurn({ config, system, messages, tools, timeoutMs = 60000, 
       systemInstruction: { parts: [{ text: system }] },
       contents: contents(model),
       ...(tools.length ? { tools: [{ functionDeclarations: tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: geminiSchema(tool.parameters) })) }] } : {}),
-      generationConfig: { maxOutputTokens: MAX_TOKENS, thinkingConfig: { thinkingBudget: 1024 } },
+      generationConfig: {
+        maxOutputTokens: MAX_TOKENS,
+        thinkingConfig: { thinkingBudget, ...(onThought ? { includeThoughts: true } : {}) },
+      },
     }, timeoutMs, who(config, model), { signal, retry429: i === models.length - 1 });
     if (!response.ok) {
       console.error(`[agent:gemini:${model}] ${response.status}`, (await response.text().catch(() => "")).slice(0, 500));
@@ -226,7 +257,10 @@ async function geminiTurn({ config, system, messages, tools, timeoutMs = 60000, 
         const candidate = (event as typeof data).candidates?.[0];
         for (const part of candidate?.content?.parts ?? []) {
           streamed.push(part);
-          if (part.text && !part.thought) onText(part.text);
+          if (part.text) {
+            if (part.thought) onThought?.(part.text);
+            else onText(part.text);
+          }
         }
         finishReason = candidate?.finishReason ?? finishReason;
       }
@@ -235,42 +269,62 @@ async function geminiTurn({ config, system, messages, tools, timeoutMs = 60000, 
     const parts: GeminiPart[] = data?.candidates?.[0]?.content?.parts ?? [];
     const calls = parts.filter((part) => part.functionCall).map((part, index) => ({ id: part.functionCall!.id || `gemini-${Date.now()}-${index}`, name: part.functionCall!.name, args: parseArgs(part.functionCall!.args) }));
     const text = parts.filter((part) => part.text && !part.thought).map((part) => part.text).join("").trim();
+    const thought = parts.filter((part) => part.text && part.thought).map((part) => part.text).join("").trim() || undefined;
     if (!calls.length && !text && data?.candidates?.[0]?.finishReason === "MAX_TOKENS") throw new UserFacingError("AI 回答太长被截断了，请重试");
-    return { text, calls, raw: { model, parts: parts.length ? parts : [{ text: text || " " }] } satisfies GeminiRaw };
+    return { text, ...(thought ? { thought } : {}), calls, raw: { model, parts: parts.length ? parts : [{ text: text || " " }] } satisfies GeminiRaw };
   }
   throw httpError(config, 429, models[models.length - 1]);
 }
 
 // ---- OpenAI-compatible (OpenAI, DeepSeek, Kimi, Qwen, 智谱, 豆包, xAI, Mistral) ----
 
-type OpenAiMessage = { role: string; content?: string | null; tool_calls?: { id: string; type: "function"; function: { name: string; arguments: string } }[]; tool_call_id?: string; reasoning_content?: string };
+type OpenAiContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
+type OpenAiMessage = { role: string; content?: string | OpenAiContentPart[] | null; tool_calls?: { id: string; type: "function"; function: { name: string; arguments: string } }[]; tool_call_id?: string; reasoning_content?: string };
 
-async function openAiTurn({ config, system, messages, tools, timeoutMs = 60000, signal, onText }: ChatRequest): Promise<ChatTurn> {
+async function openAiTurn({ config, system, messages, tools, timeoutMs = 60000, signal, onText, onThought }: ChatRequest, notice: (text: string) => void): Promise<ChatTurn> {
   if (config.provider === "gemini" || config.provider === "anthropic") throw new Error("not an OpenAI-compatible provider");
+  const hasImages = messages.some((m) => m.role === "user" && (m.images?.length ?? 0) > 0);
+  let activeModel = config.model;
+  if (hasImages) {
+    const dedicatedVision = VISION_MODEL[config.provider];
+    if (dedicatedVision && !/vl|vision|pixtral|4v|4o|omni/i.test(config.model)) {
+      activeModel = dedicatedVision;
+      notice(`附带了图片，本轮自动切换到视觉模型 ${dedicatedVision}`);
+    }
+  }
   const wire: OpenAiMessage[] = [{ role: "system", content: system }];
   for (const message of messages) {
-    if (message.role === "user") wire.push({ role: "user", content: message.text });
-    else if (message.role === "assistant") wire.push(message.raw as OpenAiMessage);
+    if (message.role === "user") {
+      if (message.images?.length) {
+        const parts: OpenAiContentPart[] = [{ type: "text", text: message.text }];
+        for (const img of message.images) {
+          if (splitDataUrl(img)) parts.push({ type: "image_url", image_url: { url: img.dataUrl } });
+        }
+        wire.push({ role: "user", content: parts });
+      } else {
+        wire.push({ role: "user", content: message.text });
+      }
+    } else if (message.role === "assistant") wire.push(message.raw as OpenAiMessage);
     else for (const { call, content } of message.results) wire.push({ role: "tool", tool_call_id: call.id, content });
   }
   const body = {
-    model: config.model,
+    model: activeModel,
     messages: wire,
     ...(tools.length ? { tools: tools.map((tool) => ({ type: "function", function: { name: tool.name, description: tool.description, parameters: tool.parameters } })) } : {}),
     max_tokens: MAX_TOKENS,
   };
   const url = `${config.baseUrl || OPENAI_COMPATIBLE_BASE_URL[config.provider]}/chat/completions`;
-  let response = await post(url, { Authorization: `Bearer ${config.apiKey}` }, onText ? { ...body, stream: true } : body, timeoutMs, who(config), { signal, retry429: true });
+  let response = await post(url, { Authorization: `Bearer ${config.apiKey}` }, onText ? { ...body, stream: true } : body, timeoutMs, who(config, activeModel), { signal, retry429: true });
   // A provider that refuses streaming (with tools) still answers the plain way.
   let streaming = !!onText;
   if (onText && response.status === 400) {
     await response.body?.cancel().catch(() => {});
-    response = await post(url, { Authorization: `Bearer ${config.apiKey}` }, body, timeoutMs, who(config), { signal, retry429: true });
+    response = await post(url, { Authorization: `Bearer ${config.apiKey}` }, body, timeoutMs, who(config, activeModel), { signal, retry429: true });
     streaming = false;
   }
   if (!response.ok) {
     console.error(`[agent:${config.provider}] ${response.status}`, (await response.text().catch(() => "")).slice(0, 500));
-    throw httpError(config, response.status);
+    throw httpError(config, response.status, activeModel);
   }
   let message: OpenAiMessage;
   let finishReason: string | undefined;
@@ -285,7 +339,7 @@ async function openAiTurn({ config, system, messages, tools, timeoutMs = 60000, 
       const delta = choice?.delta;
       if (!delta) continue;
       if (delta.content) { content += delta.content; onText(delta.content); }
-      if (delta.reasoning_content) reasoning += delta.reasoning_content;
+      if (delta.reasoning_content) { reasoning += delta.reasoning_content; onThought?.(delta.reasoning_content); }
       for (const piece of delta.tool_calls ?? []) {
         const index = piece.index ?? ((piece.id || piece.function?.name) ? pending.length : Math.max(0, pending.length - 1));
         const call = (pending[index] ??= { id: "", name: "", args: "" });
@@ -302,19 +356,31 @@ async function openAiTurn({ config, system, messages, tools, timeoutMs = 60000, 
     message = data?.choices?.[0]?.message ?? { role: "assistant", content: "" };
   }
   const calls = (message.tool_calls ?? []).map((call, index) => ({ id: call.id || `call-${index}`, name: call.function?.name ?? "", args: parseArgs(call.function?.arguments) }));
-  const text = (message.content ?? "").trim();
+  const text = (typeof message.content === "string" ? message.content : "").trim();
+  const thought = message.reasoning_content?.trim() || undefined;
   if (!calls.length && !text && finishReason === "length") throw new UserFacingError("AI 回答太长被截断了，请重试");
-  const raw: OpenAiMessage = { role: "assistant", content: message.content ?? "", ...(message.tool_calls?.length ? { tool_calls: message.tool_calls.map((call, index) => ({ ...call, id: calls[index].id })) } : {}), ...(message.reasoning_content ? { reasoning_content: message.reasoning_content } : {}) };
-  return { text, calls, raw };
+  const raw: OpenAiMessage = { role: "assistant", content: typeof message.content === "string" ? message.content : "", ...(message.tool_calls?.length ? { tool_calls: message.tool_calls.map((call, index) => ({ ...call, id: calls[index].id })) } : {}), ...(message.reasoning_content ? { reasoning_content: message.reasoning_content } : {}) };
+  return { text, ...(thought ? { thought } : {}), calls, raw };
 }
 
 // ---- Anthropic ----
 
-type AnthropicBlock = { type: string; text?: string; id?: string; name?: string; input?: unknown };
+type AnthropicBlock = { type: string; text?: string; thinking?: string; id?: string; name?: string; input?: unknown };
 
-async function anthropicTurn({ config, system, messages, tools, timeoutMs = 60000, signal, onText }: ChatRequest): Promise<ChatTurn> {
+async function anthropicTurn({ config, system, messages, tools, timeoutMs = 60000, signal, onText, onThought }: ChatRequest): Promise<ChatTurn> {
   const wire = messages.map((message) => {
-    if (message.role === "user") return { role: "user", content: message.text };
+    if (message.role === "user") {
+      if (message.images?.length) {
+        const blocks: Record<string, unknown>[] = [];
+        for (const img of message.images) {
+          const parsed = splitDataUrl(img);
+          if (parsed) blocks.push({ type: "image", source: { type: "base64", media_type: parsed.mimeType, data: parsed.data } });
+        }
+        blocks.push({ type: "text", text: message.text });
+        return { role: "user", content: blocks };
+      }
+      return { role: "user", content: message.text };
+    }
     if (message.role === "assistant") return { role: "assistant", content: message.raw as AnthropicBlock[] };
     return { role: "user", content: message.results.map(({ call, content }) => ({ type: "tool_result", tool_use_id: call.id, content })) };
   });
@@ -340,9 +406,10 @@ async function anthropicTurn({ config, system, messages, tools, timeoutMs = 6000
       const index = typeof event.index === "number" ? event.index : 0;
       if (event.type === "content_block_start") blocks[index] = { ...(event.content_block as AnthropicBlock) };
       else if (event.type === "content_block_delta") {
-        const delta = event.delta as { type?: string; text?: string; partial_json?: string };
-        const block = (blocks[index] ??= { type: delta.type === "input_json_delta" ? "tool_use" : "text" });
+        const delta = event.delta as { type?: string; text?: string; thinking?: string; partial_json?: string };
+        const block = (blocks[index] ??= { type: delta.type === "input_json_delta" ? "tool_use" : delta.type === "thinking_delta" ? "thinking" : "text" });
         if (delta.type === "text_delta" && delta.text) { block.text = (block.text ?? "") + delta.text; onText(delta.text); }
+        if (delta.type === "thinking_delta" && delta.thinking) { block.thinking = (block.thinking ?? "") + delta.thinking; onThought?.(delta.thinking); }
         if (delta.type === "input_json_delta" && delta.partial_json) inputs[index] = (inputs[index] ?? "") + delta.partial_json;
       } else if (event.type === "message_delta") {
         const delta = event.delta as { stop_reason?: string } | undefined;
@@ -357,8 +424,9 @@ async function anthropicTurn({ config, system, messages, tools, timeoutMs = 6000
   }
   const calls = blocks.filter((block) => block.type === "tool_use").map((block) => ({ id: block.id ?? "", name: block.name ?? "", args: parseArgs(block.input) }));
   const text = blocks.filter((block) => block.type === "text").map((block) => block.text ?? "").join("").trim();
+  const thought = blocks.filter((block) => block.type === "thinking").map((block) => block.thinking ?? "").join("").trim() || undefined;
   if (!calls.length && !text && stopReason === "max_tokens") throw new UserFacingError("AI 回答太长被截断了，请重试");
-  return { text, calls, raw: blocks.length ? blocks : [{ type: "text", text: text || " " }] };
+  return { text, ...(thought ? { thought } : {}), calls, raw: blocks.length ? blocks : [{ type: "text", text: text || " " }] };
 }
 
 /**
@@ -370,7 +438,7 @@ export function createChat(notice: (text: string) => void = () => {}) {
   return (request: ChatRequest): Promise<ChatTurn> => {
     if (request.config.provider === "gemini") return geminiTurn(request, state, notice);
     if (request.config.provider === "anthropic") return anthropicTurn(request);
-    return openAiTurn(request);
+    return openAiTurn(request, notice);
   };
 }
 

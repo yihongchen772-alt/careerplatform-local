@@ -6,6 +6,7 @@ import { parseApplicationProfile } from "@/lib/application-profile";
 import { ATTACHMENT_ROLE_META, resolveAutofillAttachments } from "@/lib/attachment-roles";
 import { buildBrowserApplyHref } from "@/lib/batch-apply";
 import { findJobs, type JobDiscoveryKind } from "@/lib/career-ops";
+import { expandSqlTerms } from "@/lib/agent/semantic-search";
 
 /** One lookup for 小欧's tools (src/lib/agent/tools.ts), by name. */
 export type AgentDecision = {
@@ -37,17 +38,79 @@ function safeWebUrl(raw: string | null): string | undefined {
 export async function executeAgentTool(userId: string, decision: AgentDecision): Promise<ToolResult> {
   const { query, targetId } = decision;
   if (decision.tool === "search_records") {
-    // Search the entire database, not just the first page in the initial snapshot.
+    // Search the entire database with lightweight domain-synonym expansion (e.g. 具身智能 -> 人形机器人/机器人).
     const contains = query.trim();
+    const terms = contains ? expandSqlTerms(contains, 6) : [""];
     const [positions, leads, applications, tasks, campusPostings, attachments, resumes, contacts] = await Promise.all([
-      db.position.findMany({ where: { userId, OR: [{ title: { contains } }, { company: { name: { contains } } }, { company: { aliases: { some: { alias: { contains } } } } }, { track: { contains } }, { location: { contains } }] }, select: { id: true, title: true, company: { select: { name: true, careerUrl: true } }, jdText: true, jdUrl: true, deadline: true, location: true, status: true, salaryMin: true, salaryMax: true }, take: 10, orderBy: { createdAt: "desc" } }),
-      db.jobLead.findMany({ where: { userId, OR: [{ title: { contains } }, { companyName: { contains } }, { track: { contains } }, { location: { contains } }] }, select: { id: true, companyName: true, title: true, jdUrl: true, note: true, deadline: true, fitScore: true, promotedPositionId: true }, take: 10, orderBy: { fitScore: "desc" } }),
-      db.application.findMany({ where: { userId, OR: [{ title: { contains } }, { city: { contains } }, { company: { name: { contains } } }, { company: { aliases: { some: { alias: { contains } } } } }, { company: { industry: { contains } } }, { position: { location: { contains } } }, { stageHistory: { some: { note: { contains } } } }] }, include: { company: { select: { name: true, industry: true } }, stageHistory: { take: 8, orderBy: { enteredAt: "desc" }, select: { id: true, stage: true, stageLabel: true, note: true, terminatedAtStage: true, terminatedAtStageLabel: true, enteredAt: true } } }, take: 10, orderBy: { appliedDate: "desc" } }),
-      db.personalTask.findMany({ where: { userId, OR: [{ title: { contains } }, { note: { contains } }] }, take: 10, orderBy: { createdAt: "desc" } }),
-      db.campusPosting.findMany({ where: { userId, OR: [{ company: { contains } }, { roles: { contains } }, { cities: { contains } }, { industry: { contains } }, { note: { contains } }] }, select: { id: true, company: true, roles: true, cities: true, kind: true, cohort: true, deadline: true, applyUrl: true, positionId: true }, take: 10, orderBy: { startDate: { sort: "desc", nulls: "last" } } }),
-      db.attachment.findMany({ where: { userId, OR: [{ name: { contains } }, { category: { contains } }] }, select: { id: true, name: true, category: true, url: true, createdAt: true }, take: 10, orderBy: { createdAt: "desc" } }),
-      db.resumeVersion.findMany({ where: { userId, OR: [{ name: { contains } }, { targetTrack: { contains } }] }, select: { id: true, name: true, targetTrack: true, isDefault: true, checkScore: true }, take: 10, orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }] }),
-      db.contact.findMany({ where: { userId, OR: [{ name: { contains } }, { companyName: { contains } }, { role: { contains } }, { note: { contains } }] }, select: { id: true, name: true, role: true, companyName: true, contactInfo: true, nextFollowUpAt: true }, take: 10, orderBy: { createdAt: "desc" } }),
+      db.position.findMany({
+        where: {
+          userId,
+          OR: terms.flatMap((t) => [
+            { title: { contains: t } },
+            { company: { name: { contains: t } } },
+            { company: { aliases: { some: { alias: { contains: t } } } } },
+            { track: { contains: t } },
+            { location: { contains: t } },
+          ]),
+        },
+        select: { id: true, title: true, company: { select: { name: true, careerUrl: true } }, jdText: true, jdUrl: true, deadline: true, location: true, status: true, salaryMin: true, salaryMax: true },
+        take: 10,
+        orderBy: { createdAt: "desc" },
+      }),
+      db.jobLead.findMany({
+        where: {
+          userId,
+          OR: terms.flatMap((t) => [
+            { title: { contains: t } },
+            { companyName: { contains: t } },
+            { track: { contains: t } },
+            { location: { contains: t } },
+          ]),
+        },
+        select: { id: true, companyName: true, title: true, jdUrl: true, note: true, deadline: true, fitScore: true, promotedPositionId: true },
+        take: 10,
+        orderBy: { fitScore: "desc" },
+      }),
+      db.application.findMany({
+        where: {
+          userId,
+          OR: terms.flatMap((t) => [
+            { title: { contains: t } },
+            { city: { contains: t } },
+            { company: { name: { contains: t } } },
+            { company: { aliases: { some: { alias: { contains: t } } } } },
+            { company: { industry: { contains: t } } },
+            { position: { location: { contains: t } } },
+            { stageHistory: { some: { note: { contains: t } } } },
+          ]),
+        },
+        include: { company: { select: { name: true, industry: true } }, stageHistory: { take: 8, orderBy: { enteredAt: "desc" }, select: { id: true, stage: true, stageLabel: true, note: true, terminatedAtStage: true, terminatedAtStageLabel: true, enteredAt: true } } },
+        take: 10,
+        orderBy: { appliedDate: "desc" },
+      }),
+      db.personalTask.findMany({
+        where: { userId, OR: terms.flatMap((t) => [{ title: { contains: t } }, { note: { contains: t } }]) },
+        take: 10,
+        orderBy: { createdAt: "desc" },
+      }),
+      db.campusPosting.findMany({
+        where: {
+          userId,
+          OR: terms.flatMap((t) => [
+            { company: { contains: t } },
+            { roles: { contains: t } },
+            { cities: { contains: t } },
+            { industry: { contains: t } },
+            { note: { contains: t } },
+          ]),
+        },
+        select: { id: true, company: true, roles: true, cities: true, kind: true, cohort: true, deadline: true, applyUrl: true, positionId: true },
+        take: 10,
+        orderBy: { startDate: { sort: "desc", nulls: "last" } },
+      }),
+      db.attachment.findMany({ where: { userId, OR: terms.flatMap((t) => [{ name: { contains: t } }, { category: { contains: t } }]) }, select: { id: true, name: true, category: true, url: true, createdAt: true }, take: 10, orderBy: { createdAt: "desc" } }),
+      db.resumeVersion.findMany({ where: { userId, OR: terms.flatMap((t) => [{ name: { contains: t } }, { targetTrack: { contains: t } }]) }, select: { id: true, name: true, targetTrack: true, isDefault: true, checkScore: true }, take: 10, orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }] }),
+      db.contact.findMany({ where: { userId, OR: terms.flatMap((t) => [{ name: { contains: t } }, { companyName: { contains: t } }, { role: { contains: t } }, { note: { contains: t } }]) }, select: { id: true, name: true, role: true, companyName: true, contactInfo: true, nextFollowUpAt: true }, take: 10, orderBy: { createdAt: "desc" } }),
     ]);
     return {
       data: JSON.stringify({

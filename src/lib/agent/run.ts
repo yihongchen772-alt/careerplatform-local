@@ -12,14 +12,34 @@ export type AgentStep = {
 
 export type ToolOutcome = { content: string; label: string; summary: string; href?: string };
 
-/** `reset` starts a new model turn; `delta` is the next piece of its text as it is written. */
-export type AgentEvent = { type: "step"; step: AgentStep } | { type: "note"; text: string } | { type: "reset" } | { type: "delta"; text: string };
+/** `reset` starts a new model turn; `delta` is the next piece of its text as it is written; `thought` streams reasoning summaries. */
+export type AgentEvent =
+  | { type: "step"; step: AgentStep }
+  | { type: "note"; text: string }
+  | { type: "reset" }
+  | { type: "delta"; text: string }
+  | { type: "thought"; text: string };
 
 /** Enough for "plan my week" (records, a few JDs, the resume, a search) without running away with the Key. */
 export const MAX_TOOL_ROUNDS = 12;
 const MAX_RESULT_CHARS = 12000;
 /** Tools that only read: safe to run at the same time and deduplicate within one turn. */
-const READ_ONLY_TOOLS = new Set(["search_records", "filter_applications", "get_workspace_overview", "get_application", "get_position", "resume_context", "research_web", "find_jobs", "prepare_application", "read_webpage", "list_missing_cities", "recall_conversations"]);
+const READ_ONLY_TOOLS = new Set([
+  "search_records",
+  "filter_applications",
+  "get_workspace_overview",
+  "search_emails",
+  "get_funnel_analytics",
+  "get_application",
+  "get_position",
+  "resume_context",
+  "research_web",
+  "find_jobs",
+  "prepare_application",
+  "read_webpage",
+  "list_missing_cities",
+  "recall_conversations",
+]);
 
 /**
  * The agent loop: the model sees the conversation and the tools, and either
@@ -52,7 +72,17 @@ export async function runAgent({ chat, request, execute, describe, emit, review,
     const lastRound = round >= Math.min(Math.max(maxRounds, 0), MAX_TOOL_ROUNDS);
     if (lastRound) messages.push({ role: "user", text: "（系统提示：这一轮的工具步数用完了。请直接用已经查到的内容回答；没做完的事明确告诉用户还差什么。）" });
     if (stream) emit({ type: "reset" });
-    const turn = await chat({ ...request, messages, tools: lastRound ? [] : request.tools, ...(stream ? { onText: (text: string) => emit({ type: "delta", text }) } : {}) });
+    const turn = await chat({
+      ...request,
+      messages,
+      tools: lastRound ? [] : request.tools,
+      ...(stream
+        ? {
+            onText: (text: string) => emit({ type: "delta", text }),
+            onThought: (text: string) => emit({ type: "thought", text }),
+          }
+        : {}),
+    });
     if (!turn.calls.length || lastRound) {
       if (!turn.text) throw new UserFacingError("AI 没有给出回答，请重试");
       const problem = !lastRound && !reviewed ? review?.(turn.text) : null;

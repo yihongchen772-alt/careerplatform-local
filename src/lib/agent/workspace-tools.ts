@@ -7,6 +7,7 @@ import { industryLabel } from "@/lib/company-industry";
 import { currentStageRow, isTerminalStage, stepView } from "@/lib/interview-schedule";
 import { pendingMailRows } from "@/lib/pending-mail";
 import { STAGE_LABELS } from "@/lib/stage-labels";
+import { expandQueryTerms, scoreTextMatch } from "@/lib/agent/semantic-search";
 import type { ApplicationStage } from "@prisma/client";
 
 const MAX_ROWS = 40;
@@ -359,5 +360,291 @@ export async function getWorkspaceOverviewTool(userId: string, section: string) 
   return {
     content: blocks.join("\n\n") || "没有找到对应模块的数据",
     summary: `读取了「${kind}」模块数据`,
+  };
+}
+
+/**
+ * Searches scanned recruitment emails persisted in PersonalTask (mailEventDraft / note)
+ * and email-sourced StageHistory entries (meetingInfo / autoEvidence / note).
+ */
+export async function searchEmailsTool(
+  userId: string,
+  args: { query?: string; company?: string; limit?: number }
+) {
+  const q = (args.query ?? "").trim().toLowerCase();
+  const companyFilter = (args.company ?? "").trim().toLowerCase();
+  const limit = Math.min(Math.max(Number(args.limit) || 12, 1), 25);
+
+  const [mailTasks, mailStages] = await Promise.all([
+    db.personalTask.findMany({
+      where: { userId, sourceMailKey: { not: null } },
+      include: {
+        application: {
+          select: { id: true, title: true, company: { select: { name: true, aliases: { select: { alias: true } } } } },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 80,
+    }),
+    db.stageHistory.findMany({
+      where: {
+        application: { userId },
+        OR: [{ autoSource: "email" }, { scheduleSource: "email" }],
+      },
+      include: {
+        application: {
+          select: { id: true, title: true, company: { select: { name: true, aliases: { select: { alias: true } } } } },
+        },
+      },
+      orderBy: { enteredAt: "desc" },
+      take: 60,
+    }),
+  ]);
+
+  type EmailHit = {
+    sortTs: number;
+    line: string;
+    haystack: string;
+    companyNames: string[];
+  };
+  const hits: EmailHit[] = [];
+
+  for (const task of mailTasks) {
+    const draft = (task.mailEventDraft && typeof task.mailEventDraft === "object"
+      ? task.mailEventDraft
+      : null) as Record<string, unknown> | null;
+    const companyName = task.application?.company.name || (typeof draft?.companyName === "string" ? draft.companyName : "");
+    const aliases = task.application?.company.aliases.map((a) => a.alias) ?? [];
+    const subject = typeof draft?.subject === "string" ? draft.subject : task.title;
+    const sender = typeof draft?.sender === "string" ? draft.sender : "";
+    const meetingInfo = typeof draft?.meetingInfo === "string" ? draft.meetingInfo : "";
+    const accessCode = typeof draft?.accessCode === "string" ? draft.accessCode : "";
+    const actionRequired = typeof draft?.actionRequired === "string" ? draft.actionRequired : "";
+    const actionDeadline = typeof draft?.actionDeadline === "string" ? draft.actionDeadline : "";
+    const note = (task.note ?? "").trim();
+    const parts = [
+      `- [邮件待办ID:${task.id}]${task.application ? `[投递ID:${task.application.id}]` : ""} ${companyName ? `${companyName} · ` : ""}${subject}`,
+      sender ? `发件人：${sender}` : null,
+      task.dueDate ? `时间：${task.dueDate.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}` : null,
+      meetingInfo ? `会议/入口：${meetingInfo}` : null,
+      accessCode ? `口令/验证码：${accessCode}` : null,
+      actionRequired ? `需操作：${actionRequired}${actionDeadline ? `（截止 ${actionDeadline}）` : ""}` : null,
+      note ? `正文要点：${note.replace(/\s+/g, " ").slice(0, 320)}` : null,
+      task.done ? "状态：已处理" : task.mailAppliedAt ? "状态：已自动同步日程" : "状态：待确认",
+    ].filter(Boolean);
+    const line = parts.join("；");
+    hits.push({
+      sortTs: task.createdAt.getTime(),
+      line,
+      haystack: `${companyName} ${aliases.join(" ")} ${subject} ${sender} ${meetingInfo} ${accessCode} ${actionRequired} ${note}`.toLowerCase(),
+      companyNames: [companyName, ...aliases].filter(Boolean).map((s) => s.toLowerCase()),
+    });
+  }
+
+  for (const st of mailStages) {
+    const companyName = st.application.company.name;
+    const aliases = st.application.company.aliases.map((a) => a.alias);
+    const stageName = st.stageLabel || STAGE_LABELS[st.stage];
+    const parts = [
+      `- [投递ID:${st.application.id}][进度ID:${st.id}] ${companyName} · ${st.application.title}（${stageName}，来自邮件）`,
+      st.autoEvidence ? `邮件主题/证据：${st.autoEvidence}` : null,
+      st.nextDeadline ? `安排时间：${st.nextDeadline.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}` : null,
+      st.meetingInfo ? `会议/链接：${st.meetingInfo}` : null,
+      st.note ? `备注：${st.note.replace(/\s+/g, " ").slice(0, 260)}` : null,
+    ].filter(Boolean);
+    const line = parts.join("；");
+    hits.push({
+      sortTs: st.enteredAt.getTime(),
+      line,
+      haystack: `${companyName} ${aliases.join(" ")} ${st.application.title} ${stageName} ${st.autoEvidence ?? ""} ${st.meetingInfo ?? ""} ${st.note ?? ""}`.toLowerCase(),
+      companyNames: [companyName, ...aliases].map((s) => s.toLowerCase()),
+    });
+  }
+
+  const termGroups = q ? expandQueryTerms(q) : [];
+  const matched = hits
+    .map((hit) => {
+      if (companyFilter && !hit.companyNames.some((n) => n.includes(companyFilter) || companyFilter.includes(n)) && !hit.haystack.includes(companyFilter)) {
+        return { hit, score: 0 };
+      }
+      if (termGroups.length) {
+        return { hit, score: scoreTextMatch(hit.haystack, termGroups) };
+      }
+      return { hit, score: 1 };
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score || b.hit.sortTs - a.hit.sortTs)
+    .slice(0, limit)
+    .map((item) => item.hit);
+
+  const scope = [companyFilter ? `公司「${args.company}」` : null, q ? `关键词「${args.query}」` : null].filter(Boolean).join(" + ") || "最近邮件";
+  return {
+    content: matched.length
+      ? `查到 ${matched.length} 条与「${scope}」相关的求职邮件记录：\n${matched.map((m) => m.line).join("\n")}`
+      : `本地已扫描的求职邮件里没有找到与「${scope}」匹配的记录（如需读取新邮件，请提醒用户在收件箱或顶部点「扫描邮箱」）。`,
+    summary: `查邮件（${scope}）：找到 ${matched.length} 条`,
+    href: "/calendar",
+  };
+}
+
+const STAGE_RANK: Record<string, number> = {
+  APPLIED: 1,
+  SCREENING: 1,
+  OA: 2,
+  ASSESSMENT: 2,
+  AI_INTERVIEW: 3,
+  INTERVIEW_1: 3,
+  INTERVIEW_2: 4,
+  INTERVIEW_3: 5,
+  HR_INTERVIEW: 5,
+  OFFER: 6,
+  ACCEPTED: 6,
+  DECLINED: 6,
+};
+
+function pct(part: number, total: number): string {
+  if (!total) return "0%";
+  return `${Math.round((part / total) * 100)}%`;
+}
+
+/**
+ * Deterministic job-search funnel analytics across all applications, grouped by
+ * overall / industry / city / resume version so the LLM never miscounts long lists.
+ */
+export async function getFunnelAnalyticsTool(
+  userId: string,
+  args: { groupBy?: string }
+) {
+  const groupBy = (args.groupBy ?? "all").trim().toLowerCase();
+  const now = Date.now();
+  const rows = await db.application.findMany({
+    where: { userId },
+    include: {
+      company: { select: { name: true, industry: true, sector: true } },
+      position: { select: { location: true } },
+      resumeVersion: { select: { id: true, name: true } },
+      stageHistory: { select: { stage: true, enteredAt: true } },
+    },
+  });
+
+  if (!rows.length) {
+    return { content: "目前还没有投递记录，无法计算求职漏斗。", summary: "暂无投递数据" };
+  }
+
+  type Bucket = {
+    name: string;
+    total: number;
+    examPlus: number;
+    interview1Plus: number;
+    interview2Plus: number;
+    offer: number;
+    rejected: number;
+    active: number;
+    stale14: number;
+    advanceDaysSum: number;
+    advanceCount: number;
+  };
+  const makeBucket = (name: string): Bucket => ({
+    name,
+    total: 0,
+    examPlus: 0,
+    interview1Plus: 0,
+    interview2Plus: 0,
+    offer: 0,
+    rejected: 0,
+    active: 0,
+    stale14: 0,
+    advanceDaysSum: 0,
+    advanceCount: 0,
+  });
+
+  const overall = makeBucket("总体");
+  const byIndustry = new Map<string, Bucket>();
+  const byCity = new Map<string, Bucket>();
+  const byResume = new Map<string, Bucket>();
+
+  const record = (bucket: Bucket, flags: { examPlus: boolean; i1Plus: boolean; i2Plus: boolean; offer: boolean; rejected: boolean; active: boolean; stale14: boolean; advanceDays: number | null }) => {
+    bucket.total++;
+    if (flags.examPlus) bucket.examPlus++;
+    if (flags.i1Plus) bucket.interview1Plus++;
+    if (flags.i2Plus) bucket.interview2Plus++;
+    if (flags.offer) bucket.offer++;
+    if (flags.rejected) bucket.rejected++;
+    if (flags.active) bucket.active++;
+    if (flags.stale14) bucket.stale14++;
+    if (flags.advanceDays !== null) {
+      bucket.advanceDaysSum += flags.advanceDays;
+      bucket.advanceCount++;
+    }
+  };
+
+  for (const app of rows) {
+    const stages = [app.currentStage, ...app.stageHistory.map((s) => s.stage)];
+    const maxRank = Math.max(...stages.map((s) => STAGE_RANK[s] ?? 1));
+    const offer = stages.includes("OFFER") || stages.includes("ACCEPTED") || stages.includes("DECLINED");
+    const rejected = app.currentStage === "REJECTED" || app.currentStage === "WITHDRAWN" || app.currentStage === "CANCELLED";
+    const active = !isTerminalStage(app.currentStage);
+    const daysSinceUpdate = Math.max(0, Math.floor((now - app.currentStageDate.getTime()) / 86_400_000));
+    const stale14 = active && daysSinceUpdate >= 14;
+    const advanceDays = maxRank >= 2 ? Math.max(0, Math.round((app.currentStageDate.getTime() - app.appliedDate.getTime()) / 86_400_000)) : null;
+    const flags = {
+      examPlus: maxRank >= 2,
+      i1Plus: maxRank >= 3,
+      i2Plus: maxRank >= 4,
+      offer,
+      rejected,
+      active,
+      stale14,
+      advanceDays,
+    };
+    record(overall, flags);
+
+    const ind = industryLabel(app.company) || "未分类行业";
+    let indB = byIndustry.get(ind);
+    if (!indB) { indB = makeBucket(ind); byIndustry.set(ind, indB); }
+    record(indB, flags);
+
+    const cities = applicationCities({ city: app.city, location: app.position?.location, title: app.title, companyName: app.company.name });
+    for (const c of cities.length ? cities : ["未标城市"]) {
+      let cB = byCity.get(c);
+      if (!cB) { cB = makeBucket(c); byCity.set(c, cB); }
+      record(cB, flags);
+    }
+
+    const resName = app.resumeVersion?.name || "未关联简历版本";
+    let rB = byResume.get(resName);
+    if (!rB) { rB = makeBucket(resName); byResume.set(resName, rB); }
+    record(rB, flags);
+  }
+
+  const formatBucket = (b: Bucket) => {
+    const avgDays = b.advanceCount ? `；平均推进 ${Math.round(b.advanceDaysSum / b.advanceCount)} 天` : "";
+    return `- **${b.name}**（共 ${b.total} 投）：笔测+ ${b.examPlus}（${pct(b.examPlus, b.total)}）→ 进面 ${b.interview1Plus}（${pct(b.interview1Plus, b.total)}）→ 二面+ ${b.interview2Plus}（一面转二面 ${pct(b.interview2Plus, b.interview1Plus)}）→ Offer ${b.offer}（${pct(b.offer, b.total)}）；进行中 ${b.active}（停滞≥14天 ${b.stale14}）；淘汰/终止 ${b.rejected}${avgDays}`;
+  };
+
+  const sections: string[] = [];
+  sections.push(
+    `### 总体求职漏斗（精确统计，共 ${overall.total} 条投递）\n` +
+    `- 投递总数：${overall.total} | 进行中：${overall.active}（停滞≥14天：${overall.stale14}）| 淘汰/撤回：${overall.rejected}\n` +
+    `- 到达笔试/测评及以上：${overall.examPlus}（${pct(overall.examPlus, overall.total)}）\n` +
+    `- 到达面试（含 AI/群面/一面及以上）：${overall.interview1Plus}（总进面率 ${pct(overall.interview1Plus, overall.total)}）\n` +
+    `- 到达二面及以上：${overall.interview2Plus}（一面→二面转化率 ${pct(overall.interview2Plus, overall.interview1Plus)}）\n` +
+    `- 拿到 Offer：${overall.offer}（进面→Offer 转化率 ${pct(overall.offer, overall.interview1Plus)}，总转化率 ${pct(overall.offer, overall.total)}）`
+  );
+
+  const renderGroup = (title: string, map: Map<string, Bucket>, max = 10) => {
+    const sorted = [...map.values()].sort((a, b) => b.total - a.total || b.interview1Plus - a.interview1Plus).slice(0, max);
+    if (!sorted.length) return;
+    sections.push(`### ${title}\n${sorted.map(formatBucket).join("\n")}`);
+  };
+
+  if (groupBy === "all" || groupBy === "resume") renderGroup("按简历版本对比（看哪版简历进面率高）", byResume, 10);
+  if (groupBy === "all" || groupBy === "industry") renderGroup("按行业对比", byIndustry, 10);
+  if (groupBy === "all" || groupBy === "city") renderGroup("按城市对比", byCity, 10);
+
+  return {
+    content: sections.join("\n\n"),
+    summary: `漏斗统计：共 ${overall.total} 投，进面 ${overall.interview1Plus}（${pct(overall.interview1Plus, overall.total)}），Offer ${overall.offer}`,
+    href: "/applications",
   };
 }

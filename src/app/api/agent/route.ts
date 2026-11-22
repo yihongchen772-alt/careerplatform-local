@@ -5,6 +5,7 @@ import { getAgentConfig } from "@/lib/agent/config";
 import { UserFacingError } from "@/lib/action-result";
 import { MAX_HISTORY_TURNS } from "@/lib/assistant-context";
 import { createChat, historyMessages, summarizeDroppedHistory } from "@/lib/agent/llm";
+import { buildModePrompt, routeThinkingDepth, type AgentMode } from "@/lib/agent/modes";
 import { runAgent, type AgentEvent } from "@/lib/agent/run";
 import { AGENT_TOOLS, describeToolCall, executeTool } from "@/lib/agent/tools";
 import { buildAgentSystemPrompt } from "@/lib/agent/prompt";
@@ -13,8 +14,15 @@ import { syncOpenPortalPage } from "@/lib/actions/application-sync";
 import { STAGE_LABELS } from "@/lib/stage-labels";
 import type { AssistantAction } from "@/lib/assistant-shared";
 
+const imageAttachmentSchema = z.object({
+  dataUrl: z.string().regex(/^data:image\/(png|jpeg|jpg|webp|gif);base64,[a-z0-9+/=\s]+$/i, "仅支持 PNG/JPG/WebP/GIF 图片").max(3_500_000, "单张图片过大，请压缩后再试"),
+  mimeType: z.string().max(40),
+  name: z.string().max(120).optional(),
+});
+
 const bodySchema = z.object({
-  message: z.string().trim().min(1, "说点什么吧").max(6000, "单条消息请控制在 6000 字以内。"),
+  message: z.string().trim().max(6000, "单条消息请控制在 6000 字以内。").default(""),
+  images: z.array(imageAttachmentSchema).max(4, "单次最多附带 4 张图片").optional(),
   history: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(16000), refs: z.string().max(4000).optional() })).max(100).default([]),
   /** The 网申 page open beside 小欧 in the 网申浏览器's side panel. */
   page: z.object({
@@ -62,6 +70,8 @@ const bodySchema = z.object({
   routeContext: z.object({
     pathname: z.string().max(300),
   }).optional(),
+  mode: z.enum(["general", "mock_interview", "resume_tailor", "offer_coach"]).optional().default("general"),
+  thinking: z.enum(["auto", "fast", "balanced", "deep"]).optional().default("auto"),
 });
 
 /** 小欧's drafts for the open page's questions or form fields: cards the user clicks to fill into the page. */
@@ -206,7 +216,17 @@ export async function POST(request: Request) {
   if (!parsed.success) return Response.json({ error: parsed.error.issues[0]?.message ?? "请求格式不对" }, { status: 400 });
   const config = await getAgentConfig(user.id);
   if (!config) return Response.json({ error: "先去账号设置配置一个 AI Key 才能用小欧" }, { status: 400 });
-  const { message, history, page, routeContext } = parsed.data;
+  const { history, page, routeContext, images, mode, thinking } = parsed.data;
+  const message = parsed.data.message || (images?.length ? "请帮我看看这些图片，提取关键信息并告诉我下一步建议。" : "");
+  if (!message) return Response.json({ error: "说点什么或发张图吧" }, { status: 400 });
+  const activeMode: AgentMode = mode ?? "general";
+  const effectiveThinking = routeThinkingDepth({
+    message,
+    mode: activeMode,
+    requested: thinking,
+    hasImages: !!images?.length,
+    hasPage: !!page,
+  });
 
   const encoder = new TextEncoder();
   // Closing 小欧 or clicking 「停止生成」 aborts the upstream LLM fetch immediately.
@@ -240,19 +260,25 @@ export async function POST(request: Request) {
           buildAgentSystemPrompt(user.id),
           page ? Promise.resolve("") : buildRouteContextSection(user.id, routeContext?.pathname),
         ]);
+        const modeSection = buildModePrompt(activeMode);
+        send({ type: "meta", mode: activeMode, thinking: effectiveThinking });
         const result = await runAgent({
           chat: (turn) => {
             if (!open || abortController?.signal.aborted) throw new UserFacingError("已停止生成");
-            return chat(abortController ? { ...turn, signal: abortController.signal } : turn);
+            return chat({ ...turn, thinking: effectiveThinking, ...(abortController ? { signal: abortController.signal } : {}) });
           },
           request: {
             config,
             system:
               baseSystem +
+              modeSection +
               routeSection +
               (earlierSummary ? `\n\n## 更早对话摘要（避免遗忘前面的结论与 ID，最新数据仍以工具为准）\n${earlierSummary}` : "") +
               (page ? pageSection(page) : ""),
-            messages: [...historyMessages(config.provider, recentHistory), { role: "user", text: message }],
+            messages: [
+              ...historyMessages(config.provider, recentHistory),
+              { role: "user", text: message, ...(images?.length ? { images } : {}) },
+            ],
             tools: page ? [...AGENT_TOOLS, DRAFT_TOOL, ...(page.portalCompanyId ? [SYNC_PORTAL_TOOL] : [])] : AGENT_TOOLS,
           },
           execute: (call) => {

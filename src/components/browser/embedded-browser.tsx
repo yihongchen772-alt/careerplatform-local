@@ -2120,6 +2120,10 @@ export function EmbeddedBrowser({
               askText={agentAsk}
               onAskConsumed={() => setAgentAsk(null)}
               pageContext={agentPageContext}
+              captureBrowserScreenshot={bridge ? async () => {
+                const res = await bridge.screenshot();
+                return res?.dataUrl ? { dataUrl: res.dataUrl, title: res.title } : null;
+              } : undefined}
               onFillField={fillDraft}
               onFillFields={fillMultipleDrafts}
               quickQuestions={AGENT_PAGE_QUESTIONS}

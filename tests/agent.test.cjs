@@ -12,7 +12,14 @@ function loadTs(relative, mocks = {}) {
   mod.filename = filename;
   mod.paths = Module._nodeModulePaths(path.dirname(filename));
   const original = mod.require.bind(mod);
-  mod.require = (name) => Object.hasOwn(mocks, name) ? mocks[name] : original(name);
+  mod.require = (name) => {
+    if (Object.hasOwn(mocks, name)) return mocks[name];
+    if (name.startsWith("@/")) {
+      const candidate = `src/${name.slice(2)}.ts`;
+      if (fs.existsSync(path.resolve(__dirname, "..", candidate))) return loadTs(candidate, mocks);
+    }
+    return original(name);
+  };
   mod._compile(compiled, filename);
   return mod.exports;
 }
@@ -695,4 +702,225 @@ test("v80 小欧 overhaul: collectRefs search_records JSON, numeric coercion, Ch
   const mdSrc = fs.readFileSync(path.join(__dirname, "../src/components/assistant/markdown-text.tsx"), "utf8");
   assert.match(mdSrc, /function CodeBlock/);
   assert.match(mdSrc, /isTableSeparator/);
+});
+
+test("v81 小欧 5-upgrade intelligence suite: vision, email search, funnel analytics, expert modes, semantic recall, coaching insights & proactive radar", async () => {
+  // 1. Semantic search & domain synonym expansion
+  const { expandQueryTerms, expandSqlTerms, scoreTextMatch } = loadTs("src/lib/agent/semantic-search.ts");
+  const embodiedTerms = expandSqlTerms("具身智能");
+  assert.ok(embodiedTerms.includes("机器人") || embodiedTerms.includes("人形机器人"), "具身智能 should expand to 机器人/人形机器人");
+  assert.ok(scoreTextMatch("宇树科技 人形机器人运动控制算法工程师", expandQueryTerms("具身智能")) > 0);
+  assert.ok(scoreTextMatch("腾讯秋招笔试通知 测评链接", expandQueryTerms("机考")) > 0);
+
+  // 2. Expert modes & fast/balanced/deep thinking router
+  const { buildModePrompt, routeThinkingDepth, AGENT_MODE_LIST } = loadTs("src/lib/agent/modes.ts");
+  assert.equal(AGENT_MODE_LIST.length, 4);
+  assert.equal(routeThinkingDepth({ message: "今天有什么安排？", mode: "general" }), "fast");
+  assert.equal(routeThinkingDepth({ message: "帮我量化对比这两个 Offer", mode: "general" }), "deep");
+  assert.equal(routeThinkingDepth({ message: "你好", mode: "mock_interview" }), "deep");
+  assert.equal(routeThinkingDepth({ message: "今天有什么安排？", mode: "general", requested: "deep" }), "deep");
+  assert.match(buildModePrompt("mock_interview"), /模拟面试官/);
+  assert.match(buildModePrompt("resume_tailor"), /简历精修/);
+  assert.match(buildModePrompt("offer_coach"), /Offer 量化决策/);
+
+  // 3. Multimodal vision payload + automatic VISION_MODEL switch on qwen + thinking budget
+  const llm = loadTs("src/lib/agent/llm.ts", {
+    "@/lib/ai-providers": {
+      OPENAI_COMPATIBLE_BASE_URL: { qwen: "https://dashscope.example/v1" },
+      VISION_MODEL: { qwen: "qwen-vl-plus" },
+    },
+    "@/lib/action-result": actionResult,
+    "@/lib/ai-provider-labels": { AI_PROVIDER_OPTIONS: [{ id: "qwen", label: "Qwen" }, { id: "gemini", label: "Gemini" }, { id: "anthropic", label: "Claude" }] },
+  });
+  const capturedBodies = [];
+  const notices = [];
+  const origFetch = global.fetch;
+  try {
+    global.fetch = async (url, opts) => {
+      const parsed = JSON.parse(opts.body);
+      capturedBodies.push({ url: String(url), body: parsed });
+      if (String(url).includes("generativelanguage")) {
+        return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "思考中", thought: true }, { text: "图里是字节面试通知" }] } }] }), { status: 200 });
+      }
+      if (String(url).includes("anthropic")) {
+        return new Response(JSON.stringify({ content: [{ type: "text", text: "收到图片" }] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ choices: [{ message: { role: "assistant", content: "已识图" } }] }), { status: 200 });
+    };
+    const sampleImg = { dataUrl: "data:image/png;base64,iVBORw0KGgo=", mimeType: "image/png", name: "shot.png" };
+    const chat = llm.createChat((n) => notices.push(n));
+    const gemTurn = await chat({
+      config: { provider: "gemini", apiKey: "k", model: "gemini-2.5-flash" },
+      system: "sys",
+      messages: [{ role: "user", text: "看图", images: [sampleImg] }],
+      tools: [],
+      thinking: "deep",
+    });
+    assert.equal(gemTurn.text, "图里是字节面试通知");
+    assert.equal(gemTurn.thought, "思考中");
+    assert.equal(capturedBodies[0].body.generationConfig.thinkingConfig.thinkingBudget, 4096);
+    assert.equal(capturedBodies[0].body.contents[0].parts[0].inlineData.mimeType, "image/png");
+
+    await chat({
+      config: { provider: "qwen", apiKey: "k", model: "qwen-max" },
+      system: "sys",
+      messages: [{ role: "user", text: "看图", images: [sampleImg] }],
+      tools: [],
+    });
+    assert.equal(capturedBodies[1].body.model, "qwen-vl-plus");
+    assert.ok(Array.isArray(capturedBodies[1].body.messages[1].content));
+    assert.equal(capturedBodies[1].body.messages[1].content[1].type, "image_url");
+    assert.ok(notices.some((n) => n.includes("qwen-vl-plus")));
+
+    await chat({
+      config: { provider: "anthropic", apiKey: "k", model: "claude-sonnet" },
+      system: "sys",
+      messages: [{ role: "user", text: "看图", images: [sampleImg] }],
+      tools: [],
+    });
+    assert.equal(capturedBodies[2].body.messages[0].content[0].type, "image");
+    assert.equal(capturedBodies[2].body.messages[0].content[0].source.media_type, "image/png");
+  } finally {
+    global.fetch = origFetch;
+  }
+
+  // 4. search_emails & get_funnel_analytics deterministic accuracy
+  const now = new Date("2026-11-22T10:00:00+08:00");
+  const mockDb = {
+    personalTask: {
+      findMany: async () => [
+        {
+          id: "mt_1",
+          title: "腾讯校招笔试邀请",
+          note: "请在周日前完成在线编程测评，双机位监考",
+          dueDate: new Date("2026-11-23T19:00:00+08:00"),
+          done: false,
+          mailAppliedAt: null,
+          createdAt: now,
+          mailEventDraft: {
+            companyName: "腾讯",
+            subject: "腾讯技术岗在线笔试通知",
+            sender: "campus@tencent.com",
+            meetingInfo: "https://exam.tencent.com/123",
+            accessCode: "TX-8899",
+            actionRequired: "提前调试摄像头",
+          },
+          application: { id: "app_tx", title: "后端开发", company: { name: "腾讯", aliases: [{ alias: "Tencent" }] } },
+        },
+      ],
+    },
+    stageHistory: {
+      findMany: async (q) => {
+        if (q?.where?.stage === "REJECTED") {
+          return [
+            { terminatedAtStage: "INTERVIEW_1", terminatedAtStageLabel: "一面" },
+            { terminatedAtStage: "INTERVIEW_1", terminatedAtStageLabel: "一面" },
+            { terminatedAtStage: "OA", terminatedAtStageLabel: "笔试" },
+          ];
+        }
+        return [];
+      },
+    },
+    interviewNoteExtract: {
+      findMany: async () => [{ questions: [{ category: "系统设计" }, { category: "系统设计" }, { category: "手撕算法" }] }],
+    },
+    stagePostmortem: {
+      findMany: async () => [{ content: { gaps: ["缺少量化压测指标"] }, stageHistory: { stage: "INTERVIEW_1", application: { company: { name: "字节跳动" } } } }],
+    },
+    application: {
+      findMany: async () => [
+        {
+          id: "app_1",
+          title: "机器人算法",
+          city: "上海",
+          currentStage: "OFFER",
+          currentStageLabel: null,
+          currentStageDate: new Date("2026-11-20T10:00:00+08:00"),
+          appliedDate: new Date("2026-11-01T10:00:00+08:00"),
+          company: { name: "宇树科技", industry: "机器人", sector: null },
+          position: { location: "上海" },
+          resumeVersion: { id: "r1", name: "机器人精修版" },
+          interviewBrief: null,
+          stageHistory: [{ stage: "APPLIED", enteredAt: now }, { stage: "INTERVIEW_1", enteredAt: now }, { stage: "INTERVIEW_2", enteredAt: now }, { stage: "OFFER", enteredAt: now }],
+        },
+        {
+          id: "app_2",
+          title: "大模型工程师",
+          city: "北京",
+          currentStage: "INTERVIEW_1",
+          currentStageLabel: "一面",
+          currentStageDate: new Date("2026-11-01T10:00:00+08:00"),
+          appliedDate: new Date("2026-10-25T10:00:00+08:00"),
+          company: { name: "字节跳动", industry: "互联网", sector: null },
+          position: { location: "北京" },
+          resumeVersion: { id: "r2", name: "通用算法版" },
+          interviewBrief: null,
+          stageHistory: [
+            { id: "sh_2", stage: "INTERVIEW_1", stageLabel: "一面", enteredAt: now, nextDeadline: new Date("2026-11-23T14:00:00+08:00"), nextHasTime: true },
+          ],
+        },
+        {
+          id: "app_3",
+          title: "具身智能算法",
+          city: "杭州",
+          currentStage: "OFFER",
+          currentStageLabel: null,
+          currentStageDate: new Date("2026-11-21T10:00:00+08:00"),
+          appliedDate: new Date("2026-11-02T10:00:00+08:00"),
+          company: { name: "智元机器人", industry: "机器人", sector: null },
+          position: { location: "杭州" },
+          resumeVersion: { id: "r1", name: "机器人精修版" },
+          interviewBrief: { id: "ib_3", updatedAt: now },
+          stageHistory: [
+            { id: "sh_3", stage: "INTERVIEW_2", stageLabel: "二面", enteredAt: now, nextDeadline: new Date("2026-11-23T14:30:00+08:00"), nextHasTime: true },
+            { stage: "OFFER", enteredAt: now },
+          ],
+        },
+      ],
+    },
+    position: {
+      findMany: async () => [
+        {
+          id: "pos_urgent",
+          title: "AI Agent 工程师",
+          deadline: new Date("2026-11-23T18:00:00+08:00"),
+          company: { name: "阶跃星辰" },
+          positionMatches: [{ matchScore: 92 }],
+        },
+      ],
+    },
+  };
+
+  const wsTools = loadTs("src/lib/agent/workspace-tools.ts", { "@/lib/db": { db: mockDb } });
+  const emailRes = await wsTools.searchEmailsTool("u1", { company: "腾讯", query: "机考" });
+  assert.match(emailRes.content, /TX-8899/);
+  assert.match(emailRes.content, /提前调试摄像头/);
+
+  const funnelRes = await wsTools.getFunnelAnalyticsTool("u1", { groupBy: "all" });
+  assert.match(funnelRes.content, /投递总数：3/);
+  assert.match(funnelRes.content, /拿到 Offer：2/);
+  assert.match(funnelRes.content, /机器人精修版/);
+
+  // 5. Cross-session coaching insights
+  const { buildCoachingInsights } = loadTs("src/lib/agent/insights.ts", { "@/lib/db": { db: mockDb } });
+  const insightsText = await buildCoachingInsights("u1", now);
+  assert.match(insightsText, /一面 2 次/);
+  assert.match(insightsText, /系统设计/);
+  assert.match(insightsText, /缺少量化压测指标/);
+
+  // 6. Proactive event-driven radar nudges
+  const { computeProactiveNudges } = loadTs("src/lib/agent/proactive.ts", { "@/lib/db": { db: mockDb } });
+  const nudges = await computeProactiveNudges("u1", now);
+  assert.ok(nudges.some((n) => n.kind === "interview_prep" && n.action.kind === "generate_brief"), "should nudge missing interview brief within 72h");
+  assert.ok(nudges.some((n) => n.kind === "offer_decision" && n.action.mode === "offer_coach"), "should nudge multi-offer decision");
+  assert.ok(nudges.some((n) => n.kind === "deadline_soon"), "should nudge expiring high-match position");
+
+  // 7. New action types validate & batch save skips destructive actions in UI
+  const shared = loadTs("src/lib/assistant-shared.ts");
+  assert.equal(shared.assistantActionSchema.safeParse({ type: "generate_interview_brief", label: "生成面试速览", targetId: "app_2" }).success, true);
+  assert.equal(shared.assistantActionSchema.safeParse({ type: "save_cover_letter", label: "保存定制自荐信", targetId: "pos_1", note: "这是一段完整的定制求职信正文内容，用于测试校验通过。" }).success, true);
+  const chatSrc = fs.readFileSync(path.join(__dirname, "../src/components/assistant/agent-chat.tsx"), "utf8");
+  assert.match(chatSrc, /skippedDestructive/);
+  assert.match(chatSrc, /captureBrowserScreenshot/);
+  assert.match(chatSrc, /AGENT_MODE_LIST/);
 });

@@ -59,6 +59,8 @@ export const assistantActionSchema = z.object({
     "update_task",
     "delete_task",
     "export_applications",
+    "generate_interview_brief",
+    "save_cover_letter",
   ]),
   label: z.string(),
   companyName: z.string().nullish(),

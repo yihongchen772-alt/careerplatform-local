@@ -410,6 +410,8 @@ export const ACTION_GUIDE = `当用户说的话意味着数据该被记下来或
 - update_task：修改自建待办的标题、截止日或备注。targetId 填 [待办ID]（或 title），title/date/dateEnd/note 填需要改的字段，留空保留原值
 - delete_task：删除一条自建待办（仅用户明确要求删时提）。targetId 填 [待办ID]（或 title 匹配）
 - export_applications：导出全部投递记录文件（用户点按钮即触发下载）。stage（或 note）可填 xlsx / csv / md，默认 xlsx
+- generate_interview_brief：为某条投递一键生成/刷新《面试或笔试速览卡》（自动结合 JD、简历、面经和联网真题）。targetId 填 [投递ID]（或填 companyName + title），stage 为 exam 时生成笔试速览，留空自动按当前轮次判断
+- save_cover_letter：把为某个岗位写好的定制求职信、自荐信、或针对性简历改写方案保存到该岗位档案里。targetId 填 [岗位ID]（或关联岗位的 [投递ID]），note 填完整正文内容（至少 20 字）
 每个 action 的 label 写成用户一眼能看懂的按钮文案，比如"记一条投递：字节跳动 后端开发"或"更新为一面，面试时间 3月5日"。label 只是按钮上的字，不能代替上面那些字段——该填 title/companyName/targetId 的一个都不能少，别只写 label 就交差。
 问到安排（"今天有什么""下一场是什么时候"）直接按上面的「接下来」回答，带上时间和会议/测评链接；用户说"宝洁一面改到周五下午三点""刚面完腾讯二面，问了…"就给 reschedule / complete_step + save_note。
 举例：用户说"我今天投了美团的数据分析，下周三一面"，就给两个 action —— 一个 log_application（如果候选池里没有这条，对上号就用 mark_position_applied），一个提醒他准备面试的 add_task。`;

@@ -43,7 +43,7 @@ export const OPENAI_COMPATIBLE_BASE_URL: Record<OpenAiCompatibleProviderId, stri
  * 智谱's glm-4v-flash and Mistral's pixtral-large-latest are the same story —
  * a dedicated vision model id, confirmed against each vendor's current docs.
  */
-const VISION_MODEL: Partial<Record<OpenAiCompatibleProviderId, string>> = {
+export const VISION_MODEL: Partial<Record<OpenAiCompatibleProviderId, string>> = {
   deepseek: "deepseek-v4-flash-vision-exp",
   kimi: "moonshot-v1-8k-vision-preview",
   qwen: "qwen-vl-plus",

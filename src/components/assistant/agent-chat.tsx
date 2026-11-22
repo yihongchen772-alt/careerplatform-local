@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Send, Check, Plus, Loader2, CircleAlert, CircleCheck, Trash2, Copy, MessageSquareText, ChevronRight, Square, RotateCcw, Pencil, ArrowDown } from "lucide-react";
+import { Send, Check, Plus, Loader2, CircleAlert, CircleCheck, Trash2, Copy, MessageSquareText, ChevronRight, Square, RotateCcw, Pencil, ArrowDown, ImagePlus, Camera, X, Brain } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,17 +14,28 @@ import { deleteAgentConversation, listAgentConversations, loadAgentConversation,
 import { assistantActionSchema, type AssistantAction, type AssistantChatMessage } from "@/lib/assistant-shared";
 import { STAGE_LABELS } from "@/lib/stage-labels";
 import type { AgentStep } from "@/lib/agent/run";
+import { AGENT_MODE_LIST, AGENT_MODE_MAP, type AgentMode } from "@/lib/agent/modes";
 import { VoiceInput } from "./voice-input";
 import { MarkdownText } from "./markdown-text";
 import { cn } from "@/lib/utils";
 import { copyText } from "@/lib/copy-text";
 
+export type ChatImageAttachment = {
+  dataUrl: string;
+  mimeType: string;
+  name?: string;
+};
+
 type DisplayMessage = AssistantChatMessage & {
   id: number;
+  /** Session-only image thumbnails sent with this user turn (not stored in SQLite). */
+  images?: ChatImageAttachment[];
   actions?: AssistantAction[];
   /** Indices of this message's actions already applied, so they don't run twice. */
   applied?: number[];
   steps?: AgentStep[];
+  /** Collapsible model reasoning summary captured during this turn (session-only). */
+  thought?: string;
   /** Backup models used this turn ("…过载，改用 …"). */
   notices?: string[];
   failedRequest?: { message: string; history: AssistantChatMessage[] };
@@ -32,6 +43,45 @@ type DisplayMessage = AssistantChatMessage & {
   drafts?: PageDraft[];
   filled?: number[];
 };
+
+const MAX_ATTACH_IMAGES = 4;
+
+/** Compresses a pasted/picked image into a compact JPEG/WebP dataUrl (max 1400px edge). */
+async function compressImageFile(file: Blob, name?: string): Promise<ChatImageAttachment> {
+  const rawUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("读取图片失败"));
+    reader.readAsDataURL(file);
+  });
+  return compressDataUrl(rawUrl, file.type || "image/png", name);
+}
+
+async function compressDataUrl(rawUrl: string, fallbackMime = "image/png", name?: string): Promise<ChatImageAttachment> {
+  if (typeof window === "undefined" || typeof Image === "undefined") {
+    return { dataUrl: rawUrl, mimeType: fallbackMime, name };
+  }
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const el = new Image();
+    el.onload = () => resolve(el);
+    el.onerror = () => reject(new Error("图片解析失败"));
+    el.src = rawUrl;
+  });
+  const maxEdge = 1400;
+  const scale = Math.min(1, maxEdge / Math.max(img.width || 1, img.height || 1));
+  const w = Math.max(1, Math.round(img.width * scale));
+  const h = Math.max(1, Math.round(img.height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return { dataUrl: rawUrl, mimeType: fallbackMime, name };
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(img, 0, 0, w, h);
+  const compressed = canvas.toDataURL("image/jpeg", 0.84);
+  return { dataUrl: compressed, mimeType: "image/jpeg", name };
+}
 
 export type PageDraft = { question: string; answer: string; section?: string };
 
@@ -167,8 +217,11 @@ async function streamTurn(
   history: AssistantChatMessage[],
   page: AgentPageContext | null,
   routeContext: { pathname: string } | undefined,
+  images: ChatImageAttachment[] | undefined,
+  mode: AgentMode,
+  thinking: "auto" | "deep",
   signal: AbortSignal,
-  onEvent: (event: { type: string; step?: AgentStep; text?: string }) => void
+  onEvent: (event: { type: string; step?: AgentStep; text?: string; mode?: string; thinking?: string }) => void
 ): Promise<TurnResult> {
   const response = await fetch("/api/agent", {
     method: "POST",
@@ -177,6 +230,9 @@ async function streamTurn(
     body: JSON.stringify({
       message,
       history,
+      mode,
+      thinking,
+      ...(images?.length ? { images } : {}),
       ...(page ? { page } : {}),
       ...(routeContext ? { routeContext } : {}),
     }),
@@ -259,10 +315,12 @@ function when(iso: string) {
  * 小欧's conversation, plan and memory — the floating window on every page
  * and the 网申浏览器's side panel (with the open page as context) both show this.
  */
-export function AgentChat({ header, pageContext, routeContext, suggestions = DEFAULT_SUGGESTIONS, quickQuestions = DEFAULT_QUICK_QUESTIONS, intro, askText, askSend = false, onAskConsumed, onNavigate, onReply, onFillField, onFillFields, className }: {
+export function AgentChat({ header, pageContext, routeContext, captureBrowserScreenshot, suggestions = DEFAULT_SUGGESTIONS, quickQuestions = DEFAULT_QUICK_QUESTIONS, intro, askText, askSend = false, askMode, onAskConsumed, onNavigate, onReply, onFillField, onFillFields, className }: {
   header: ReactNode;
   pageContext?: () => Promise<AgentPageContext | null>;
   routeContext?: { pathname: string };
+  /** 网申浏览器 only: captures current page screenshot so 小欧 can inspect visually. */
+  captureBrowserScreenshot?: () => Promise<{ dataUrl: string; title?: string } | null>;
   suggestions?: string[];
   quickQuestions?: string[];
   intro?: ReactNode;
@@ -270,6 +328,8 @@ export function AgentChat({ header, pageContext, routeContext, suggestions = DEF
   askText?: string | null;
   /** Send askText as soon as the chat is ready instead of only typing it in. */
   askSend?: boolean;
+  /** Optional expert mode to switch into when consuming askText. */
+  askMode?: AgentMode;
   onAskConsumed?: () => void;
   onNavigate?: () => void;
   /** A turn finished (answered or failed) — for a dot when the panel is closed. */
@@ -282,12 +342,21 @@ export function AgentChat({ header, pageContext, routeContext, suggestions = DEF
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("chat");
+  const [mode, setModeState] = useState<AgentMode>("general");
+  const modeRef = useRef<AgentMode>("general");
+  const setMode = (next: AgentMode) => {
+    modeRef.current = next;
+    setModeState(next);
+  };
+  const [deepThinking, setDeepThinking] = useState(false);
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [threadId, setThreadId] = useState<string | null>(null);
   const [threads, setThreads] = useState<AgentThreadSummary[] | null>(null);
   const [input, setInput] = useState("");
+  const [pendingImages, setPendingImages] = useState<ChatImageAttachment[]>([]);
+  const [capturingShot, setCapturingShot] = useState(false);
   const [sending, setSending] = useState(false);
-  const [live, setLive] = useState<{ steps: AgentStep[]; note: string; text: string }>({ steps: [], note: "", text: "" });
+  const [live, setLive] = useState<{ steps: AgentStep[]; note: string; text: string; thought: string; thinkingLevel?: string }>({ steps: [], note: "", text: "", thought: "" });
   const [applying, setApplying] = useState<string | null>(null);
   const [state, setState] = useState<AgentState | null>(null);
   const [planDraft, setPlanDraft] = useState<string | null>(null);
@@ -298,9 +367,11 @@ export function AgentChat({ header, pageContext, routeContext, suggestions = DEF
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const stickToBottomRef = useRef(true);
   const abortRef = useRef<AbortController | null>(null);
   const liveTextRef = useRef("");
+  const liveThoughtRef = useRef("");
   const liveStepsRef = useRef<AgentStep[]>([]);
   const busyRef = useRef(false);
   const threadRef = useRef<string | null>(null);
@@ -400,9 +471,51 @@ export function AgentChat({ header, pageContext, routeContext, suggestions = DEF
     setMessages(next);
   }
 
-  function addMessage(role: "user" | "assistant", content: string, actions?: AssistantAction[], steps?: AgentStep[], notices?: string[], drafts?: PageDraft[], refs?: string) {
+  function addMessage(role: "user" | "assistant", content: string, actions?: AssistantAction[], steps?: AgentStep[], notices?: string[], drafts?: PageDraft[], refs?: string, images?: ChatImageAttachment[], thought?: string) {
     const id = nextId.current++;
-    update((prev) => [...prev, { id, role, content, ...(refs ? { refs } : {}), actions, steps, notices, applied: [], drafts: drafts?.length ? drafts : undefined, filled: [] }]);
+    update((prev) => [...prev, { id, role, content, ...(images?.length ? { images } : {}), ...(thought ? { thought } : {}), ...(refs ? { refs } : {}), actions, steps, notices, applied: [], drafts: drafts?.length ? drafts : undefined, filled: [] }]);
+  }
+
+  async function attachImageFiles(files: FileList | File[]) {
+    const list = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    if (!list.length) return;
+    const room = Math.max(0, MAX_ATTACH_IMAGES - pendingImages.length);
+    if (!room) {
+      toast.error(`单次最多附带 ${MAX_ATTACH_IMAGES} 张图片`);
+      return;
+    }
+    const added: ChatImageAttachment[] = [];
+    for (const file of list.slice(0, room)) {
+      try {
+        added.push(await compressImageFile(file, file.name));
+      } catch {
+        toast.error(`读取图片「${file.name || "截图"}」失败`);
+      }
+    }
+    if (added.length) setPendingImages((prev) => [...prev, ...added].slice(0, MAX_ATTACH_IMAGES));
+  }
+
+  async function handleAttachBrowserScreenshot() {
+    if (!captureBrowserScreenshot || capturingShot) return;
+    if (pendingImages.length >= MAX_ATTACH_IMAGES) {
+      toast.error(`单次最多附带 ${MAX_ATTACH_IMAGES} 张图片`);
+      return;
+    }
+    setCapturingShot(true);
+    try {
+      const shot = await captureBrowserScreenshot();
+      if (!shot?.dataUrl) {
+        toast.error("未能获取当前网页截图");
+        return;
+      }
+      const compressed = await compressDataUrl(shot.dataUrl, "image/png", shot.title ? `${shot.title.slice(0, 24)}.jpg` : "网页截图.jpg");
+      setPendingImages((prev) => [...prev, compressed].slice(0, MAX_ATTACH_IMAGES));
+      toast.success("已附上当前网页截图");
+    } catch {
+      toast.error("截取当前网页失败");
+    } finally {
+      setCapturingShot(false);
+    }
   }
 
   function newChat() {
@@ -439,16 +552,19 @@ export function AgentChat({ header, pageContext, routeContext, suggestions = DEF
     if (id === threadId) newChat();
   }
 
-  async function runTurn(content: string, history: AssistantChatMessage[]): Promise<TurnResult> {
+  async function runTurn(content: string, history: AssistantChatMessage[], images?: ChatImageAttachment[], modeOverride?: AgentMode): Promise<TurnResult> {
     const controller = new AbortController();
     abortRef.current = controller;
     liveTextRef.current = "";
+    liveThoughtRef.current = "";
     liveStepsRef.current = [];
-    setLive({ steps: [], note: "", text: "" });
+    setLive({ steps: [], note: "", text: "", thought: "" });
     try {
       const page = pageContext ? await pageContext().catch(() => null) : null;
-      return await streamTurn(content, history, page, routeContext, controller.signal, (event) => {
-        if (event.type === "step" && event.step) {
+      return await streamTurn(content, history, page, routeContext, images, modeOverride ?? modeRef.current, deepThinking ? "deep" : "auto", controller.signal, (event) => {
+        if (event.type === "meta" && event.thinking) {
+          setLive((prev) => ({ ...prev, thinkingLevel: event.thinking }));
+        } else if (event.type === "step" && event.step) {
           const step = event.step;
           const nextSteps = liveStepsRef.current.some((item) => item.id === step.id)
             ? liveStepsRef.current.map((item) => (item.id === step.id ? step : item))
@@ -456,6 +572,10 @@ export function AgentChat({ header, pageContext, routeContext, suggestions = DEF
           liveStepsRef.current = nextSteps;
           setLive((prev) => ({ ...prev, steps: nextSteps }));
         } else if (event.type === "note" && event.text) setLive((prev) => ({ ...prev, note: event.text! }));
+        else if (event.type === "thought" && event.text) {
+          liveThoughtRef.current += event.text;
+          setLive((prev) => ({ ...prev, thought: prev.thought + event.text }));
+        }
         // The reply as the model writes it; a new model turn (after looking things up) starts over.
         else if (event.type === "reset") {
           liveTextRef.current = "";
@@ -472,7 +592,7 @@ export function AgentChat({ header, pageContext, routeContext, suggestions = DEF
       return { ok: false, message: "连接中断，本次请求未完成。请稍后重试。" };
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
-      setLive({ steps: [], note: "", text: "" });
+      setLive({ steps: [], note: "", text: "", thought: "" });
     }
   }
 
@@ -509,7 +629,7 @@ export function AgentChat({ header, pageContext, routeContext, suggestions = DEF
     try {
       const res = await runTurn(userContent, history);
       onReply?.();
-      if (res.ok) addMessage("assistant", res.reply, res.actions, res.steps, res.notices, res.drafts, res.refs || undefined);
+      if (res.ok) addMessage("assistant", res.reply, res.actions, res.steps, res.notices, res.drafts, res.refs || undefined, undefined, liveThoughtRef.current.trim() || undefined);
       else if (res.aborted) {
         const partial = liveTextRef.current.trim();
         addMessage("assistant", partial ? `${partial}\n\n（已停止生成）` : "（已停止生成）", undefined, liveStepsRef.current.length ? liveStepsRef.current : undefined);
@@ -533,8 +653,10 @@ export function AgentChat({ header, pageContext, routeContext, suggestions = DEF
     setTimeout(() => composerRef.current?.focus(), 0);
   }
 
-  async function handleSend(text?: string) {
-    const content = (text ?? input).trim();
+  async function handleSend(text?: string, modeOverride?: AgentMode) {
+    const raw = (text ?? input).trim();
+    const attached = text === undefined ? pendingImages : [];
+    const content = raw || (attached.length ? "请帮我看看这张图，提取关键信息并告诉我下一步建议。" : "");
     if (!content || busyRef.current || !loaded) return;
     if (content.length > 6000) { toast.error("单条消息请控制在 6000 字以内"); return; }
     busyRef.current = true;
@@ -542,14 +664,17 @@ export function AgentChat({ header, pageContext, routeContext, suggestions = DEF
     setShowScrollDown(false);
     setTab("chat");
     const history = messages.filter((m) => !m.failedRequest).map(({ role, content, refs }) => ({ role, content, ...(refs ? { refs } : {}) }));
-    addMessage("user", content);
+    addMessage("user", content, undefined, undefined, undefined, undefined, undefined, attached);
     // A tapped suggestion leaves whatever was being typed alone.
-    if (text === undefined) setInput("");
+    if (text === undefined) {
+      setInput("");
+      setPendingImages([]);
+    }
     setSending(true);
     try {
-      const res = await runTurn(content, history);
+      const res = await runTurn(content, history, attached.length ? attached : undefined, modeOverride);
       onReply?.();
-      if (res.ok) addMessage("assistant", res.reply, res.actions, res.steps, res.notices, res.drafts, res.refs || undefined);
+      if (res.ok) addMessage("assistant", res.reply, res.actions, res.steps, res.notices, res.drafts, res.refs || undefined, undefined, liveThoughtRef.current.trim() || undefined);
       else if (res.aborted) {
         const partial = liveTextRef.current.trim();
         addMessage("assistant", partial ? `${partial}\n\n（已停止生成）` : "（已停止生成）", undefined, liveStepsRef.current.length ? liveStepsRef.current : undefined);
@@ -571,12 +696,13 @@ export function AgentChat({ header, pageContext, routeContext, suggestions = DEF
     if (askSend && (!loaded || sending)) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- a question handed over from another page
     setTab("chat");
+    if (askMode) setMode(askMode);
     if (askSend) void handleSend(askText);
     else setInput(askText.slice(0, 6000));
     onAskConsumed?.();
     // handleSend reads the latest messages itself; re-running on its identity would send twice.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [askText, askSend, loaded, sending, onAskConsumed]);
+  }, [askText, askSend, askMode, loaded, sending, onAskConsumed]);
 
   async function handleApply(messageId: number, index: number, action: AssistantAction) {
     const token = `${messageId}:${index}`;
@@ -593,7 +719,10 @@ export function AgentChat({ header, pageContext, routeContext, suggestions = DEF
       }
       toast.success(res.data.done);
       update((prev) => prev.map((m) => (m.id === messageId ? { ...m, applied: [...(m.applied ?? []), index] } : m)));
-      addMessage("assistant", `操作已完成：${res.data.done}`);
+      addMessage(
+        "assistant",
+        res.data.href ? `操作已完成：${res.data.done}（[点击查看](${res.data.href})）` : `操作已完成：${res.data.done}`
+      );
       router.refresh();
     } catch {
       toast.error("未能确认保存结果，请先检查记录再重试。");
@@ -602,11 +731,17 @@ export function AgentChat({ header, pageContext, routeContext, suggestions = DEF
     }
   }
 
-  /** Every button of one message not yet saved, one after another; a failed one stays clickable. */
+  /** Every non-destructive button of one message not yet saved, one after another; destructive ones require individual clicks. */
   async function handleApplyAll(messageId: number) {
     const message = messages.find((m) => m.id === messageId);
     if (applying || !message?.actions) return;
-    const pending = message.actions.map((action, index) => ({ action, index })).filter(({ index }) => !message.applied?.includes(index));
+    const allPending = message.actions.map((action, index) => ({ action, index })).filter(({ index }) => !message.applied?.includes(index));
+    const pending = allPending.filter(({ action }) => !DESTRUCTIVE_ACTIONS.has(action.type));
+    const skippedDestructive = allPending.length - pending.length;
+    if (!pending.length) {
+      if (skippedDestructive > 0) toast.info("删除类操作需要单独点击「确认删除」");
+      return;
+    }
     setApplying(`${messageId}:all`);
     const saved: number[] = [];
     const failed: string[] = [];
@@ -621,9 +756,9 @@ export function AgentChat({ header, pageContext, routeContext, suggestions = DEF
       }
     } finally {
       if (saved.length) update((prev) => prev.map((m) => (m.id === messageId ? { ...m, applied: [...(m.applied ?? []), ...saved] } : m)));
-      if (saved.length) toast.success(`已保存 ${saved.length} 项`);
+      if (saved.length) toast.success(`已保存 ${saved.length} 项${skippedDestructive ? `（已跳过 ${skippedDestructive} 项删除操作）` : ""}`);
       if (failed.length) toast.error(`${failed.length} 项没保存，可以单独再点`);
-      addMessage("assistant", `操作已完成：保存了 ${saved.length} 项${failed.length ? `；没保存：${failed.join("、")}` : ""}`);
+      addMessage("assistant", `操作已完成：保存了 ${saved.length} 项${skippedDestructive ? `；${skippedDestructive} 项删除操作需单独确认` : ""}${failed.length ? `；没保存：${failed.join("、")}` : ""}`);
       if (saved.length) router.refresh();
       setApplying(null);
     }
@@ -758,18 +893,62 @@ export function AgentChat({ header, pageContext, routeContext, suggestions = DEF
 
       {tab === "chat" && (
         <>
+          <div className="flex items-center gap-1 overflow-x-auto border-b bg-muted/25 px-2.5 py-1 text-[11px] [scrollbar-width:none]">
+            {AGENT_MODE_LIST.map((item) => {
+              const active = mode === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  disabled={sending}
+                  title={item.description}
+                  onClick={() => setMode(item.id)}
+                  className={cn(
+                    "shrink-0 rounded-full px-2 py-0.5 transition-colors disabled:opacity-50",
+                    active
+                      ? "bg-primary text-primary-foreground font-medium shadow-xs"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  )}
+                >
+                  {item.shortLabel}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              disabled={sending}
+              title={deepThinking ? "已锁定深度推理模式（再次点击恢复智能自动分流）" : "当前为快慢思考自动分流（点击可强制开启深度推理）"}
+              onClick={() => setDeepThinking((prev) => !prev)}
+              className={cn(
+                "ml-auto inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 transition-colors disabled:opacity-50",
+                deepThinking || mode !== "general"
+                  ? "border-primary/40 bg-primary/10 font-medium text-primary"
+                  : "border-transparent text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+            >
+              <Brain className="size-3" />
+              {deepThinking ? "深度" : mode !== "general" ? "专家深度" : "自动"}
+            </button>
+          </div>
           <div className="relative flex min-h-0 flex-1 flex-col">
             <div ref={scrollRef} onScroll={handleScroll} className="flex-1 space-y-2.5 overflow-y-auto p-3">
               {messages.length === 0 ? (
                 <div className="space-y-2">
-                  {intro ?? (
-                    <p className="text-sm text-muted-foreground">
-                      把求职的事交给我：我会自己查你的记录、读 JD 和简历、上官网找岗位、联网研究，然后给你明确的建议和计划。
-                      要改记录时我会给出按钮，你点了才保存；我不会替你发邮件或提交网申。
-                    </p>
+                  {mode !== "general" ? (
+                    <div className="rounded-xl border border-primary/25 bg-primary/5 px-3 py-2 text-xs text-foreground">
+                      <p className="font-medium text-primary">{AGENT_MODE_MAP[mode].label}</p>
+                      <p className="mt-0.5 text-muted-foreground">{AGENT_MODE_MAP[mode].description}</p>
+                    </div>
+                  ) : (
+                    intro ?? (
+                      <p className="text-sm text-muted-foreground">
+                        把求职的事交给我：我会自己查你的记录、读 JD 和简历、上官网找岗位、联网研究，然后给你明确的建议和计划。
+                        要改记录时我会给出按钮，你点了才保存；我不会替你发邮件或提交网申。
+                      </p>
+                    )
                   )}
                   <Link href="/settings?tab=ai" onClick={onNavigate} className="inline-block text-xs text-primary underline">配置 AI 服务商和 API Key</Link>
-                  {suggestions.map((s) => (
+                  {(mode !== "general" ? AGENT_MODE_MAP[mode].quickQuestions : suggestions).map((s) => (
                     <button key={s} type="button" disabled={!loaded} onClick={() => handleSend(s)} className="block w-full rounded-xl border px-3 py-2 text-left text-sm transition-colors hover:bg-muted">{s}</button>
                   ))}
                 </div>
@@ -777,7 +956,27 @@ export function AgentChat({ header, pageContext, routeContext, suggestions = DEF
                 messages.map((m) => (
                   <div key={m.id} className="group/msg flex flex-col gap-1.5">
                     {!!m.steps?.length && <StepsSummary steps={m.steps} onNavigate={onNavigate} />}
+                    {!!m.thought && (
+                      <details className="group/thought px-1 text-xs">
+                        <summary className="flex w-fit cursor-pointer list-none items-center gap-1 text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+                          <Brain className="size-3.5 text-primary/70" />
+                          思考过程（{m.thought.length} 字）
+                          <ChevronRight className="size-3.5 transition-transform group-open/thought:rotate-90" />
+                        </summary>
+                        <div className="mt-1.5 max-h-48 overflow-y-auto whitespace-pre-wrap rounded-lg border border-border/60 bg-muted/40 px-2.5 py-2 text-xs leading-5 text-muted-foreground">
+                          {m.thought}
+                        </div>
+                      </details>
+                    )}
                     <div className={m.failedRequest ? "mr-6 rounded-2xl rounded-bl-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm" : m.role === "assistant" ? "bubble-ai group relative mr-6 rounded-2xl rounded-bl-md bg-muted px-3 py-2 text-sm" : "bubble-user group relative max-w-[85%] self-end rounded-2xl rounded-br-md bg-primary px-3 py-2 text-sm text-primary-foreground"}>
+                      {!!m.images?.length && (
+                        <div className="mb-1.5 flex flex-wrap gap-1.5">
+                          {m.images.map((img, idx) => (
+                            // eslint-disable-next-line @next/next/no-img-element -- local user-attached base64 preview
+                            <img key={idx} src={img.dataUrl} alt={img.name || `附图 ${idx + 1}`} className="max-h-28 max-w-36 rounded-lg border border-white/20 object-cover" />
+                          ))}
+                        </div>
+                      )}
                       {m.role === "assistant" && !m.failedRequest ? (
                         <MarkdownText text={m.content} onNavigate={onNavigate} />
                       ) : (
@@ -829,11 +1028,15 @@ export function AgentChat({ header, pageContext, routeContext, suggestions = DEF
                       );
                     })}
 
-                    {(m.actions?.length ?? 0) - (m.applied?.length ?? 0) >= 2 && (
-                      <Button size="sm" variant="outline" className="w-full text-xs" disabled={!!applying} onClick={() => handleApplyAll(m.id)}>
-                        {applying === `${m.id}:all` ? <><Loader2 className="size-3.5 animate-spin" />保存中…</> : <><Check className="size-3.5" />全部保存（{(m.actions?.length ?? 0) - (m.applied?.length ?? 0)} 项）</>}
-                      </Button>
-                    )}
+                    {(() => {
+                      const safePending = (m.actions ?? []).filter((act, idx) => !m.applied?.includes(idx) && !DESTRUCTIVE_ACTIONS.has(act.type)).length;
+                      if (safePending < 2) return null;
+                      return (
+                        <Button size="sm" variant="outline" className="w-full text-xs" disabled={!!applying} onClick={() => handleApplyAll(m.id)}>
+                          {applying === `${m.id}:all` ? <><Loader2 className="size-3.5 animate-spin" />保存中…</> : <><Check className="size-3.5" />一键全部保存（{safePending} 项）</>}
+                        </Button>
+                      );
+                    })()}
                     {m.actions?.map((action, i) => {
                       const done = m.applied?.includes(i);
                       const busy = applying === `${m.id}:${i}`;
@@ -900,10 +1103,23 @@ export function AgentChat({ header, pageContext, routeContext, suggestions = DEF
                       const running = [...live.steps].reverse().find((s) => s.status === "running");
                       if (running) return `正在：${running.label}…`;
                       if (live.text.trim()) return "小欧正在组织回答…";
+                      if (live.thought.trim()) return live.thinkingLevel === "deep" ? "小欧正在深度推理…" : "小欧正在思考…";
                       return live.steps.length ? "小欧正在整理结果…" : "小欧在想该怎么做…";
                     })()}
                   </p>
                   {live.note && <p className="mt-1 text-muted-foreground">{live.note}</p>}
+                  {!!live.thought.trim() && (
+                    <details className="group/thought mt-1.5">
+                      <summary className="flex w-fit cursor-pointer list-none items-center gap-1 text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+                        <Brain className="size-3.5 text-primary/70" />
+                        思考中（{live.thought.length} 字）
+                        <ChevronRight className="size-3.5 transition-transform group-open/thought:rotate-90" />
+                      </summary>
+                      <div className="mt-1 max-h-36 overflow-y-auto whitespace-pre-wrap rounded-lg border border-border/60 bg-muted/40 px-2.5 py-1.5 text-xs leading-5 text-muted-foreground">
+                        {live.thought}
+                      </div>
+                    </details>
+                  )}
                   {!!live.steps.length && <ol className="mt-2">{live.steps.map((step) => <StepLine key={step.id} step={step} onNavigate={onNavigate} />)}</ol>}
                 </div>
               )}
@@ -929,24 +1145,105 @@ export function AgentChat({ header, pageContext, routeContext, suggestions = DEF
           </div>
 
           <div className="flex gap-1.5 overflow-x-auto border-t px-2 pt-2 [scrollbar-width:none]">
-            {quickQuestions.map((question) => (
+            {(mode !== "general" ? AGENT_MODE_MAP[mode].quickQuestions : quickQuestions).map((question) => (
               <button key={question} type="button" disabled={sending || !loaded} onClick={() => handleSend(question)} className="shrink-0 rounded-full border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50">{question}</button>
             ))}
           </div>
-          <div className="flex items-end gap-2 p-2">
+          {!!pendingImages.length && (
+            <div className="flex flex-wrap gap-1.5 border-t bg-muted/30 px-2.5 pt-2 pb-1">
+              {pendingImages.map((img, idx) => (
+                <div key={idx} className="group/img relative overflow-hidden rounded-lg border bg-background">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- local preview */}
+                  <img src={img.dataUrl} alt={img.name || `附图 ${idx + 1}`} className="h-14 w-14 object-cover" />
+                  <button
+                    type="button"
+                    aria-label="移除图片"
+                    onClick={() => setPendingImages((prev) => prev.filter((_, i) => i !== idx))}
+                    className="absolute top-0.5 right-0.5 flex size-4 items-center justify-center rounded-full bg-black/70 text-white hover:bg-black"
+                  >
+                    <X className="size-2.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div
+            className="flex items-end gap-1.5 p-2"
+            onDragOver={(e) => {
+              if (e.dataTransfer?.types?.includes("Files")) e.preventDefault();
+            }}
+            onDrop={(e) => {
+              if (e.dataTransfer?.files?.length) {
+                e.preventDefault();
+                void attachImageFiles(e.dataTransfer.files);
+              }
+            }}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files?.length) void attachImageFiles(e.target.files);
+                e.target.value = "";
+              }}
+            />
             <VoiceInput disabled={sending || !loaded} onText={(text) => setInput((previous) => (previous ? previous + "\n" + text : text).slice(0, 6000))} />
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="size-9 shrink-0 text-muted-foreground hover:text-foreground"
+              aria-label="上传图片"
+              title="上传图片（也可直接 Ctrl/Cmd+V 粘贴或拖拽截图）"
+              disabled={sending || !loaded || pendingImages.length >= MAX_ATTACH_IMAGES}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <ImagePlus className="size-4" />
+            </Button>
+            {captureBrowserScreenshot && (
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="size-9 shrink-0 text-muted-foreground hover:text-foreground"
+                aria-label="附当前网页截图"
+                title="截取当前网申网页发给小欧看"
+                disabled={sending || !loaded || capturingShot || pendingImages.length >= MAX_ATTACH_IMAGES}
+                onClick={() => void handleAttachBrowserScreenshot()}
+              >
+                {capturingShot ? <Loader2 className="size-4 animate-spin" /> : <Camera className="size-4" />}
+              </Button>
+            )}
             <textarea
               ref={composerRef}
               rows={1}
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              onPaste={(e) => {
+                const items = e.clipboardData?.items;
+                if (!items) return;
+                const files: File[] = [];
+                for (let i = 0; i < items.length; i++) {
+                  if (items[i].type.startsWith("image/")) {
+                    const f = items[i].getAsFile();
+                    if (f) files.push(f);
+                  }
+                }
+                if (files.length) {
+                  e.preventDefault();
+                  void attachImageFiles(files);
+                }
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault();
                   void handleSend();
                 }
               }}
-              placeholder="交给小欧一件事（Enter 发送，Shift+Enter 换行）…"
+              placeholder={AGENT_MODE_MAP[mode].placeholder}
               aria-label="给小欧发送消息"
               maxLength={6000}
               disabled={sending || !loaded}
@@ -957,7 +1254,7 @@ export function AgentChat({ header, pageContext, routeContext, suggestions = DEF
                 <Square className="size-3.5 fill-current" />
               </Button>
             ) : (
-              <Button type="button" size="icon" className="size-9 shrink-0" aria-label="发送" disabled={!input.trim() || !loaded} onClick={() => handleSend()}>
+              <Button type="button" size="icon" className="size-9 shrink-0" aria-label="发送" disabled={(!input.trim() && !pendingImages.length) || !loaded} onClick={() => handleSend()}>
                 <Send className="size-4" />
               </Button>
             )}

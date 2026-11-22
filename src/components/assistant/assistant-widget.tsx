@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Sparkles, X, Maximize2, Minimize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AgentChat, DEFAULT_QUICK_QUESTIONS, DEFAULT_SUGGESTIONS } from "./agent-chat";
+import type { AgentMode } from "@/lib/agent/modes";
 
 const WIDTH_KEY = "careerplatform.agent.width";
 const MIN_WIDTH = 380;
@@ -97,6 +98,7 @@ export function AssistantWidget() {
   const [width, setWidth] = useState(460);
   const [askText, setAskText] = useState<string | null>(null);
   const [askSend, setAskSend] = useState(false);
+  const [askMode, setAskMode] = useState<AgentMode | undefined>(undefined);
   const dragging = useRef(false);
   const openRef = useRef(open);
   useEffect(() => { openRef.current = open; }, [open]);
@@ -129,14 +131,20 @@ export function AssistantWidget() {
   useEffect(() => {
     if (inBrowser) return;
     const ask = (event: Event) => {
-      const detail = (event as CustomEvent<string | { text?: unknown; send?: unknown }>).detail;
+      const detail = (event as CustomEvent<string | { text?: unknown; send?: unknown; mode?: unknown }>).detail;
       setOpen(true);
       if (typeof detail === "string") {
         setAskText(detail);
         setAskSend(false);
+        setAskMode(undefined);
       } else if (detail && typeof detail.text === "string") {
         setAskText(detail.text);
         setAskSend(detail.send === true);
+        setAskMode(
+          detail.mode === "mock_interview" || detail.mode === "resume_tailor" || detail.mode === "offer_coach" || detail.mode === "general"
+            ? detail.mode
+            : undefined
+        );
       }
     };
     window.addEventListener("xiaoou:ask", ask);
@@ -173,10 +181,11 @@ export function AssistantWidget() {
           <AgentChat
             askText={askText}
             askSend={askSend}
+            askMode={askMode}
             routeContext={pathname ? { pathname } : undefined}
             quickQuestions={prompts.quickQuestions}
             suggestions={prompts.suggestions}
-            onAskConsumed={() => { setAskText(null); setAskSend(false); }}
+            onAskConsumed={() => { setAskText(null); setAskSend(false); setAskMode(undefined); }}
             onNavigate={() => setOpen(false)}
             onReply={() => { if (!openRef.current) setUnread(true); }}
             header={(
