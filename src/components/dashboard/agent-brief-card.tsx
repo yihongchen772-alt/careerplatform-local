@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { MarkdownText } from "@/components/assistant/markdown-text";
 import { generateBrief } from "@/lib/actions/agent-brief";
 import { applyAssistantAction } from "@/lib/actions/assistant";
+import { launchBatchApply } from "@/lib/batch-apply";
 import type { BriefKind, BriefView, ProactiveNudge } from "@/lib/agent/brief";
 import type { AgentMode } from "@/lib/agent/modes";
 import { cn } from "@/lib/utils";
@@ -68,6 +69,9 @@ export function AgentBriefCard({ daily, weekly, dailyDue, weeklyDue, nudges = []
     if (!action) return;
     const res = await applyAssistantAction(action);
     if (!res.ok) return void toast.error(res.message);
+    if (res.data.batchJobs?.length) {
+      await launchBatchApply(res.data.batchJobs, (href) => router.push(href));
+    }
     toast.success(res.data.done);
     setApplied((prev) => [...prev, key]);
     router.refresh();

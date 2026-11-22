@@ -70,7 +70,7 @@ const bodySchema = z.object({
   routeContext: z.object({
     pathname: z.string().max(300),
   }).optional(),
-  mode: z.enum(["general", "mock_interview", "resume_tailor", "offer_coach"]).optional().default("general"),
+  mode: z.enum(["general", "career_ops", "mock_interview", "resume_tailor", "offer_coach"]).optional().default("general"),
   thinking: z.enum(["auto", "fast", "balanced", "deep"]).optional().default("auto"),
 });
 

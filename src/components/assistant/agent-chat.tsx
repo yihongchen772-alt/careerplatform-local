@@ -19,6 +19,7 @@ import { VoiceInput } from "./voice-input";
 import { MarkdownText } from "./markdown-text";
 import { cn } from "@/lib/utils";
 import { copyText } from "@/lib/copy-text";
+import { launchBatchApply } from "@/lib/batch-apply";
 
 export type ChatImageAttachment = {
   dataUrl: string;
@@ -717,6 +718,12 @@ export function AgentChat({ header, pageContext, routeContext, captureBrowserScr
       if (res.data.downloadUrl) {
         window.open(res.data.downloadUrl, "_blank", "noopener");
       }
+      if (res.data.batchJobs?.length) {
+        await launchBatchApply(res.data.batchJobs, (href) => {
+          onNavigate?.();
+          router.push(href);
+        });
+      }
       toast.success(res.data.done);
       update((prev) => prev.map((m) => (m.id === messageId ? { ...m, applied: [...(m.applied ?? []), index] } : m)));
       addMessage(
@@ -745,14 +752,22 @@ export function AgentChat({ header, pageContext, routeContext, captureBrowserScr
     setApplying(`${messageId}:all`);
     const saved: number[] = [];
     const failed: string[] = [];
+    const queuedBatch: { url: string; positionId?: string; company?: string; title?: string }[] = [];
     try {
       for (const { action, index } of pending) {
         const res = await applyAssistantAction(action).catch(() => null);
         if (res?.ok) {
           saved.push(index);
           if (res.data.downloadUrl) window.open(res.data.downloadUrl, "_blank", "noopener");
+          if (res.data.batchJobs?.length) queuedBatch.push(...res.data.batchJobs);
         }
         else failed.push(`${action.label}${res && !res.ok ? `（${res.message}）` : ""}`);
+      }
+      if (queuedBatch.length) {
+        await launchBatchApply(queuedBatch, (href) => {
+          onNavigate?.();
+          router.push(href);
+        });
       }
     } finally {
       if (saved.length) update((prev) => prev.map((m) => (m.id === messageId ? { ...m, applied: [...(m.applied ?? []), ...saved] } : m)));

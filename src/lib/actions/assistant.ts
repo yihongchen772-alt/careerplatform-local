@@ -16,6 +16,7 @@ import { markContacted, updateContact, deleteContact } from "@/lib/actions/conta
 import { revalidateContactPaths } from "@/lib/revalidate-contacts";
 import { addCalendarItem, addStageSchedule, markFollowedUp, saveStepNote, setEventCompleted, setStageSchedule, setStepCompleted, writeMailSchedule } from "@/lib/actions/schedule";
 import { generateInterviewBrief } from "@/lib/actions/interview-brief";
+import { startTailoring, generateTailoring, saveTailoringAsVersion } from "@/lib/actions/resume-tailor";
 import { assistantActionSchema, type AssistantAction } from "@/lib/assistant-shared";
 import { parseCities } from "@/lib/application-city";
 import { closestId } from "@/lib/closest-id";
@@ -167,7 +168,14 @@ function normalizePositionStatus(input: string | null | undefined): "EVALUATING"
  */
 export async function applyAssistantAction(
   action: AssistantAction
-): Promise<ActionResult<{ done: string; downloadUrl?: string; href?: string }>> {
+): Promise<
+  ActionResult<{
+    done: string;
+    downloadUrl?: string;
+    href?: string;
+    batchJobs?: { url: string; positionId?: string; company?: string; title?: string }[];
+  }>
+> {
   return toActionResult(async () => {
     const user = await requireUser();
     const a = assistantActionSchema.parse(action);
@@ -734,6 +742,97 @@ export async function applyAssistantAction(
           };
         }
         throw new UserFacingError("需要指定关联的候选岗位或投递（含关联岗位）才能保存求职信/定制稿");
+      }
+
+      case "tailor_resume_pdf": {
+        const pos = await findPositionForAction(user.id, a.targetId, a.companyName, a.title);
+        const app = !pos ? await findApplicationForAction(user.id, a.targetId, a.companyName, a.title) : null;
+        const positionId = pos?.id ?? app?.positionId ?? null;
+        const jdText = a.note?.trim() || undefined;
+        const startRes = await startTailoring(
+          positionId
+            ? { positionId }
+            : {
+                company: a.companyName?.trim() || app?.company.name || "",
+                title: a.title?.trim() || app?.title || "",
+                jdText: jdText || "",
+                url: webUrl(a.url) ?? undefined,
+              }
+        );
+        if (!startRes.ok) throw new UserFacingError(startRes.message);
+        const tailorId = startRes.data.id;
+        const mode = a.stage && /order|重排|调序/i.test(a.stage) ? "order" : "text";
+        const genRes = await generateTailoring(tailorId, {
+          mode,
+          ...(jdText ? { jdText } : {}),
+        });
+        if (!genRes.ok) throw new UserFacingError(genRes.message);
+        if (genRes.data.status === "needs-resume-text") {
+          return {
+            done: `已创建定制草稿，但需要先在简历定制页粘贴原文：${genRes.data.reason}`,
+            href: `/resumes?tailor=${tailorId}`,
+          };
+        }
+        const saved = await saveTailoringAsVersion(tailorId).catch(() => null);
+        if (saved?.ok) {
+          revalidatePath("/resumes");
+          revalidatePath("/browser");
+          return {
+            done: `已生成定制版 PDF 简历「${saved.data.name}」（共优化 ${genRes.data.changes} 处），可直接用于网申上传`,
+            href: "/resumes",
+          };
+        }
+        return {
+          done: `已完成简历定制（共优化 ${genRes.data.changes} 处），可在简历定制页预览并导出 PDF`,
+          href: `/resumes?tailor=${tailorId}`,
+        };
+      }
+
+      case "launch_batch_apply": {
+        const rawIds = (a.targetId ?? "")
+          .split(/[\s,，、;；]+/)
+          .map((s) => s.trim())
+          .filter(Boolean)
+          .slice(0, 15);
+        const jobs: { url: string; positionId?: string; company?: string; title?: string }[] = [];
+        const seenUrl = new Set<string>();
+        const pushJob = (url: string | null, meta: { positionId?: string; company?: string; title?: string }) => {
+          if (!url || seenUrl.has(url)) return;
+          seenUrl.add(url);
+          jobs.push({ url, ...meta });
+        };
+
+        for (const id of rawIds) {
+          const pos = await findPositionForAction(user.id, id);
+          if (!pos) continue;
+          const candidate = pos.jdUrl || pos.company.careerUrl || "";
+          const withScheme = candidate && !/^[a-z][a-z0-9+.-]*:/i.test(candidate.trim()) ? `https://${candidate.trim()}` : candidate;
+          pushJob(webUrl(withScheme), { positionId: pos.id, company: pos.company.name, title: pos.title });
+        }
+
+        if (a.url?.trim()) {
+          for (const raw of a.url.split(/[\s,，\n]+/).map((s) => s.trim()).filter(Boolean)) {
+            const withScheme = !/^[a-z][a-z0-9+.-]*:/i.test(raw) ? `https://${raw}` : raw;
+            pushJob(webUrl(withScheme), { company: a.companyName?.trim() || undefined, title: a.title?.trim() || undefined });
+          }
+        }
+
+        if (!jobs.length && (a.companyName || a.title)) {
+          const pos = await findPositionForAction(user.id, undefined, a.companyName, a.title);
+          if (pos) {
+            const candidate = pos.jdUrl || pos.company.careerUrl || "";
+            const withScheme = candidate && !/^[a-z][a-z0-9+.-]*:/i.test(candidate.trim()) ? `https://${candidate.trim()}` : candidate;
+            pushJob(webUrl(withScheme), { positionId: pos.id, company: pos.company.name, title: pos.title });
+          }
+        }
+
+        if (!jobs.length) {
+          throw new UserFacingError("这些岗位暂时没有可打开的网申链接，请先在候选池补充岗位链接或公司官网链接");
+        }
+        return {
+          done: `已送入网申浏览器批量预填队列（共 ${jobs.length} 个岗位）`,
+          batchJobs: jobs.slice(0, 15),
+        };
       }
     }
   });

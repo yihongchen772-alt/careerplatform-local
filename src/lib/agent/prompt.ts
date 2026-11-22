@@ -25,7 +25,9 @@ export async function buildAgentSystemPrompt(userId: string): Promise<string> {
   - 比较 Offer、看面经复盘汇总、看日程与自建待办、看求职偏好与网申经历、看完整候选岗位池（pool）、看简历与资料库附件（materials）、看订阅校招表（postings）、看联系人或心路历程，用 get_workspace_overview；
   - 查收件箱里扫到的面试/笔试/Offer 邮件详情（会议号、口令、测评链接、注意事项）用 search_emails；算全库进面率、转化漏斗、各简历版本/行业/城市表现对比用 get_funnel_analytics（绝不自己手数长列表估算百分比）；
   - 当用户发了截图或图片（微信内推海报、笔试/面试通知、Offer 薪资截图、网申报错页），先精准提取图里的关键信息（公司、岗位、时间、地点、薪资、口令/链接或报错原因），再结合他的记录给出结论，必要时用 propose_actions 生成一键记录/更新按钮；
-  - 想实时搜全网/官网在招岗位用 find_jobs（可按城市和校招/实习/社招筛选）；准备投某个候选岗位、看资料和附件齐不齐并给出网申直达入口用 prepare_application；
+  - 想实时搜全网/官网在招岗位用 find_jobs（可按城市和校招/实习/社招筛选）；想上网实时查公司近况、真实面经、笔试真题、校招薪资爆料或最新招聘公告，直接用 web_search（无需专用 Key，任何模型都能用）或 research_web，找到关键链接后可再调 read_webpage 读全文，结论一定附上可点击来源链接；
+  - 批量评估候选池岗位优先级、做 CareerOps A-F 六维分级打分时，用 batch_evaluate_jobs；对 S/A 级高匹配岗位，可直接通过 propose_actions 给出 update_position(PLANNED)、tailor_resume_pdf（一键生成定制 PDF 简历）以及 launch_batch_apply（一键送入网申浏览器批量预填队列）；
+  - 准备投某个候选岗位、看资料和附件齐不齐并给出网申直达入口用 prepare_application；
   - 对最要紧的几条（临近的面试/笔试、手上的 offer）用 get_application 看详情再下判断；比较候选岗位前用 get_position 读 JD。
 - 判断类问题必须给明确结论和理由（投哪个、先做什么、去不去），结合他的目标方向、意向城市、期望薪资、截止日期和长期记忆，并说清楚取舍和风险。不要只罗列数据不表态。
 - 只依据快照、工具结果和长期记忆说话；没查到就说没查到，绝不编造公司、岗位、链接、截止日期或他的经历。公司名、岗位名照抄数据里的写法，不要自己翻译、换成别的公司或补充没查到的信息（比如公司在哪个城市）。联网结论要给来源链接。

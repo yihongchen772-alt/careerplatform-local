@@ -714,7 +714,7 @@ test("v81 小欧 5-upgrade intelligence suite: vision, email search, funnel anal
 
   // 2. Expert modes & fast/balanced/deep thinking router
   const { buildModePrompt, routeThinkingDepth, AGENT_MODE_LIST } = loadTs("src/lib/agent/modes.ts");
-  assert.equal(AGENT_MODE_LIST.length, 4);
+  assert.equal(AGENT_MODE_LIST.length, 5);
   assert.equal(routeThinkingDepth({ message: "今天有什么安排？", mode: "general" }), "fast");
   assert.equal(routeThinkingDepth({ message: "帮我量化对比这两个 Offer", mode: "general" }), "deep");
   assert.equal(routeThinkingDepth({ message: "你好", mode: "mock_interview" }), "deep");
@@ -923,4 +923,110 @@ test("v81 小欧 5-upgrade intelligence suite: vision, email search, funnel anal
   assert.match(chatSrc, /skippedDestructive/);
   assert.match(chatSrc, /captureBrowserScreenshot/);
   assert.match(chatSrc, /AGENT_MODE_LIST/);
+});
+
+test("v82 小欧 CareerOps full loop + zero-key live web_search", async () => {
+  // 1. Live web search URL decoder & Bing/DuckDuckGo parsers
+  const ws = loadTs("src/lib/agent/web-search.ts", {
+    "@/lib/city-search": { searchResults: async () => ({ text: "" }) },
+  });
+  const encoded = Buffer.from("https://jobs.bytedance.com/campus/position/123", "utf8").toString("base64");
+  assert.equal(
+    ws.resolveSearchUrl(`https://www.bing.com/ck/a?u=a1${encoded}`),
+    "https://jobs.bytedance.com/campus/position/123"
+  );
+  const bingHtml = `
+    <li class="b_algo"><h2><a href="https://jobs.example.com/ai">字节跳动 2027 校招算法面经</a></h2><p>主要考察 Transformer 与强化学习</p></li>
+    <li class="b_algo"><h2><a href="https://salary.example.com/offer">宇树科技校招薪资爆料</a></h2><p>算法岗总包 40w+</p></li>
+  `;
+  const parsedBing = ws.parseBingHtml(bingHtml, 5);
+  assert.equal(parsedBing.length, 2);
+  assert.equal(parsedBing[0].url, "https://jobs.example.com/ai");
+
+  const origFetch = global.fetch;
+  try {
+    global.fetch = async (url) => {
+      if (String(url).includes("cn.bing.com")) {
+        return new Response(bingHtml, { status: 200 });
+      }
+      return new Response("", { status: 404 });
+    };
+    const res = await ws.webSearchTool("宇树科技 算法", { category: "interview", limit: 5 });
+    assert.equal(res.hits.length, 2);
+    assert.match(res.content, /https:\/\/jobs\.example\.com\/ai/);
+  } finally {
+    global.fetch = origFetch;
+  }
+
+  // 2. CareerOps 6-dimension batch evaluator (S/A vs D/F)
+  const mockDb = {
+    user: {
+      findUnique: async () => ({
+        targetTrack: "机器人算法",
+        preferredCities: "上海、杭州",
+        skills: "Python, PyTorch, ROS, 强化学习, C++",
+        expectedSalaryMin: 25,
+        graduationYear: 2027,
+      }),
+    },
+    resumeVersion: {
+      findFirst: async () => ({
+        id: "res_1",
+        name: "机器人主简历",
+        extractedText: "熟悉 Python PyTorch ROS 强化学习 C++ 具身智能项目",
+        targetTrack: "机器人算法",
+      }),
+    },
+    position: {
+      findMany: async () => [
+        {
+          id: "pos_good",
+          title: "具身智能机器人算法工程师（2027届校招）",
+          track: "机器人算法",
+          location: "上海",
+          status: "EVALUATING",
+          salaryMin: 28,
+          salaryMax: 40,
+          deadline: new Date("2026-11-25T23:59:00+08:00"),
+          jdUrl: "https://jobs.unitree.example/apply/1",
+          jdText: "负责具身智能与人形机器人控制，熟悉 Python、PyTorch、ROS、强化学习、C++，面向 2027 届应届毕业生。",
+          company: { name: "宇树科技", careerUrl: "https://unitree.example", industry: "机器人" },
+          positionMatches: [{ matchScore: 93, recommendation: "强烈推荐" }],
+        },
+        {
+          id: "pos_bad",
+          title: "海外线下销售代表",
+          track: "销售",
+          location: "哈尔滨",
+          status: "EVALUATING",
+          salaryMin: 8,
+          salaryMax: 12,
+          deadline: new Date("2026-11-01T23:59:00+08:00"),
+          jdUrl: null,
+          jdText: "需要 5年以上社招经验，仅限博士或海外渠道销售背景，2025 届优先。",
+          company: { name: "某某贸易", careerUrl: null, industry: "贸易" },
+          positionMatches: [{ matchScore: 15, recommendation: "不推荐" }],
+        },
+      ],
+    },
+  };
+  const co = loadTs("src/lib/agent/career-ops-tools.ts", { "@/lib/db": { db: mockDb } });
+  const evalRes = await co.batchEvaluateJobsTool("u1", { limit: 10 }, new Date("2026-11-22T10:00:00+08:00"));
+  assert.equal(evalRes.evaluated.length, 2);
+  assert.equal(evalRes.evaluated[0].positionId, "pos_good");
+  assert.ok(["S", "A"].includes(evalRes.evaluated[0].grade), `expected S/A grade, got ${evalRes.evaluated[0].grade}`);
+  assert.ok(["D", "F"].includes(evalRes.evaluated[1].grade), `expected D/F grade, got ${evalRes.evaluated[1].grade}`);
+  assert.match(evalRes.content, /launch_batch_apply/);
+
+  // 3. New CareerOps mode + actions validate cleanly
+  const { buildModePrompt, routeThinkingDepth } = loadTs("src/lib/agent/modes.ts");
+  assert.match(buildModePrompt("career_ops"), /CareerOps/);
+  assert.equal(routeThinkingDepth({ message: "搜岗", mode: "career_ops" }), "deep");
+
+  const shared = loadTs("src/lib/assistant-shared.ts");
+  assert.equal(shared.assistantActionSchema.safeParse({ type: "tailor_resume_pdf", label: "一键定制PDF简历", targetId: "pos_good" }).success, true);
+  assert.equal(shared.assistantActionSchema.safeParse({ type: "launch_batch_apply", label: "批量送入网申预填", targetId: "pos_good,pos_2" }).success, true);
+
+  const chatSrc = fs.readFileSync(path.join(__dirname, "../src/components/assistant/agent-chat.tsx"), "utf8");
+  assert.match(chatSrc, /launchBatchApply/);
 });

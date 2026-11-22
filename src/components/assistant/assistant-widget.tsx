@@ -141,7 +141,7 @@ export function AssistantWidget() {
         setAskText(detail.text);
         setAskSend(detail.send === true);
         setAskMode(
-          detail.mode === "mock_interview" || detail.mode === "resume_tailor" || detail.mode === "offer_coach" || detail.mode === "general"
+          detail.mode === "career_ops" || detail.mode === "mock_interview" || detail.mode === "resume_tailor" || detail.mode === "offer_coach" || detail.mode === "general"
             ? detail.mode
             : undefined
         );

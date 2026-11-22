@@ -5,6 +5,8 @@ import { executeAgentTool } from "@/lib/agent-tools";
 import { MAX_RESEARCH, listCityGaps, researchCities } from "@/lib/agent/city-tools";
 import { filterApplicationsTool, getFunnelAnalyticsTool, getWorkspaceOverviewTool, searchEmailsTool } from "@/lib/agent/workspace-tools";
 import { expandQueryTerms, scoreTextMatch } from "@/lib/agent/semantic-search";
+import { webSearchTool, type WebSearchCategory } from "@/lib/agent/web-search";
+import { batchEvaluateJobsTool } from "@/lib/agent/career-ops-tools";
 import { closestId } from "@/lib/closest-id";
 import { parseCities } from "@/lib/application-city";
 import { fetchJobPage, htmlToText } from "@/lib/fetch-job-page";
@@ -49,7 +51,16 @@ export const AGENT_TOOLS: ToolSpec[] = [
   { name: "get_application", description: "读一条投递的完整详情：每一轮的时间、会议/测评链接、面经复盘、AI复盘分析、结果、渠道、薪资备注，以及对应岗位的 JD。分析某家进展、准备面试前用。", parameters: { type: "object", properties: { applicationId: str("[投递ID]") }, required: ["applicationId"] } },
   { name: "get_position", description: "读候选池里一个岗位的完整 JD、地点、截止、薪资和 AI 匹配分析。比较岗位、判断值不值得投前用。", parameters: { type: "object", properties: { positionId: str("[岗位ID]") }, required: ["positionId"] } },
   { name: "resume_context", description: "读简历内容摘要（不填 resumeId 读默认简历）。做匹配分析、写材料前用。", parameters: { type: "object", properties: { resumeId: str("[简历ID]，可留空") } } },
-  { name: "research_web", description: "联网查公开信息（公司近况、岗位要求、面经、薪资口碑），返回带来源链接的结论。不要在问题里写用户的姓名、电话、简历内容。", parameters: { type: "object", properties: { question: str("要查证的具体问题") }, required: ["question"] } },
+  { name: "web_search", description: "直接去全网实时搜索公开信息（无需专用搜索 Key，支持所有模型）：查公司近况/校招公告/真实面经/笔试真题/薪资口碑/招聘官网入口，返回带真实可点击 URL 的搜索结果列表；找到关键链接后可接 read_webpage 读正文。不要在搜索词里写用户的姓名、电话、简历内容。", parameters: { type: "object", properties: {
+    query: str("简洁准确的搜索词，如「宇树科技 2027 校招 算法 面经」「字节 具身智能 薪资」"),
+    category: { type: "string", enum: ["general", "jobs", "interview", "salary", "company"], description: "可选：搜索类型，默认 general" },
+    limit: num("可选：返回条数（1-12），默认 8"),
+  }, required: ["query"] } },
+  { name: "research_web", description: "深度联网研究公开信息（优先调用模型原生联网搜索，若当前服务商不支持会自动无缝降级到 web_search 实时全网搜索），返回带来源链接的结论。不要在问题里写用户的姓名、电话、简历内容。", parameters: { type: "object", properties: { question: str("要查证的具体问题") }, required: ["question"] } },
+  { name: "batch_evaluate_jobs", description: "CareerOps 批量岗位 6 维度 A–F 分级评估：一次对候选岗位池里多个待评估岗位（或指定 positionIds，最多 12 个）按方向/技能/地点/薪资/投递就绪/门槛风险打出 S/A/B/C/D/F 等级与 0-100 总分，并给出立刻投/计划投/观望/放弃建议。适合用户问「帮我批量评估候选池」「今天最该先投哪几个」「按 CareerOps 帮我排投递优先级」时调用。", parameters: { type: "object", properties: {
+    positionIds: { type: "array", items: { type: "string" }, description: "可选：指定要评估的 [岗位ID] 列表（最多 12 个）；不填则自动挑候选池未投递的岗位" },
+    limit: num("可选：评估数量上限（1-12），默认 10"),
+  } } },
   { name: "find_jobs", description: "到公司招聘官网、已订阅校招信息表和全网公告实时找在招岗位，自动去掉用户已记过的，可按城市和校招/实习/社招过滤。", parameters: { type: "object", properties: {
     keywords: str("1-3 个关键词，可带公司名，如「产品经理」「字节 数据分析」"),
     cities: str("可选：指定筛选城市，多个用空格或顿号隔开（不填则优先用户意向城市）"),
@@ -76,8 +87,8 @@ export const AGENT_TOOLS: ToolSpec[] = [
 ];
 
 const TOOL_LABELS: Record<string, string> = {
-  search_records: "查记录", filter_applications: "筛选投递记录", get_workspace_overview: "读全库模块数据", search_emails: "查求职邮件", get_funnel_analytics: "算求职漏斗", get_application: "看投递详情", get_position: "看岗位 JD", resume_context: "读简历",
-  research_web: "联网研究", find_jobs: "到官网找岗位", read_webpage: "读网页", prepare_application: "准备投递",
+  search_records: "查记录", filter_applications: "筛选投递记录", get_workspace_overview: "读全库模块数据", search_emails: "查求职邮件", get_funnel_analytics: "算求职漏斗", batch_evaluate_jobs: "CareerOps 批量评岗", get_application: "看投递详情", get_position: "看岗位 JD", resume_context: "读简历",
+  web_search: "全网实时搜索", research_web: "联网研究", find_jobs: "到官网找岗位", read_webpage: "读网页", prepare_application: "准备投递",
   list_missing_cities: "看哪些投递没写城市", research_cities: "联网查工作城市", recall_conversations: "翻以前的对话", remember: "记住", forget: "忘掉一条记忆", update_plan: "更新求职计划", propose_actions: "提出操作",
   draft_page_answers: "生成网页填表草稿", sync_current_portal_page: "同步当前进度页",
 };
@@ -169,9 +180,45 @@ export async function executeTool(userId: string, call: ToolCall, proposed: Assi
       const result = await executeAgentTool(userId, { tool: "resume_context", query: "", targetId: text(call.args.resumeId, 150) });
       return { content: result.data, label, summary: result.summary, href: result.href };
     }
+    case "web_search": {
+      const q = text(call.args.query, 200);
+      const rawCat = text(call.args.category, 20);
+      const category: WebSearchCategory =
+        rawCat === "jobs" || rawCat === "interview" || rawCat === "salary" || rawCat === "company" ? rawCat : "general";
+      const result = await webSearchTool(q, {
+        category,
+        limit: typeof call.args.limit === "number" ? call.args.limit : undefined,
+      });
+      return { content: result.content, label, summary: result.summary };
+    }
     case "research_web": {
-      const result = await executeAgentTool(userId, { tool: "research_web", query: text(call.args.question, 600), targetId: "" });
-      return { content: result.data, label, summary: result.summary };
+      const q = text(call.args.question, 600);
+      try {
+        const result = await executeAgentTool(userId, { tool: "research_web", query: q, targetId: "" });
+        return { content: result.data, label, summary: result.summary };
+      } catch (err) {
+        // Seamless public web fallback when the user's AI provider has no native grounding
+        // (e.g. DeepSeek/Kimi/豆包/智谱) or grounding call fails.
+        const fallback = await webSearchTool(q.slice(0, 160), { category: "general", limit: 8 }).catch(() => null);
+        if (fallback && (fallback.hits.length > 0 || fallback.content.includes("网页搜索摘要"))) {
+          return {
+            content: fallback.content,
+            label: `全网搜索：${q.slice(0, 32)}`,
+            summary: `${fallback.summary}（自动切换公共搜索引擎）`,
+          };
+        }
+        throw err;
+      }
+    }
+    case "batch_evaluate_jobs": {
+      const ids = Array.isArray(call.args.positionIds)
+        ? call.args.positionIds.filter((id): id is string => typeof id === "string")
+        : undefined;
+      const result = await batchEvaluateJobsTool(userId, {
+        positionIds: ids,
+        limit: typeof call.args.limit === "number" ? call.args.limit : undefined,
+      });
+      return { content: result.content, label, summary: result.summary, href: result.href };
     }
     case "find_jobs": {
       const citiesRaw = text(call.args.cities, 80);

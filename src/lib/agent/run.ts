@@ -30,6 +30,8 @@ const READ_ONLY_TOOLS = new Set([
   "get_workspace_overview",
   "search_emails",
   "get_funnel_analytics",
+  "batch_evaluate_jobs",
+  "web_search",
   "get_application",
   "get_position",
   "resume_context",

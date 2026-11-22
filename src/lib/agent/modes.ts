@@ -1,6 +1,6 @@
 import type { ThinkingMode } from "@/lib/agent/llm";
 
-export type AgentMode = "general" | "mock_interview" | "resume_tailor" | "offer_coach";
+export type AgentMode = "general" | "career_ops" | "mock_interview" | "resume_tailor" | "offer_coach";
 
 export type AgentModeMeta = {
   id: AgentMode;
@@ -21,6 +21,15 @@ export const AGENT_MODE_LIST: AgentModeMeta[] = [
     placeholder: "交给小欧一件事（支持粘贴截图 · Enter 发送）…",
     quickQuestions: ["今天有什么安排？", "算一下我的求职漏斗", "帮我准备下一场面试", "哪些该跟进了？", "帮我找新岗位"],
     defaultThinking: "balanced",
+  },
+  {
+    id: "career_ops",
+    label: "CareerOps 全流程运营",
+    shortLabel: "CareerOps",
+    description: "全网扫岗 → 6 维 A-F 批量评级 → 一键生成定制 PDF 简历 → 一键送入网申浏览器批量预填",
+    placeholder: "说「批量评估候选池」或「帮我全网找上海机器人岗位并排优先级」…",
+    quickQuestions: ["批量评估候选池并按 S-F 分级", "全网+官网搜最新匹配岗位", "为 S/A 级岗位一键送入网申预填", "查一下目标公司的最新面经和薪资"],
+    defaultThinking: "deep",
   },
   {
     id: "mock_interview",
@@ -61,6 +70,19 @@ export const AGENT_MODE_MAP: Record<AgentMode, AgentModeMeta> = Object.fromEntri
  */
 export function buildModePrompt(mode: AgentMode): string {
   switch (mode) {
+    case "career_ops":
+      return `\n\n## 当前专家模式：CareerOps 全流程求职运营（End-to-End Job Ops）
+你现在运行完整的 CareerOps 自动化求职闭环，按以下 4 步高效推进，不废话、直接给可点按钮：
+1. **多源搜岗 & 联网调研**：
+   - 找新机会时同时善用 \`find_jobs\`（直连 350+ 官网 ATS + 订阅校招表）和 \`web_search\`（全网实时搜招聘公告、公司风评、薪资爆料与面经）；
+   - 找到值得关注的新岗位，附带来源链接并用 \`add_position\` 生成一键入池按钮。
+2. **6 维度 A–F 批量评级**：
+   - 评估候选池时优先调用 \`batch_evaluate_jobs\`，用清晰的 Markdown 表格展示 **等级（S/A/B/C/D/F）| 总分 | 公司·岗位 | 城市/截止 | 核心优势 | 致命短板 | 结论**。
+3. **定制简历 PDF 直出**：
+   - 对 S/A 级高匹配岗位，主动通过 \`propose_actions\` 提供 \`tailor_resume_pdf\` 按钮，让用户一键生成针对该岗位的定制版 PDF 简历版本（可直接用于网申上传）。
+4. **批量送入网申浏览器预填**：
+   - 对评估后值得立刻投的 S/A 级岗位，同时给出 \`update_position\`（标为 PLANNED / 放弃 D-F）和 \`launch_batch_apply\` 按钮（\`targetId\` 填英文逗号分隔的多个 \`[岗位ID]\`），让用户点一下直接拉起网申浏览器批量自动预填队列！`;
+
     case "mock_interview":
       return `\n\n## 当前专家模式：模拟面试官（Mock Interviewer）
 你现在进入「实战模拟面试官」状态，严格遵循以下节奏：
