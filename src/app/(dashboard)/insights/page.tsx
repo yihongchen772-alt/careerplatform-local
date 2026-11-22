@@ -6,6 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { SkillGapCard } from "@/components/insights/skill-gap-card";
 import { FunnelCard } from "@/components/insights/funnel-card";
 import { ResumeComparisonCard } from "@/components/insights/resume-comparison-card";
+import { CareerReportStudio } from "@/components/insights/career-report-studio";
+import { buildActivityHeatmap, buildSankeyData } from "@/lib/insights-visuals";
 import {
   bestGroupLine,
   computeConversion,
@@ -63,6 +65,20 @@ export default async function InsightsPage() {
   const resumeComparison = computeResumeComparison(applications);
   const { levels, total } = computeFunnel(applications);
   const outcomes = computeOutcomes(applications);
+  const sankey = buildSankeyData(
+    applications.map((a) => ({
+      currentStage: a.currentStage,
+      appliedDate: a.appliedDate,
+      stageHistory: a.stageHistory,
+      companyName: a.company.name,
+    }))
+  );
+  const heatmap = buildActivityHeatmap(applications);
+  const topCompanies = [...new Set(
+    applications
+      .filter((a) => ["OFFER", "ACCEPTED", "INTERVIEW_2", "INTERVIEW_3", "HR_INTERVIEW", "INTERVIEW_1"].includes(a.currentStage))
+      .map((a) => a.company.name)
+  )].slice(0, 8);
   // The funnel only needs applications to exist at all — unlike the two
   // grouped cards below, it doesn't depend on source/track being filled in,
   // so it must not be hidden by the same "no grouped data yet" check (an
@@ -85,6 +101,12 @@ export default async function InsightsPage() {
         </div>
       ) : (
         <>
+          <CareerReportStudio
+            sankey={sankey}
+            heatmap={heatmap}
+            topCompanies={topCompanies}
+            userLabel={user.name ?? ""}
+          />
           <FunnelCard levels={levels} total={total} outcomes={outcomes} />
           <ResumeComparisonCard
             rows={resumeComparison}

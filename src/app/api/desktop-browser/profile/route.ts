@@ -4,6 +4,7 @@ import { atsFamilyFor, mergeMappingsWithAtsFallback } from "@/lib/ats-family";
 import { PERSONAL_FIELDS, SOCIAL_FIELDS, describeApplicationProfile, englishFromLanguages, parseApplicationProfile, resolveProfileVariant } from "@/lib/application-profile";
 import { db } from "@/lib/db";
 import { MEMORY_CATEGORIES, profileWithMemories, toMemoryView, type MemoryCategory, type MemoryView } from "@/lib/application-memory";
+import { matchReferralCodeForPage, readReferralVault } from "@/lib/referral-vault";
 
 // Consumed by electron/browser-view.js's autofill handler (plain HTTP —
 // the Electron main process isn't part of the Next app, see
@@ -35,7 +36,28 @@ export async function GET(request: Request) {
   const summaries = Object.fromEntries(memories.filter((row) => row.enabled && row.content.text && !(variant && ["experience", "project"].includes(row.category))).map((row) => [row.category, row.content.text]));
   // The job this tab is filling for (岗位工作台 / 候选池), for 「投递岗位」「应聘职位」 boxes.
   const positionId = contextKey?.startsWith("job:v1:") ? contextKey.slice(7) : null;
-  const appliedJob = positionId ? (await db.position.findFirst({ where: { id: positionId, userId: user.id }, select: { title: true } }))?.title ?? null : null;
+  const boundPosition = positionId
+    ? await db.position.findFirst({ where: { id: positionId, userId: user.id }, select: { title: true, company: { select: { name: true } } } })
+    : null;
+  const appliedJob = boundPosition?.title ?? null;
+  const matchedReferral = matchReferralCodeForPage(readReferralVault(user.applicationProfile), {
+    url: pageUrl,
+    companyName: boundPosition?.company?.name,
+    title: appliedJob,
+  });
+  const baseCustomFields = structured.customFields ?? [];
+  const referralCustomFields = matchedReferral
+    ? [
+        { label: "内推码", value: matchedReferral.code },
+        { label: "推荐码", value: matchedReferral.code },
+        { label: "邀请码", value: matchedReferral.code },
+        ...(matchedReferral.referrer ? [{ label: "内推人", value: matchedReferral.referrer }] : []),
+      ]
+    : [];
+  const mergedCustomFields = [
+    ...baseCustomFields,
+    ...referralCustomFields.filter((rf) => !baseCustomFields.some((bf) => bf.label.trim() === rf.label)),
+  ];
   const edu = structured.education[0];
   const exp = structured.experiences[0];
   return NextResponse.json({
@@ -108,7 +130,9 @@ export async function GET(request: Request) {
     thesis: structured.extras.thesis || null,
     ...Object.fromEntries(SOCIAL_FIELDS.map((field) => [field.key, structured.extras[field.key] || null])),
     ...Object.fromEntries(PERSONAL_FIELDS.map((field) => [field.key, structured.extras[field.key] || null])),
-    customFields: structured.customFields ?? [],
+    customFields: mergedCustomFields,
+    referralCode: matchedReferral?.code ?? null,
+    referralCompany: matchedReferral?.company ?? null,
     family: structured.family ?? [],
     department: edu?.department || null,
     extra: [describeApplicationProfile(structured), ...Object.entries(summaries).map(([category, text]) => `${MEMORY_CATEGORIES[category as MemoryCategory] ?? "经历"}整段原文：${text}`)].filter(Boolean).join("\n") || null,

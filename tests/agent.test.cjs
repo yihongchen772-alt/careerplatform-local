@@ -1118,3 +1118,120 @@ test("v83 v2.0.0 readiness: read_webpage JS fallback + SSRF guard, multi-model f
   assert.match(chatSrc, /saveToDesktopNote/);
   assert.match(chatSrc, /exportConversationMarkdown/);
 });
+
+test("v2.1.0 Public Clean Suite: Cmd+K Command Palette, Referral Vault & Autofill Injection, Offer Net Sandbox (14 cities), Sankey/Heatmap Studio & Encrypted LAN Sync", async () => {
+  // 1. Command Palette wired cleanly (without any floating HUD)
+  const paletteSrc = fs.readFileSync(path.join(__dirname, "../src/components/layout/command-palette.tsx"), "utf8");
+  assert.match(paletteSrc, /\/api\/command-search/);
+  assert.match(paletteSrc, /askXiaoOu/);
+  assert.equal(/\/desktop\/hud|act:hud/.test(paletteSrc), false, "public build must not expose floating HUD");
+  const navSrc = fs.readFileSync(path.join(__dirname, "../src/components/dashboard/nav.tsx"), "utf8");
+  assert.match(navSrc, /CommandPalette/);
+
+  // 2. Referral Vault parser, URL/company matcher & autofill profile injection
+  const rv = loadTs("src/lib/referral-vault.ts");
+  const parsedPost = rv.parseReferralPostText(
+    "【字节跳动 2027 届秋招内推】算法/研发全岗位开放！内推码：DSK92A8，投递链接 https://jobs.bytedance.com/campus/position/12345 截止时间 2026-11-30，联系张学长微信可查进度！"
+  );
+  assert.equal(parsedPost.company, "字节跳动");
+  assert.equal(parsedPost.code, "DSK92A8");
+  assert.equal(parsedPost.url, "https://jobs.bytedance.com/campus/position/12345");
+  assert.equal(parsedPost.deadline, "2026-11-30");
+
+  const vault = rv.readReferralVault({
+    referralCodes: [
+      { id: "ref_1", company: "字节跳动", code: "DSK92A8", url: "https://jobs.bytedance.com/campus", referrer: "张学长", createdAt: "2026-11-22T00:00:00.000Z" },
+      { id: "ref_2", company: "美团", code: "MT2027", url: "https://campus.meituan.com/jobs", createdAt: "2026-11-22T00:00:00.000Z" },
+    ],
+  });
+  assert.equal(rv.matchReferralCodeForPage(vault, { url: "https://jobs.bytedance.com/campus/position/999" })?.code, "DSK92A8");
+  assert.equal(rv.matchReferralCodeForPage(vault, { companyName: "美团点评" })?.code, "MT2027");
+  const profileApiSrc = fs.readFileSync(path.join(__dirname, "../src/app/api/desktop-browser/profile/route.ts"), "utf8");
+  assert.match(profileApiSrc, /matchReferralCodeForPage/);
+
+  // 3. Offer Net Cash & 14-city Talent Subsidy + Optimal Tax Calculator
+  const calc = loadTs("src/lib/offer-calculator.ts");
+  assert.ok(calc.CITY_LIVING_PRESETS.length >= 14);
+  const hz = calc.findCityPreset("杭州市余杭区");
+  assert.equal(hz.city, "杭州");
+  assert.equal(hz.firstYearSubsidy.master, 40000);
+  const econ = calc.calculateOfferEconomics({
+    id: "o1",
+    companyName: "宇树科技",
+    title: "机器人算法",
+    city: "杭州",
+    monthlyBase: 28000,
+    months: 15,
+    signOnBonus: 20000,
+    housingFundRate: 0.12,
+    monthlyDeduction: 1500,
+    monthlyRent: 3200,
+    talentSubsidy: 40000,
+    weeklyHours: 50,
+    commuteMinutes: 30,
+    decideBy: "2026-11-28",
+    penaltyRmb: 5000,
+  });
+  assert.equal(econ.grossAnnual, 28000 * 15 + 20000);
+  assert.ok(econ.realDisposablePlusFund > econ.cashAfterRent);
+  assert.ok(econ.effectiveHourlyRate > 80);
+
+  // 4. Sankey Funnel + 18-week Activity Heatmap
+  const visuals = loadTs("src/lib/insights-visuals.ts");
+  const sankey = visuals.buildSankeyData([
+    { currentStage: "APPLIED", appliedDate: "2026-11-10", stageHistory: [{ stage: "APPLIED" }] },
+    { currentStage: "OA", appliedDate: "2026-11-12", stageHistory: [{ stage: "APPLIED" }, { stage: "OA" }] },
+    { currentStage: "INTERVIEW_1", appliedDate: "2026-11-15", stageHistory: [{ stage: "APPLIED" }, { stage: "INTERVIEW_1" }] },
+    { currentStage: "OFFER", appliedDate: "2026-11-18", stageHistory: [{ stage: "APPLIED" }, { stage: "INTERVIEW_1" }, { stage: "INTERVIEW_2" }, { stage: "OFFER" }] },
+    { currentStage: "REJECTED", appliedDate: "2026-11-20", stageHistory: [{ stage: "APPLIED" }, { stage: "INTERVIEW_1" }, { stage: "REJECTED" }] },
+  ]);
+  assert.equal(sankey.total, 5);
+  assert.equal(sankey.offerCount, 1);
+  const heatmap = visuals.buildActivityHeatmap(
+    [
+      { appliedDate: new Date("2026-11-22T09:00:00+08:00") },
+      { appliedDate: new Date("2026-11-22T11:00:00+08:00") },
+      { appliedDate: new Date("2026-11-21T10:00:00+08:00") },
+    ],
+    18,
+    new Date("2026-11-22T12:00:00+08:00")
+  );
+  assert.equal(heatmap.days.length, 18 * 7);
+  assert.equal(heatmap.longestStreak, 2);
+
+  // 5. Cross-Device Encrypted LAN Sync (AES-256-GCM + 6-digit code + lockout)
+  const cryptoMod = require("../electron/lan-sync-crypto.js");
+  const { createLanSyncController } = require("../electron/lan-sync.js");
+  const code = cryptoMod.generatePairingCode();
+  const sampleBackup = JSON.stringify({ version: 1, exportedAt: "2026-11-22T16:30:00.000Z", data: { application: [{ id: "app_1" }] }, files: {} });
+  const blob = cryptoMod.encryptLanPayload(sampleBackup, code, { hostname: "MacBook", platform: "darwin", files: 0 });
+  assert.equal(cryptoMod.decryptLanPayload(blob, code).payload, sampleBackup);
+  assert.throws(() => cryptoMod.parsePairingTarget("8.8.8.8:54321#482916"), /私网地址/);
+
+  const receivedImports = [];
+  const sender = createLanSyncController({
+    bindHost: "127.0.0.1",
+    fetchLocalBackup: async () => ({ payload: sampleBackup, files: 0, exportedAt: "2026-11-22T16:30:00.000Z" }),
+    postLocalTransfer: async () => ({ ok: true }),
+  });
+  const receiver = createLanSyncController({
+    bindHost: "127.0.0.1",
+    fetchLocalBackup: async () => ({ payload: "{}", files: 0, exportedAt: "2026-11-22T16:30:00.000Z" }),
+    postLocalTransfer: async (mode, payloadJson) => {
+      if (mode === "preview") return { ok: true, data: { exportedAt: "2026-11-22T16:30:00.000Z", counts: [{ label: "投递记录", n: 1 }], files: 0 } };
+      receivedImports.push(payloadJson);
+      return { ok: true, data: { restored: 1, skipped: 0, filesMigrated: 0, filesFailed: 0 } };
+    },
+  });
+  try {
+    const shareInfo = await sender.startShare();
+    const pulled = await receiver.pullFromPeer({ address: `127.0.0.1:${shareInfo.port}`, code: shareInfo.code });
+    assert.equal(pulled.ok, true);
+    const imported = await receiver.confirmImport(pulled.stagingId);
+    assert.equal(imported.ok, true);
+    assert.equal(receivedImports[0], sampleBackup);
+  } finally {
+    sender.shutdown();
+    receiver.shutdown();
+  }
+});

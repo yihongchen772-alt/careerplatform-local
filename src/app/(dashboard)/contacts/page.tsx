@@ -1,13 +1,15 @@
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { ContactList } from "@/components/contacts/contact-list";
+import { ReferralVaultCard } from "@/components/contacts/referral-vault-card";
+import { readReferralVault } from "@/lib/referral-vault";
 import { PageHero } from "@/components/layout/page-hero";
 import { Users } from "lucide-react";
 
 export default async function ContactsPage() {
   const user = await requireUser();
 
-  const [contacts, allPositions, allApplications] = await Promise.all([
+  const [contacts, allPositions, allApplications, profileRow] = await Promise.all([
     db.contact.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: "desc" },
@@ -20,7 +22,12 @@ export default async function ContactsPage() {
       where: { userId: user.id },
       include: { company: true },
     }),
+    db.user.findUnique({
+      where: { id: user.id },
+      select: { applicationProfile: true },
+    }),
   ]);
+  const referralCodes = readReferralVault(profileRow?.applicationProfile);
 
   const positionOptions = allPositions.map((p) => ({
     id: p.id,
@@ -33,7 +40,8 @@ export default async function ContactsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHero title="联系人" icon={Users} description="HR、内推人、面试官——记下谁、怎么联系、什么时候该跟进，到日子会提醒你" />
+      <PageHero title="联系人与内推码" icon={Users} description="HR、内推人、面试官与内推码保险箱——群聊内推文案一键入库，网申自动填入对应公司内推码" />
+      <ReferralVaultCard initialCodes={referralCodes} />
       <ContactList
         contacts={contacts.map((c) => ({
           id: c.id,

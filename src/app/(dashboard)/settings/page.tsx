@@ -9,6 +9,7 @@ import { EmailSettingsForm } from "@/components/settings/email-settings-form";
 import { MailAccountsCard } from "@/components/settings/mail-accounts-card";
 import { getScanHealth } from "@/lib/scan-health";
 import { BackupCard } from "@/components/settings/backup-card";
+import { LanSyncCard } from "@/components/settings/lan-sync-card";
 import { AutoBackupCard } from "@/components/settings/auto-backup-card";
 import { getAutoBackupSettings } from "@/lib/actions/auto-backup";
 import { ExtensionCard } from "@/components/settings/extension-card";
@@ -210,6 +211,7 @@ async function DataSection() {
   const [freshnessResult, autoBackup] = await Promise.all([getDataFreshness(), getAutoBackupSettings()]);
   return (
     <>
+      <LanSyncCard />
       <AutoBackupCard initial={autoBackup} />
       <BackupCard initialFreshness={freshnessResult.ok ? freshnessResult.data : null} />
       <UpdateCard currentVersion={packageInfo.version} />

@@ -27,6 +27,7 @@ app.on("second-instance", () => { if (mainWindow) { mainWindow.restore(); showWi
 const isDev = !app.isPackaged;
 const eventReminderToken = crypto.randomBytes(32).toString("hex");
 let productivity = null;
+let lanSync = null;
 const PORT = process.env.CAREERPLATFORM_TEST_MODE === "1" ? Number(process.env.CAREERPLATFORM_TEST_PORT || 3210) : 3210;
 
 // Dev: this file is at <project>/electron/main.js, so the project root is one
@@ -1017,6 +1018,7 @@ app.whenReady().then(async () => {
     } catch { /* First launch or older window state. */ }
     createWindow({ show: !openedAtLogin && restoreMainVisible });
     productivity = require("./productivity").setupProductivity({ port: PORT, token: eventReminderToken, getMainWindow: () => mainWindow, showMainWindow: showWindow, getNotesAtLogin: () => readAppSettings().notesAtLogin, setNotesAtLogin, openNotesAtLogin: openedAtLogin && settings.notesAtLogin });
+    lanSync = require("./lan-sync").setupLanSync({ port: PORT, token: eventReminderToken, ipcMain, trustedOrigin: `http://localhost:${PORT}` });
     buildApplicationMenu();
     if (process.env.CAREERPLATFORM_TEST_MODE !== "1") buildTray();
     const updaterController = setupUpdater({
@@ -1062,6 +1064,7 @@ function shutdown() {
   for (const controller of backgroundRequests.values()) controller.abort();
   if (autoBackupTimer) { clearInterval(autoBackupTimer); autoBackupTimer = null; }
   productivity?.shutdown();
+  lanSync?.shutdown();
   if (emailReminderTimer) { clearInterval(emailReminderTimer); emailReminderTimer = null; }
   if (reminderTimer) {
     clearInterval(reminderTimer);

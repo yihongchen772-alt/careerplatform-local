@@ -34,7 +34,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { GlobalSearchDialog } from "@/components/search/global-search-dialog";
+import { CommandPalette } from "@/components/layout/command-palette";
 import { BrandMark } from "@/components/brand-mark";
 
 type NavLink = { href: string; label: string; icon: LucideIcon; chipClass: string };
@@ -217,7 +217,7 @@ function NavContent({
         <Search className="size-3.5 shrink-0 text-primary/80" />
         {!collapsed && (
           <>
-            <span>搜索投递 / 岗位</span>
+            <span>全局指挥台 / 闪记</span>
             <kbd className="ml-auto hidden rounded-md border border-foreground/10 bg-card/80 px-1.5 py-0.5 font-sans text-[10px] font-medium text-muted-foreground/80 shadow-2xs md:inline">⌘K</kbd>
           </>
         )}
@@ -519,7 +519,7 @@ export function DashboardNav({ userLabel }: { userLabel: string }) {
 
   return (
     <>
-      <GlobalSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
+      <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
 
       {/* Desktop sidebar — sticky & collapsible so full-bleed tools like 网申浏览器 get extra width. */}
       <aside

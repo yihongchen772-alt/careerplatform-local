@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { STAGE_BADGE_VARIANT, STAGE_LABELS } from "@/lib/stage-labels";
 import { OfferCompareTable, type OfferRow } from "@/components/compare/offer-compare-table";
 import { OfferAnalysisDialog } from "@/components/compare/offer-analysis-dialog";
+import { OfferNetSandbox, type OfferSandboxSeed } from "@/components/compare/offer-net-sandbox";
 import { PageHero } from "@/components/layout/page-hero";
 import { AskXiaoOuButton } from "@/components/assistant/ask-xiaoou-button";
 import { MODULE_CLUSTERS, ModuleTabs } from "@/components/layout/module-tabs";
@@ -28,6 +29,24 @@ export default async function ComparePage() {
     0,
     ...applications.map((a) => a.salaryMax ?? a.salaryMin ?? 0)
   );
+
+  const sandboxSeeds: OfferSandboxSeed[] = applications.map((app) => {
+    const offerStage = app.stageHistory.find(
+      (h) => h.stage === "OFFER" || h.stage === "ACCEPTED"
+    );
+    return {
+      id: app.id,
+      companyName: app.company.name,
+      title: app.title,
+      city: app.position?.location ?? "杭州",
+      salaryK: app.salaryMax ?? app.salaryMin ?? null,
+      annualTotalW: app.offerAnnualTotal ?? null,
+      commuteMinutes: app.commuteMinutes ?? null,
+      decideBy: offerStage?.nextDeadline
+        ? offerStage.nextDeadline.toISOString().slice(0, 10)
+        : null,
+    };
+  });
 
   return (
     <div className="space-y-6">
@@ -157,6 +176,8 @@ export default async function ComparePage() {
         </div>
         </>
       )}
+
+      <OfferNetSandbox seeds={sandboxSeeds} />
     </div>
   );
 }

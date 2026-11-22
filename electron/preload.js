@@ -171,3 +171,12 @@ contextBridge.exposeInMainWorld("desktopProductivity", {
   openMain: () => ipcRenderer.invoke("productivity:main"),
   setNotesAtLogin: (value) => ipcRenderer.invoke("productivity:notes-at-login", value),
 });
+
+contextBridge.exposeInMainWorld("desktopLanSync", {
+  status: () => ipcRenderer.invoke("lan-sync:status"),
+  startShare: () => ipcRenderer.invoke("lan-sync:start"),
+  stopShare: () => ipcRenderer.invoke("lan-sync:stop"),
+  pull: (args) => ipcRenderer.invoke("lan-sync:pull", args),
+  confirmImport: (stagingId) => ipcRenderer.invoke("lan-sync:confirm-import", stagingId),
+  discardStaged: (stagingId) => ipcRenderer.invoke("lan-sync:discard", stagingId),
+});

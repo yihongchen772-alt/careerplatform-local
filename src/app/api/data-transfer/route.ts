@@ -1,8 +1,37 @@
+import { timingSafeEqual } from "crypto";
 import { isTrustedLocalRequest } from "@/lib/local-request-guard";
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/session";
 import { importBackup, previewBackup } from "@/lib/actions/backup";
+import { buildBackupPayload } from "@/lib/backup-core";
 import { MAX_BACKUP_BYTES } from "@/lib/backup-files";
+
+function hasValidDesktopToken(headers: Headers): boolean {
+  const expected = process.env.DESKTOP_REMINDER_TOKEN;
+  if (!expected) return true;
+  const provided = headers.get("x-desktop-token") ?? "";
+  const a = Buffer.from(provided, "utf8");
+  const b = Buffer.from(expected, "utf8");
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+/**
+ * Used exclusively by the Electron main process (`electron/lan-sync.js`) to
+ * obtain a consistent JSON snapshot for AES-256-GCM LAN peer-to-peer sync.
+ */
+export async function GET(request: Request) {
+  if (!isTrustedLocalRequest(request.headers) || !hasValidDesktopToken(request.headers)) {
+    return new NextResponse("Forbidden", { status: 403 });
+  }
+  await requireUser();
+  const { payload, files } = await buildBackupPayload();
+  return NextResponse.json({
+    ok: true,
+    payload,
+    files,
+    exportedAt: new Date().toISOString(),
+  });
+}
 
 // Backups can exceed the Server Action 16MB limit. Bound the raw streamed
 // request independently, before JSON parsing, for preview and restore alike.
