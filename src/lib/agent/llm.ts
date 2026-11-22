@@ -278,19 +278,34 @@ async function geminiTurn({ config, system, messages, tools, timeoutMs = 60000, 
 
 // ---- OpenAI-compatible (OpenAI, DeepSeek, Kimi, Qwen, 智谱, 豆包, xAI, Mistral) ----
 
+/** Comma/newline-separated model fallback list for any provider (deduplicated). */
+export function parseProviderModels(model: string): string[] {
+  const seen = new Set<string>();
+  const list: string[] = [];
+  for (const raw of String(model || "").split(/[,，\n]+/)) {
+    const item = raw.trim();
+    if (item && !seen.has(item)) {
+      seen.add(item);
+      list.push(item);
+    }
+  }
+  return list.length ? list : [model];
+}
+
 type OpenAiContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
 type OpenAiMessage = { role: string; content?: string | OpenAiContentPart[] | null; tool_calls?: { id: string; type: "function"; function: { name: string; arguments: string } }[]; tool_call_id?: string; reasoning_content?: string };
 
-async function openAiTurn({ config, system, messages, tools, timeoutMs = 60000, signal, onText, onThought }: ChatRequest, notice: (text: string) => void): Promise<ChatTurn> {
+async function openAiTurn({ config, system, messages, tools, timeoutMs = 60000, signal, onText, onThought }: ChatRequest, state: { modelIndex: number }, notice: (text: string) => void): Promise<ChatTurn> {
   if (config.provider === "gemini" || config.provider === "anthropic") throw new Error("not an OpenAI-compatible provider");
   const hasImages = messages.some((m) => m.role === "user" && (m.images?.length ?? 0) > 0);
-  let activeModel = config.model;
-  if (hasImages) {
-    const dedicatedVision = VISION_MODEL[config.provider];
-    if (dedicatedVision && !/vl|vision|pixtral|4v|4o|omni/i.test(config.model)) {
-      activeModel = dedicatedVision;
-      notice(`附带了图片，本轮自动切换到视觉模型 ${dedicatedVision}`);
-    }
+  const configuredModels = parseProviderModels(config.model);
+  const dedicatedVision = hasImages ? VISION_MODEL[config.provider] : undefined;
+  const models =
+    dedicatedVision && !configuredModels.some((m) => /vl|vision|pixtral|4v|4o|omni/i.test(m))
+      ? [dedicatedVision, ...configuredModels]
+      : configuredModels;
+  if (dedicatedVision && models[0] === dedicatedVision && state.modelIndex === 0) {
+    notice(`附带了图片，本轮自动切换到视觉模型 ${dedicatedVision}`);
   }
   const wire: OpenAiMessage[] = [{ role: "system", content: system }];
   for (const message of messages) {
@@ -307,67 +322,78 @@ async function openAiTurn({ config, system, messages, tools, timeoutMs = 60000, 
     } else if (message.role === "assistant") wire.push(message.raw as OpenAiMessage);
     else for (const { call, content } of message.results) wire.push({ role: "tool", tool_call_id: call.id, content });
   }
-  const body = {
-    model: activeModel,
-    messages: wire,
-    ...(tools.length ? { tools: tools.map((tool) => ({ type: "function", function: { name: tool.name, description: tool.description, parameters: tool.parameters } })) } : {}),
-    max_tokens: MAX_TOKENS,
-  };
   const url = `${config.baseUrl || OPENAI_COMPATIBLE_BASE_URL[config.provider]}/chat/completions`;
-  let response = await post(url, { Authorization: `Bearer ${config.apiKey}` }, onText ? { ...body, stream: true } : body, timeoutMs, who(config, activeModel), { signal, retry429: true });
-  // A provider that refuses streaming (with tools) still answers the plain way.
-  let streaming = !!onText;
-  if (onText && response.status === 400) {
-    await response.body?.cancel().catch(() => {});
-    response = await post(url, { Authorization: `Bearer ${config.apiKey}` }, body, timeoutMs, who(config, activeModel), { signal, retry429: true });
-    streaming = false;
-  }
-  if (!response.ok) {
-    console.error(`[agent:${config.provider}] ${response.status}`, (await response.text().catch(() => "")).slice(0, 500));
-    throw httpError(config, response.status, activeModel);
-  }
-  let message: OpenAiMessage;
-  let finishReason: string | undefined;
-  if (streaming && onText) {
-    // Text and reasoning arrive in pieces; a tool call's id and name come once, its arguments in pieces, by index.
-    let content = "";
-    let reasoning = "";
-    const pending: { id: string; name: string; args: string }[] = [];
-    for await (const event of sseEvents(response, signal)) {
-      const choice = (event as { choices?: { finish_reason?: string; delta?: { content?: string | null; reasoning_content?: string | null; tool_calls?: { index?: number; id?: string; function?: { name?: string; arguments?: string } }[] } }[] }).choices?.[0];
-      if (choice?.finish_reason) finishReason = choice.finish_reason;
-      const delta = choice?.delta;
-      if (!delta) continue;
-      if (delta.content) { content += delta.content; onText(delta.content); }
-      if (delta.reasoning_content) { reasoning += delta.reasoning_content; onThought?.(delta.reasoning_content); }
-      for (const piece of delta.tool_calls ?? []) {
-        const index = piece.index ?? ((piece.id || piece.function?.name) ? pending.length : Math.max(0, pending.length - 1));
-        const call = (pending[index] ??= { id: "", name: "", args: "" });
-        if (piece.id) call.id = piece.id;
-        if (piece.function?.name) call.name += piece.function.name;
-        if (piece.function?.arguments) call.args += piece.function.arguments;
-      }
+  const startIdx = Math.min(state.modelIndex, models.length - 1);
+  for (let i = startIdx; i < models.length; i++) {
+    const activeModel = models[i];
+    const body = {
+      model: activeModel,
+      messages: wire,
+      ...(tools.length ? { tools: tools.map((tool) => ({ type: "function", function: { name: tool.name, description: tool.description, parameters: tool.parameters } })) } : {}),
+      max_tokens: MAX_TOKENS,
+    };
+    const retry429 = i === models.length - 1;
+    let response = await post(url, { Authorization: `Bearer ${config.apiKey}` }, onText ? { ...body, stream: true } : body, timeoutMs, who(config, activeModel), { signal, retry429 });
+    // A provider that refuses streaming (with tools) still answers the plain way.
+    let streaming = !!onText;
+    if (onText && response.status === 400) {
+      await response.body?.cancel().catch(() => {});
+      response = await post(url, { Authorization: `Bearer ${config.apiKey}` }, body, timeoutMs, who(config, activeModel), { signal, retry429 });
+      streaming = false;
     }
-    const toolCalls = pending.filter(Boolean).map((call) => ({ id: call.id, type: "function" as const, function: { name: call.name, arguments: call.args } }));
-    message = { role: "assistant", content, ...(toolCalls.length ? { tool_calls: toolCalls } : {}), ...(reasoning ? { reasoning_content: reasoning } : {}) };
-  } else {
-    const data = await response.json();
-    finishReason = data?.choices?.[0]?.finish_reason;
-    message = data?.choices?.[0]?.message ?? { role: "assistant", content: "" };
+    if (!response.ok) {
+      console.error(`[agent:${config.provider}:${activeModel}] ${response.status}`, (await response.text().catch(() => "")).slice(0, 500));
+      if ((response.status === 429 || TRANSIENT.has(response.status)) && i < models.length - 1) {
+        notice(`${activeModel} ${response.status === 429 ? "额度用完了" : "这会儿过载"}，改用 ${models[i + 1]} 继续`);
+        continue;
+      }
+      throw httpError(config, response.status, activeModel);
+    }
+    if (!dedicatedVision) state.modelIndex = i;
+    let message: OpenAiMessage;
+    let finishReason: string | undefined;
+    if (streaming && onText) {
+      // Text and reasoning arrive in pieces; a tool call's id and name come once, its arguments in pieces, by index.
+      let content = "";
+      let reasoning = "";
+      const pending: { id: string; name: string; args: string }[] = [];
+      for await (const event of sseEvents(response, signal)) {
+        const choice = (event as { choices?: { finish_reason?: string; delta?: { content?: string | null; reasoning_content?: string | null; tool_calls?: { index?: number; id?: string; function?: { name?: string; arguments?: string } }[] } }[] }).choices?.[0];
+        if (choice?.finish_reason) finishReason = choice.finish_reason;
+        const delta = choice?.delta;
+        if (!delta) continue;
+        if (delta.content) { content += delta.content; onText(delta.content); }
+        if (delta.reasoning_content) { reasoning += delta.reasoning_content; onThought?.(delta.reasoning_content); }
+        for (const piece of delta.tool_calls ?? []) {
+          const index = piece.index ?? ((piece.id || piece.function?.name) ? pending.length : Math.max(0, pending.length - 1));
+          const call = (pending[index] ??= { id: "", name: "", args: "" });
+          if (piece.id) call.id = piece.id;
+          if (piece.function?.name) call.name += piece.function.name;
+          if (piece.function?.arguments) call.args += piece.function.arguments;
+        }
+      }
+      const toolCalls = pending.filter(Boolean).map((call) => ({ id: call.id, type: "function" as const, function: { name: call.name, arguments: call.args } }));
+      message = { role: "assistant", content, ...(toolCalls.length ? { tool_calls: toolCalls } : {}), ...(reasoning ? { reasoning_content: reasoning } : {}) };
+    } else {
+      const data = await response.json();
+      finishReason = data?.choices?.[0]?.finish_reason;
+      message = data?.choices?.[0]?.message ?? { role: "assistant", content: "" };
+    }
+    const calls = (message.tool_calls ?? []).map((call, index) => ({ id: call.id || `call-${index}`, name: call.function?.name ?? "", args: parseArgs(call.function?.arguments) }));
+    const text = (typeof message.content === "string" ? message.content : "").trim();
+    const thought = message.reasoning_content?.trim() || undefined;
+    if (!calls.length && !text && finishReason === "length") throw new UserFacingError("AI 回答太长被截断了，请重试");
+    const raw: OpenAiMessage = { role: "assistant", content: typeof message.content === "string" ? message.content : "", ...(message.tool_calls?.length ? { tool_calls: message.tool_calls.map((call, index) => ({ ...call, id: calls[index].id })) } : {}), ...(message.reasoning_content ? { reasoning_content: message.reasoning_content } : {}) };
+    return { text, ...(thought ? { thought } : {}), calls, raw };
   }
-  const calls = (message.tool_calls ?? []).map((call, index) => ({ id: call.id || `call-${index}`, name: call.function?.name ?? "", args: parseArgs(call.function?.arguments) }));
-  const text = (typeof message.content === "string" ? message.content : "").trim();
-  const thought = message.reasoning_content?.trim() || undefined;
-  if (!calls.length && !text && finishReason === "length") throw new UserFacingError("AI 回答太长被截断了，请重试");
-  const raw: OpenAiMessage = { role: "assistant", content: typeof message.content === "string" ? message.content : "", ...(message.tool_calls?.length ? { tool_calls: message.tool_calls.map((call, index) => ({ ...call, id: calls[index].id })) } : {}), ...(message.reasoning_content ? { reasoning_content: message.reasoning_content } : {}) };
-  return { text, ...(thought ? { thought } : {}), calls, raw };
+  throw httpError(config, 429, models[models.length - 1]);
 }
 
 // ---- Anthropic ----
 
 type AnthropicBlock = { type: string; text?: string; thinking?: string; id?: string; name?: string; input?: unknown };
 
-async function anthropicTurn({ config, system, messages, tools, timeoutMs = 60000, signal, onText, onThought }: ChatRequest): Promise<ChatTurn> {
+async function anthropicTurn({ config, system, messages, tools, timeoutMs = 60000, signal, onText, onThought }: ChatRequest, state: { modelIndex: number }, notice: (text: string) => void): Promise<ChatTurn> {
   const wire = messages.map((message) => {
     if (message.role === "user") {
       if (message.images?.length) {
@@ -384,61 +410,72 @@ async function anthropicTurn({ config, system, messages, tools, timeoutMs = 6000
     if (message.role === "assistant") return { role: "assistant", content: message.raw as AnthropicBlock[] };
     return { role: "user", content: message.results.map(({ call, content }) => ({ type: "tool_result", tool_use_id: call.id, content })) };
   });
-  const response = await post("https://api.anthropic.com/v1/messages", { "x-api-key": config.apiKey, "anthropic-version": "2023-06-01" }, {
-    model: config.model,
-    system,
-    messages: wire,
-    ...(tools.length ? { tools: tools.map((tool) => ({ name: tool.name, description: tool.description, input_schema: tool.parameters })) } : {}),
-    max_tokens: MAX_TOKENS,
-    ...(onText ? { stream: true } : {}),
-  }, timeoutMs, who(config), { signal, retry429: true });
-  if (!response.ok) {
-    console.error(`[agent:anthropic] ${response.status}`, (await response.text().catch(() => "")).slice(0, 500));
-    throw httpError(config, response.status);
-  }
-  let blocks: AnthropicBlock[];
-  let stopReason: string | undefined;
-  if (onText) {
-    // Blocks open, grow (text, or a tool's input as pieces of JSON) and close, by index.
-    blocks = [];
-    const inputs: string[] = [];
-    for await (const event of sseEvents(response, signal)) {
-      const index = typeof event.index === "number" ? event.index : 0;
-      if (event.type === "content_block_start") blocks[index] = { ...(event.content_block as AnthropicBlock) };
-      else if (event.type === "content_block_delta") {
-        const delta = event.delta as { type?: string; text?: string; thinking?: string; partial_json?: string };
-        const block = (blocks[index] ??= { type: delta.type === "input_json_delta" ? "tool_use" : delta.type === "thinking_delta" ? "thinking" : "text" });
-        if (delta.type === "text_delta" && delta.text) { block.text = (block.text ?? "") + delta.text; onText(delta.text); }
-        if (delta.type === "thinking_delta" && delta.thinking) { block.thinking = (block.thinking ?? "") + delta.thinking; onThought?.(delta.thinking); }
-        if (delta.type === "input_json_delta" && delta.partial_json) inputs[index] = (inputs[index] ?? "") + delta.partial_json;
-      } else if (event.type === "message_delta") {
-        const delta = event.delta as { stop_reason?: string } | undefined;
-        if (delta?.stop_reason) stopReason = delta.stop_reason;
-      } else if (event.type === "error") throw new UserFacingError(`${who(config)} 调用中断：服务商那边过载或出错，请稍后重试`);
+  const models = parseProviderModels(config.model);
+  const startIdx = Math.min(state.modelIndex, models.length - 1);
+  for (let i = startIdx; i < models.length; i++) {
+    const model = models[i];
+    const response = await post("https://api.anthropic.com/v1/messages", { "x-api-key": config.apiKey, "anthropic-version": "2023-06-01" }, {
+      model,
+      system,
+      messages: wire,
+      ...(tools.length ? { tools: tools.map((tool) => ({ name: tool.name, description: tool.description, input_schema: tool.parameters })) } : {}),
+      max_tokens: MAX_TOKENS,
+      ...(onText ? { stream: true } : {}),
+    }, timeoutMs, who(config, model), { signal, retry429: i === models.length - 1 });
+    if (!response.ok) {
+      console.error(`[agent:anthropic:${model}] ${response.status}`, (await response.text().catch(() => "")).slice(0, 500));
+      if ((response.status === 429 || TRANSIENT.has(response.status)) && i < models.length - 1) {
+        notice(`${model} ${response.status === 429 ? "额度用完了" : "这会儿过载"}，改用 ${models[i + 1]} 继续`);
+        continue;
+      }
+      throw httpError(config, response.status, model);
     }
-    blocks = blocks.map((block, index) => block && block.type === "tool_use" && inputs[index] !== undefined ? { ...block, input: parseArgs(inputs[index]) } : block).filter(Boolean);
-  } else {
-    const data = await response.json();
-    stopReason = data?.stop_reason;
-    blocks = data?.content ?? [];
+    state.modelIndex = i;
+    let blocks: AnthropicBlock[];
+    let stopReason: string | undefined;
+    if (onText) {
+      // Blocks open, grow (text, or a tool's input as pieces of JSON) and close, by index.
+      blocks = [];
+      const inputs: string[] = [];
+      for await (const event of sseEvents(response, signal)) {
+        const index = typeof event.index === "number" ? event.index : 0;
+        if (event.type === "content_block_start") blocks[index] = { ...(event.content_block as AnthropicBlock) };
+        else if (event.type === "content_block_delta") {
+          const delta = event.delta as { type?: string; text?: string; thinking?: string; partial_json?: string };
+          const block = (blocks[index] ??= { type: delta.type === "input_json_delta" ? "tool_use" : delta.type === "thinking_delta" ? "thinking" : "text" });
+          if (delta.type === "text_delta" && delta.text) { block.text = (block.text ?? "") + delta.text; onText(delta.text); }
+          if (delta.type === "thinking_delta" && delta.thinking) { block.thinking = (block.thinking ?? "") + delta.thinking; onThought?.(delta.thinking); }
+          if (delta.type === "input_json_delta" && delta.partial_json) inputs[index] = (inputs[index] ?? "") + delta.partial_json;
+        } else if (event.type === "message_delta") {
+          const delta = event.delta as { stop_reason?: string } | undefined;
+          if (delta?.stop_reason) stopReason = delta.stop_reason;
+        } else if (event.type === "error") throw new UserFacingError(`${who(config, model)} 调用中断：服务商那边过载或出错，请稍后重试`);
+      }
+      blocks = blocks.map((block, index) => block && block.type === "tool_use" && inputs[index] !== undefined ? { ...block, input: parseArgs(inputs[index]) } : block).filter(Boolean);
+    } else {
+      const data = await response.json();
+      stopReason = data?.stop_reason;
+      blocks = data?.content ?? [];
+    }
+    const calls = blocks.filter((block) => block.type === "tool_use").map((block) => ({ id: block.id ?? "", name: block.name ?? "", args: parseArgs(block.input) }));
+    const text = blocks.filter((block) => block.type === "text").map((block) => block.text ?? "").join("").trim();
+    const thought = blocks.filter((block) => block.type === "thinking").map((block) => block.thinking ?? "").join("").trim() || undefined;
+    if (!calls.length && !text && stopReason === "max_tokens") throw new UserFacingError("AI 回答太长被截断了，请重试");
+    return { text, ...(thought ? { thought } : {}), calls, raw: blocks.length ? blocks : [{ type: "text", text: text || " " }] };
   }
-  const calls = blocks.filter((block) => block.type === "tool_use").map((block) => ({ id: block.id ?? "", name: block.name ?? "", args: parseArgs(block.input) }));
-  const text = blocks.filter((block) => block.type === "text").map((block) => block.text ?? "").join("").trim();
-  const thought = blocks.filter((block) => block.type === "thinking").map((block) => block.thinking ?? "").join("").trim() || undefined;
-  if (!calls.length && !text && stopReason === "max_tokens") throw new UserFacingError("AI 回答太长被截断了，请重试");
-  return { text, ...(thought ? { thought } : {}), calls, raw: blocks.length ? blocks : [{ type: "text", text: text || " " }] };
+  throw httpError(config, 429, models[models.length - 1]);
 }
 
 /**
- * A chat function bound to one conversation (Gemini keeps to one model within
- * it). `notice` hears about a fall-over to the next model.
+ * A chat function bound to one conversation (every provider sticks to the
+ * working fallback model within it). `notice` hears about a fall-over to the next model.
  */
 export function createChat(notice: (text: string) => void = () => {}) {
   const state = { modelIndex: 0 };
   return (request: ChatRequest): Promise<ChatTurn> => {
     if (request.config.provider === "gemini") return geminiTurn(request, state, notice);
-    if (request.config.provider === "anthropic") return anthropicTurn(request);
-    return openAiTurn(request, notice);
+    if (request.config.provider === "anthropic") return anthropicTurn(request, state, notice);
+    return openAiTurn(request, state, notice);
   };
 }
 

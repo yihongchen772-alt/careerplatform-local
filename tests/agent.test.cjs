@@ -1030,3 +1030,91 @@ test("v82 小欧 CareerOps full loop + zero-key live web_search", async () => {
   const chatSrc = fs.readFileSync(path.join(__dirname, "../src/components/assistant/agent-chat.tsx"), "utf8");
   assert.match(chatSrc, /launchBatchApply/);
 });
+
+test("v83 v2.0.0 readiness: read_webpage JS fallback + SSRF guard, multi-model failover for OpenAI/Anthropic, direct mode entries & note/markdown export", async () => {
+  // 1. parseProviderModels & OpenAI/Anthropic multi-model failover on 429
+  const llm = loadTs("src/lib/agent/llm.ts", {
+    "@/lib/ai-providers": {
+      OPENAI_COMPATIBLE_BASE_URL: { deepseek: "https://deepseek.example/v1" },
+      VISION_MODEL: { deepseek: "deepseek-v4-flash-vision-exp" },
+    },
+    "@/lib/action-result": actionResult,
+    "@/lib/ai-provider-labels": { AI_PROVIDER_OPTIONS: [{ id: "deepseek", label: "DeepSeek" }, { id: "anthropic", label: "Claude" }] },
+  });
+  assert.deepEqual(llm.parseProviderModels("deepseek-chat, deepseek-reasoner, deepseek-chat"), ["deepseek-chat", "deepseek-reasoner"]);
+
+  const seenModels = [];
+  const notices = [];
+  const origFetch = global.fetch;
+  try {
+    global.fetch = async (url, opts) => {
+      const body = JSON.parse(opts.body);
+      seenModels.push(body.model);
+      if (body.model === "deepseek-chat" || body.model === "claude-primary") {
+        return new Response("quota exceeded", { status: 429 });
+      }
+      if (String(url).includes("anthropic")) {
+        return new Response(JSON.stringify({ content: [{ type: "text", text: "claude fallback ok" }] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ choices: [{ message: { role: "assistant", content: "deepseek fallback ok" } }] }), { status: 200 });
+    };
+
+    const dsChat = llm.createChat((n) => notices.push(n));
+    const dsRes = await dsChat({
+      config: { provider: "deepseek", apiKey: "k", model: "deepseek-chat, deepseek-reasoner" },
+      system: "s",
+      messages: [{ role: "user", text: "hi" }],
+      tools: [],
+    });
+    assert.equal(dsRes.text, "deepseek fallback ok");
+    assert.deepEqual(seenModels.slice(0, 2), ["deepseek-chat", "deepseek-reasoner"]);
+    assert.ok(notices.some((n) => n.includes("deepseek-reasoner")));
+
+    const claudeChat = llm.createChat((n) => notices.push(n));
+    const claudeRes = await claudeChat({
+      config: { provider: "anthropic", apiKey: "k", model: "claude-primary, claude-backup" },
+      system: "s",
+      messages: [{ role: "user", text: "hi" }],
+      tools: [],
+    });
+    assert.equal(claudeRes.text, "claude fallback ok");
+    assert.deepEqual(seenModels.slice(2, 4), ["claude-primary", "claude-backup"]);
+  } finally {
+    global.fetch = origFetch;
+  }
+
+  // 2. read_webpage falls back to renderPageText for JS SPA pages & blocks private IPs
+  const toolsMod = loadTs("src/lib/agent/tools.ts", {
+    "next/cache": { revalidatePath: () => {} },
+    "@/lib/db": { db: {} },
+    "@/lib/action-result": actionResult,
+    "@/lib/agent-tools": { executeAgentTool: async () => ({ data: "{}", summary: "ok" }) },
+    "@/lib/agent/city-tools": { MAX_RESEARCH: 4, listCityGaps: async () => ({}), researchCities: async () => ({ evidence: new Map() }) },
+    "@/lib/agent/workspace-tools": { filterApplicationsTool: async () => ({}), getWorkspaceOverviewTool: async () => ({}), searchEmailsTool: async () => ({}), getFunnelAnalyticsTool: async () => ({}) },
+    "@/lib/agent/web-search": { webSearchTool: async () => ({ content: "", summary: "", hits: [] }) },
+    "@/lib/agent/career-ops-tools": { batchEvaluateJobsTool: async () => ({ content: "", summary: "", evaluated: [] }) },
+    "@/lib/fetch-job-page": { fetchJobPage: async () => "<html><body><div id='app'></div></body></html>", htmlToText: () => "" },
+    "@/lib/render-bridge-client": { renderPageText: async () => "宇树科技 2027 校招 具身智能算法工程师（工作地点：上海/杭州）。岗位职责：负责强化学习、VLA 多模态模型与人形机器人运动控制算法研发及真机部署，参与核心项目落地。任职要求：熟练掌握 Python/C++/PyTorch/ROS，有顶会论文或机器人竞赛获奖经历优先。" },
+    "node:dns/promises": {
+      lookup: async (host) => host === "localhost" ? [{ address: "127.0.0.1", family: 4 }] : [{ address: "93.184.216.34", family: 4 }],
+    },
+  });
+  const spaRes = await toolsMod.executeTool("u1", { id: "c1", name: "read_webpage", args: { url: "https://jobs.example.com/spa/1" } }, []);
+  assert.match(spaRes.content, /宇树科技/);
+  assert.match(spaRes.summary, /动态渲染/);
+  await assert.rejects(
+    toolsMod.executeTool("u1", { id: "c2", name: "read_webpage", args: { url: "http://localhost/secret" } }, []),
+    /本机或内网/
+  );
+
+  // 3. Verify direct entry buttons, note saving & markdown export
+  const poolSrc = fs.readFileSync(path.join(__dirname, "../src/components/pool/pool-table.tsx"), "utf8");
+  assert.match(poolSrc, /mode: "career_ops"/);
+  const appDetailSrc = fs.readFileSync(path.join(__dirname, "../src/app/(dashboard)/applications/[id]/page.tsx"), "utf8");
+  assert.match(appDetailSrc, /mode="mock_interview"/);
+  const compareSrc = fs.readFileSync(path.join(__dirname, "../src/app/(dashboard)/compare/page.tsx"), "utf8");
+  assert.match(compareSrc, /mode="offer_coach"/);
+  const chatSrc = fs.readFileSync(path.join(__dirname, "../src/components/assistant/agent-chat.tsx"), "utf8");
+  assert.match(chatSrc, /saveToDesktopNote/);
+  assert.match(chatSrc, /exportConversationMarkdown/);
+});

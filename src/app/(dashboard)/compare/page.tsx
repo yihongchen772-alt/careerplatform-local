@@ -8,6 +8,7 @@ import { STAGE_BADGE_VARIANT, STAGE_LABELS } from "@/lib/stage-labels";
 import { OfferCompareTable, type OfferRow } from "@/components/compare/offer-compare-table";
 import { OfferAnalysisDialog } from "@/components/compare/offer-analysis-dialog";
 import { PageHero } from "@/components/layout/page-hero";
+import { AskXiaoOuButton } from "@/components/assistant/ask-xiaoou-button";
 import { MODULE_CLUSTERS, ModuleTabs } from "@/components/layout/module-tabs";
 
 export default async function ComparePage() {
@@ -30,7 +31,20 @@ export default async function ComparePage() {
 
   return (
     <div className="space-y-6">
-      <PageHero title="Offer 对比" icon={Scale} description="汇总所有拿到 offer 或已接受的投递，方便横向比较" />
+      <PageHero
+        title="Offer 对比"
+        icon={Scale}
+        description="汇总所有拿到 offer 或已接受的投递，方便横向比较"
+        actions={
+          applications.length > 0 ? (
+            <AskXiaoOuButton
+              label="小欧量化对比 & 谈薪"
+              mode="offer_coach"
+              prompt="请拉取我手上全部 Offer，用 Markdown 表格量化对比总包、折算时薪、通勤、加班强度和成长性，给出最终排序建议，并提供一版可直接发给 HR 的谈薪话术。"
+            />
+          ) : undefined
+        }
+      />
       <ModuleTabs items={MODULE_CLUSTERS.applications} activeHref="/compare" />
 
       {applications.length === 0 ? (

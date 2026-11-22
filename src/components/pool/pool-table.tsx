@@ -359,6 +359,25 @@ export function PoolTable({
             </SelectContent>
           </Select>
           <span className="text-sm text-muted-foreground">共 {sorted.length} 条</span>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="ml-auto gap-1.5"
+            onClick={() => {
+              const ids = [...selected].slice(0, 12);
+              askXiaoOu({
+                text: ids.length
+                  ? `用 CareerOps 6 维度批量评估我选中的这 ${ids.length} 个候选岗位（岗位ID：${ids.join(",")}），输出 S/A/B/C/D/F 评级表并给出定制简历或批量预填按钮。`
+                  : "用 CareerOps 6 维度批量评估我候选池里的待投递岗位，按 S/A/B/C/D/F 排好优先级，并给出更新状态和一键批量预填按钮。",
+                mode: "career_ops",
+                send: true,
+              });
+            }}
+          >
+            <Sparkles className="size-3.5 text-primary" />
+            {selected.size > 0 ? `CareerOps 评选中 (${selected.size})` : "小欧 CareerOps 评岗"}
+          </Button>
         </div>
       )}
 

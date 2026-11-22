@@ -21,6 +21,7 @@ import { PortalReviewBanner } from "@/components/applications/portal-review-bann
 import { AutoProgressBanner } from "@/components/applications/auto-progress-banner";
 import { ApplicationMailTimeline } from "@/components/applications/application-mail-timeline";
 import { QuickStageMenu } from "@/components/applications/quick-stage-menu";
+import { AskXiaoOuButton } from "@/components/assistant/ask-xiaoou-button";
 import { DeleteApplicationButton } from "@/components/applications/delete-application-button";
 import { loadAutoProgressItems, loadAutoScheduleItems, loadMailScheduleConflicts } from "@/lib/auto-progress";
 import { PortalAssignmentCard } from "@/components/applications/portal-assignment-card";
@@ -146,6 +147,15 @@ export default async function ApplicationDetailPage({
           </Badge>
           {application.currentStageLabel && <span className="hero-sub text-sm font-medium text-muted-foreground">{application.currentStageLabel}</span>}
           <QuickStageMenu applicationId={application.id} companyName={application.company.name} currentStage={application.currentStage} step={step} className="h-7" />
+          {!closed && (
+            <AskXiaoOuButton
+              label="模拟这场面试"
+              mode="mock_interview"
+              size="xs"
+              className="h-7"
+              prompt={`针对我当前的投递「${application.company.name} · ${application.title}」（[投递ID:${application.id}]，当前阶段：${application.currentStageLabel || STAGE_LABELS[application.currentStage]}），请先看它的 JD、历史面经和我的简历，然后开始 1 对 1 实战模拟面试，一次问我一道题。`}
+            />
+          )}
         </div>
         <div className="hero-divider mt-6 grid grid-cols-2 gap-3 border-t border-border/55 pt-5 sm:grid-cols-5">
           {[

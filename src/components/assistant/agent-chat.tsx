@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Send, Check, Plus, Loader2, CircleAlert, CircleCheck, Trash2, Copy, MessageSquareText, ChevronRight, Square, RotateCcw, Pencil, ArrowDown, ImagePlus, Camera, X, Brain } from "lucide-react";
+import { Send, Check, Plus, Loader2, CircleAlert, CircleCheck, Trash2, Copy, MessageSquareText, ChevronRight, Square, RotateCcw, Pencil, ArrowDown, ImagePlus, Camera, X, Brain, StickyNote, Download } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { applyAssistantAction } from "@/lib/actions/assistant";
+import { createNoteWithContent } from "@/lib/actions/productivity";
 import { addAgentMemory, deleteAgentMemory, getAgentState, saveAgentPlan, type AgentState } from "@/lib/actions/agent-memory";
 import { deleteAgentConversation, listAgentConversations, loadAgentConversation, saveAgentConversation, type AgentThreadSummary } from "@/lib/actions/agent-conversation";
 import { assistantActionSchema, type AssistantAction, type AssistantChatMessage } from "@/lib/assistant-shared";
@@ -839,6 +840,34 @@ export function AgentChat({ header, pageContext, routeContext, captureBrowserScr
     setState((prev) => prev && { ...prev, memories: prev.memories.filter((memory) => memory.id !== id) });
   }
 
+  async function saveToDesktopNote(text: string) {
+    const res = await createNoteWithContent(text);
+    if (!res.ok) return void toast.error(res.message);
+    toast.success("已存入桌面便签");
+  }
+
+  function exportConversationMarkdown() {
+    if (!messages.length) return;
+    const today = new Date().toLocaleDateString("sv-SE");
+    const lines = [
+      `# 小欧求职对话记录（${today}）`,
+      "",
+      ...messages
+        .filter((m) => !m.failedRequest)
+        .map((m) => `## ${m.role === "user" ? "我" : "小欧"}\n\n${m.content.trim()}\n`),
+    ];
+    const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `小欧对话-${today}.md`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast.success("已导出 Markdown 对话记录");
+  }
+
   return (
     <div className={cn("flex min-h-0 flex-1 flex-col", className)}>
       {header}
@@ -846,7 +875,14 @@ export function AgentChat({ header, pageContext, routeContext, captureBrowserScr
         {([["chat", "对话"], ["history", "历史"], ["plan", "求职计划"], ["memory", "小欧的记忆"]] as const).map(([id, label]) => (
           <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => openTab(id)} className={`rounded-full px-2.5 py-1 ${tab === id ? "bg-primary/10 font-medium text-primary" : "text-muted-foreground hover:bg-muted"}`}>{label}</button>
         ))}
-        <button type="button" disabled={sending || !!applying || !loaded || !messages.length} onClick={newChat} className="ml-auto flex items-center gap-1 rounded-full px-2.5 py-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"><Plus className="size-3.5" />新对话</button>
+        <div className="ml-auto flex items-center gap-0.5">
+          {messages.length > 0 && (
+            <button type="button" title="导出整段对话为 Markdown" aria-label="导出 Markdown" disabled={sending || !loaded} onClick={exportConversationMarkdown} className="flex items-center gap-1 rounded-full px-2 py-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40">
+              <Download className="size-3.5" />
+            </button>
+          )}
+          <button type="button" disabled={sending || !!applying || !loaded || !messages.length} onClick={newChat} className="flex items-center gap-1 rounded-full px-2.5 py-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"><Plus className="size-3.5" />新对话</button>
+        </div>
       </div>
 
       {tab === "history" && (
@@ -1009,6 +1045,11 @@ export function AgentChat({ header, pageContext, routeContext, captureBrowserScr
                         <button type="button" title="复制" className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-muted hover:text-foreground" onClick={() => copy(m.content)}>
                           <Copy className="size-3" />复制
                         </button>
+                        {m.role === "assistant" && (
+                          <button type="button" title="存入桌面便签" className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-muted hover:text-foreground" onClick={() => void saveToDesktopNote(m.content)}>
+                            <StickyNote className="size-3" />存便签
+                          </button>
+                        )}
                         {m.role === "assistant" && !sending && (
                           <button type="button" title="重新生成" className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-muted hover:text-foreground" onClick={() => void regenerateReply(m.id)}>
                             <RotateCcw className="size-3" />重试

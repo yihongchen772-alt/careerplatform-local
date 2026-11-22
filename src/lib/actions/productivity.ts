@@ -17,6 +17,18 @@ export async function createNote() {
     return db.desktopNote.create({ data: { userId: user.id } });
   });
 }
+export async function createNoteWithContent(content: string, color: (typeof NOTE_COLORS)[number] = "cream") {
+  return toActionResult(async () => {
+    const user = await requireUser();
+    const cleaned = z.string().trim().min(1, "内容为空，无法存入便签").max(100000).parse(content);
+    const safeColor = z.enum(NOTE_COLORS).catch("cream").parse(color);
+    const created = await db.desktopNote.create({
+      data: { userId: user.id, content: cleaned, color: safeColor, template: "blank" },
+    });
+    revalidatePath("/notes");
+    return created;
+  });
+}
 export async function saveNote(input: { id: string; revision: number; content: string; template: string; color: string }) {
   return toActionResult(async () => {
     const user = await requireUser();
