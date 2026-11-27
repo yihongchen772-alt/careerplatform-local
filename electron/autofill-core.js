@@ -116,7 +116,8 @@ function scanPageFields(prefix, readOnly = false, preserveIds = false, lightweig
   // same form item as the box and is not its name. (A real label stays, even
   // when the portal marks it red.)
   const MESSAGE_CLASS = /(?:^|[_\s-])(?:error|err-msg|error-msg|explain|feedback|bottombar|baritem|currentcount|counter|Input-message)(?![a-z])/i;
-  const VALIDATION_TEXT = /^(?:此项|该项|本项)?必填(?:项)?(?:未填写|不能为空)?$|^(?:不能为空|格式不正确|格式错误)$/;
+  const VALIDATION_TEXT = /^(?:此项|该项|本项)?必填(?:项)?(?:未填写|不能为空)?$|^(?:不能为空|格式不正确|格式错误|务必填写(?:此项|该项|本项)?|请填写此项|此项为必填)$/;
+  const GENERIC_ARIA_LABEL = /^(?:radio-?group|checkbox-?group|radiogroup|group|select|combobox|listbox)$/i;
   function isValidationOrCounter(node, container) {
     const txt = clean(node.textContent);
     if (/^\d+\s*\/\s*\d+$|^\d+$/.test(txt) || VALIDATION_TEXT.test(txt)) return true;
@@ -265,8 +266,8 @@ function scanPageFields(prefix, readOnly = false, preserveIds = false, lightweig
     // Moka 的输入框外面就是一个 <label>，里面写的是选中的值，不是题目。
     const wrapping = el.closest("label");
     if (wrapping && !/sd-Input-container/.test(wrapping.className || "") && labelText(wrapping)) return labelText(wrapping);
-    const ariaLabel = el.getAttribute("aria-label");
-    if (ariaLabel) return clean(ariaLabel);
+    const ariaLabel = clean(el.getAttribute("aria-label"));
+    if (ariaLabel && !GENERIC_ARIA_LABEL.test(ariaLabel)) return ariaLabel;
     const ariaLabelledby = el.getAttribute("aria-labelledby");
     if (ariaLabelledby) {
       const text = clean(ariaLabelledby.split(/\s+/).map((id) => rootOf(el).getElementById?.(id) || document.getElementById(id)).filter((node) => node && node !== el).map(labelText).filter(Boolean).join(" "));
@@ -426,7 +427,8 @@ function scanPageFields(prefix, readOnly = false, preserveIds = false, lightweig
     const group = box || radios[0].closest("[role='radiogroup']");
     const labelledBy = group?.getAttribute("aria-labelledby");
     if (labelledBy) label = clean(labelledBy.split(/\s+/).map((id) => rootOf(group).getElementById?.(id) || document.getElementById(id)).filter((node) => node && !inside(group, node)).map(labelText).join(" "));
-    if (!label && group?.getAttribute("aria-label")) label = clean(group.getAttribute("aria-label"));
+    const groupAria = clean(group?.getAttribute("aria-label"));
+    if (!label && groupAria && !GENERIC_ARIA_LABEL.test(groupAria)) label = groupAria;
     // The group's own label: the shared form item, or the text before the first radio.
     if (!label) label = labelFromFormItem(radios[0]) || labelFromTable(radios[0]);
     if (!label) {
@@ -1190,7 +1192,8 @@ async function fillFields(pairs, taskId) {
     }
     if (el && el.readOnly && el.closest("[class*='sd-Dropdown-container']")) {
       if (el.value && String(el.value).trim() && !allowCalOverwrite) { skipped.push(p.id); continue; }
-      if (await (el.closest("[class*='location_info']") ? pickSdLocation(el, p.value) : pickSdCalendar(el, p.value))) { mark(el, p.source || "profile", p.answerId); confirmManual(el, p); filled.push(p.id); }
+      const isSdLocation = !!(el.closest("[class*='location_info'], [class*='region_info']") || /省市区|省市|选择地区/.test(el.getAttribute("placeholder") || ""));
+      if (await (isSdLocation ? pickSdLocation(el, p.value) : pickSdCalendar(el, p.value))) { mark(el, p.source || "profile", p.answerId); confirmManual(el, p); filled.push(p.id); }
       else failed.push(p.label || p.id);
       continue;
     }
@@ -1303,10 +1306,38 @@ async function fillFields(pairs, taskId) {
       else { failed.push(p.label || p.id); reasons[p.label || p.id] = `网站的下拉列表里没有「${write.slice(0, 20)}」，请输入后从列表里点选`; }
       continue;
     }
+    let matchedSelectText = null;
     if (tag === "select") {
-      const match = Array.from(el.options).find((o) => !o.disabled && clean(o.textContent) === p.value);
+      const PLACEHOLDER_OPT = /^(?:[-—]+\s*)?(?:请(?:选择|选取)|please\s*(?:select|choose)|select\s*(?:one|an?\b))/i;
+      const realOptions = () => Array.from(el.options).filter((o) => !o.disabled && !!o.value && !PLACEHOLDER_OPT.test(clean(o.textContent)));
+      // Cascading child <select> (e.g. 51job 户口所在地/籍贯 市级下拉) populates shortly after its parent fires change.
+      if (!realOptions().length) {
+        for (let waited = 0; waited < 400 && !realOptions().length; waited += 50) await sleep(50);
+      }
+      const opts = realOptions();
+      const candidates = [p.value, ...(Array.isArray(p.alternatives) ? p.alternatives : [])].map((v) => clean(v)).filter(Boolean);
+      let match = null;
+      for (const cand of candidates) {
+        match = opts.find((o) => clean(o.textContent) === cand);
+        if (match) break;
+      }
+      if (!match && opts.length) {
+        const stripSuffix = (s) => s.replace(/(?:特别行政区|维吾尔自治区|壮族自治区|回族自治区|自治区|自治州|地区|省|市|盟|区|县)$/, "") || s;
+        const valNorm = clean(p.value);
+        const scored = opts
+          .map((o) => {
+            const t = clean(o.textContent);
+            const b = stripSuffix(t);
+            const hit = (b.length >= 2 && valNorm.includes(b)) || (valNorm.length >= 2 && t.includes(valNorm));
+            return hit ? { o, score: t.length } : null;
+          })
+          .filter(Boolean)
+          .sort((a, b) => b.score - a.score);
+        if (scored.length) match = scored[0].o;
+      }
       if (!match) { failed.push(p.label || p.id); continue; }
       el.value = match.value;
+      matchedSelectText = clean(match.textContent);
     } else if (tag === "textarea") {
       setControlValue(el, write, nativeTextareaSetter);
     } else {
@@ -1318,7 +1349,7 @@ async function fillFields(pairs, taskId) {
     // Controlled components can revert after input/change handlers run.
     await sleep(50);
     const actual = tag === "select" ? clean(el.options[el.selectedIndex]?.textContent) : String(el.value || "");
-    const expected = tag === "select" ? p.value : String(write);
+    const expected = tag === "select" ? (matchedSelectText || p.value) : String(write);
     if (clean(actual) !== clean(expected)) {
       failed.push(p.label || p.id);
       reasons[p.label || p.id] = reasons[p.label || p.id] || "网页控件没有保留写入的值，请手动确认";
@@ -1333,7 +1364,7 @@ async function fillFields(pairs, taskId) {
 
   // Moka 的籍贯 / 所在地：省 → 市 → 县三个标签页，点到哪算哪，最后按「确认」才写进框。
   async function pickSdLocation(el, value) {
-    const field = el.closest("[class*='location_info']");
+    const field = el.closest("[class*='location_info'], [class*='region_info'], [class*='sd-Dropdown-container']");
     const menu = () => field.querySelector("[class*='menu-wrapper']");
     const tags = () => Array.from(menu()?.querySelectorAll("[class*='page-container'] [class*='sd-Tag-container']") || []).filter((tag) => tag.getClientRects().length);
     const text = (tag) => clean(tag.textContent);
@@ -1442,18 +1473,33 @@ async function fillFields(pairs, taskId) {
     const EN_MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
     const monthNum = Number(m[2]);
     const monthNames = new Set([MONTHS[monthNum - 1], `${monthNum}月`, EN_MONTHS[monthNum - 1]]);
-    const month = Array.from(panel().querySelectorAll("[class*='sd-basic-year-item']")).find((node) => {
+    const findMonthItem = () => Array.from(panel().querySelectorAll("[class*='sd-basic-year-item']")).find((node) => {
       const label = clean(node.textContent).toLowerCase();
       return monthNames.has(label) || label.startsWith(EN_MONTHS[monthNum - 1]);
     });
-    if (!month) return false;
-    month.click();
-    await sleep(250);
+    let month = findMonthItem();
+    // Moka day_info pickers may open directly in day-grid mode (header shows year + month, no 12-month grid).
+    if (!month) {
+      const monthHeader = panel().querySelector("[class*='sd-basic-selector-month']");
+      if (monthHeader) {
+        for (let step = 0; step < 14; step++) {
+          const curMonth = Number(/(\d{1,2})\s*月/.exec(monthHeader.textContent || "")?.[1]);
+          if (!curMonth || curMonth === monthNum) break;
+          const arrow = panel().querySelector(curMonth < monthNum ? "[class*='iconright']:not([class*='double'])" : "[class*='iconleft']:not([class*='double'])");
+          if (!arrow) break;
+          arrow.click();
+          await sleep(40);
+        }
+      }
+    } else {
+      month.click();
+      await sleep(250);
+    }
     if (panel() && m[3]) {
       const day = Array.from(panel().querySelectorAll("[class*='sd-panal-table-container'] *")).find((node) => !node.children.length && clean(node.textContent) === String(Number(m[3])) && !/disabled|other|prev|next/i.test(node.className || ""));
       if (day) { day.click(); await sleep(250); }
     }
-    return clean(el.value).startsWith(`${m[1]}-${m[2].padStart(2, "0")}`);
+    return new RegExp(`${m[1]}\\D+0?${monthNum}(?:\\D|$)`).test(clean(el.value));
   }
 
   // Fallback for readonly/controlled Ant Design v4/v5 (.ant-picker) and Element UI/Plus (.el-date-editor) calendars.
@@ -2749,7 +2795,8 @@ const BASIC_FIELD_RULES = [
   // resolveRepeatField below. Only the page-wide "最高学历" stays flat.
   { keys: ["最高学历毕业院校", "最高学历毕业学校", "最高学历院校", "最高学历学校", "最高学历就读院校"], get: (p) => highestEducation(p)?.school },
   { keys: ["最高学历专业", "最高学历所学专业"], get: (p) => highestEducation(p)?.major },
-  { keys: ["最高学历", "最高学位", "全日制最高学历", "全日制最高学位", "highest degree", "highest education"], not: /形式|方式|类型|性质|学校|院校|专业|时间|日期|证书|编号/, get: (p) => highestEducation(p)?.degree, degree: true },
+  { keys: ["最高学历所在地", "最高学历所在区域", "最高学历所在地区", "最高学历国家", "最高学历所在国家"], get: (p) => schoolCountry(highestEducation(p)?.school) || (p.nationality || p.ethnicity || p.hometown ? "中国" : null) },
+  { keys: ["最高学历", "最高学位", "全日制最高学历", "全日制最高学位", "highest degree", "highest education"], not: /形式|方式|类型|性质|学校|院校|专业|时间|日期|证书|编号|所在地|区域|地区|国家/, get: (p) => highestEducation(p)?.degree, degree: true },
   // `learn`: the 网申资料 field a hand-typed answer here fills while it is blank.
   { keys: ["英语", "外语", "cet", "english", "语言能力"], not: /姓名|名字|name/i, get: (p) => p.english, english: true, learn: "english" },
   { keys: ["证件类型", "证件种类", "id type", "document type"], get: (p) => p.idType, learn: "idType" },
@@ -2760,6 +2807,7 @@ const BASIC_FIELD_RULES = [
   { keys: ["入党时间", "入团时间", "入党日期", "入团日期", "入党（团）时间", "入党(团)时间"], get: (p) => p.partyDate, date: true, learn: "partyDate" },
   { keys: ["出生地", "出生地点", "place of birth"], get: (p) => p.birthplace, learn: "birthplace" },
   { keys: ["户籍所在地", "户口所在地", "户籍地"], not: /地址|详细|街道|门牌/, get: (p) => p.householdPlace, learn: "householdPlace" },
+  { keys: ["户口地址", "户籍地址"], get: (p) => p.householdPlace || p.hometown, learn: "householdPlace" },
   { keys: ["户口性质", "户口类型", "户籍类型"], get: (p) => p.householdType, learn: "householdType" },
   { keys: ["生源地", "生源所在地"], get: (p) => p.sourcePlace, learn: "sourcePlace" },
   { keys: ["档案所在地", "档案存放"], get: (p) => p.archivePlace, learn: "archivePlace" },
@@ -2776,7 +2824,7 @@ const BASIC_FIELD_RULES = [
   { keys: ["职业资格", "技能证书", "资格证书"], get: (p) => p.certificates, learn: "certificates" },
   { keys: ["所在校区", "校区"], not: /是否|意向/, get: (p) => p.campusZone, learn: "campusZone" },
   { keys: ["挂科门数", "挂科数", "不及格门数"], get: (p) => p.failedCourses, learn: "failedCourses" },
-  { keys: ["籍贯", "户籍", "户口所在地", "家乡", "老家", "hometown"], not: /地址|详细|街道|门牌/, get: (p) => p.hometown, learn: "hometown" },
+  { keys: ["籍贯", "户籍", "户口所在地", "家庭所在地", "家乡", "老家", "hometown"], not: /地址|详细|街道|门牌/, get: (p) => p.hometown, learn: "hometown" },
   { keys: ["民族", "ethnic", "ethnicity"], get: (p) => p.ethnicity, learn: "ethnicity" },
   { keys: ["微信", "wechat", "weixin"], get: (p) => p.wechat, learn: "wechat" },
   // 「推荐方式：无 / 内推 / 大使推荐」: nobody referred the applicant unless they type a code themselves.
@@ -2784,14 +2832,16 @@ const BASIC_FIELD_RULES = [
   { keys: ["qq", "qq号", "qq号码"], get: (p) => p.qq, learn: "qq" },
   { keys: ["期望薪资", "期望月薪", "期望年薪", "期望薪酬", "期望待遇", "薪资要求", "薪资期望", "expected salary", "salary expectation"], get: (p) => p.expectedSalary, learn: "expectedSalary" },
   { keys: ["到岗时间", "到岗日期", "可入职", "最早入职", "available from", "availability date", "earliest start"], get: (p) => p.availableFrom, date: true, learn: "availableFrom" },
-  { keys: ["实习时长", "实习周期", "可实习时长", "可实习时间", "每周实习", "每周可实习", "实习天数", "internship duration"], get: (p) => p.internshipDuration, learn: "internshipDuration" },
-  { keys: ["通讯地址", "联系地址", "家庭住址", "现住址", "居住地址", "详细地址", "邮寄地址", "mailing address", "home address", "street address", "address line"], not: /e-?mail|邮箱|户口|户籍|原籍/i, get: (p) => p.address, learn: "address" },
+  // 「可实习时间」 with a date placeholder (e.g. Moka 日期（年月日）) asks for a start date, not a duration.
+  { keys: ["可实习时间", "最早实习时间", "可到岗时间"], when: (field) => !!(field.sdCalendar || field.antCalendar || field.type === "date" || /日期|年月日|yyyy/i.test(field.placeholder || "")), get: (p) => p.availableFrom, date: true, learn: "availableFrom" },
+  { keys: ["实习时长", "实习周期", "可实习时长", "可实习时间", "每周实习", "每周可实习", "实习天数", "internship duration"], when: (field) => !(field.sdCalendar || field.antCalendar || field.type === "date" || /日期|年月日|yyyy/i.test(field.placeholder || "")), get: (p) => p.internshipDuration, learn: "internshipDuration" },
+  { keys: ["通讯地址", "通信地址", "联系地址", "家庭住址", "现住址", "居住地址", "详细地址", "邮寄地址", "mailing address", "home address", "street address", "address line"], not: /e-?mail|邮箱|户口|户籍|原籍/i, get: (p) => p.address, learn: "address" },
   // Preferred cities first: a bare English "City" (address blocks) is where
   // the applicant lives, not where they'd like to work.
   { keys: ["意向城市", "期望城市", "工作城市", "意向工作地", "期望工作地", "工作地点", "意向地点", "期望地点", "工作地区", "preferred city", "preferred location", "desired location", "work location"], not: /是否|可否|能否|接受|现工作|当前工作|目前工作/, get: (p) => p.preferredCities, cities: true },
   // English portals (Microsoft, Workday …): country of residence, before the bare "city" rule.
   { keys: ["country/region", "country / region", "country or region", "country of residence", "country", "所在国家", "居住国家", "国家/地区", "国家或地区"], not: /code|区号|代码|phone|dial|birth|出生|citizenship|nationality|国籍|issu|签发|city|城市|state of|学校|院校|school|university|college/i, get: (p) => p.country || countryFromCity(p.currentCity), learn: "country", english: false, englishName: true },
-  { keys: ["现工作城市", "当前工作城市", "目前工作城市", "现居", "现住", "所在城市", "常住", "居住城市", "所在地", "居住地", "现所在地", "目前所在地", "current city", "current location", "city"], not: /工作所在地|公司所在地|单位所在地|学校所在地|户籍所在地|户口所在地|生源所在地|家庭所在地/, get: (p) => p.currentCity, learn: "currentCity", englishName: true },
+  { keys: ["现工作城市", "当前工作城市", "目前工作城市", "现居", "现住", "所在城市", "常住", "居住城市", "所在地", "居住地", "现所在地", "目前所在地", "current city", "current location", "city"], not: /工作所在地|公司所在地|单位所在地|学校所在地|户籍所在地|户口所在地|生源所在地|家庭所在地|学历所在地|学历所在区域|学历所在地区/, get: (p) => p.currentCity, learn: "currentCity", englishName: true },
   // 资料方案 fields: the direction-specific target role and self-assessment.
   // No `learn` here: which city and which job is usually picked per company.
   { keys: ["期望岗位", "期望职位", "意向岗位", "意向职位", "求职意向"], get: (p) => p.targetRole },
@@ -2807,7 +2857,7 @@ const BASIC_FIELD_RULES = [
   { keys: ["研究方向", "研究领域", "research direction", "research interest"], when: longTextBox, get: (p) => p.researchDirection || p.researchTopic, learn: "researchDirection" },
   { keys: ["成绩排名", "专业排名", "绩点排名", "年级排名", "班级排名", "排名"], not: /学校|院校|企业|公司|职位|岗位/, get: (p) => p.rank, learn: "rank", rank: true },
   { keys: ["主修课程", "专业课程", "核心课程", "主要课程"], get: (p) => p.courses, learn: "courses" },
-  { keys: ["是否接受调剂", "服从调剂", "接受调剂", "岗位调剂", "是否服从", "接受其他岗位", "考虑其他岗位"], not: /工作地|城市|地点/, get: (p) => p.acceptAdjust, learn: "acceptAdjust" },
+  { keys: ["是否接受调剂", "服从调剂", "接受调剂", "岗位调剂", "方向调剂", "是否服从", "接受其他岗位", "考虑其他岗位"], not: /工作地|城市|地点/, get: (p) => p.acceptAdjust, learn: "acceptAdjust" },
   // The job being applied for: the one this tab was opened for (比亚迪 / 钉钉表单's 「投递岗位」).
   { keys: ["投递岗位", "应聘岗位", "申请岗位", "应聘职位", "申请职位", "报考岗位", "投递职位"], not: /是否|期望|意向|第二|其他/, get: (p) => p.appliedJob },
   // 工作年限：优先用保存的工作年限，否则在校生按应届生匹配。
@@ -2826,15 +2876,15 @@ const BASIC_FIELD_RULES = [
   { keys: ["是否学生干部", "是否担任学生干部", "是否担任过学生干部", "是否为学生干部"], get: (p) => (p.campus || []).some((row) => row.role) ? "是" : null },
   // Still studying full time, read from the education rows (蔚来's 是否为全日制在校学生, 应届, 学习形式).
   { keys: ["全日制在校", "全日制学生", "是否为在校学生", "是否在校学生"], get: (p) => studyingNow(p) && studyMode(p) === "全日制" ? "是" : null },
-  // 「是否全日制」 on an education row asks how that study was done, whether or not it is over.
-  { keys: ["是否全日制", "是否为全日制"], not: /在校/, get: (p) => studyMode(p) ? (studyMode(p) === "全日制" ? "是" : "否") : null },
+  // 「是否全日制」「是否统招」 on an education row asks how that study was done, whether or not it is over.
+  { keys: ["是否全日制", "是否为全日制", "是否统招", "是否为统招"], not: /在校/, get: (p) => studyMode(p) ? (studyMode(p) === "全日制" ? "是" : "否") : null },
   // Only as a question: 「应届生求职登录」 is a page heading, not this.
   { keys: ["是否应届", "是否为应届"], not: /往届|非应届/, get: (p) => studyingNow(p) ? "是" : null },
-  { keys: ["学习形式", "教育形式", "就读方式", "受教育类型", "教育方式", "培养方式", "招生类别"], studyForm: true, get: (p) => studyMode(p) },
-  { keys: ["学习形式", "教育形式", "就读方式", "学历类型", "学历性质", "培养方式", "受教育类型", "教育方式", "招生类别"], get: (p) => studyMode(p) },
+  { keys: ["学习形式", "教育形式", "就读方式", "受教育类型", "教育类型", "教育方式", "培养方式", "招生类别"], studyForm: true, get: (p) => studyMode(p) },
+  { keys: ["学习形式", "教育形式", "就读方式", "学历类型", "学历性质", "培养方式", "受教育类型", "教育类型", "教育方式", "招生类别"], get: (p) => studyMode(p) },
   // 国籍 is not the country of residence (studying in 新加坡 is still 中国): 民族 / 政治面貌 / 籍贯 say 中国.
   { keys: ["国籍"], not: /父|母|配偶|家庭|亲属|紧急/, get: (p) => p.nationality || (p.ethnicity || p.politics || p.hometown ? "中国" : null), nationality: true },
-  { keys: ["招聘信息来源", "信息来源", "获知渠道", "了解渠道", "得知渠道", "从何处得知", "how did you hear", "where did you hear"], get: (p) => p.jobSource, learn: "jobSource" },
+  { keys: ["招聘信息来源", "信息来源", "获知渠道", "了解渠道", "得知渠道", "从何处得知", "职位信息的渠道", "获取职位信息", "职位信息渠道", "校招的途径", "校招途径", "招聘途径", "how did you hear", "where did you hear"], get: (p) => p.jobSource, learn: "jobSource" },
   // Seen filled by hand on 腾讯、网易、歌尔、中国移动 after v1.20.
   { keys: ["个人主页", "个人网站", "作品链接", "作品集链接", "作品地址", "个人博客", "github", "portfolio", "personal website"], not: /linkedin|领英/i, get: (p) => p.homepage, learn: "homepage" },
   { keys: ["实验室", "课题组", "所在实验室", "研究组"], not: /是否|安全|有无/, get: (p) => p.lab, learn: "lab" },
@@ -2843,10 +2893,11 @@ const BASIC_FIELD_RULES = [
   // 央国企 / 银行 / 军工院所高频专属字段自动推导
   { keys: ["专业技术职务", "技术职称", "专业技术资格", "职称等级", "现任职称", "最高职称"], get: (p) => p.professionalTitle || "无" },
   { keys: ["有无违法", "违法违纪", "犯罪记录", "受过何种处分", "处分记录", "违规违纪", "治安处罚", "失信记录", "不良记录"], get: () => "无", yesNo: true },
-  { keys: ["服从工作地点", "服从地点", "服从分配", "服从单位", "服从外派", "接受外派", "接受出差", "服从安排", "服从岗位"], get: (p) => p.acceptAdjust || "是", yesNo: true },
+  { keys: ["服从工作地点", "服从地点", "服从分配", "服从单位", "服从外派", "接受外派", "接受出差", "服从安排", "服从岗位", "工作地点调配", "异地调派", "地点调配", "异地调剂", "工作地调剂"], get: (p) => p.acceptAdjust || "是", yesNo: true },
   { keys: ["毕(结)业", "毕结业", "毕业情况", "学历状态", "是否毕业"], not: /时间|日期|院校|学校|论文|编号/, get: (p) => studyingNow(p) ? "在读" : "毕业" },
   { keys: ["毕业证书编号", "学位证书编号", "学历证书编号", "毕结业证书号"], get: (p) => p.certificateNo || (studyingNow(p) ? "暂未取得" : null) },
   { keys: ["邮政编码", "邮编", "postal code", "zip code"], get: (p) => p.postalCode || derivePostalCode(p.address || p.currentCity || p.hometown) },
+  { keys: ["填表日期", "填写日期", "申请日期", "填报日期", "date of application", "application date"], get: () => { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`; }, date: true },
 ];
 
 const CITY_POSTAL_CODES = [
@@ -2993,7 +3044,7 @@ function fieldHaystack(field) {
 // 家庭成员 / 紧急联系人 / 推荐人 fields describe someone else: the applicant's
 // own name, phone or employer must never land there, and nothing typed
 // there is remembered as the applicant's own.
-const THIRD_PARTY = /紧急联系人|联系人|家庭成员|家庭情况|家庭信息|家庭关系|家庭主要成员|主要家庭成员|家属|亲属|亲友|父母|父亲|母亲|配偶|爱人|子女|兄弟|姐妹|监护人|推荐人|内推人|介绍人|证明人|担保人|导师|社会关系|与本人关系|emergency|guardian|spouse|parent|father|mother|sibling|relative|next of kin|referee|references?\b|referr/i;
+const THIRD_PARTY = /紧急联系人|紧急联络人|联系人|联络人|家庭成员|家庭情况|家庭信息|家庭关系|家庭主要成员|主要家庭成员|家属|亲属|亲友|父母|父亲|母亲|配偶|爱人|子女|兄弟|姐妹|监护人|推荐人|内推人|介绍人|证明人|担保人|导师|社会关系|与本人关系|emergency|guardian|spouse|parent|father|mother|sibling|relative|next of kin|referee|references?\b|referr/i;
 
 function isThirdPartyField(field) {
   // 「是否独生子女」「是否有亲属在本公司」问的是申请人自己。
@@ -3027,7 +3078,7 @@ function savedThirdPartyValue(field, profile, rows) {
   if (/紧急联系人|紧急联络人|emergency/i.test(text)) {
     if (/关系|relation/i.test(label)) return profile.emergencyRelation || null;
     if (/电话|手机|联系方式|phone|tel/i.test(label)) return profile.emergencyPhone || null;
-    if (/姓名|联系人|name/i.test(label)) return profile.emergencyName || null;
+    if (/姓名|联系人|联络人|name/i.test(label)) return profile.emergencyName || null;
     return null;
   }
   if (/导师/.test(label) && /姓名|^导师$/.test(label)) return profile.advisor || null;
@@ -3057,9 +3108,13 @@ function savedExplicitPersonalValue(field, profile) {
   if (!profile || isThirdPartyField(field)) return null;
   const bare = bareLabel(field);
   const haystack = fieldHaystack(field);
-  if (/^(?:证件类型|证件种类)$|\bid[\s_-]*type\b|\bdocument[\s_-]*type\b/i.test(bare)) {
-    const val = String(profile.idType || "").trim();
+  if (/^(?:证件类型|证件种类)$|\bid[\s_-]*type\b|\bdocument[\s_-]*type\b/i.test(bare) || (field.tag === "select" && /证件/.test(bare) && Array.isArray(field.options) && field.options.some((o) => /身份证|护照/.test(o)))) {
+    const val = String(profile.idType || (profile.idNumber ? "居民身份证" : "")).trim();
     if (!val) return null;
+    if (Array.isArray(field.options) && field.options.length) {
+      const hit = field.options.find((o) => (/身份证/.test(val) && /国内身份证|居民身份证|二代身份证|身份证/.test(o) && !/国外/.test(o)) || (/护照/.test(val) && /护照/.test(o)));
+      if (hit) return { value: hit, alternatives: [] };
+    }
     const alts = /身份证/.test(val)
       ? ["居民身份证", "二代身份证", "中国居民身份证", "身份证"]
       : /护照/.test(val)
@@ -3264,15 +3319,17 @@ function educationFieldKind(haystack, inSection, bare = "") {
   if (/最高(?:学历|学位)|highest/i.test(haystack)) return null;
   // 学校所在国家/地区: where that row's school is, not where the applicant lives.
   if (/国家|国别|country/i.test(haystack) && (inSection || /学校|院校|school|university|college/i.test(haystack)) && !/城市|省份|city|province|国籍|nationality|奖|证书|项目|级|重点|计划|专项|助学|scholarship|award/i.test(haystack)) return "country";
-  if (inSection && /^(?:学习形式|就读方式|教育形式|受教育类型|教育方式)$/.test(bare)) return "mode";
+  if (inSection && /^(?:学习形式|就读方式|教育形式|受教育类型|教育类型|教育方式)$/.test(bare)) return "mode";
   if (/学校|院校|school|university|college/i.test(haystack)) return /城市|所在地|地区|省份|类型|性质|层次|排名|city|type|rank/i.test(haystack) ? null : "school";
   if (/专业|major|field of study/i.test(haystack)) return /技能|证书|资格|排名|方向|课程|实践|能力/.test(haystack) ? null : "major";
   if (/学历|学位|degree|education.?level/i.test(haystack)) return "degree";
   if (/gpa|绩点|平均分|平均成绩|学习成绩|加权/i.test(haystack) || (inSection && /^成绩$/.test(bare))) return /排名|rank/i.test(haystack) ? null : "gpa";
   if (/学制/.test(bare || haystack)) return "years";
   if (NOT_A_DATE.test(haystack)) return null;
-  if (/入学/.test(haystack) || (inSection && START_LABEL.test(haystack))) return "start";
-  if (/毕业(?:时间|年份|年月|日期)|graduation/i.test(haystack) || (inSection && END_LABEL.test(haystack))) return "end";
+  const nonDatePlace = /户口|户籍|生源|所在地|地点|地址|地区|省|市|成绩|分数|排名|方式|途径|类型|性质|状态/;
+  const explicitEduLevel = /(?:本科|硕士|研究生|博士|大专|专科|高中|第一学历|最高学历)/.test(haystack);
+  if ((/入学/.test(haystack) && !nonDatePlace.test(haystack)) || ((inSection || explicitEduLevel) && START_LABEL.test(haystack) && !nonDatePlace.test(haystack))) return "start";
+  if ((/毕业(?:时间|年份|年月|日期)|graduation/i.test(haystack) && !nonDatePlace.test(haystack)) || ((inSection || explicitEduLevel) && END_LABEL.test(haystack) && !nonDatePlace.test(haystack))) return "end";
   if (/^(?:在校时间|就读时间|在读时间)$/.test(bare) || (inSection && RANGE_LABEL.test(bare))) return "range";
   return null;
 }
@@ -3352,8 +3409,8 @@ function projectFieldKind(haystack, bare = "", inSection = false, field = null) 
   if (/^(?:链接|网址|地址|link|url)$/.test(bare)) return "link";
   if (/^(?:名称|name|title)$/.test(bare)) return "name";
   if (/^(?:担任)?(?:角色|职务|职位)(?:[/／](?:角色|职务|职位))?$|^role$/.test(bare)) return "role";
-  // Moka asks a one-line 「职责」 next to a 「项目中职责」 paragraph: the line is the role.
-  if (/^(?:担任)?职责$/.test(bare) && field && !longTextBox({ ...field, label: "" })) return "role";
+  // Moka asks a one-line 「职责」 (<input maxlength="255">) next to a 「项目中职责」 textarea: the one-line input is the role.
+  if (/^(?:担任)?职责$/.test(bare) && field && field.tag === "input") return "role";
   if (/^(?:开始(?:时间|日期)?|起始(?:时间|日期)?|start(?:date)?)$/.test(bare)) return "start";
   if (/^(?:结束(?:时间|日期)?|截止(?:时间|日期)?|end(?:date)?)$/.test(bare)) return "end";
   if (RANGE_LABEL.test(bare)) return "range";
@@ -3589,8 +3646,8 @@ function dateFormatFor(field) {
   if (field.type === "date") return { precision: "day", sep: "-", order: "ymd" };
   if (field.type === "month") return { precision: "month", sep: "-", order: "ymd" };
   if (/年份|(?:^|\W)year(?:\W|$)/i.test(hint)) return { precision: "year", sep: "-", order: "ymd" };
-  if (/月份|年月|month/i.test(hint)) return { precision: "month", sep: "-", order: "ymd" };
-  if (/日期|date|生日|birthday/i.test(hint)) return { precision: "day", sep: "-", order: "ymd" };
+  if (/月份|年月(?!日)|month/i.test(hint)) return { precision: "month", sep: "-", order: "ymd" };
+  if (/年月日|日期|date|生日|birthday/i.test(hint)) return { precision: "day", sep: "-", order: "ymd" };
   return { precision: "month", sep: "-", order: "ymd" };
 }
 
@@ -4348,6 +4405,45 @@ function customValueAlternatives(value, kind = "", field = null) {
     const extras = /实习|intern/i.test(v) ? ["实习", "实习生", "兼职/实习"] : ["全职", "正式", "正职", "社招/全职"];
     for (const item of extras) if (item !== v && !out.includes(item)) out.push(item);
   }
+  if (/^(?:健康|良好|身体健康|正常)$/.test(v) && (!field || /健康|身体/i.test(fieldHaystack(field)))) {
+    for (const item of ["健康", "良好", "身体健康", "正常", "无疾病", "无遗传病及慢性病", "无"]) {
+      if (item !== v && !out.includes(item)) out.push(item);
+    }
+  }
+  if (/^(?:中国|中国大陆|中国内地)$/.test(v) && (!field || /学历所在地|学历所在区域|学历所在地区|学校所在|国家|地区|区域/i.test(fieldHaystack(field)))) {
+    for (const item of ["中国大陆", "中国内地", "国内", "大陆", "内地", "中国", "China", "Mainland China"]) {
+      if (item !== v && !out.includes(item)) out.push(item);
+    }
+  }
+  if (/^(?:英国|美国|加拿大|澳大利亚|澳洲|日本|韩国|新加坡|德国|法国|瑞士|荷兰|海外|境外|国外)$/.test(v) && field && /学历所在地|学历所在区域|学历所在地区|学校所在/i.test(fieldHaystack(field))) {
+    for (const item of ["海外", "国外", "境外", "海外及港澳台", "国外/境外"]) {
+      if (item !== v && !out.includes(item)) out.push(item);
+    }
+  }
+  if (/cet\s*-?\s*6|六级/i.test(v)) {
+    for (const item of ["大学英语六级", "英语六级", "六级", "CET-6", "CET6", "大学英语六级（CET-6）"]) {
+      if (item !== v && !out.includes(item)) out.push(item);
+    }
+  } else if (/cet\s*-?\s*4|(?<!专业|专业英语)四级/i.test(v)) {
+    for (const item of ["大学英语四级", "英语四级", "四级", "CET-4", "CET4", "大学英语四级（CET-4）"]) {
+      if (item !== v && !out.includes(item)) out.push(item);
+    }
+  } else if (/ielts|雅思/i.test(v)) {
+    for (const item of ["雅思", "IELTS"]) if (item !== v && !out.includes(item)) out.push(item);
+  } else if (/toefl|托福/i.test(v)) {
+    for (const item of ["托福", "TOEFL"]) if (item !== v && !out.includes(item)) out.push(item);
+  }
+  if (field && /排名|rank/i.test(fieldHaystack(field))) {
+    const pct = rankPercent(v);
+    if (pct !== null) {
+      const buckets = pct <= 5 ? ["前5%", "前10%", "Top 5%", "5%以内", "前10%以内"]
+        : pct <= 10 ? ["前10%", "5%-10%", "前15%", "前20%", "Top 10%", "10%以内", "前10%以内"]
+          : pct <= 20 ? ["前20%", "10%-20%", "前10%-20%", "前30%", "Top 20%", "20%以内"]
+            : pct <= 30 ? ["前30%", "20%-30%", "前50%", "Top 30%"]
+              : ["前50%", "30%-50%", "Top 50%"];
+      for (const item of buckets) if (item !== v && !out.includes(item)) out.push(item);
+    }
+  }
   for (const [key, list] of Object.entries(SCHOOL_TIER_SYNONYMS)) {
     if (v.includes(key) || /境外|国外|qs/i.test(v) && key === "海外") {
       for (const item of list) if (item !== v && !out.includes(item)) out.push(item);
@@ -4368,7 +4464,8 @@ function customDatePart(field, value) {
 
 function matchFieldOption(field, value) {
   if (!value) return null;
-  if (!field.options) return value;
+  // Empty options on a native <select> means a cascading child (e.g. 51job 市级下拉) whose options populate after its parent changes.
+  if (!field.options || !field.options.length) return value;
   // 年 / 月 / 日 dropdowns of a split date take their own part of it.
   if (field.datePart) {
     const parts = dateParts(value);
@@ -4381,6 +4478,11 @@ function matchFieldOption(field, value) {
   if (band) return band;
   const fuzzy = field.options.filter((option) => option.includes(value) || value.includes(option));
   if (fuzzy.length === 1) return fuzzy[0];
+  // e.g. "广东省深圳市" against ["广东省", "深圳"]: prefer the prefix province option.
+  if (fuzzy.length > 1) {
+    const prefix = fuzzy.filter((option) => String(value).startsWith(option));
+    if (prefix.length === 1) return prefix[0];
+  }
   // 全日制 between 全日制 / 非全日制: the option that doesn't negate it.
   const plain = /^[非不]/.test(value) ? [] : fuzzy.filter((option) => !option.includes(`非${value}`) && !option.includes(`不${value}`));
   return plain.length === 1 ? plain[0] : null;
@@ -4530,6 +4632,11 @@ function matchPhoneChoice(field, profile) {
   if (/country.{0,12}code|phone.{0,6}code|dialing code|国家.{0,4}代码|地区.{0,4}代码|国际区号|国家\/地区号码/.test(text)) {
     if (field.options) return field.options.filter((option) => /\+\s*86(?!\d)|中国大陆|^中国|china/i.test(option) && !/香港|澳门|台湾|hong kong|macau|macao|taiwan/i.test(option)).sort((a, b) => a.length - b.length)[0] || null;
     return field.tag === "custom-select" || field.tag === "input" ? "+86" : null;
+  }
+  // 51job pairs a <select> labeled "手机号码 *" with options ["中国大陆（+86）", "其他地区手机号"].
+  if (field.options && /手机|电话|phone|mobile/i.test(text)) {
+    const cn = field.options.find((option) => /\+\s*86(?!\d)|中国大陆/i.test(option) && !/香港|澳门|台湾/.test(option));
+    if (cn) return cn;
   }
   if (field.options && /phone.{0,8}(?:device|type)|电话类型|号码类型/.test(text)) return field.options.find((option) => /^(?:mobile|cell|手机|移动电话)/i.test(option)) || null;
   return null;
@@ -5266,7 +5373,10 @@ async function runAutofillCore(adapter, resumeVersionId, options = {}) {
       if (repeat && !repeatFieldGoesToAi(repeat, profile)) continue;
       const value = repeat ? null : matchFlatField(field, profile);
       if (value) {
-        pairs.push({ id: field.id, value, source: "profile", label: field.label, tag: field.tag, alternatives: [...(degreeAlternatives(field, value) || []), ...(field.tag === "custom-select" ? yesNoAlternatives(value) : []), ...(field.tag === "custom-select" && value === "应届生" ? ["应届毕业生", "应届", "在校生", "无工作经验", "无"] : [])] });
+        const flatAlts = field.tag === "custom-select" || field.tag === "select"
+          ? [...new Set([...(degreeAlternatives(field, value) || []), ...customValueAlternatives(value, "", field), ...yesNoAlternatives(value), ...(value === "应届生" ? ["应届毕业生", "应届", "在校生", "无工作经验", "无"] : [])])].filter((item) => item !== value)
+          : degreeAlternatives(field, value);
+        pairs.push({ id: field.id, value, source: "profile", label: field.label, tag: field.tag, alternatives: flatAlts });
         continue;
       }
       const label = field.label || field.placeholder || field.name;
