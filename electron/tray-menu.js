@@ -31,10 +31,42 @@ function upcomingMenuItems(items, { openMeeting, copyText, openApplication, open
 }
 
 /** 「求职罗盘 · 今天 14:00 宝洁 · 一面（还有 2 小时）」 when something is today. */
-function trayTooltip(payload) {
+function trayTooltip(payload, activeProfile) {
+  const prefix =
+    activeProfile && !activeProfile.isDefault && activeProfile.id && activeProfile.id !== "default"
+      ? `求职罗盘 [${activeProfile.displayName || activeProfile.name}]`
+      : "求职罗盘";
   const first = payload && Array.isArray(payload.items) ? payload.items.find((item) => item.source !== "mail") : null;
-  if (!first || !payload.today) return "求职罗盘";
-  return shorten(`求职罗盘 · ${first.label}${first.relative ? `（${first.relative}）` : ""}`);
+  if (!first || !payload.today) return shorten(prefix);
+  return shorten(`${prefix} · ${first.label}${first.relative ? `（${first.relative}）` : ""}`);
 }
 
-module.exports = { upcomingMenuItems, trayTooltip };
+/**
+ * Builds the `👥 切换求职人` submenu items shared by the macOS/Windows
+ * application menu bar and the system tray menu.
+ */
+function profileSwitchMenuItems(profiles, activeProfileId, { onSwitch, onCreateProfile } = {}) {
+  const list = Array.isArray(profiles) ? profiles : [];
+  const items = list.map((profile) => {
+    const active = profile.id === activeProfileId;
+    const baseLabel = String(profile.displayName || profile.name || "未命名档案");
+    return {
+      label: shorten(baseLabel),
+      type: "radio",
+      checked: active,
+      click: () => {
+        if (!active && typeof onSwitch === "function") onSwitch(profile.id);
+      },
+    };
+  });
+  if (typeof onCreateProfile === "function") {
+    if (items.length > 0) items.push({ type: "separator" });
+    items.push({
+      label: "+ 新增求职人（如：对象）…",
+      click: () => onCreateProfile(),
+    });
+  }
+  return items;
+}
+
+module.exports = { upcomingMenuItems, trayTooltip, profileSwitchMenuItems };

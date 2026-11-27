@@ -4,6 +4,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { readFeishuBase, feishuBaseRevision } = require("./feishu-base");
+const { isAllowedBrowserPartition } = require("./profiles.cjs");
 
 // Job radar's static-HTML fetch runs in the Next.js server child process,
 // which has no Electron APIs of its own (it's a plain Node process this
@@ -64,7 +65,7 @@ async function renderOne(url, partition) {
     webPreferences: {
       javascript: true,
       images: false,
-      ...(partition === APPLICATION_BROWSER_PARTITION || partition === SEARCH_PARTITION
+      ...(partition === SEARCH_PARTITION || isAllowedBrowserPartition(partition)
         ? { session: session.fromPartition(partition) }
         : {}),
     },
@@ -136,7 +137,7 @@ const ROUTES = new Set(["/render", "/feishu-base", "/feishu-base-rev", "/print-p
  * gated only by the token, so it must not be reachable from anywhere but
  * this machine's own Next.js child process.
  */
-function startRenderBridge() {
+function startRenderBridge({ getApplicationPartition } = {}) {
   const token = crypto.randomBytes(24).toString("hex");
 
   const server = http.createServer((req, res) => {
@@ -197,12 +198,16 @@ function startRenderBridge() {
         res.writeHead(400, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "无效 URL" }));
         return;
       }
-      if (partition != null && partition !== APPLICATION_BROWSER_PARTITION && partition !== SEARCH_PARTITION) {
+      if (partition != null && partition !== SEARCH_PARTITION && !isAllowedBrowserPartition(partition)) {
         res.writeHead(400, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "不支持的会话分区" }));
         return;
       }
+      const effectivePartition =
+        partition === APPLICATION_BROWSER_PARTITION && typeof getApplicationPartition === "function"
+          ? getApplicationPartition() || APPLICATION_BROWSER_PARTITION
+          : partition;
       try {
-        const text = await enqueueRender(url, partition);
+        const text = await enqueueRender(url, effectivePartition);
         res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ text }));
       } catch (err) {
         res

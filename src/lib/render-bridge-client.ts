@@ -35,7 +35,11 @@ export async function renderPageText(
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({
         url,
-        ...(options.useApplicationSession ? { partition: "persist:job-application-browser" } : options.useSearchSession ? { partition: "cp-search" } : {}),
+        ...(options.useApplicationSession
+          ? { partition: process.env.CAREERPLATFORM_BROWSER_PARTITION || "persist:job-application-browser" }
+          : options.useSearchSession
+            ? { partition: "cp-search" }
+            : {}),
       }),
     });
     const data: unknown = await res.json().catch(() => null);

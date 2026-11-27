@@ -36,6 +36,7 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { CommandPalette } from "@/components/layout/command-palette";
 import { BrandMark } from "@/components/brand-mark";
+import { ProfileSwitcher } from "@/components/dashboard/profile-switcher";
 
 type NavLink = { href: string; label: string; icon: LucideIcon; chipClass: string };
 
@@ -204,13 +205,17 @@ function NavContent({
         )}
       </div>
 
+      <div className="mt-3">
+        <ProfileSwitcher userLabel={userLabel} collapsed={collapsed} />
+      </div>
+
       <button
         type="button"
         onClick={onSearchClick}
         title="搜索投递 / 岗位 (⌘K)"
         aria-label={collapsed ? "搜索投递 / 岗位" : undefined}
         className={cn(
-          "mt-3.5 flex h-9 w-full items-center rounded-xl border border-foreground/[0.06] bg-foreground/[0.035] text-[13px] text-muted-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.5)] transition-all duration-200 hover:border-primary/25 hover:bg-foreground/[0.06] hover:text-foreground dark:shadow-none",
+          "mt-2.5 flex h-9 w-full items-center rounded-xl border border-foreground/[0.06] bg-foreground/[0.035] text-[13px] text-muted-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.5)] transition-all duration-200 hover:border-primary/25 hover:bg-foreground/[0.06] hover:text-foreground dark:shadow-none",
           collapsed ? "justify-center px-0" : "gap-2 px-3"
         )}
       >

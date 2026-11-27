@@ -1,14 +1,27 @@
-const { app, BrowserWindow, dialog, systemPreferences, shell, ipcMain, Menu, nativeTheme } = require("electron");
+const { app, BrowserWindow, dialog, systemPreferences, shell, ipcMain, Menu, nativeTheme, session } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
 const { spawn } = require("child_process");
-const { setupBrowserViewIpc } = require("./browser-view");
+const { setupBrowserViewIpc, switchBrowserProfile, getActiveBrowserPartition } = require("./browser-view");
 const { setupUpdater } = require("./updater");
 const { createApplicationSyncSchedule } = require("./application-sync-schedule");
 const { startRenderBridge } = require("./render-bridge");
 const { hasPendingMigrations } = require("./migration-guard.cjs");
-const { upcomingMenuItems, trayTooltip } = require("./tray-menu");
+const { upcomingMenuItems, trayTooltip, profileSwitchMenuItems } = require("./tray-menu");
+const {
+  DEFAULT_PROFILE_ID,
+  browserPartitionForProfile,
+  resolveProfileDataDir,
+  readProfilesState,
+  listProfilesDetailed,
+  createProfile,
+  renameProfile,
+  setActiveProfile,
+  deleteProfile,
+  syncAiKeysForProfile,
+  ensureProfileSecret,
+} = require("./profiles.cjs");
 
 // Pinned regardless of the app's marketing name (package.json's
 // "productName", shown in the dock/menu bar/window title): app.getPath
@@ -42,13 +55,28 @@ function getAppRoot() {
 // value every launch would make previously-saved keys undecryptable — so
 // it's generated once and persisted alongside the database.
 function ensureSecret(userDataDir) {
-  const secretFile = path.join(userDataDir, ".secret");
-  if (fs.existsSync(secretFile)) {
-    return fs.readFileSync(secretFile, "utf8").trim();
-  }
-  const secret = crypto.randomBytes(32).toString("hex");
-  fs.writeFileSync(secretFile, secret, { mode: 0o600 });
-  return secret;
+  return ensureProfileSecret(userDataDir);
+}
+
+function rootUserDataDir() {
+  return app.getPath("userData");
+}
+
+function activeProfileState() {
+  const rootDir = rootUserDataDir();
+  const state = readProfilesState(rootDir);
+  const active = state.profiles.find((p) => p.id === state.activeProfileId) || state.profiles[0];
+  return {
+    rootDir,
+    state,
+    active,
+    dataDir: resolveProfileDataDir(rootDir, active.id),
+    partition: browserPartitionForProfile(active.id),
+  };
+}
+
+function activeProfileDataDir() {
+  return activeProfileState().dataDir;
 }
 
 // process.execPath inside Electron's main process is the Electron binary,
@@ -149,9 +177,11 @@ function migrateLegacyUserData(userDataDir) {
 
 let serverProcess;
 let renderBridge;
+let switchingProfilePromise = null;
+let lastTrayUpcomingItems = [];
 
-async function runDataWorker(initialize = false) {
-  const dir = app.getPath("userData");
+async function runDataWorker(initialize = false, targetDir = activeProfileDataDir()) {
+  const dir = targetDir;
   if (!initialize && !fs.existsSync(path.join(dir, "local.db"))) return;
   await new Promise((resolve, reject) => {
     const worker = isDev ? path.join(__dirname, "backup-worker.cjs") : path.join(process.resourcesPath, "app.asar.unpacked", "electron", "backup-worker.cjs");
@@ -160,21 +190,56 @@ async function runDataWorker(initialize = false) {
     child.on("exit", code => code === 0 ? resolve() : reject(new Error("数据备份失败，已停止更新。")));
   });
 }
-async function backupUserData() { await runDataWorker(); }
+async function backupUserData(targetDir = activeProfileDataDir()) { await runDataWorker(false, targetDir); }
+
+async function stopNextServer() {
+  if (!serverProcess) return;
+  const proc = serverProcess;
+  serverProcess = null;
+  if (proc.exitCode !== null || proc.signalCode !== null) return;
+  await new Promise((resolve) => {
+    const killTimer = setTimeout(() => {
+      try {
+        if (process.platform === "win32") proc.kill();
+        else proc.kill("SIGKILL");
+      } catch { /* ignore */ }
+    }, 3000);
+    proc.once("exit", () => {
+      clearTimeout(killTimer);
+      resolve();
+    });
+    try {
+      if (process.platform === "win32") proc.kill();
+      else proc.kill("SIGTERM");
+    } catch {
+      clearTimeout(killTimer);
+      resolve();
+    }
+  });
+}
 
 async function startNextServer() {
-  const userDataDir = app.getPath("userData");
+  const rootDir = rootUserDataDir();
+  fs.mkdirSync(rootDir, { recursive: true });
+  migrateLegacyUserData(rootDir);
+
+  const { active, dataDir: userDataDir, partition } = activeProfileState();
   fs.mkdirSync(userDataDir, { recursive: true });
-  migrateLegacyUserData(userDataDir);
   const uploadsDir = path.join(userDataDir, "uploads");
   fs.mkdirSync(uploadsDir, { recursive: true });
   const dbPath = path.join(userDataDir, "local.db");
+
+  switchBrowserProfile({ profileId: active.id, dataDir: userDataDir });
 
   // The Next.js server below runs as a separate spawned process, not inside
   // Electron itself, so it has no BrowserWindow access of its own — job-radar's
   // rendered-page fetch tier calls back into this main process through this
   // bridge for that. See electron/render-bridge.js for why.
-  renderBridge = await startRenderBridge();
+  if (!renderBridge) {
+    renderBridge = await startRenderBridge({
+      getApplicationPartition: () => getActiveBrowserPartition(),
+    });
+  }
 
   const env = {
     ...process.env,
@@ -188,23 +253,36 @@ async function startNextServer() {
     NODE_ENV: isDev ? "development" : "production",
     CAREERPLATFORM_RENDER_BRIDGE_URL: renderBridge.url,
     CAREERPLATFORM_RENDER_BRIDGE_TOKEN: renderBridge.token,
+    CAREERPLATFORM_PROFILE_ID: active.id,
+    CAREERPLATFORM_PROFILE_NAME: active.name,
+    CAREERPLATFORM_BROWSER_PARTITION: partition,
     // 小欧's 「找岗位」 runs the vendored career-ops fetchers from here.
     CAREERPLATFORM_CAREER_OPS_DIR: isDev ? path.join(__dirname, "career-ops") : path.join(process.resourcesPath, "app.asar.unpacked", "electron", "career-ops"),
   };
 
   const appRoot = getAppRoot();
   const dbExisted = fs.existsSync(dbPath);
-  if (!dbExisted) await runDataWorker(true);
+  if (!dbExisted) await runDataWorker(true, userDataDir);
   // Back up before new migrations, including local builds that keep the same
   // package version while adding schema changes.
   const marker = path.join(userDataDir, ".last-migrated-version");
   const previousVersion = fs.existsSync(marker) ? fs.readFileSync(marker, "utf8").trim() : "";
   const migrationsPending = !dbExisted || hasPendingMigrations(dbPath, path.join(appRoot, "prisma", "migrations"));
-  if (previousVersion !== app.getVersion() || migrationsPending) await backupUserData();
+  if (previousVersion !== app.getVersion() || migrationsPending) await backupUserData(userDataDir);
   if (migrationsPending) {
     await runPrismaMigrate(appRoot, env);
   }
   if (previousVersion !== app.getVersion()) fs.writeFileSync(marker, app.getVersion());
+
+  // Automatically share configured AI keys from the main profile into secondary
+  // profiles without overwriting any provider key explicitly set in that profile.
+  if (active.id !== DEFAULT_PROFILE_ID) {
+    try {
+      syncAiKeysForProfile(rootDir, active.id);
+    } catch (err) {
+      console.error("[profiles] AI key sync warning:", err && err.message ? err.message : err);
+    }
+  }
 
   const nextCli = path.join(appRoot, "node_modules", "next", "dist", "bin", "next");
   serverProcess = spawn(
@@ -391,28 +469,40 @@ function showWindow() {
 // ---------- shared settings file (written by the Next app) ----------
 
 function settingsFile() {
-  return path.join(app.getPath("userData"), "app-settings.json");
+  return path.join(activeProfileDataDir(), "app-settings.json");
 }
 
 function readAppSettings() {
+  const defaults = {
+    autoLaunch: false,
+    notesAtLogin: false,
+    backgroundReminders: false,
+    inboxScanIntervalHours: 0,
+    jobRadarIntervalHours: 0,
+    applicationSyncIntervalHours: 0,
+  };
+  let rootDefaults = {};
+  const rootFile = path.join(rootUserDataDir(), "app-settings.json");
+  const activeFile = settingsFile();
+  if (activeFile !== rootFile && fs.existsSync(rootFile)) {
+    try {
+      const parsedRoot = JSON.parse(fs.readFileSync(rootFile, "utf8"));
+      if (parsedRoot && typeof parsedRoot === "object") {
+        if (typeof parsedRoot.fitZoom === "boolean") rootDefaults.fitZoom = parsedRoot.fitZoom;
+        if (typeof parsedRoot.proxyUrl === "string") rootDefaults.proxyUrl = parsedRoot.proxyUrl;
+      }
+    } catch { /* ignore */ }
+  }
   try {
     return {
-      autoLaunch: false,
-      notesAtLogin: false,
-      backgroundReminders: false,
-      inboxScanIntervalHours: 0,
-      jobRadarIntervalHours: 0,
-      applicationSyncIntervalHours: 0,
-      ...JSON.parse(fs.readFileSync(settingsFile(), "utf8")),
+      ...defaults,
+      ...rootDefaults,
+      ...JSON.parse(fs.readFileSync(activeFile, "utf8")),
     };
   } catch {
     return {
-      autoLaunch: false,
-      notesAtLogin: false,
-      backgroundReminders: false,
-      inboxScanIntervalHours: 0,
-      jobRadarIntervalHours: 0,
-      applicationSyncIntervalHours: 0,
+      ...defaults,
+      ...rootDefaults,
     };
   }
 }
@@ -484,12 +574,342 @@ function zoomBy(step) {
   contents.setZoomFactor(step === 0 ? 1 : Math.min(2, Math.max(0.5, Math.round((contents.getZoomFactor() + step) * 10) / 10)));
 }
 
-function buildApplicationMenu() {
+function listProfilesPayload() {
+  const detailed = listProfilesDetailed(rootUserDataDir());
+  return {
+    activeProfileId: detailed.activeProfileId,
+    switching: Boolean(switchingProfilePromise),
+    profiles: detailed.profiles.map((item) => ({
+      id: item.id,
+      name: item.name,
+      color: item.color,
+      createdAt: item.createdAt,
+      isDefault: item.isDefault,
+      displayName: item.displayName,
+      userRealName: item.userRealName,
+      applicationCount: item.applicationCount,
+      resumeCount: item.resumeCount,
+      aiKeyCount: item.aiKeyCount,
+      initialized: item.initialized,
+      browserPartition: item.browserPartition,
+    })),
+  };
+}
+
+function updateMainWindowTitle(payload = null) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const info = payload || listProfilesPayload();
+  const active = info.profiles.find((p) => p.id === info.activeProfileId);
+  if (active && !active.isDefault) {
+    mainWindow.setTitle(`求职罗盘 · 当前求职人：${active.displayName || active.name}`);
+  } else {
+    mainWindow.setTitle("求职罗盘");
+  }
+}
+
+function requestCreateProfileFromMenu() {
+  showWindow();
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("profiles:open-create-dialog");
+    }
+  }, 150);
+}
+
+function safeRouteAfterProfileSwitch(rawUrl) {
+  const SAFE_TOP_SEGMENTS = new Set([
+    "dashboard",
+    "calendar",
+    "leads",
+    "pool",
+    "browser",
+    "applications",
+    "resumes",
+    "mock-interview",
+    "insights",
+    "tools",
+    "settings",
+    "companies",
+    "contacts",
+    "compare",
+    "interviews",
+    "journey",
+    "library",
+    "personality",
+    "question-banks",
+    "resume-drill",
+  ]);
+  try {
+    const parsed = new URL(rawUrl);
+    const first = parsed.pathname.split("/").filter(Boolean)[0] || "";
+    if (SAFE_TOP_SEGMENTS.has(first)) return `/${first}`;
+  } catch { /* ignore */ }
+  return "/dashboard";
+}
+
+function showNativeSwitchOverlay(targetLabel) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const safeText = JSON.stringify(String(targetLabel || "新档案"));
+  mainWindow.webContents.executeJavaScript(`(() => {
+    if (document.getElementById("__cp-profile-switch-mask")) return;
+    const mask = document.createElement("div");
+    mask.id = "__cp-profile-switch-mask";
+    mask.style.cssText = "position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,0.52);backdrop-filter:blur(10px);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;";
+    const card = document.createElement("div");
+    card.style.cssText = "max-width:380px;padding:24px 28px;border-radius:18px;background:rgba(255,255,255,0.96);color:#0f172a;box-shadow:0 24px 60px rgba(0,0,0,0.25);text-align:center;";
+    const title = document.createElement("div");
+    title.style.cssText = "font-size:15px;font-weight:700;margin-bottom:6px;";
+    title.textContent = "正在切换至「" + ${safeText} + "」的求职档案…";
+    const sub = document.createElement("div");
+    sub.style.cssText = "font-size:12px;color:#64748b;line-height:1.6;";
+    sub.textContent = "正在隔离简历库、投递看板与内置浏览器登录态，并自动同步共享 AI 密钥";
+    card.appendChild(title);
+    card.appendChild(sub);
+    mask.appendChild(card);
+    document.body.appendChild(mask);
+  })()`).catch(() => {});
+}
+
+function clearNativeSwitchOverlay() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.executeJavaScript(`document.getElementById("__cp-profile-switch-mask")?.remove()`).catch(() => {});
+}
+
+async function performProfileSwitch(targetProfileId) {
+  if (switchingProfilePromise) {
+    await switchingProfilePromise.catch(() => {});
+  }
+  const rootDir = rootUserDataDir();
+  const before = readProfilesState(rootDir);
+  const target = before.profiles.find((p) => p.id === targetProfileId);
+  if (!target) {
+    throw new Error("目标求职人档案不存在");
+  }
+  if (before.activeProfileId === target.id && serverProcess) {
+    return listProfilesPayload();
+  }
+
+  const runSwitch = async () => {
+    const targetDataDir = resolveProfileDataDir(rootDir, target.id);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("profiles:switching", {
+        switching: true,
+        targetId: target.id,
+        targetName: target.name,
+      });
+      showNativeSwitchOverlay(target.name);
+    }
+
+    try {
+      // 1. Cancel in-flight background scans & reset per-profile timers/dedupe sets
+      for (const controller of backgroundRequests.values()) controller.abort();
+      backgroundRequests.clear();
+      inboxSchedule.reset();
+      radarSchedule.reset();
+      applicationSyncSchedule.reset();
+      postingSheetSchedule.reset();
+      notified.clear();
+      lastNotifiedApplicationSyncError = "";
+      lastAutoBackupError = "";
+      lastTrayUpcomingItems = [];
+      appliedSettings = null;
+
+      // 2. Close embedded browser tabs/popups & isolate browser session partition
+      switchBrowserProfile({ profileId: target.id, dataDir: targetDataDir });
+      productivity?.closeAllWindows?.();
+      lanSync?.stopShare?.();
+
+      // 3. Stop outgoing Next.js local server cleanly so SQLite handles close
+      const previousUrl = mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents.getURL() : "";
+      await stopNextServer();
+
+      // 4. Persist activeProfileId & start Next.js against the target profile's DB/secret/uploads
+      setActiveProfile(rootDir, target.id);
+      await startNextServer();
+
+      // 5. Clear cookies & HTTP cache on main window to prevent stale session/user artifacts
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        const appOrigin = `http://localhost:${PORT}`;
+        await mainWindow.webContents.session.clearStorageData({ origin: appOrigin, storages: ["cookies"] }).catch(() => {});
+        await mainWindow.webContents.session.clearCache().catch(() => {});
+        const nextRoute = safeRouteAfterProfileSwitch(previousUrl);
+        await mainWindow.loadURL(`${appOrigin}${nextRoute}`);
+      }
+
+      const nextPayload = listProfilesPayload();
+      updateMainWindowTitle(nextPayload);
+      buildApplicationMenu(nextPayload);
+      setTrayMenu([], nextPayload);
+      void refreshTrayUpcoming();
+      reconcileAppSettings();
+
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("profiles:switching", { switching: false });
+        mainWindow.webContents.send("profiles:changed", nextPayload);
+      }
+      return nextPayload;
+    } catch (err) {
+      clearNativeSwitchOverlay();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("profiles:switching", {
+          switching: false,
+          error: String(err && err.message ? err.message : err),
+        });
+      }
+      throw err;
+    }
+  };
+
+  switchingProfilePromise = runSwitch();
+  try {
+    return await switchingProfilePromise;
+  } finally {
+    switchingProfilePromise = null;
+  }
+}
+
+function assertTrustedMainFrame(event) {
+  const expectedOrigin = `http://localhost:${PORT}`;
+  const frameUrl = event?.senderFrame?.url || event?.sender?.getURL?.() || "";
+  try {
+    if (new URL(frameUrl).origin !== expectedOrigin) {
+      throw new Error("不受信任的调用来源");
+    }
+  } catch {
+    throw new Error("不受信任的调用来源");
+  }
+}
+
+ipcMain.handle("profiles:list", (event) => {
+  assertTrustedMainFrame(event);
+  const payload = listProfilesPayload();
+  updateMainWindowTitle(payload);
+  buildApplicationMenu(payload);
+  if (tray) setTrayMenu(lastTrayUpcomingItems, payload);
+  return payload;
+});
+
+ipcMain.handle("profiles:create", async (event, rawPayload) => {
+  assertTrustedMainFrame(event);
+  try {
+    const name = typeof rawPayload?.name === "string" ? rawPayload.name : "";
+    const color = typeof rawPayload?.color === "string" ? rawPayload.color : undefined;
+    const switchImmediately = rawPayload?.switchImmediately !== false;
+    const created = createProfile(rootUserDataDir(), { name, color });
+    if (switchImmediately) {
+      const state = await performProfileSwitch(created.id);
+      return { ok: true, ...state, message: `已创建并切换至「${created.name}」` };
+    }
+    const state = listProfilesPayload();
+    buildApplicationMenu(state);
+    if (tray) setTrayMenu(lastTrayUpcomingItems, state);
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("profiles:changed", state);
+    return { ok: true, ...state, message: `已创建档案「${created.name}」` };
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : String(err) };
+  }
+});
+
+ipcMain.handle("profiles:switch", async (event, profileId) => {
+  assertTrustedMainFrame(event);
+  try {
+    const state = await performProfileSwitch(String(profileId || ""));
+    const active = state.profiles.find((p) => p.id === state.activeProfileId);
+    return { ok: true, ...state, message: `已切换至「${active?.displayName || active?.name || "目标档案"}」` };
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : String(err) };
+  }
+});
+
+ipcMain.handle("profiles:rename", (event, profileId, newName) => {
+  assertTrustedMainFrame(event);
+  try {
+    renameProfile(rootUserDataDir(), String(profileId || ""), String(newName || ""));
+    const state = listProfilesPayload();
+    updateMainWindowTitle(state);
+    buildApplicationMenu(state);
+    if (tray) setTrayMenu(lastTrayUpcomingItems, state);
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("profiles:changed", state);
+    return { ok: true, ...state, message: "档案已重命名" };
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : String(err) };
+  }
+});
+
+ipcMain.handle("profiles:delete", async (event, profileId) => {
+  assertTrustedMainFrame(event);
+  try {
+    const targetId = String(profileId || "");
+    if (targetId === DEFAULT_PROFILE_ID) {
+      return { ok: false, message: "默认主档案不可删除" };
+    }
+    const current = readProfilesState(rootUserDataDir());
+    // If deleting the currently active profile, switch back to default FIRST so
+    // the outgoing Next.js process releases all SQLite file locks cleanly.
+    if (current.activeProfileId === targetId) {
+      await performProfileSwitch(DEFAULT_PROFILE_ID);
+    }
+    const removed = deleteProfile(rootUserDataDir(), targetId);
+    if (removed.partitionToClear && session && typeof session.fromPartition === "function") {
+      try {
+        const targetSession = session.fromPartition(removed.partitionToClear);
+        await targetSession.clearStorageData();
+        if (typeof targetSession.clearCache === "function") await targetSession.clearCache();
+      } catch { /* ignore */ }
+    }
+    const state = listProfilesPayload();
+    updateMainWindowTitle(state);
+    buildApplicationMenu(state);
+    if (tray) setTrayMenu(lastTrayUpcomingItems, state);
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("profiles:changed", state);
+    return { ok: true, ...state, message: "已删除该求职人档案及其隔离数据" };
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : String(err) };
+  }
+});
+
+ipcMain.handle("profiles:sync-ai-keys", (event, targetProfileId) => {
+  assertTrustedMainFrame(event);
+  try {
+    const rootDir = rootUserDataDir();
+    const resolvedTarget = typeof targetProfileId === "string" && targetProfileId
+      ? targetProfileId
+      : readProfilesState(rootDir).activeProfileId;
+    const outcome = syncAiKeysForProfile(rootDir, resolvedTarget, { overwrite: true });
+    const state = listProfilesPayload();
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("profiles:changed", state);
+    return {
+      ok: true,
+      synced: outcome.synced,
+      skipped: outcome.skipped,
+      providers: outcome.providers,
+      message: outcome.synced > 0
+        ? `已同步 ${outcome.synced} 个 AI 服务密钥（${outcome.providers.join(" / ")}）`
+        : "未检测到可同步的 AI 密钥，请先在主档案配置 AI 服务",
+    };
+  } catch (err) {
+    return { ok: false, synced: 0, skipped: 0, message: err instanceof Error ? err.message : String(err) };
+  }
+});
+
+function buildApplicationMenu(precomputedProfiles = null) {
+  const profileInfo = precomputedProfiles || listProfilesPayload();
+  const profileSubmenu = profileSwitchMenuItems(profileInfo.profiles, profileInfo.activeProfileId, {
+    onSwitch: (id) => {
+      void performProfileSwitch(id).catch((err) => {
+        dialog.showErrorBox("切换求职人失败", String(err && err.message ? err.message : err));
+      });
+    },
+    onCreateProfile: requestCreateProfileFromMenu,
+  });
+
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { label: "求职罗盘", submenu: [
       { label: "关于求职罗盘", role: "about" },
       { type: "separator" },
       { label: "打开求职罗盘", click: showWindow },
+      { label: "👥 切换求职人", submenu: profileSubmenu },
+      { type: "separator" },
       { label: "显示便利贴", click: () => productivity?.open("notes") },
       { label: "显示日历", click: () => productivity?.open("calendar") },
       { type: "separator" },
@@ -556,14 +976,27 @@ async function refreshTrayUpcoming() {
     const res = await fetch(`http://localhost:${PORT}/api/upcoming?days=7`, { signal: AbortSignal.timeout(10000) });
     if (!res.ok) return;
     const payload = await res.json();
-    setTrayMenu(Array.isArray(payload.items) ? payload.items : []);
-    tray.setToolTip(trayTooltip(payload));
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    lastTrayUpcomingItems = items;
+    const profileInfo = listProfilesPayload();
+    const active = profileInfo.profiles.find((p) => p.id === profileInfo.activeProfileId);
+    setTrayMenu(items, profileInfo);
+    tray.setToolTip(trayTooltip(payload, active));
   } catch { /* server not up yet: the next tick retries */ }
 }
 
-function setTrayMenu(upcoming) {
+function setTrayMenu(upcoming, precomputedProfiles = null) {
   if (!tray) return;
   const { Menu, clipboard } = require("electron");
+  const profileInfo = precomputedProfiles || listProfilesPayload();
+  const profileSubmenu = profileSwitchMenuItems(profileInfo.profiles, profileInfo.activeProfileId, {
+    onSwitch: (id) => {
+      void performProfileSwitch(id).catch((err) => {
+        dialog.showErrorBox("切换求职人失败", String(err && err.message ? err.message : err));
+      });
+    },
+    onCreateProfile: requestCreateProfileFromMenu,
+  });
   const items = upcomingMenuItems(upcoming, {
     openMeeting: (url) => { try { const parsed = new URL(url); if (parsed.protocol === "http:" || parsed.protocol === "https:") shell.openExternal(parsed.href).catch(() => {}); } catch { /* not a link */ } },
     copyText: (text) => clipboard.writeText(String(text)),
@@ -573,6 +1006,8 @@ function setTrayMenu(upcoming) {
   });
   tray.setContextMenu(
     Menu.buildFromTemplate([
+      { label: "👥 切换求职人", submenu: profileSubmenu },
+      { type: "separator" },
       ...items,
       { type: "separator" },
       { label: "显示便利贴", click: () => productivity?.open("notes") },
@@ -1017,6 +1452,7 @@ app.whenReady().then(async () => {
       if (saved.mainVisible === false && saved.windows?.some((window) => window.visible)) restoreMainVisible = false;
     } catch { /* First launch or older window state. */ }
     createWindow({ show: !openedAtLogin && restoreMainVisible });
+    updateMainWindowTitle();
     productivity = require("./productivity").setupProductivity({ port: PORT, token: eventReminderToken, getMainWindow: () => mainWindow, showMainWindow: showWindow, getNotesAtLogin: () => readAppSettings().notesAtLogin, setNotesAtLogin, openNotesAtLogin: openedAtLogin && settings.notesAtLogin });
     lanSync = require("./lan-sync").setupLanSync({ port: PORT, token: eventReminderToken, ipcMain, trustedOrigin: `http://localhost:${PORT}` });
     buildApplicationMenu();

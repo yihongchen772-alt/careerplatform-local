@@ -182,17 +182,20 @@ jobs:
         shell: bash
         run: |
           cat > release-notes.md <<'NOTES'
-          本版新增 Agent 失败重试和语音输入、按原因及阶段记录流程终止、桌面便签、日历与提醒，以及通过剪贴板快速捕获岗位。岗位保存前可编辑并检查重复；原有用户数据会在迁移前备份。
+          ### ✨ v2.2.0 核心更新：👥 原生多求职人档案一键切换（Multi-Profile Switcher）
 
-          Windows 电脑下载文件名含 win-x64 的 .exe；Apple Silicon Mac 下载含 mac-arm64 的 .dmg。
+          支持在同一台电脑上帮对象或家人代投简历，零串号、免重复配置 AI Key：
+          - **100% 物理隔离**：每个求职人档案拥有独立的本地数据库（投递看板、候选池、网申填表记忆、收件箱账号）、独立的简历与附件目录，以及**独立的内置网申浏览器 Cookie 分区**（登录字节、腾讯、北森、Moka 等招聘官网手机号绝不串号）。
+          - **AI Key 跨档案无感共享**：新建或切换到新求职人档案时，底层自动从主档案解密并重加密同步已配置的 AI 服务密钥与默认模型，开箱即用免重复配置。
+          - **丝滑热切换与双入口 UI**：侧边栏顶部新增彩色徽章切换器（代投模式下提供醒目防误投标识），系统顶部菜单栏与托盘菜单同步支持「👥 切换求职人」一键秒切。
+          - **100% 向后兼容零丢数据**：原有主档案（`default`）继续使用原用户数据根目录与原浏览器会话分区，升级后历史投递记录、简历与官网登录态完整保留。
 
-          Windows 安装后可以在软件内检查更新、下载并重启安装。首次切换到本版本需安装一次新的安装包。
-          macOS 当前通过 DMG 覆盖应用更新；尚未配置 Apple 开发者签名和公证，不提供自动替换安装。
+          ---
 
-          更新保留 careerplatform 用户数据目录中的数据库、附件和密钥。不要卸载或手动删除用户数据目录。
-          latest.yml 和 .blockmap 是 Windows 更新所需的文件，请与安装包一起保留。
-
-          发布前请检查本次版本变更，并完成 Windows 安装/更新和 Mac DMG 打开验证。
+          ### 📦 下载与更新说明
+          - **Windows（64位）**：下载 `JobCompass-2.2.0-win-x64.exe`（已安装旧版亦可在软件「设置 → 版本更新」内检查更新）。
+          - **macOS（Apple Silicon M 系列芯片）**：下载 `JobCompass-2.2.0-mac-arm64.dmg`，拖入「应用程序」覆盖即可（首次打开如遇系统拦截请右键点击选择「打开」）。
+          - 更新过程会自动备份并保留 `careerplatform` 用户数据目录中的全部数据库、附件与密钥。
           NOTES
           if gh release view "$RELEASE_TAG" --json isDraft > existing-release.json 2>/dev/null; then
             node -e "if (!require('./existing-release.json').isDraft) throw new Error('Refusing to replace a published release. Increment the version instead.');"

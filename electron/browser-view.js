@@ -4,6 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const { createLoginStore, loginRealm, realmLabel, noteLanding, inheritedJdFits } = require("./saved-logins");
 const { historyMarkAt, historySinceMark, recordedMark } = require("./history-mark");
+const { browserPartitionForProfile, DEFAULT_BROWSER_PARTITION } = require("./profiles.cjs");
 
 // The page-injected helpers and field matchers live in autofill-core.js so
 // the Chrome extension can reuse them unchanged.
@@ -137,7 +138,16 @@ function comparableUrl(input) {
 const ZOOM_STEP = 0.1;
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 2;
-const PARTITION = "persist:job-application-browser";
+const PARTITION = DEFAULT_BROWSER_PARTITION;
+let activePartition = PARTITION;
+let activeBrowserDataDir = null;
+const configuredPartitions = new Set();
+function currentPartition() {
+  return activePartition || PARTITION;
+}
+function currentBrowserDataDir() {
+  return activeBrowserDataDir || app.getPath("userData");
+}
 const HISTORY_LIMIT = 50;
 // Login detection runs in every frame of a tab, isolated from the page (see
 // browser-guest-preload.js).
@@ -146,7 +156,7 @@ const guestPreload = () => path.join(__dirname, "browser-guest-preload.js");
 // ---- saved passwords ----
 let loginStore = null;
 function logins() {
-  if (!loginStore) loginStore = createLoginStore({ dir: app.getPath("userData") });
+  if (!loginStore) loginStore = createLoginStore({ dir: currentBrowserDataDir() });
   return loginStore;
 }
 // A typed account waiting for 保存 / 不保存, per tab (the password stays here,
@@ -417,11 +427,11 @@ function openSafeExternalUrl(rawUrl) {
 }
 
 function historyFile() {
-  return path.join(app.getPath("userData"), "browser-history.json");
+  return path.join(currentBrowserDataDir(), "browser-history.json");
 }
 
 function batchQueueFile() {
-  return path.join(app.getPath("userData"), "batch-queue.json");
+  return path.join(currentBrowserDataDir(), "batch-queue.json");
 }
 
 function readSavedBatchQueue() {
@@ -532,7 +542,7 @@ async function loadFavicon(tab, url) {
   if (faviconCache.has(url)) return show(faviconCache.get(url));
   let dataUrl = null;
   try {
-    const res = await session.fromPartition(PARTITION).fetch(url, { signal: AbortSignal.timeout(5000) });
+    const res = await session.fromPartition(currentPartition()).fetch(url, { signal: AbortSignal.timeout(5000) });
     const type = (res.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
     const bytes = res.ok && /^image\//.test(type) ? Buffer.from(await res.arrayBuffer()) : null;
     if (bytes && bytes.length > 0 && bytes.length <= 100 * 1024) dataUrl = `data:${type};base64,${bytes.toString("base64")}`;
@@ -686,7 +696,7 @@ function createTab(url, { activate = true, deferLoad = false } = {}) {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      session: session.fromPartition(PARTITION),
+      session: session.fromPartition(currentPartition()),
       // Not Node: with sandbox on, this only lets the login watcher run in
       // iframes too (many 网申 login boxes live in one).
       preload: guestPreload(),
@@ -808,7 +818,7 @@ function createTab(url, { activate = true, deferLoad = false } = {}) {
           width: 520,
           height: 640,
           autoHideMenuBar: true,
-          webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, session: session.fromPartition(PARTITION), preload: guestPreload(), nodeIntegrationInSubFrames: true },
+          webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, session: session.fromPartition(currentPartition()), preload: guestPreload(), nodeIntegrationInSubFrames: true },
         },
       };
     }
@@ -1145,6 +1155,100 @@ function syncChromeExtension({ force = false } = {}) {
   return target;
 }
 
+function ensurePartitionDownloadHandler(partitionName) {
+  if (!partitionName || configuredPartitions.has(partitionName)) return;
+  if (!session || typeof session.fromPartition !== "function") return;
+  const targetSession = session.fromPartition(partitionName);
+  if (!targetSession || typeof targetSession.on !== "function") return;
+  configuredPartitions.add(partitionName);
+  // 网申 sites hand out 测评说明/offer letters as downloads. Save straight
+  // to ~/Downloads (no dialog — the page is already inside a panel) and tell
+  // the renderer where it went.
+  targetSession.on("will-download", (_event, item) => {
+    const dir = app.getPath("downloads");
+    const filename = safeDownloadFilename(item.getFilename());
+    let target = path.join(dir, filename);
+    let n = 1;
+    while (fs.existsSync(target)) {
+      const ext = path.extname(filename);
+      target = path.join(dir, `${path.basename(filename, ext)} (${n++})${ext}`);
+    }
+    item.setSavePath(target);
+    item.once("done", (_e, state) => {
+      send("browser:download", { state, filename: path.basename(target), path: target });
+    });
+  });
+}
+
+/**
+ * Safely tears down all open recruitment browser tabs, login prompts, and
+ * saved-login caches for the outgoing profile, then rebinds the embedded
+ * browser to the incoming profile's isolated Chromium session partition and
+ * data directory.
+ */
+function switchBrowserProfile({ profileId, dataDir } = {}) {
+  const nextPartition = browserPartitionForProfile(profileId);
+  const nextDataDir = dataDir || null;
+
+  batchQueueToken = null;
+  batchRunning = false;
+  for (const tab of tabs) {
+    tab.resumeAfterLogin = null;
+    stopFillTask(tab.id, "正在切换求职人档案，已停止填写", { force: true });
+  }
+  if (tabs.length) {
+    persistBatchQueue();
+  }
+  lastBounds = null;
+  detach();
+
+  if (BrowserWindow && typeof BrowserWindow.getAllWindows === "function") {
+    for (const win of BrowserWindow.getAllWindows()) {
+      try {
+        if (!win.isDestroyed() && win.webContents && popupTabs.has(win.webContents.id)) {
+          win.close();
+        }
+      } catch { /* ignore */ }
+    }
+  }
+
+  for (const tab of tabs.splice(0)) {
+    if (tab.jdTimer) {
+      clearTimeout(tab.jdTimer);
+      tab.jdTimer = null;
+    }
+    try {
+      if (tab.view?.webContents && !tab.view.webContents.isDestroyed()) {
+        tab.view.webContents.close();
+      }
+    } catch { /* ignore */ }
+  }
+
+  activeId = null;
+  loginStore = null;
+  formWatch.lastSignature.clear();
+  formWatch.settled.clear();
+  submittedSignatures.clear();
+  lastAiFilled.clear();
+  pendingPlans.clear();
+  savingAnswersForTabs.clear();
+  fillingTabs.clear();
+  fillTasks.clear();
+  pendingLogins.clear();
+  loginStates.clear();
+  otpStates.clear();
+  popupTabs.clear();
+  faviconCache.clear();
+
+  activePartition = nextPartition;
+  activeBrowserDataDir = nextDataDir;
+  if (registered) {
+    ensurePartitionDownloadHandler(activePartition);
+  }
+  sendTabsState();
+  return { partition: activePartition, dataDir: activeBrowserDataDir };
+}
+
 function setupBrowserViewIpc(mainWindow, serverPort) {
   cleanOldUploadCopies();
   currentWindow = mainWindow;
@@ -1160,24 +1264,7 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
     return handler(event, ...args);
   });
 
-  const browserSession = session.fromPartition(PARTITION);
-  // 网申 sites hand out 测评说明/offer letters as downloads. Save straight
-  // to ~/Downloads (no dialog — the page is already inside a panel) and tell
-  // the renderer where it went.
-  browserSession.on("will-download", (_event, item) => {
-    const dir = app.getPath("downloads");
-    const filename = safeDownloadFilename(item.getFilename());
-    let target = path.join(dir, filename);
-    let n = 1;
-    while (fs.existsSync(target)) {
-      const ext = path.extname(filename);
-      target = path.join(dir, `${path.basename(filename, ext)} (${n++})${ext}`);
-    }
-    item.setSavePath(target);
-    item.once("done", (_e, state) => {
-      send("browser:download", { state, filename: path.basename(target), path: target });
-    });
-  });
+  ensurePartitionDownloadHandler(currentPartition());
 
   // ---- tabs & navigation ----
   handle("browser:new-tab", (_e, url) => createTab(url || "about:blank").id);
@@ -1423,8 +1510,9 @@ function setupBrowserViewIpc(mainWindow, serverPort) {
   // Logging out of every 网申 site at once — for switching accounts, or
   // just not leaving a term's worth of sessions lying around.
   handle("browser:clear-site-data", async () => {
-    await browserSession.clearStorageData();
-    await browserSession.clearCache();
+    const curSession = session.fromPartition(currentPartition());
+    await curSession.clearStorageData();
+    if (typeof curSession.clearCache === "function") await curSession.clearCache();
     for (const t of tabs) t.view.webContents.reload();
   });
 
@@ -2570,7 +2658,7 @@ const AUTO_SAMPLE_UNFILLED = 5;
 const AUTO_SAMPLE_LIMIT = 120;
 const AUTO_SAMPLE_MISSED = 8;
 const NUDGE_EMPTY_FIELDS = 4;
-const sampleDir = () => path.join(app.getPath("userData"), "网申样本");
+const sampleDir = () => path.join(currentBrowserDataDir(), "网申样本");
 
 /** The page as it is right before 一键填写 runs, kept for an automatic sample (see captureSample). */
 async function rememberPreFill(tab) {
@@ -2745,4 +2833,10 @@ function recordFillStats(rawUrl, patch) {
   } catch { /* Statistics never get in the way of filling. */ }
 }
 
-module.exports = { setupBrowserViewIpc, syncChromeExtension, __test: { detectLoginGateCleared, siteStrategyFor } };
+module.exports = {
+  setupBrowserViewIpc,
+  syncChromeExtension,
+  switchBrowserProfile,
+  getActiveBrowserPartition: () => currentPartition(),
+  __test: { detectLoginGateCleared, siteStrategyFor },
+};

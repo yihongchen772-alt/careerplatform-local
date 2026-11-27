@@ -180,3 +180,27 @@ contextBridge.exposeInMainWorld("desktopLanSync", {
   confirmImport: (stagingId) => ipcRenderer.invoke("lan-sync:confirm-import", stagingId),
   discardStaged: (stagingId) => ipcRenderer.invoke("lan-sync:discard", stagingId),
 });
+
+contextBridge.exposeInMainWorld("desktopProfiles", {
+  list: () => ipcRenderer.invoke("profiles:list"),
+  create: (payload) => ipcRenderer.invoke("profiles:create", payload),
+  switch: (profileId) => ipcRenderer.invoke("profiles:switch", profileId),
+  rename: (profileId, name) => ipcRenderer.invoke("profiles:rename", profileId, name),
+  delete: (profileId) => ipcRenderer.invoke("profiles:delete", profileId),
+  syncAiKeys: (profileId) => ipcRenderer.invoke("profiles:sync-ai-keys", profileId),
+  onSwitching: (callback) => {
+    const listener = (_event, state) => callback(state);
+    ipcRenderer.on("profiles:switching", listener);
+    return () => ipcRenderer.removeListener("profiles:switching", listener);
+  },
+  onChanged: (callback) => {
+    const listener = (_event, state) => callback(state);
+    ipcRenderer.on("profiles:changed", listener);
+    return () => ipcRenderer.removeListener("profiles:changed", listener);
+  },
+  onOpenCreateDialog: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on("profiles:open-create-dialog", listener);
+    return () => ipcRenderer.removeListener("profiles:open-create-dialog", listener);
+  },
+});

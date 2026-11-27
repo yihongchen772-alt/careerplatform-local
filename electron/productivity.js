@@ -153,8 +153,13 @@ function setupProductivity({ port, token, getMainWindow, showMainWindow, getNote
     } catch (error) { console.error("Event reminders:", error.message); }
     finally { polling = false; }
   }
+  function closeAllWindows() {
+    for (const entry of [...windows.values()]) {
+      try { if (!entry.win.isDestroyed()) entry.win.close(); } catch { /* ignore */ }
+    }
+  }
   const interval = setInterval(poll, 15000);
   powerMonitor.on("resume", poll); void poll();
-  return { open: (kind) => open(kind, null, kind === "capture"), setMainWindow, shutdown() { quitting = true; persist(); clearInterval(interval); powerMonitor.removeListener("resume", poll); globalShortcut.unregister(shortcut); } };
+  return { open: (kind) => open(kind, null, kind === "capture"), setMainWindow, closeAllWindows, shutdown() { quitting = true; persist(); clearInterval(interval); powerMonitor.removeListener("resume", poll); globalShortcut.unregister(shortcut); } };
 }
 module.exports = { setupProductivity, fitBounds };
